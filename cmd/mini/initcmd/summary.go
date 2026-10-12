@@ -112,6 +112,10 @@ func stepInFile(file string, mini agents.MiniEntry, s ServerStatus) (string, boo
 	return "", false
 }
 
+func LoginCommand(mini agents.MiniEntry, server string) string {
+	return miniCommand(mini, "auth", server)
+}
+
 // Commands carry the config directory whenever agents are given one, so they act on the same servers.
 func miniCommand(mini agents.MiniEntry, args ...string) string {
 	words := []string{"mini"}

@@ -3,10 +3,13 @@ package tui
 import tea "charm.land/bubbletea/v2"
 
 const (
-	continueLabel = "Continue"
-	backLabel     = "Back"
-	// The rows under a screen with no choices of its own: a blank line, Continue and Back.
-	tallestNavigation = 3
+	continueLabel          = "Continue"
+	backLabel              = "Back"
+	saveAndFinishLabel     = "Save and finish"
+	exitWithoutSavingLabel = "Exit without saving"
+	// The rows under a screen with no choices of its own, at most a blank line, Save and finish,
+	// Exit without saving and Back.
+	tallestNavigation = 4
 )
 
 type chooser interface {
@@ -47,14 +50,27 @@ type navigation struct {
 }
 
 func (a *app) labels() []string {
-	labels := []string{continueLabel}
-	if c, ok := a.current().(chooser); ok {
-		labels = c.choices()
-	}
+	labels := a.forwardLabels()
 	if a.canGoBack() {
 		return append(labels[:len(labels):len(labels)], backLabel)
 	}
 	return labels
+}
+
+func (a *app) forwardLabels() []string {
+	if c, ok := a.current().(chooser); ok {
+		return c.choices()
+	}
+	if a.endsRun() {
+		return []string{saveAndFinishLabel, exitWithoutSavingLabel}
+	}
+	return []string{continueLabel}
+}
+
+// Before the save point, saving can still open Logins, so only a screen past it knows it is last.
+func (a *app) endsRun() bool {
+	_, hasNext := a.nextShown(a.at, 1)
+	return a.saves.save != nil && a.at > a.saves.after && !hasNext
 }
 
 func (a *app) onNavigation() bool {
@@ -81,15 +97,19 @@ func (a *app) disabledChoice(i int) bool {
 }
 
 func (a *app) settleDefaultChoice() {
-	if a.nav.moved || !a.disabledChoice(a.nav.at) {
-		return
+	if !a.nav.moved && a.disabledChoice(a.nav.at) {
+		a.nav.at = a.firstEnabledLabel()
 	}
+}
+
+// Jumping to the choices lands where enter does something.
+func (a *app) firstEnabledLabel() int {
 	for i := range a.labels() {
 		if !a.disabledChoice(i) {
-			a.nav.at = i
-			return
+			return i
 		}
 	}
+	return 0
 }
 
 // Back goes away under the cursor when the screens before this one empty.
@@ -98,7 +118,7 @@ func (a *app) clampNavigationCursor() {
 }
 
 func (a *app) reachNavigation() {
-	a.nav.focus, a.nav.at = focusNavigation, 0
+	a.nav.focus, a.nav.at = focusNavigation, a.firstEnabledLabel()
 }
 
 // A key on the navigation makes it the user's choice, so a row that appears later doesn't take the
@@ -112,7 +132,7 @@ func (a *app) handleNavigation(key tea.KeyPressMsg) tea.Cmd {
 	case "down":
 		a.nav.moved, a.nav.at = true, min(a.nav.at+1, len(a.labels())-1)
 	case "tab":
-		a.nav.moved, a.nav.at = true, 0
+		a.nav.moved, a.nav.at = true, a.firstEnabledLabel()
 	case "enter":
 		return a.act()
 	case "esc":
@@ -140,6 +160,9 @@ func (a *app) act() tea.Cmd {
 	}
 	if c, ok := a.current().(chooser); ok && !c.choose(a.nav.at) {
 		return nil
+	}
+	if a.labels()[a.nav.at] == exitWithoutSavingLabel {
+		return a.quitWithoutSaving()
 	}
 	return a.forward()
 }

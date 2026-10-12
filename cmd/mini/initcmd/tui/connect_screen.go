@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -14,6 +15,7 @@ import (
 
 type connectPlan interface {
 	HasDuplicates(agent string) bool
+	DuplicatedServers(agents ...string) []string
 	Check(ctx context.Context) initcmd.Removals
 }
 
@@ -164,13 +166,26 @@ func (s *connectScreen) unavailableBecause(choice initcmd.ConnectChoice) string 
 		return "Nothing to remove from the ticked agents."
 	}
 	if s.checks.done && len(s.picksWithRemovals()) == 0 {
-		return "None of these MCPs work in mini yet, so nothing will be removed."
+		return s.nothingWorksYet()
 	}
 	return ""
 }
 
+func (s *connectScreen) nothingWorksYet() string {
+	var picked []string
+	for _, agent := range s.picked() {
+		picked = append(picked, agent.Name)
+	}
+	names := s.plan.DuplicatedServers(picked...)
+	verb := "don't"
+	if len(names) == 1 {
+		verb = "doesn't"
+	}
+	return fmt.Sprintf("Nothing will be removed: %s %s work in mini yet.", initcmd.JoinAnd(names), verb)
+}
+
 func (s *connectScreen) body(height int, focused bool) string {
-	note := s.addedLines()
+	note := addedNote(s.p.added(), s.width)
 	if len(note) > 0 && s.focusable() {
 		note = append(note, "")
 	}
@@ -180,13 +195,12 @@ func (s *connectScreen) body(height int, focused bool) string {
 	return strings.Join(append(note, s.agents.view(max(height-len(note), 1), focused)), "\n")
 }
 
-func (s *connectScreen) addedLines() []string {
-	added := s.p.added()
+func addedNote(added []string, width int) []string {
 	if len(added) == 0 {
 		return nil
 	}
 	text := initcmd.Plural(len(added), "MCP") + " will be added to mini: " + strings.Join(added, ", ")
-	return strings.Split(ansi.Wrap(text, max(s.width, 20), ""), "\n")
+	return strings.Split(ansi.Wrap(text, max(width, 20), ""), "\n")
 }
 
 // Subtitles run past a narrow window, and the app cuts lines at its edge, so they wrap.

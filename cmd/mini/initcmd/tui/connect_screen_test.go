@@ -37,6 +37,15 @@ func newFakePlan(removable map[string][]string) *fakePlan {
 
 func (f *fakePlan) HasDuplicates(agent string) bool { return len(f.removable[agent]) > 0 }
 
+func (f *fakePlan) DuplicatedServers(agents ...string) []string {
+	var names []string
+	for _, agent := range agents {
+		names = append(names, f.removable[agent]...)
+	}
+	slices.Sort(names)
+	return slices.Compact(names)
+}
+
 func (f *fakePlan) Check(ctx context.Context) initcmd.Removals {
 	select {
 	case r := <-f.release:
@@ -247,6 +256,8 @@ type stuckPlan struct{ unblock chan struct{} }
 
 func (*stuckPlan) HasDuplicates(string) bool { return true }
 
+func (*stuckPlan) DuplicatedServers(...string) []string { return []string{"files"} }
+
 func (p *stuckPlan) Check(context.Context) initcmd.Removals {
 	<-p.unblock
 	return initcmd.Removals{}
@@ -283,7 +294,7 @@ func TestConnectScreen_anAgentAlreadyConnectedIsMarkedWithOnlyOneToConnect(t *te
 func TestConnectScreen_withNoAgentTickedTheConnectChoicesSayToTickOne(t *testing.T) {
 	s, _ := connectScreenFor(t, newFakePlan(nil), namedAgents("Claude", "Codex"), nil)
 	a := framed(s, false)
-	send(a, "up", "a", "tab")
+	send(a, "up", "a", "tab", "up")
 	want := "> Just connect mini\n  Tick the agents above to connect mini to them\n" +
 		"  I'll connect mini later\n  Leaves your agent configurations alone."
 	if text := framedText(a); !strings.Contains(text, want) {
@@ -320,10 +331,10 @@ func TestConnectScreen_untickingEveryAgentDimsTheConnectChoicesUntilOneIsTickedA
 		)
 	}
 	send(a, "tab")
-	if text := framedText(a); !strings.Contains(text, "> Just connect mini") {
-		t.Errorf("view after tab:\n%s\nwant the cursor on disabled Just connect mini", text)
+	if text := framedText(a); !strings.Contains(text, "> I'll connect mini later") {
+		t.Errorf("view after tab:\n%s\nwant tab to land on I'll connect mini later, the only choice enter takes", text)
 	}
-	send(a, "up")
+	send(a, "up", "up")
 	if text := framedText(a); strings.Contains(text, "> I'll connect") || strings.Contains(text, "> Just") {
 		t.Errorf(
 			"view after up from the first choice:\n%s\nwant the cursor on the rows",

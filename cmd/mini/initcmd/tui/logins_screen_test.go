@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/mcpmini/mini/cmd/mini/initcmd"
+	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
 )
 
@@ -29,10 +31,16 @@ func newFakeChecks(statuses ...initcmd.ServerStatus) *fakeChecks {
 func (f *fakeChecks) screen() *loginsScreen {
 	return newLoginsScreen(loginsParams{
 		configDirFor: func(string) string { return "testconfig" },
+		steps:        testSteps,
 		statuses:     func() ([]initcmd.ServerStatus, error) { return f.statuses, nil },
 		checking:     func() map[string]bool { return maps.Clone(f.checking) },
 		changed:      f.changed,
 	})
+}
+
+var testSteps = serverSteps{
+	file:  func(name string) string { return "~/.mini/servers/" + name + ".yaml" },
+	login: func(name string) string { return "mini auth " + name },
 }
 
 func loginsText(s *loginsScreen) string {
@@ -54,9 +62,9 @@ func TestLoginsScreen_listsOnlyLoginRowsAndListsTheByHandServersWithWhatTheyRequ
 	showScreen(s)
 	want := "> linear  press enter to log in\n\n" +
 		"Browser login isn't available for these MCPs, so you will need to configure them manually later:\n" +
-		"  github  requires manual configuration, edit testconfig/servers/github.yaml\n" +
-		"  asana   requires a custom OAuth app\n" +
-		"  files   requires manual configuration, edit testconfig/servers/files.yaml\n\n  Continue"
+		"  github  requires manual configuration, edit ~/.mini/servers/github.yaml\n" +
+		"  asana   requires a custom OAuth app, edit ~/.mini/servers/asana.yaml\n" +
+		"  files   requires manual configuration, edit ~/.mini/servers/files.yaml\n\n  Continue"
 	if text := loginsText(s); text != want {
 		t.Errorf("screen:\n%s\nwant:\n%s", text, want)
 	}
@@ -92,14 +100,14 @@ func TestLoginsScreen_byHandServersAreListedBelowTheLoginRowsAndAreNotRows(t *te
 			"one",
 			[]string{"github"},
 			"Browser login isn't available for this MCP, so you will need to configure it manually later:\n" +
-				"  github  requires manual configuration, edit testconfig/servers/github.yaml",
+				"  github  requires manual configuration, edit ~/.mini/servers/github.yaml",
 		},
 		{
 			"two",
 			[]string{"github", "asana"},
 			"Browser login isn't available for these MCPs, so you will need to configure them manually later:\n" +
-				"  github  requires manual configuration, edit testconfig/servers/github.yaml\n" +
-				"  asana   requires manual configuration, edit testconfig/servers/asana.yaml",
+				"  github  requires manual configuration, edit ~/.mini/servers/github.yaml\n" +
+				"  asana   requires manual configuration, edit ~/.mini/servers/asana.yaml",
 		},
 	}
 	for _, tc := range cases {
@@ -130,7 +138,7 @@ func TestLoginsScreen_onlyByHandServersLeaveAHeadingAndTheListWithContinue(t *te
 	s.resize(200, 30)
 	a := framed(s, false)
 	want := "Browser login isn't available for this MCP, so you will need to configure it manually later:\n" +
-		"  github  requires manual configuration, edit testconfig/servers/github.yaml\n\n> Continue"
+		"  github  requires manual configuration, edit ~/.mini/servers/github.yaml\n\n> Continue"
 	if text := framedText(a); text != want {
 		t.Errorf("screen:\n%s\nwant:\n%s", text, want)
 	}
@@ -183,6 +191,7 @@ func TestLoginsScreen_aCheckFinishingWhileTheStatusesAreReadIsNotLost(t *testing
 	checks.checking["open"] = true
 	s := newLoginsScreen(loginsParams{
 		configDirFor: func(string) string { return "testconfig" },
+		steps:        testSteps,
 		statuses: func() ([]initcmd.ServerStatus, error) {
 			delete(checks.checking, "open")
 			checks.changed <- struct{}{}
@@ -257,6 +266,7 @@ func loginScreenWithStatuses(logins *fakeLogins, statuses ...initcmd.ServerStatu
 	checks := newFakeChecks(statuses...)
 	s := newLoginsScreen(loginsParams{
 		configDirFor: func(string) string { return "testconfig" },
+		steps:        testSteps,
 		statuses:     func() ([]initcmd.ServerStatus, error) { return checks.statuses, nil },
 		checking:     func() map[string]bool { return nil },
 		changed:      checks.changed,
@@ -584,6 +594,7 @@ func TestLoginsScreen_showingItAgainPutsTheCursorOnTheNextLogin(t *testing.T) {
 func TestLoginsScreen_aReadErrorLeavesOnlyTheNavigation(t *testing.T) {
 	s := newLoginsScreen(loginsParams{
 		configDirFor: func(string) string { return "testconfig" },
+		steps:        testSteps,
 		statuses:     func() ([]initcmd.ServerStatus, error) { return nil, errors.New("permission denied") },
 		checking:     func() map[string]bool { return nil },
 	})
@@ -738,5 +749,35 @@ func TestLoginsScreen_whileALoginWaitsTheFooterGivesEscOneMeaning(t *testing.T) 
 	); !strings.Contains(footer, "esc cancel login") ||
 		strings.Contains(footer, "esc back") {
 		t.Errorf("footer:\n%s\nwant esc named once, as cancelling the login", footer)
+	}
+}
+
+func TestRun_aByHandServerPointsAtTheFileItWillHaveInMini(t *testing.T) {
+	configDir := t.TempDir()
+	setup := setupFor(configDir)
+	setup.Probe = func(context.Context, string, config.ServerConfig) error { return errors.New("401") }
+	token := catalog.Entry{Name: "github", URL: "https://mcp.github.example/mcp", Auth: catalog.AuthToken}
+	var view string
+	program := func(m tea.Model) error {
+		pressingAndDelivering("space", "tab", "enter")(m)
+		view = shown(m.(*app))
+		return nil
+	}
+	if _, err := Run(
+		Params{
+			Setup:       setup,
+			LoadCatalog: fromCatalog(catalog.Catalog{Entries: []catalog.Entry{token}}),
+			Program:     program,
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(configDir, "servers", "github.yaml")
+	if !strings.Contains(strings.Join(strings.Fields(view), ""), want) {
+		t.Errorf(
+			"Logins:\n%s\nwant github's step to name %s, where Save and finish puts it, not the staging copy",
+			view,
+			want,
+		)
 	}
 }

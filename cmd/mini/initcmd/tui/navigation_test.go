@@ -362,6 +362,29 @@ func TestNavigation_theUntouchedDefaultLeavesAChoiceThatBecomesDisabled(t *testi
 	}
 }
 
+func TestNavigation_tabAndDownPastTheRowsLandOnTheFirstEnabledChoice(t *testing.T) {
+	for _, key := range []string{"tab", "down"} {
+		t.Run(key, func(t *testing.T) {
+			s := &disablingScreen{fakeScreen: fakeScreen{name: "Pick", hasRows: true}, off: map[int]bool{0: true}}
+			a := framed(s, false)
+			// The user went down to the choices and back up, so the cursor no longer follows the default.
+			a.nav.focus, a.nav.moved = focusRows, true
+			send(a, key)
+			if view := shown(a); !strings.Contains(view, "> Drop") {
+				t.Errorf("view after %s:\n%s\nwant the cursor on Drop: enter does nothing on disabled Keep", key, view)
+			}
+		})
+	}
+}
+
+func TestNavigation_tabOnTheChoicesReturnsToTheFirstEnabledChoice(t *testing.T) {
+	_, a := disablingAt(0)
+	send(a, "enter", "down", "tab")
+	if view := shown(a); !strings.Contains(view, "> Drop") {
+		t.Errorf("view after tab from Park:\n%s\nwant the cursor on Drop, not disabled Keep", view)
+	}
+}
+
 func TestNavigation_upFromTheFirstChoiceReturnsToTheRows(t *testing.T) {
 	_, a := disablingAt(0)
 	send(a, "enter", "up")
@@ -372,5 +395,53 @@ func TestNavigation_upFromTheFirstChoiceReturnsToTheRows(t *testing.T) {
 	view := shown(a)
 	if strings.Contains(view, "> Keep") || strings.Contains(view, "> Drop") || strings.Contains(view, "> Park") {
 		t.Errorf("view:\n%s\nwant the cursor back on the rows", view)
+	}
+}
+
+func TestNavigation_aLastScreenPastTheSavePointOffersSaveAndFinishExitAndBack(t *testing.T) {
+	a := inApp(100, 30, &fakeScreen{name: "Before"}, &fakeScreen{name: "Last"})
+	a.saves = savePoint{after: 0, save: func() {}}
+	send(a, "enter")
+	if view := shown(a); !strings.Contains(view, "> Save and finish\n  Exit without saving\n  Back") {
+		t.Errorf("view:\n%s\nwant Save and finish, Exit without saving and Back on the last screen", view)
+	}
+}
+
+func TestNavigation_aLastScreenAtTheSavePointStillOffersContinue(t *testing.T) {
+	a := inApp(100, 30, &fakeScreen{name: "Before"}, &fakeScreen{name: "Pick"})
+	a.saves = savePoint{after: 1, save: func() {}}
+	send(a, "enter")
+	if view := shown(a); !strings.Contains(view, "> Continue") || strings.Contains(view, saveAndFinishLabel) {
+		t.Errorf("view:\n%s\nwant Continue: nothing past the save point has been shown yet", view)
+	}
+}
+
+func TestNavigation_aLastChooserKeepsItsChoicesPastTheSavePoint(t *testing.T) {
+	s := &choosingScreen{fakeScreen: fakeScreen{name: "Pick", hasRows: true}}
+	a := inApp(100, 30, &fakeScreen{name: "Before"}, s)
+	a.saves = savePoint{after: 0, save: func() {}}
+	send(a, "enter")
+	if view := shown(a); !strings.Contains(view, "> Keep") || strings.Contains(view, saveAndFinishLabel) {
+		t.Errorf("view:\n%s\nwant the chooser's own choices, not the run's final actions", view)
+	}
+}
+
+func TestNavigation_saveAndFinishOnTheLastScreenSavesOnceAndEndsTheRun(t *testing.T) {
+	saves := 0
+	a := inApp(100, 30, &fakeScreen{name: "Before", nothing: true}, &fakeScreen{name: "Last"})
+	a.saves = savePoint{after: 0, save: func() { saves++ }}
+	cmd := send(a, "enter")
+	saved := a.saves.saved
+	if saves != 1 || cmd == nil || !saved {
+		t.Errorf("saves = %d, cmd = %v, saved = %v; want the picks saved once and the program ended", saves, cmd, saved)
+	}
+}
+
+func TestNavigation_exitWithoutSavingOnTheLastScreenQuitsWithoutSaving(t *testing.T) {
+	saves := 0
+	a := inApp(100, 30, &fakeScreen{name: "Before", nothing: true}, &fakeScreen{name: "Last"})
+	a.saves = savePoint{after: 0, save: func() { saves++ }}
+	if cmd := send(a, "down", "enter"); saves != 0 || cmd == nil || !a.quit {
+		t.Errorf("saves = %d, cmd = %v, quit = %v; want nothing saved and the program ended", saves, cmd, a.quit)
 	}
 }
