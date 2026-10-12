@@ -8,10 +8,8 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
-// A run without screens never showed which servers still need a step or which were already in
-// mini, so the summary does.
+// A run without screens never showed which servers were already in mini, so the summary does.
 func writeWhatNoScreenShowed(b *strings.Builder, r Report) {
-	writeSteps(b, r)
 	if len(r.AlreadyConfigured) > 0 {
 		fmt.Fprintf(b, "Already configured in mini: %s\n", strings.Join(r.AlreadyConfigured, ", "))
 	}
@@ -31,6 +29,8 @@ func writeSkipped(b *strings.Builder, r Report) {
 	}
 }
 
+// Logins doesn't name the command, Review is skipped when Connect shows, and a check can finish
+// after the screens close, so every run lists what is still unfinished.
 func writeSteps(b *strings.Builder, r Report) {
 	unfinished := slices.DeleteFunc(slices.Clone(r.Servers), func(s ServerStatus) bool { return s.Readiness == Ready })
 	if len(unfinished) == 0 {

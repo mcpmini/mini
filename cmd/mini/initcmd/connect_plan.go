@@ -85,7 +85,7 @@ func (p ConnectPlan) Check(ctx context.Context) Removals {
 	})
 	rule := p.setup.replacementRule(r.Checks)
 	for agent, a := range p.agents {
-		r.ByAgent[agent], _ = rule.splitDuplicates(a.existing, a.duplicates)
+		r.ByAgent[agent] = rule.removableDuplicates(a.existing, a.duplicates)
 	}
 	return r
 }

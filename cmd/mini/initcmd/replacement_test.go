@@ -132,18 +132,9 @@ func TestApply_existingMiniEntry(t *testing.T) {
 			},
 		})
 
-		wantKept := []KeptEntry{{Entry: "files", Server: "files", Err: errMiniInactive}}
 		for i, result := range results {
-			if result.ExistingMini != MiniEntryInactive || result.Removed != nil ||
-				!reflect.DeepEqual(result.Kept, wantKept) {
+			if result.ExistingMini != MiniEntryInactive || result.Removed != nil {
 				t.Errorf("%s result = %+v, want files kept because mini won't serve it", result.Agent.Name, result)
-			}
-			if result.Changed != nil {
-				t.Errorf(
-					"%s changed = %v, want none: files is as Connect counted it",
-					result.Agent.Name,
-					result.Changed,
-				)
 			}
 			if after := testutil.ReadFile(t, result.Agent.ConfigPath); string(after) != string(before[i]) {
 				t.Errorf("%s config changed:\n%s", result.Agent.Name, after)
@@ -164,8 +155,7 @@ func TestApply_aMiniServerChangedAfterItsCheckRemovesNoEntryConnectDidntCount(t 
 		removals: Removals{Checks: map[string]error{"files": nil}, ByAgent: counted},
 	})
 
-	wantKept := []KeptEntry{{Entry: "other", Server: "files", Err: errNotCounted}}
-	if results[0].Removed != nil || !reflect.DeepEqual(results[0].Kept, wantKept) {
+	if len(results[0].Removed) > 0 {
 		t.Errorf("result = %+v, want other kept: Connect counted only old", results[0])
 	}
 	if got := entryNamesIn(t, cursor); !reflect.DeepEqual(got, []string{"mini", "old", "other"}) {

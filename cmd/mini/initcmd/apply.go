@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"os"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/mcpmini/mini/internal/agents"
@@ -43,27 +42,11 @@ type AgentResult struct {
 	// own or the one init wrote; false means the agent won't get mini's servers through it.
 	MiniServes bool
 	Removed    []string
-	Kept       []KeptEntry
-	Changed    []string
 	Err        error
-}
-
-// KeptEntry is an agent entry mini duplicates but didn't replace: mini's copy failed its
-// connection check or was never checked, or the agent's mini entry won't serve it.
-type KeptEntry struct {
-	Entry  string
-	Server string
-	Err    error
 }
 
 const inactiveMiniReasons = "it's switched off, uses another config directory, " +
 	"or doesn't start mini connect by absolute path"
-
-var (
-	errNotChecked   = errors.New("its connection wasn't checked")
-	errNotCounted   = errors.New("it wasn't among the MCPs you chose to remove")
-	errMiniInactive = errors.New("the agent's mini entry may not run these servers: " + inactiveMiniReasons)
-)
 
 // ConnectParams is what the user chose on Connect.
 type ConnectParams struct {
@@ -136,7 +119,7 @@ func (p applyParams) edit(agent agents.Agent, mini miniServers) AgentResult {
 	}
 	result.Backup, result.Err = agents.EditFile(agent.ConfigPath, edit, p.now)
 	if result.Err != nil {
-		result.MiniServes, result.Removed, result.Kept, result.Changed = false, nil, nil, nil
+		result.MiniServes, result.Removed = false, nil
 	}
 	return result
 }
@@ -155,9 +138,7 @@ func (p applyParams) editedConfig(
 	result.ExistingMini = p.rule.entryCheck.existingMini(entries)
 	result.MiniServes = p.rule.servedAfterEdit(result.ExistingMini)
 	if p.choice == ConnectAndRemove {
-		duplicates := mini.Duplicates(entries, p.selfPath)
-		result.Changed = changedSince(p.counted[agent.Name], entries, duplicates)
-		result.Removed, result.Kept = p.removals(agent.Name, result.ExistingMini, duplicates)
+		result.Removed = p.removals(agent.Name, result.ExistingMini, mini.Duplicates(entries, p.selfPath))
 	}
 	switch {
 	case result.ExistingMini == NoMiniEntry:
@@ -169,32 +150,9 @@ func (p applyParams) editedConfig(
 	}
 }
 
-func (p applyParams) removals(
-	agent string,
-	existing ExistingMini,
-	duplicates map[string]string,
-) ([]string, []KeptEntry) {
-	removable, kept := p.rule.splitDuplicates(existing, duplicates)
-	var remove []string
-	for _, entry := range removable {
-		// The user agreed only to what Connect counted; an entry removable since then stays.
-		if slices.Contains(p.counted[agent], entry) {
-			remove = append(remove, entry)
-		} else {
-			kept = append(kept, KeptEntry{Entry: entry, Server: duplicates[entry], Err: errNotCounted})
-		}
-	}
-	slices.SortFunc(kept, func(a, b KeptEntry) int { return strings.Compare(a.Entry, b.Entry) })
-	return remove, kept
-}
-
-func changedSince(counted []string, entries map[string]agents.Server, duplicates map[string]string) []string {
-	var changed []string
-	for _, entry := range counted {
-		_, exists := entries[entry] // one the user deleted since the check is gone either way
-		if _, still := duplicates[entry]; exists && !still {
-			changed = append(changed, entry)
-		}
-	}
-	return changed
+func (p applyParams) removals(agent string, existing ExistingMini, duplicates map[string]string) []string {
+	// The user agreed only to what Connect counted; an entry removable since then stays.
+	return slices.DeleteFunc(p.rule.removableDuplicates(existing, duplicates), func(entry string) bool {
+		return !slices.Contains(p.counted[agent], entry)
+	})
 }

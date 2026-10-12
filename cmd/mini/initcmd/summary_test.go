@@ -33,8 +33,8 @@ func TestSummary_headline(t *testing.T) {
 		requireLines(t, plainSummary(Report{Interactive: true}), "No MCPs were added to mini.\n")
 	})
 	t.Run("a read error still says what this run added, then the error", func(t *testing.T) {
-		got := plainSummary(Report{ReadServersErr: errors.New("permission denied")})
-		requireLines(t, got, "No MCPs were added to mini.\nCould not read mini's servers: permission denied\n")
+		got := plainSummary(Report{Added: []string{"github"}, ReadServersErr: errors.New("permission denied")})
+		requireLines(t, got, "Added 1 MCP to mini: github.\n", "Could not read mini's servers: permission denied\n")
 	})
 }
 
@@ -69,8 +69,27 @@ func TestSummary_aRunWithoutScreensListsWhatNoScreenShowed(t *testing.T) {
 		t.Errorf("a ready server is listed:\n%s", got)
 	}
 	report.Interactive = true
-	if got := plainSummary(report); got != "Added 5 MCPs to mini: github, asana, notion, files and search.\n" {
-		t.Errorf("after the screens ran, summary = %q, want only the headline: they showed the rest", got)
+	got := plainSummary(report)
+	requireLines(t, got, "  notion  requires a login, run: mini --config '/srv/my mini' auth notion\n")
+	if strings.Contains(got, "Already configured") || strings.Contains(got, "Imported from your agents") {
+		t.Errorf("after the screens ran, summary:\n%s\nwant no already-configured lines: Catalog showed them", got)
+	}
+}
+
+func TestSummary_aServerStillNeedingALoginAfterTheScreensIsNamedWithItsCommand(t *testing.T) {
+	claude := agents.Agent{Name: "Claude Code", ConfigPath: "/home/u/.claude.json"}
+	got := plainSummary(Report{
+		Interactive: true,
+		Added:       []string{"linear"},
+		Servers:     []ServerStatus{{Name: "linear", Readiness: NeedsLogin}},
+		Connected:   []AgentResult{{Agent: claude, Created: true}},
+	})
+	want := "Added 1 MCP to mini: linear.\n" +
+		"These MCPs need one more step:\n" +
+		"  linear  requires a login, run: mini auth linear\n" +
+		"Connected mini to Claude Code. Restart it to start using mini.\n"
+	if got != want {
+		t.Errorf("summary:\n%s\nwant:\n%s", got, want)
 	}
 }
 

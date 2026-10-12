@@ -32,8 +32,8 @@ type Report struct {
 	AddCoveredByImport []string
 	WriteErrors        []ServerError
 	Servers            []ServerStatus
-	// Interactive is set when init's screens ran: Logins and Review already showed each unfinished
-	// server's step, and Import each entry it offered.
+	// Interactive is set when init's screens ran: Import already showed each entry it offered, and
+	// Catalog what was already in mini.
 	Interactive bool
 	Agents      AgentConnections
 	// Connected holds the agents init tried to connect. Nil means it tried none, and the summary

@@ -31,6 +31,7 @@ func styled(style func(string) string, text string) string {
 func Summary(r Report, style SummaryStyle) string {
 	var b strings.Builder
 	writeHeadline(&b, r)
+	writeSteps(&b, r)
 	if !r.Interactive {
 		writeWhatNoScreenShowed(&b, r)
 	}
@@ -112,7 +113,7 @@ func writeFailures(b *strings.Builder, r Report) {
 
 // LoginCommands gives the command that logs in to a server, written as the summary writes its commands.
 func LoginCommands(configDir string) func(server string) string {
-	c := AgentConnections{Mini: MiniCommand(configDir), MiniName: systemLookup.displayName()}
+	c := connectionsFor(configDir)
 	return func(server string) string { return miniCommand(c, "auth", server) }
 }
 

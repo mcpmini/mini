@@ -21,8 +21,12 @@ func (c AgentConnections) miniName() string {
 	return c.MiniName
 }
 
+func connectionsFor(configDir string) AgentConnections {
+	return AgentConnections{Mini: MiniCommand(configDir), MiniName: systemLookup.displayName()}
+}
+
 func classifyAgents(configDir, selfPath string, list []agents.Agent) AgentConnections {
-	c := AgentConnections{Mini: MiniCommand(configDir), MiniName: systemLookup.displayName()}
+	c := connectionsFor(configDir)
 	check := miniEntryCheck{configDir: configDir, selfPath: selfPath}
 	for _, agent := range list {
 		switch check.existingMiniIn(agent) {
