@@ -11,13 +11,13 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-type CodexServer struct {
+type codexServer struct {
 	Command string   `toml:"command"`
 	Args    []string `toml:"args"`
 }
 
-// EditCodexServers disables named servers and adds mini only when its entry is absent.
-func EditCodexServers(data []byte, disable []string, mini *CodexServer) ([]byte, error) {
+// editCodexServers disables named servers and adds mini only when its entry is absent.
+func editCodexServers(data []byte, disable []string, mini *codexServer) ([]byte, error) {
 	before, err := decodeCodexConfig(data)
 	if err != nil {
 		return nil, err
@@ -204,7 +204,7 @@ func leadingSpace(text string) string {
 	return text[:len(text)-len(strings.TrimLeft(text, " \t"))]
 }
 
-func codexMiniTable(before map[string]any, mini *CodexServer) ([]string, error) {
+func codexMiniTable(before map[string]any, mini *codexServer) ([]string, error) {
 	if mini == nil || serverDefined(before, MiniKey) {
 		return nil, nil
 	}

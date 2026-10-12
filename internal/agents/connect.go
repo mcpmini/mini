@@ -25,11 +25,11 @@ func connectJSON(config []byte, remove []string, mini *MiniEntry) ([]byte, error
 	if mini != nil {
 		add = map[string]any{MiniKey: map[string]any{"command": mini.Command, "args": mini.Args}}
 	}
-	return EditJSONServers(config, remove, add)
+	return editJSONServers(config, remove, add)
 }
 
 func connectCodex(config []byte, disable []string, mini *MiniEntry) ([]byte, error) {
-	return EditCodexServers(config, disable, (*CodexServer)(mini))
+	return editCodexServers(config, disable, (*codexServer)(mini))
 }
 
 // CreateFile writes the MCP config of an agent that has none yet. It never replaces a file: one

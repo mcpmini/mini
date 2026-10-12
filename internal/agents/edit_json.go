@@ -8,8 +8,8 @@ import (
 	"io"
 )
 
-// EditJSONServers removes and adds servers, preserving an existing mini entry.
-func EditJSONServers(data []byte, remove []string, add map[string]any) ([]byte, error) {
+// editJSONServers removes and adds servers, preserving an existing mini entry.
+func editJSONServers(data []byte, remove []string, add map[string]any) ([]byte, error) {
 	doc, err := decodeJSONObject(data)
 	if err != nil {
 		return nil, err

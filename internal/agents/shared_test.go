@@ -77,7 +77,7 @@ func TestServerCandidate(t *testing.T) {
 
 func TestReadConfigFile(t *testing.T) {
 	t.Run("file not found returns error", func(t *testing.T) {
-		_, err := ReadConfigFile("/nonexistent/path/file.json")
+		_, err := readConfigFile("/nonexistent/path/file.json")
 		if err == nil {
 			t.Fatal("expected error for missing file")
 		}
@@ -89,9 +89,9 @@ func TestReadConfigFile(t *testing.T) {
 		want := []byte(`{"hello":"world"}`)
 		testutil.WriteFileBytes(t, f, want)
 
-		got, err := ReadConfigFile(f)
+		got, err := readConfigFile(f)
 		if err != nil {
-			t.Fatalf("ReadConfigFile: %v", err)
+			t.Fatalf("readConfigFile: %v", err)
 		}
 		if string(got) != string(want) {
 			t.Errorf("got %q, want %q", got, want)
@@ -104,7 +104,7 @@ func TestReadConfigFile(t *testing.T) {
 		big := make([]byte, maxImportConfigBytes+1)
 		testutil.WriteFileBytes(t, f, big)
 
-		_, err := ReadConfigFile(f)
+		_, err := readConfigFile(f)
 		if err == nil {
 			t.Fatal("expected error for oversized file")
 		}
@@ -117,9 +117,9 @@ func TestReadConfigFile(t *testing.T) {
 		f := filepath.Join(tempDir(t), "limit.json")
 		testutil.WriteFileBytes(t, f, make([]byte, maxImportConfigBytes))
 
-		got, err := ReadConfigFile(f)
+		got, err := readConfigFile(f)
 		if err != nil {
-			t.Fatalf("ReadConfigFile: %v", err)
+			t.Fatalf("readConfigFile: %v", err)
 		}
 		if len(got) != maxImportConfigBytes {
 			t.Errorf("read %d bytes, want %d", len(got), maxImportConfigBytes)

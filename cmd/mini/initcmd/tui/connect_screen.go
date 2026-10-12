@@ -55,6 +55,12 @@ func (s *connectScreen) refresh() {
 		plan = initcmd.ConnectPlan{}
 	}
 	s.plan = plan
+	s.separateConnectedAgents()
+	s.agents = newList(s.agentRows(), s.ticked)
+	s.agents.untickable = s.connectedRows()
+}
+
+func (s *connectScreen) separateConnectedAgents() {
 	s.listed, s.alreadyConnected = nil, nil
 	for _, agent := range s.p.agents {
 		if s.p.withMini[agent.Name] && !s.plan.HasDuplicates(agent.Name) {
@@ -66,17 +72,25 @@ func (s *connectScreen) refresh() {
 		}
 		s.listed = append(s.listed, agent)
 	}
-	var rows, connected []row
-	if len(s.listed) > 1 {
-		for _, agent := range s.listed {
-			rows = append(rows, row{key: agent.Name, label: agent.Name, detail: s.agentDetail(agent.Name)})
-		}
+}
+
+func (s *connectScreen) agentRows() []row {
+	if len(s.listed) <= 1 {
+		return nil
 	}
+	rows := make([]row, 0, len(s.listed))
+	for _, agent := range s.listed {
+		rows = append(rows, row{key: agent.Name, label: agent.Name, detail: s.agentDetail(agent.Name)})
+	}
+	return rows
+}
+
+func (s *connectScreen) connectedRows() []row {
+	var rows []row
 	for _, name := range s.alreadyConnected {
-		connected = append(connected, row{key: name, label: name, detail: miniConnected})
+		rows = append(rows, row{key: name, label: name, detail: miniConnected})
 	}
-	s.agents = newList(rows, s.ticked)
-	s.agents.untickable = connected
+	return rows
 }
 
 func (s *connectScreen) agentDetail(agent string) string {
