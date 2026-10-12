@@ -54,9 +54,16 @@ func (s ServerStatus) NeedsOwnApp() bool {
 	return needs
 }
 
-// ServerStatuses judges every enabled server as mini would load it. noSelfRegistration names the
-// servers whose login needs the user's own OAuth app, as the run's discovery found.
-func ServerStatuses(configDir string, noSelfRegistration map[string]bool) ([]ServerStatus, error) {
+// CheckFindings is what a run's checks learned that no server file says.
+type CheckFindings struct {
+	// NoSelfRegistration names the servers whose authorization server lets no client register itself.
+	NoSelfRegistration map[string]bool
+	// NeedsCredential names the servers that refused the probe without an OAuth challenge.
+	NeedsCredential map[string]bool
+}
+
+// ServerStatuses judges every enabled server as mini would load it, with what the run's checks found.
+func ServerStatuses(configDir string, findings CheckFindings) ([]ServerStatus, error) {
 	servers, err := config.LoadServers(configDir)
 	if err != nil {
 		return nil, err
@@ -64,24 +71,24 @@ func ServerStatuses(configDir string, noSelfRegistration map[string]bool) ([]Ser
 	var statuses []ServerStatus
 	for _, sc := range servers.Loaded {
 		if sc.IsEnabled() {
-			statuses = append(statuses, serverStatus(configDir, sc, noSelfRegistration))
+			statuses = append(statuses, serverStatus(configDir, sc, findings))
 		}
 	}
 	return statuses, nil
 }
 
-func serverStatus(configDir string, sc config.ServerConfig, noSelfRegistration map[string]bool) ServerStatus {
+func serverStatus(configDir string, sc config.ServerConfig, findings CheckFindings) ServerStatus {
 	status := ServerStatus{Name: sc.Name, Readiness: ReadyState{}}
 	switch {
 	case sc.UnsetEnv != nil:
 		status.Readiness = envReadiness(sc.UnsetEnv)
-	case holdsTokenPlaceholder(sc):
+	case holdsTokenPlaceholder(sc), findings.NeedsCredential[sc.Name]:
 		status.Readiness = NeedsTokenState{}
 	case holdsAppPlaceholder(sc):
 		status.Readiness = NeedsOwnAppState{}
 	case sc.UsesOAuthLogin() && needsLogin(configDir, sc.Name):
 		status.Readiness = NeedsLoginState{}
-		if sc.Auth.ClientID == "" && noSelfRegistration[sc.Name] {
+		if sc.Auth.ClientID == "" && findings.NoSelfRegistration[sc.Name] {
 			status.Readiness = NeedsOwnAppState{}
 		}
 	}

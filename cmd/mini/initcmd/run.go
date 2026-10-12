@@ -64,12 +64,12 @@ func (r *Run) ConfigDirFor(server string) string {
 
 // ServerStatuses are mini's servers with the ones this run adds.
 func (r *Run) ServerStatuses() ([]ServerStatus, error) {
-	noSelfRegistration := r.session.NoSelfRegistration()
-	inMini, err := ServerStatuses(r.setup.ConfigDir, noSelfRegistration)
+	findings := r.session.Findings()
+	inMini, err := ServerStatuses(r.setup.ConfigDir, findings)
 	if err != nil || !r.stage.created {
 		return inMini, err
 	}
-	added, err := ServerStatuses(r.stage.dir, noSelfRegistration)
+	added, err := ServerStatuses(r.stage.dir, findings)
 	all := slices.Concat(inMini, added)
 	slices.SortFunc(all, func(a, b ServerStatus) int { return strings.Compare(a.Name, b.Name) })
 	return all, err
@@ -118,6 +118,6 @@ func (r *Run) report(c commitResult) Report {
 	report.AlreadyConfigured, report.AddCoveredByImport = adds.alreadyConfigured, adds.coveredByImport
 	report.WriteErrors = slices.Concat(r.last.Failed, c.failed)
 	report.Import.keepOnly(report.Import.importedOf(c.committed))
-	report.Servers, report.ReadServersErr = ServerStatuses(r.setup.ConfigDir, r.session.NoSelfRegistration())
+	report.Servers, report.ReadServersErr = ServerStatuses(r.setup.ConfigDir, r.session.Findings())
 	return report
 }

@@ -329,7 +329,7 @@ func editServerFile(t *testing.T, configDir, name, old, replacement string) {
 
 func currentStatus(t *testing.T, setup Setup, name string) ServerStatus {
 	t.Helper()
-	statuses, err := ServerStatuses(setup.ConfigDir, nil)
+	statuses, err := ServerStatuses(setup.ConfigDir, CheckFindings{})
 	if err != nil {
 		t.Fatal(err)
 	}

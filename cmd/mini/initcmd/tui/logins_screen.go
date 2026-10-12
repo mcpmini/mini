@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 	"unicode"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/mcpmini/mini/cmd/mini/initcmd"
+	"github.com/mcpmini/mini/internal/clock"
 )
 
 // Login is a browser login that has started: the browser is opening URL, and Wait blocks until the
@@ -32,6 +34,8 @@ type loginsParams struct {
 	configDirFor func(name string) string
 	steps        serverSteps
 	copy         func(text string) error
+	// clock paces the spinner; nil is the system clock.
+	clock clock.Clock
 }
 
 type loginsScreen struct {
@@ -52,9 +56,13 @@ type loginsScreen struct {
 	cursorMoved bool
 	// One waiting command covers every running check.
 	waitingOnChecks bool
+	spinnerFrame    int
 }
 
 func newLoginsScreen(p loginsParams) *loginsScreen {
+	if p.clock == nil {
+		p.clock = clock.System()
+	}
 	return &loginsScreen{p: p, results: map[string]error{}}
 }
 
@@ -143,6 +151,10 @@ func (s *loginsScreen) update(msg tea.Msg) tea.Cmd {
 		s.waitingOnChecks = false
 		s.refresh()
 		return s.waitWhileChecking()
+	case spinnerTicked:
+		s.waitingOnChecks = false
+		s.spinnerFrame++
+		return s.waitWhileChecking()
 	case loginStarted:
 		return s.loginStarted(msg)
 	case loginFinished:
@@ -151,19 +163,41 @@ func (s *loginsScreen) update(msg tea.Msg) tea.Cmd {
 	return nil
 }
 
+var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
+const spinnerInterval = 100 * time.Millisecond
+
+type spinnerTicked struct{}
+
+// While the loading line shows, the wait also wakes for the spinner's next frame, so one wait is
+// ever in flight.
 func (s *loginsScreen) waitWhileChecking() tea.Cmd {
 	if s.waitingOnChecks || len(s.checking) == 0 {
 		return nil
 	}
 	s.waitingOnChecks = true
+	var frame <-chan time.Time
+	if s.loading() {
+		frame = s.p.clock.After(spinnerInterval)
+	}
 	return func() tea.Msg {
-		<-s.p.changed
-		return checksChanged{}
+		select {
+		case <-s.p.changed:
+			return checksChanged{}
+		case <-frame:
+			return spinnerTicked{}
+		}
 	}
 }
 
+// The checks usually finish within a second of arriving, so the rows appear once, settled, instead of
+// flashing a state per row; once a login was tried, a later check never hides its result.
+func (s *loginsScreen) loading() bool {
+	return len(s.checking) > 0 && len(s.results) == 0 && s.pending == nil
+}
+
 func (s *loginsScreen) selectable(i int) bool {
-	if i < 0 || i >= len(s.rows) {
+	if s.loading() || i < 0 || i >= len(s.rows) {
 		return false
 	}
 	r := s.rows[i]
@@ -235,6 +269,9 @@ func (s *loginsScreen) heading() string {
 func (s *loginsScreen) body(height int, focused bool) string {
 	if s.err != nil {
 		return "mini's MCPs couldn't be read: " + s.err.Error()
+	}
+	if s.loading() {
+		return spinnerFrames[s.spinnerFrame%len(spinnerFrames)] + " Checking how to log in to your MCPs…"
 	}
 	rows, first, last := s.serverLines(focused)
 	lines := slices.Concat(rows, s.skippedLoginWarning(), s.byHandList())

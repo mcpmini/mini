@@ -5,6 +5,7 @@ package initcmd
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/ops"
 	"github.com/mcpmini/mini/internal/testutil"
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 func httpServer(name, url string) config.ServerConfig {
@@ -334,6 +336,7 @@ func TestSessionChecks_discoveryNamesTheLoginsThatNeedTheUsersOwnApp(t *testing.
 		"https://github.example/mcp": {},
 		"https://linear.example/mcp": {RegistrationURL: "https://linear.example/register"},
 		"https://notion.example/mcp": {CIMDSupported: true},
+		"https://sentry.example/mcp": {CIMDSupported: true},
 	}}
 	var probed []string
 	var mu sync.Mutex
@@ -341,6 +344,9 @@ func TestSessionChecks_discoveryNamesTheLoginsThatNeedTheUsersOwnApp(t *testing.
 		mu.Lock()
 		probed = append(probed, sc.Name)
 		mu.Unlock()
+		if sc.Name == "keyed" {
+			return fmt.Errorf("connect: %w", &transport.UnauthorizedError{WWWAuthenticate: "ApiKey"})
+		}
 		return config.MarkOAuthDetected(dir, sc.Name)
 	}
 	s := newSession(sessionParams{ConfigDir: stage, MiniDir: miniDir, Probe: probe, Discover: discovery.discover})
@@ -349,16 +355,25 @@ func TestSessionChecks_discoveryNamesTheLoginsThatNeedTheUsersOwnApp(t *testing.
 	s.Sync([]config.ServerConfig{
 		httpServer("github", "https://github.example/mcp"), httpServer("linear", "https://linear.example/mcp"),
 		httpServer("notion", "https://notion.example/mcp"), httpServer("flaky", "https://flaky.example/mcp"),
+		httpServer("keyed", "https://keyed.example/mcp"), oauthServer("sentry", ""),
 	}, nil)
 	s.WaitChecks()
 
-	if got := s.NoSelfRegistration(); !reflect.DeepEqual(got, map[string]bool{"asana": true, "github": true}) {
+	findings := s.Findings()
+	if got := findings.NoSelfRegistration; !reflect.DeepEqual(got, map[string]bool{"asana": true, "github": true}) {
 		t.Errorf("no self-registration = %v, want asana and github: neither offers DCR or CIMD, and flaky's "+
 			"failed discovery proves nothing", got)
 	}
+	if got := findings.NeedsCredential; !reflect.DeepEqual(got, map[string]bool{"keyed": true}) {
+		t.Errorf("needs credential = %v, want keyed: it refused the probe without an OAuth challenge", got)
+	}
 	slices.Sort(probed)
-	if !slices.Equal(probed, []string{"flaky", "github", "linear", "notion"}) {
-		t.Errorf("probed = %v, want only this run's servers: asana was the user's before", probed)
+	if !slices.Equal(probed, []string{"flaky", "github", "keyed", "linear", "notion"}) {
+		t.Errorf("probed = %v, want this run's servers of unknown auth: asana was the user's before, "+
+			"and sentry already declares OAuth", probed)
+	}
+	if !slices.Contains(discovery.discovered, "https://sentry.example/mcp") {
+		t.Error("sentry's authorization server wasn't discovered, want it checked without a probe")
 	}
 	for _, url := range []string{"https://own.example/mcp", "https://box.example/mcp"} {
 		if slices.Contains(discovery.discovered, url) {

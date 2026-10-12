@@ -18,9 +18,9 @@ type probeParams struct {
 
 type probeFunc func(ctx context.Context, configDir string, sc config.ServerConfig) error
 
-func checkOAuth(ctx context.Context, p probeParams, probe probeFunc) {
+// The probe saves an OAuth finding itself; its error tells a refusal without OAuth from the rest.
+func checkOAuth(ctx context.Context, p probeParams, probe probeFunc) error {
 	ctx, cancel := clock.WithTimeout(ctx, p.clock, oauthCheckTimeout)
 	defer cancel()
-	//nolint:errcheck // Unreachable servers are left for the proxy; OAuth checks consume auth configuration saved by the probe.
-	probe(ctx, p.configDir, p.server)
+	return probe(ctx, p.configDir, p.server)
 }

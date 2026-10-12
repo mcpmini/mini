@@ -2,17 +2,19 @@ package initcmd
 
 import (
 	"context"
+	"errors"
 	"slices"
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/ops"
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 type checkTarget struct {
 	configDir string
 	server    config.ServerConfig
-	// Only a server this run wrote is probed: the probe records its OAuth finding in its config dir,
-	// and servers the user had before are never touched.
+	// Only a server this run wrote whose auth is unknown is probed: the probe records its OAuth
+	// finding in its config dir, and servers the user had before are never touched.
 	probe bool
 }
 
@@ -36,9 +38,9 @@ func (s *session) checkTargets() []checkTarget {
 	var targets []checkTarget
 	// Read back from disk, so bundled and already-detected auth count.
 	for _, sc := range s.unchecked(s.p.ConfigDir) {
-		if _, written := s.written[sc.Name]; written &&
-			(ops.MayNeedOAuth(sc) || needsRegistrationCheck(s.p.ConfigDir, sc)) {
-			targets = append(targets, checkTarget{configDir: s.p.ConfigDir, server: sc, probe: true})
+		_, written := s.written[sc.Name]
+		if written && (ops.MayNeedOAuth(sc) || needsRegistrationCheck(s.p.ConfigDir, sc)) {
+			targets = append(targets, checkTarget{configDir: s.p.ConfigDir, server: sc, probe: ops.MayNeedOAuth(sc)})
 		}
 	}
 	for _, sc := range s.unchecked(s.p.MiniDir) {
@@ -63,10 +65,11 @@ func (s *session) unchecked(configDir string) []config.ServerConfig {
 }
 
 func (s *session) check(ctx context.Context, t checkTarget) {
+	var probeErr error
 	if t.probe {
-		checkOAuth(ctx, probeParams{configDir: t.configDir, server: t.server, clock: s.p.Clock}, s.p.Probe)
+		probeErr = checkOAuth(ctx, probeParams{configDir: t.configDir, server: t.server, clock: s.p.Clock}, s.p.Probe)
 	}
-	s.checkRegistration(ctx, t.configDir, t.server.Name)
+	s.recordFindings(ctx, t.configDir, t.server.Name, probeErr)
 	s.mu.Lock()
 	delete(s.checking, t.server.Name)
 	// A cancelled check proved nothing, so the next sync runs it again; a timed-out one is done.
@@ -77,12 +80,27 @@ func (s *session) check(ctx context.Context, t checkTarget) {
 	s.notifyChanged()
 }
 
-// Reads the server again after the probe, which may have found that it needs an OAuth login.
-func (s *session) checkRegistration(ctx context.Context, configDir, name string) {
-	sc, ok := loadServer(configDir, name)
-	if !ok || !needsRegistrationCheck(configDir, sc) {
+// Reads the server again after the probe, which may have found that it needs an OAuth login. One
+// that refused the probe without an OAuth challenge needs a credential the user must supply.
+func (s *session) recordFindings(ctx context.Context, configDir, name string, probeErr error) {
+	sc, err := config.LoadServer(configDir, name)
+	if err != nil {
 		return
 	}
+	var unauthorized *transport.UnauthorizedError
+	if errors.As(probeErr, &unauthorized) && !sc.UsesOAuthLogin() {
+		s.mu.Lock()
+		s.findings.NeedsCredential[name] = true
+		s.mu.Unlock()
+		return
+	}
+	if needsRegistrationCheck(configDir, sc) {
+		s.checkRegistration(ctx, sc)
+	}
+}
+
+func (s *session) checkRegistration(ctx context.Context, sc config.ServerConfig) {
+	name := sc.Name
 	check := registrationCheck{server: sc, clock: s.p.Clock, discover: s.p.Discover}
 	selfRegisters, known := check.selfRegisters(ctx)
 	if !known {
@@ -91,22 +109,10 @@ func (s *session) checkRegistration(ctx context.Context, configDir, name string)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if selfRegisters {
-		delete(s.noSelfRegistration, name)
+		delete(s.findings.NoSelfRegistration, name)
 	} else {
-		s.noSelfRegistration[name] = true
+		s.findings.NoSelfRegistration[name] = true
 	}
-}
-
-func loadServer(configDir, name string) (config.ServerConfig, bool) {
-	servers, err := config.LoadServers(configDir)
-	if err != nil {
-		return config.ServerConfig{}, false
-	}
-	i := slices.IndexFunc(servers.Loaded, func(sc config.ServerConfig) bool { return sc.Name == name })
-	if i < 0 {
-		return config.ServerConfig{}, false
-	}
-	return servers.Loaded[i], true
 }
 
 func (s *session) notifyChanged() {

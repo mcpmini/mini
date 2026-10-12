@@ -38,8 +38,7 @@ type session struct {
 	mu       sync.Mutex
 	checking map[string]bool
 	checked  map[string]bool
-	// noSelfRegistration names the servers whose authorization server lets no client register itself.
-	noSelfRegistration map[string]bool
+	findings CheckFindings
 }
 
 type writtenServer struct {
@@ -80,7 +79,7 @@ func newSession(p sessionParams) *session {
 		checking: map[string]bool{},
 		checked:  map[string]bool{},
 
-		noSelfRegistration: map[string]bool{},
+		findings: CheckFindings{NoSelfRegistration: map[string]bool{}, NeedsCredential: map[string]bool{}},
 	}
 }
 
@@ -173,10 +172,13 @@ func (s *session) Running() map[string]bool {
 	return maps.Clone(s.checking)
 }
 
-func (s *session) NoSelfRegistration() map[string]bool {
+func (s *session) Findings() CheckFindings {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return maps.Clone(s.noSelfRegistration)
+	return CheckFindings{
+		NoSelfRegistration: maps.Clone(s.findings.NoSelfRegistration),
+		NeedsCredential:    maps.Clone(s.findings.NeedsCredential),
+	}
 }
 
 func (s *session) WaitChecks() {

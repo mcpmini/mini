@@ -28,6 +28,7 @@ func TestServerStatuses(t *testing.T) {
 		oauth("login", ""), oauth("loggedin", ""), oauth("noregistration", ""), oauth("ownapp", "my-app"),
 		oauth("appplaceholder", clientIDPlaceholder),
 		{Name: "plain", Transport: "http", URL: "https://plain.example.com/mcp"},
+		{Name: "refused", Transport: "http", URL: "https://refused.example.com/mcp"},
 		{Name: "keyed", Transport: "http", URL: "https://keyed.example.com/mcp", Headers: map[string]string{"Authorization": "Bearer ${KEY}"}},
 		{
 			Name: "tokenplaceholder", Transport: "http", URL: "https://tokenplaceholder.example.com/mcp",
@@ -49,7 +50,10 @@ func TestServerStatuses(t *testing.T) {
 	)
 	t.Setenv("KEY", "synthetic")
 
-	statuses, err := ServerStatuses(dir, map[string]bool{"noregistration": true, "ownapp": true, "loggedin": true})
+	statuses, err := ServerStatuses(dir, CheckFindings{
+		NoSelfRegistration: map[string]bool{"noregistration": true, "ownapp": true, "loggedin": true},
+		NeedsCredential:    map[string]bool{"refused": true},
+	})
 
 	want := []ServerStatus{
 		{Name: "appplaceholder", Readiness: NeedsOwnAppState{}},
@@ -60,6 +64,7 @@ func TestServerStatuses(t *testing.T) {
 		{Name: "noregistration", Readiness: NeedsOwnAppState{}},
 		{Name: "ownapp", Readiness: NeedsLoginState{}},
 		{Name: "plain", Readiness: ReadyState{}},
+		{Name: "refused", Readiness: NeedsTokenState{}},
 		{Name: "tokenplaceholder", Readiness: NeedsTokenState{}},
 		{Name: "unset", Readiness: NeedsEnvState{Names: []string{"MINI_TEST_UNSET"}, Field: "headers.Authorization"}},
 	}

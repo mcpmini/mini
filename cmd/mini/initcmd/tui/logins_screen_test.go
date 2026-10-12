@@ -52,6 +52,8 @@ const (
 		"You can always log in later using mini auth <name>."
 )
 
+const checkingScreen = "⠋ Checking how to log in to your MCPs…\n\n> Continue"
+
 func loginsText(s *loginsScreen) string {
 	return framedText(framed(s, false))
 }
@@ -179,8 +181,8 @@ func TestLoginsScreen_aServerBeingCheckedSaysSoUntilTheCheckFinishes(t *testing.
 	checks.checking["open"] = true
 	s := checks.screen()
 	wait := showScreen(s)
-	if text := loginsText(s); !strings.Contains(text, "  open  checking…") || wait == nil {
-		t.Fatalf("screen:\n%s\nwait = %v; want open checking and a wait for the result", text, wait)
+	if text := loginsText(s); text != checkingScreen || wait == nil {
+		t.Fatalf("screen:\n%s\nwait = %v; want one loading line, no rows yet, and a wait for the result", text, wait)
 	}
 	if text := loginsText(s); strings.Contains(text, "⚠") {
 		t.Errorf("screen:\n%s\nwant no login warning while the check may still find open ready", text)
@@ -201,6 +203,52 @@ func TestLoginsScreen_aServerBeingCheckedSaysSoUntilTheCheckFinishes(t *testing.
 	}
 }
 
+func TestLoginsScreen_whileTheChecksRunOnlyALoadingLineShows(t *testing.T) {
+	setup := func(t *testing.T) (*fakeChecks, *fakeLogins, *loginsScreen, tea.Cmd, *app) {
+		checks := newFakeChecks(
+			initcmd.ServerStatus{
+				Name:      "linear",
+				Readiness: initcmd.NeedsLoginState{},
+			},
+			initcmd.ServerStatus{Name: "open"},
+		)
+		checks.checking["open"] = true
+		logins := newFakeLogins("linear")
+		s := checks.screen()
+		s.p.startLogin = logins.start
+		s.resize(200, 30)
+		wait := showScreen(s)
+		a := framed(s, false)
+		if text := framedText(a); text != checkingScreen {
+			t.Fatalf("screen while open is checked:\n%s\nwant only the loading line, with linear hidden", text)
+		}
+		return checks, logins, s, wait, a
+	}
+	t.Run("a hidden row takes no enter", func(t *testing.T) {
+		_, _, s, _, a := setup(t)
+		if send(a, "enter"); s.pending != nil {
+			t.Error("enter while loading started a login on a hidden row")
+		}
+	})
+	t.Run("the rows appear with the cursor on the first login, and stay once one was tried", func(t *testing.T) {
+		checks, logins, s, wait, a := setup(t)
+		delete(checks.checking, "open")
+		checks.statuses[1].Readiness = initcmd.NeedsLoginState{}
+		checks.changed <- struct{}{}
+		s.update(wait())
+		if text := framedText(a); !strings.HasPrefix(text, "> linear  press enter to log in\n  open") {
+			t.Fatalf("screen after the check:\n%s\nwant both rows, the cursor on linear", text)
+		}
+		logins.ends["linear"] <- nil
+		pressAndRun(s, "enter")
+		checks.checking["open"] = true
+		s.refresh()
+		if text := loginsText(s); !strings.Contains(text, "linear  ✓ logged in") {
+			t.Errorf("screen when a check runs after a login:\n%s\nwant the login's result still shown", text)
+		}
+	})
+}
+
 func TestLoginsScreen_aCheckFinishingWhileTheStatusesAreReadIsNotLost(t *testing.T) {
 	checks := newFakeChecks()
 	checks.checking["open"] = true
@@ -216,9 +264,9 @@ func TestLoginsScreen_aCheckFinishingWhileTheStatusesAreReadIsNotLost(t *testing
 		changed:  checks.changed,
 	})
 	wait := showScreen(s)
-	if text := loginsText(s); !strings.Contains(text, "open  checking…") || wait == nil {
+	if text := loginsText(s); text != checkingScreen || wait == nil {
 		t.Errorf(
-			"screen:\n%s\nwait = %v; want open still listed as checking, and a wait for the change it signaled",
+			"screen:\n%s\nwait = %v; want open still read as checking, and a wait for the change it signaled",
 			text,
 			wait,
 		)
@@ -499,9 +547,12 @@ func TestLoginsScreen_theCursorStaysOnTheUsersPickWhenACheckFinishes(t *testing.
 			initcmd.ServerStatus{Name: "open"},
 			initcmd.ServerStatus{Name: "linear", Readiness: initcmd.NeedsLoginState{}},
 			initcmd.ServerStatus{Name: "sentry", Readiness: initcmd.NeedsLoginState{}},
+			initcmd.ServerStatus{Name: "zoom"},
 		)
 		checks.checking["open"] = true
 		s := checks.screen()
+		// A login tried earlier keeps the rows on screen while a later check runs.
+		s.results["zoom"] = nil
 		return checks, s, showScreen(s)
 	}
 	finish := func(checks *fakeChecks, s *loginsScreen, wait tea.Cmd, readiness initcmd.Readiness) {
