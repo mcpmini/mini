@@ -125,6 +125,7 @@ func startMiniCmdCapturingStderr(
 }
 
 func TestIntegrationStartup_aBrokenServerDoesNotStopTheOthers(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, fakeServerParams{
 		ServerName: "healthy",
@@ -261,6 +262,7 @@ func doMiniHandshake(t *testing.T, p *standaloneMini) {
 }
 
 func TestIntegrationStandaloneSIGTERM_openStdinExitsSuccessfully(t *testing.T) {
+	t.Parallel()
 	proc := startMiniForSignal(t, t.TempDir())
 	doMiniHandshake(t, proc)
 	proc.Cmd.Process.Signal(syscall.SIGTERM) //nolint:errcheck
@@ -270,6 +272,7 @@ func TestIntegrationStandaloneSIGTERM_openStdinExitsSuccessfully(t *testing.T) {
 }
 
 func TestIntegrationStandaloneSIGINT_openStdinExitsSuccessfully(t *testing.T) {
+	t.Parallel()
 	proc := startMiniForSignal(t, t.TempDir())
 	doMiniHandshake(t, proc)
 	proc.Cmd.Process.Signal(syscall.SIGINT) //nolint:errcheck
@@ -279,6 +282,7 @@ func TestIntegrationStandaloneSIGINT_openStdinExitsSuccessfully(t *testing.T) {
 }
 
 func TestIntegrationStandaloneSIGTERM_delayedConnectIsDrained(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	hungDir := mockFixtureDir(t, map[string]string{"never": `{}`})
 	fault := map[string]any{"method": "initialize", "type": "slow_initialize", "delay_ms": 30000}

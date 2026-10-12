@@ -25,6 +25,7 @@ func initHTTPSession(t *testing.T, cfg, token string) string {
 }
 
 func TestIntegrationDaemon_HTTPClientDirect(t *testing.T) {
+	t.Parallel()
 	cfg := daemonForTest(t)
 	startDaemon(t, cfg)
 	token := readDaemonToken(t, cfg)
@@ -34,6 +35,7 @@ func TestIntegrationDaemon_HTTPClientDirect(t *testing.T) {
 }
 
 func TestIntegrationDaemon_HTTPRejectsMissingToken(t *testing.T) {
+	t.Parallel()
 	cfg := daemonForTest(t)
 	startDaemon(t, cfg)
 	resp := daemonPost(t, cfg, daemonPostOpts{})
@@ -44,6 +46,7 @@ func TestIntegrationDaemon_HTTPRejectsMissingToken(t *testing.T) {
 }
 
 func TestIntegrationDaemon_HTTPRejectsWrongToken(t *testing.T) {
+	t.Parallel()
 	cfg := daemonForTest(t)
 	startDaemon(t, cfg)
 	resp := daemonPost(t, cfg, daemonPostOpts{Token: "wrong-token-value"})
@@ -54,6 +57,7 @@ func TestIntegrationDaemon_HTTPRejectsWrongToken(t *testing.T) {
 }
 
 func TestIntegrationDaemon_HostHeaderRejection(t *testing.T) {
+	t.Parallel()
 	cfg := daemonForTest(t)
 	startDaemon(t, cfg)
 	resp := daemonPost(t, cfg, daemonPostOpts{Token: readDaemonToken(t, cfg), Host: "evil.com"})
@@ -64,6 +68,7 @@ func TestIntegrationDaemon_HostHeaderRejection(t *testing.T) {
 }
 
 func TestIntegrationDaemon_CrossOriginRejection(t *testing.T) {
+	t.Parallel()
 	cfg := daemonForTest(t)
 	startDaemon(t, cfg)
 	resp := daemonPost(t, cfg, daemonPostOpts{Token: readDaemonToken(t, cfg), Origin: "http://evil.com"})
@@ -74,6 +79,7 @@ func TestIntegrationDaemon_CrossOriginRejection(t *testing.T) {
 }
 
 func TestIntegrationDaemon_socketAndDirArePrivate(t *testing.T) {
+	t.Parallel()
 	cfg := daemonForTest(t)
 	startDaemon(t, cfg)
 
@@ -99,6 +105,7 @@ func TestIntegrationDaemon_socketAndDirArePrivate(t *testing.T) {
 }
 
 func TestIntegrationDaemon_TokenFilePermissions(t *testing.T) {
+	t.Parallel()
 	cfg := daemonForTest(t)
 	startDaemon(t, cfg)
 	fi, err := os.Stat(filepath.Join(cfg, "internal", "daemon", "daemon.token"))
@@ -157,19 +164,43 @@ type httpToolCall struct {
 
 func postHTTPToolCall(t *testing.T, cfg string, c httpToolCall) *http.Response {
 	t.Helper()
-	body, _ := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "id": 2, "method": "tools/call",
-		"params": map[string]any{"name": "call", "arguments": map[string]any{"server": c.server, "tool": c.tool}},
-	})
+	session := daemonSession{cfg: cfg, id: c.sessionID, token: c.token}
+	return postDaemonToolsCall(t, session, toolCallRaw("call", c.server, c.tool, map[string]any{}))
+}
+
+type daemonSession struct {
+	cfg   string
+	id    string
+	token string
+}
+
+func postDaemonToolsCall(t *testing.T, s daemonSession, params map[string]any) *http.Response {
+	t.Helper()
+	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": params})
 	req, _ := http.NewRequest(http.MethodPost, "http://localhost/mcp", strings.NewReader(string(body)))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Mcp-Session-Id", c.sessionID)
-	req.Header.Set("Authorization", "Bearer "+c.token)
-	resp, err := daemonHTTPClient(cfg).Do(req)
+	req.Header.Set("Mcp-Session-Id", s.id)
+	req.Header.Set("Authorization", "Bearer "+s.token)
+	resp, err := daemonHTTPClient(s.cfg).Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return resp
+}
+
+func waitForDaemonServersConnected(t *testing.T, cfg string) {
+	t.Helper()
+	names := connectableServers(t, cfg, nil)
+	if len(names) == 0 {
+		return
+	}
+	token := readDaemonToken(t, cfg)
+	session := daemonSession{cfg: cfg, id: initHTTPSession(t, cfg, token), token: token}
+	waitUntilConnected(t, names, func() map[string]bool {
+		resp := postDaemonToolsCall(t, session, configStatusParams())
+		defer resp.Body.Close()
+		return connectedInStatus(t, decodeRPCToolText(t, resp.Body))
+	})
 }
 
 func decodeDaemonEnvelope(t *testing.T, resp *http.Response) envelope {

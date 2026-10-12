@@ -65,7 +65,16 @@ func waitForDaemon(t *testing.T, cfg string) {
 	t.Fatal("daemon did not become healthy within 5s")
 }
 
+// /healthz answers before the upstreams connect (#33), and a call in that window is told the server is
+// still starting, so tests that call tools wait for every configured server first.
 func startDaemon(t *testing.T, cfg string) *exec.Cmd {
+	t.Helper()
+	cmd := startHealthyDaemon(t, cfg)
+	waitForDaemonServersConnected(t, cfg)
+	return cmd
+}
+
+func startHealthyDaemon(t *testing.T, cfg string) *exec.Cmd {
 	t.Helper()
 	cmd := exec.Command(miniBin, "--config", cfg, "daemon")
 	cmd.Stdout = io.Discard
@@ -184,6 +193,7 @@ func connectProxy(t *testing.T, cfg string) *mcpClient   { return connect(t, cfg
 func connectCompact(t *testing.T, cfg string) *mcpClient { return connect(t, cfg, "compact") }
 
 func TestIntegrationDaemon_basicToolCall(t *testing.T) {
+	t.Parallel()
 	cfg := daemonForTest(t)
 	startDaemon(t, cfg)
 	client := connectCompact(t, cfg)
@@ -193,6 +203,7 @@ func TestIntegrationDaemon_basicToolCall(t *testing.T) {
 }
 
 func TestIntegrationDaemon_spawnsOnDemandAndReuses(t *testing.T) {
+	t.Parallel()
 	cfg := daemonForTest(t)
 	t.Cleanup(func() { reapDaemons(cfg) })
 
@@ -209,6 +220,7 @@ func TestIntegrationDaemon_spawnsOnDemandAndReuses(t *testing.T) {
 }
 
 func TestIntegrationDaemon_sessionIsolation(t *testing.T) {
+	t.Parallel()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"x","name":"test"}`})
 	cfg := shortConfigDir(t)
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
@@ -230,6 +242,7 @@ func TestIntegrationDaemon_sessionIsolation(t *testing.T) {
 }
 
 func TestIntegrationDaemon_standaloneFlag(t *testing.T) {
+	t.Parallel()
 	dir := mockFixtureDir(t, map[string]string{"ping": `{"ok":true}`})
 	cfg := shortConfigDir(t)
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
@@ -243,6 +256,7 @@ func TestIntegrationDaemon_standaloneFlag(t *testing.T) {
 
 // /healthz keys on HTTP server readiness, not upstream connectivity (#33).
 func TestIntegrationDaemon_healthyBeforeSlowUpstreamConnects(t *testing.T) {
+	t.Parallel()
 	cfg := shortConfigDir(t)
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 	fault := map[string]any{"method": "initialize", "type": "slow_initialize", "delay_ms": 5000}
@@ -256,13 +270,14 @@ func TestIntegrationDaemon_healthyBeforeSlowUpstreamConnects(t *testing.T) {
 	})
 
 	start := time.Now()
-	startDaemon(t, cfg)
+	startHealthyDaemon(t, cfg)
 	if elapsed := time.Since(start); elapsed > 2*time.Second {
 		t.Fatalf("daemon took %v to become healthy; want well under the upstream's 5s slow_initialize delay", elapsed)
 	}
 }
 
 func TestIntegrationDaemon_coldStartFirstToolsListIncludesASlowServer(t *testing.T) {
+	t.Parallel()
 	cfg := shortConfigDir(t)
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 	fault := map[string]any{"method": "initialize", "type": "slow_initialize", "delay_ms": 1500}
@@ -281,6 +296,7 @@ func TestIntegrationDaemon_coldStartFirstToolsListIncludesASlowServer(t *testing
 }
 
 func TestIntegrationDaemon_healthzEndpoint(t *testing.T) {
+	t.Parallel()
 	cfg := shortConfigDir(t)
 	startDaemon(t, cfg)
 
@@ -300,6 +316,7 @@ func TestIntegrationDaemon_healthzEndpoint(t *testing.T) {
 }
 
 func TestIntegrationDaemon_proxyModeToolCall(t *testing.T) {
+	t.Parallel()
 	cfg := daemonForTest(t)
 	startDaemon(t, cfg)
 	client := connectProxy(t, cfg)
@@ -317,6 +334,7 @@ func TestIntegrationDaemon_proxyModeToolCall(t *testing.T) {
 }
 
 func TestIntegrationDaemon_recoversAfterGracefulKill(t *testing.T) {
+	t.Parallel()
 	cfg := daemonForTest(t)
 	cmd := startDaemon(t, cfg)
 	tokenBefore := readDaemonToken(t, cfg)
@@ -327,7 +345,7 @@ func TestIntegrationDaemon_recoversAfterGracefulKill(t *testing.T) {
 
 	killDaemonProc(t, cmd, cfg, syscall.SIGTERM)
 
-	if e := client.execEnvelope("svc", "get_item", nil); e.Error != "" {
+	if e := client.execEnvelopeOnceStarted("svc", "get_item"); e.Error != "" {
 		t.Fatalf("post-kill call did not recover: %+v", e)
 	}
 	if got := readDaemonToken(t, cfg); got != tokenBefore {
@@ -336,6 +354,7 @@ func TestIntegrationDaemon_recoversAfterGracefulKill(t *testing.T) {
 }
 
 func TestIntegrationDaemon_recoversAfterSIGKILLWithStaleSocket(t *testing.T) {
+	t.Parallel()
 	cfg := daemonForTest(t)
 	cmd := startDaemon(t, cfg)
 	tokenBefore := readDaemonToken(t, cfg)
@@ -350,7 +369,7 @@ func TestIntegrationDaemon_recoversAfterSIGKILLWithStaleSocket(t *testing.T) {
 		t.Fatalf("expected stale socket file to remain after SIGKILL, got: %v", err)
 	}
 
-	if e := client.execEnvelope("svc", "get_item", nil); e.Error != "" {
+	if e := client.execEnvelopeOnceStarted("svc", "get_item"); e.Error != "" {
 		t.Fatalf("post-SIGKILL call did not recover despite stale socket: %+v", e)
 	}
 	if got := readDaemonToken(t, cfg); got != tokenBefore {
@@ -359,6 +378,7 @@ func TestIntegrationDaemon_recoversAfterSIGKILLWithStaleSocket(t *testing.T) {
 }
 
 func TestIntegrationDaemon_manyClientsRecoverSingleWinner(t *testing.T) {
+	t.Parallel()
 	const n = 20
 	cfg := daemonForTest(t)
 	cmd := startDaemon(t, cfg)
@@ -393,7 +413,7 @@ func recoverAllClients(t *testing.T, clients []*mcpClient) {
 		wg.Add(1)
 		go func(i int, c *mcpClient) {
 			defer wg.Done()
-			if e := c.execEnvelope("svc", "get_item", nil); e.Error != "" {
+			if e := c.execEnvelopeOnceStarted("svc", "get_item"); e.Error != "" {
 				errs[i] = e.Error
 			}
 		}(i, c)
@@ -406,7 +426,22 @@ func recoverAllClients(t *testing.T, clients []*mcpClient) {
 	}
 }
 
+// A respawned daemon serves calls before its upstreams reconnect, and answers those with the retryable
+// server_starting (#279); an agent retries that, so recovery means the call succeeds once the server is up.
+func (c *mcpClient) execEnvelopeOnceStarted(server, tool string) envelope {
+	c.t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		e := c.execEnvelope(server, tool, nil)
+		if e.Error != "server_starting" || time.Now().After(deadline) {
+			return e
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func TestIntegrationDaemon_removedServerFile_dropsToolsWithoutRestart(t *testing.T) {
+	t.Parallel()
 	cfg := daemonForTest(t)
 	startDaemon(t, cfg)
 	client := connectProxy(t, cfg)

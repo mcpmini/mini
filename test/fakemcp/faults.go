@@ -3,22 +3,23 @@
 package main
 
 import (
+	"fmt"
 	"math/rand"
 	"sync"
+	"time"
 )
 
 type FaultType string
 
 const (
-	FaultDelay        FaultType = "delay"
-	FaultErrorResult  FaultType = "error_response"
-	FaultRPCError     FaultType = "rpc_error"
-	FaultHang         FaultType = "hang"
-	FaultBadJSON      FaultType = "bad_json"
-	FaultOversized    FaultType = "oversized_response"
-	FaultDrop         FaultType = "connection_drop"
-	FaultIntermittent FaultType = "intermittent"
-	FaultSlowInit     FaultType = "slow_initialize"
+	FaultDelay       FaultType = "delay"
+	FaultErrorResult FaultType = "error_response"
+	FaultRPCError    FaultType = "rpc_error"
+	FaultHang        FaultType = "hang"
+	FaultBadJSON     FaultType = "bad_json"
+	FaultOversized   FaultType = "oversized_response"
+	FaultDrop        FaultType = "connection_drop"
+	FaultSlowInit    FaultType = "slow_initialize"
 )
 
 type Fault struct {
@@ -33,16 +34,21 @@ type Fault struct {
 
 type FaultRegistry struct {
 	mu     sync.RWMutex
-	faults []Fault
+	faults []registeredFault
 }
 
-func (r *FaultRegistry) Set(f Fault) {
+func (r *FaultRegistry) Set(f Fault) error {
+	effect, err := f.effect()
+	if err != nil {
+		return err
+	}
 	if f.Probability == 0 {
 		f.Probability = 1.0
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.faults = append(r.faults, f)
+	r.faults = append(r.faults, registeredFault{spec: f, effect: effect})
+	return nil
 }
 
 func (r *FaultRegistry) Clear() {
@@ -55,23 +61,47 @@ func (r *FaultRegistry) All() []Fault {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	out := make([]Fault, len(r.faults))
-	copy(out, r.faults)
+	for i, f := range r.faults {
+		out[i] = f.spec
+	}
 	return out
 }
 
-func (r *FaultRegistry) Match(method, tool string) (Fault, bool) {
+func (r *FaultRegistry) Match(method, tool string) (registeredFault, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	for _, f := range r.faults {
-		if matchesField(f.Method, method) && matchesField(f.Tool, tool) {
-			if rand.Float64() < f.Probability {
+		if matchesField(f.spec.Method, method) && matchesField(f.spec.Tool, tool) {
+			if rand.Float64() < f.spec.Probability {
 				return f, true
 			}
 		}
 	}
-	return Fault{}, false
+	return registeredFault{}, false
 }
 
 func matchesField(pattern, value string) bool {
 	return pattern == "*" || pattern == "" || pattern == value
+}
+
+func (f Fault) effect() (faultEffect, error) {
+	switch f.Type {
+	case FaultDelay:
+		return delayFault{duration: time.Duration(f.DelayMS) * time.Millisecond}, nil
+	case FaultSlowInit:
+		return slowInitFault{duration: time.Duration(f.DelayMS) * time.Millisecond}, nil
+	case FaultHang:
+		return hangFault{}, nil
+	case FaultDrop:
+		return dropFault{}, nil
+	case FaultBadJSON:
+		return badJSONFault{}, nil
+	case FaultRPCError:
+		return rpcErrorFault{message: faultMessage(f.Message, "injected rpc error")}, nil
+	case FaultErrorResult:
+		return errorResultFault{message: faultMessage(f.Message, "injected tool error")}, nil
+	case FaultOversized:
+		return oversizedFault{sizeBytes: f.SizeBytes}, nil
+	}
+	return nil, fmt.Errorf("unsupported fault type %q", f.Type)
 }

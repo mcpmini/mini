@@ -18,62 +18,44 @@ type mcpHandler struct {
 	listPageSize int
 }
 
-// dispatchResult carries the response and any raw-write override for fault injection.
-type dispatchResult struct {
-	response transport.Response
-	rawWrite []byte // non-nil: write this instead of encoding response
-	exit     bool   // true: process should exit (connection_drop fault)
-}
-
 func (h *mcpHandler) dispatch(req transport.Request) dispatchResult {
-	toolName := extractToolName(req)
-
-	if fault, ok := h.faults.Match(req.Method, toolName); ok {
-		if result, handled := h.applyFault(req, fault); handled {
+	if fault, ok := h.faults.Match(req.Method, extractToolName(req)); ok {
+		result := applyFault(req, fault.effect)
+		if _, continued := result.(continueResult); !continued {
 			return result
 		}
 	}
-
-	return dispatchResult{response: h.handle(req)}
+	return responseResult{response: h.handle(req)}
 }
 
-func (h *mcpHandler) applyFault(req transport.Request, f Fault) (dispatchResult, bool) {
-	switch f.Type {
-	case FaultDelay:
-		time.Sleep(time.Duration(f.DelayMS) * time.Millisecond)
-		return dispatchResult{}, false
-	case FaultSlowInit:
-		applySlowInit(req.Method, f.DelayMS)
-		return dispatchResult{}, false
-	case FaultHang:
+func applyFault(req transport.Request, effect faultEffect) dispatchResult {
+	switch f := effect.(type) {
+	case delayFault:
+		time.Sleep(f.duration)
+		return continueResult{}
+	case slowInitFault:
+		if req.Method == "initialize" {
+			time.Sleep(f.duration)
+		}
+		return continueResult{}
+	case hangFault:
 		select {}
-	case FaultDrop:
-		return dispatchResult{exit: true}, true
-	case FaultBadJSON:
-		return dispatchResult{rawWrite: []byte("GARBAGE_NOT_JSON\n")}, true
+	case dropFault:
+		return exitResult{}
+	case badJSONFault:
+		return rawWriteResult{data: []byte("GARBAGE_NOT_JSON\n")}
+	case rpcErrorFault:
+		return responseResult{response: faultRPCError(req.ID, f.message)}
+	case errorResultFault:
+		return responseResult{response: respond(req.ID, errResult(f.message))}
+	case oversizedFault:
+		return faultOversized(req.ID, f.sizeBytes)
 	}
-	return h.applyContentFault(req, f)
+	return continueResult{}
 }
 
-func applySlowInit(method string, delayMS int) {
-	if method == "initialize" {
-		time.Sleep(time.Duration(delayMS) * time.Millisecond)
-	}
-}
-
-func (h *mcpHandler) applyContentFault(req transport.Request, f Fault) (dispatchResult, bool) {
-	switch f.Type {
-	case FaultRPCError:
-		msg := faultMessage(f.Message, "injected rpc error")
-		resp := transport.Response{JSONRPC: "2.0", ID: req.ID, Error: &transport.RPCError{Code: -32603, Message: msg}}
-		return dispatchResult{response: resp}, true
-	case FaultErrorResult:
-		msg := faultMessage(f.Message, "injected tool error")
-		return dispatchResult{response: respond(req.ID, errResult(msg))}, true
-	case FaultOversized:
-		return faultOversized(req.ID, f.SizeBytes), true
-	}
-	return dispatchResult{}, false
+func faultRPCError(id any, message string) transport.Response {
+	return transport.Response{JSONRPC: "2.0", ID: id, Error: &transport.RPCError{Code: -32603, Message: message}}
 }
 
 func faultMessage(message, fallback string) string {
@@ -90,7 +72,7 @@ func faultOversized(id any, sizeBytes int) dispatchResult {
 	}
 	content := strings.Repeat("x", size)
 	result := transport.ToolCallResult{Content: []transport.ContentItem{{Type: "text", Text: content}}}
-	return dispatchResult{response: respond(id, result)}
+	return responseResult{response: respond(id, result)}
 }
 
 var fakeInitResult = transport.InitializeResult{
@@ -108,7 +90,7 @@ func (h *mcpHandler) handle(req transport.Request) transport.Response {
 	case "tools/call":
 		p := parseToolCall(req.Params)
 		fault, _ := h.faults.Match(req.Method, p.Name)
-		return respond(req.ID, h.tools.Call(p.Name, p.Arguments, fault.SizeBytes))
+		return respond(req.ID, h.tools.Call(p.Name, p.Arguments, fault.spec.SizeBytes))
 	default:
 		return methodNotFound(req)
 	}

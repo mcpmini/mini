@@ -37,7 +37,10 @@ func (s *controlServer) handleFault(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		s.faults.Set(f)
+		if err := s.faults.Set(f); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		w.WriteHeader(http.StatusNoContent)
 	case http.MethodDelete:
 		s.faults.Clear()

@@ -79,7 +79,9 @@ func setInitialFault(faults *FaultRegistry, raw string) error {
 	if err := json.Unmarshal([]byte(raw), &f); err != nil {
 		return fmt.Errorf("--initial-fault: %w", err)
 	}
-	faults.Set(f)
+	if err := faults.Set(f); err != nil {
+		return fmt.Errorf("--initial-fault: %w", err)
+	}
 	return nil
 }
 
