@@ -100,7 +100,8 @@ jobs:
           scripts/test-bins.sh "$testbin" >> "$GITHUB_ENV"
 
       - name: Integration tests
-        # Go's test cache can't see the binaries, subprocesses and sockets these tests use, so a cached pass proves nothing.
+        # Explicitly not using cached results because go's test caching cannot detect changes to our test binaries
+        # We want integration tests to run cleanly every single time
         run: go test -race -count=1 -tags integration,test -run '^TestIntegration' -timeout 180s ./...
 
   ci:
