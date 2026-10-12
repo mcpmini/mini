@@ -27,20 +27,22 @@ type Catalog struct {
 }
 
 type Entry struct {
-	Name        string `json:"name"`
-	Title       string `json:"title"`
-	URL         string `json:"url"`
-	Description string `json:"description"`
-	Category    string `json:"category"`
-	Auth        string `json:"auth"`
-	SetupURL    string `json:"setup_url,omitempty"`
+	Name        string   `json:"name"`
+	Title       string   `json:"title"`
+	URL         string   `json:"url"`
+	Description string   `json:"description"`
+	Category    string   `json:"category"`
+	Auth        AuthKind `json:"auth"`
+	SetupURL    string   `json:"setup_url,omitempty"`
 }
 
+type AuthKind string
+
 const (
-	AuthOAuth2    = "oauth2"
-	AuthOAuth2App = "oauth2-app"
-	AuthToken     = "token"
-	AuthNone      = "none"
+	AuthOAuth2    AuthKind = "oauth2"
+	AuthOAuth2App AuthKind = "oauth2-app"
+	AuthToken     AuthKind = "token"
+	AuthNone      AuthKind = "none"
 )
 
 const (
@@ -48,7 +50,7 @@ const (
 	maxTitleRunes = 40
 )
 
-var knownAuthValues = []string{AuthOAuth2, AuthOAuth2App, AuthToken, AuthNone}
+var knownAuthValues = []AuthKind{AuthOAuth2, AuthOAuth2App, AuthToken, AuthNone}
 
 func (e Entry) needsUserCredentials() bool {
 	return e.Auth == AuthToken || e.Auth == AuthOAuth2App

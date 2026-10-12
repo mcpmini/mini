@@ -41,7 +41,7 @@ func connectingSetup(configDir string, list ...agents.Agent) initcmd.Setup {
 	return setup
 }
 
-func entryWithAuth(name, auth string) catalog.Entry {
+func entryWithAuth(name string, auth catalog.AuthKind) catalog.Entry {
 	return catalog.Entry{Name: name, URL: "https://" + name + ".example.com/mcp", Auth: auth}
 }
 

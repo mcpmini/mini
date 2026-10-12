@@ -30,7 +30,7 @@ func credentialComment(entry catalog.Entry) string {
 
 // credentialSteps is where to get a server's credentials and the config that holds them, shared by
 // the file's comment and the summary so the two never disagree.
-func credentialSteps(authKind, setupURL string) (intro string, block []string) {
+func credentialSteps(authKind catalog.AuthKind, setupURL string) (intro string, block []string) {
 	switch authKind {
 	case catalog.AuthToken:
 		return "Create a token at " + setupURL, []string{

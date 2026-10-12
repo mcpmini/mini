@@ -338,7 +338,7 @@ func TestLoadProjectionFormat_rejectsMini(t *testing.T) {
 }
 
 func TestValidResponseFormat(t *testing.T) {
-	for _, format := range []string{"", "json", "toon"} {
+	for _, format := range []config.ResponseFormat{"", "json", "toon"} {
 		if err := config.ValidResponseFormat(format); err != nil {
 			t.Errorf("ValidResponseFormat(%q) = %v, want nil", format, err)
 		}
@@ -353,7 +353,8 @@ func TestValidResponseFormat(t *testing.T) {
 
 func TestEffectiveFormat(t *testing.T) {
 	cases := []struct {
-		name, explicit, projection, global, want string
+		name                               string
+		explicit, projection, global, want config.ResponseFormat
 	}{
 		{
 			name:       "explicit wins over all",

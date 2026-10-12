@@ -105,7 +105,7 @@ func (r *Runner) reps() int {
 	return 1
 }
 
-func modeLabel(kind string, idx int) string {
+func modeLabel(kind string, idx format) string {
 	if kind == "direct" {
 		return "direct"
 	}
@@ -114,7 +114,8 @@ func modeLabel(kind string, idx int) string {
 
 type runSetup struct {
 	kind, callDir, workDir string
-	idx, rep               int
+	idx                    format
+	rep                    int
 	cmd                    func() *exec.Cmd
 }
 
@@ -142,7 +143,7 @@ func (r *Runner) buildSetups(ec evalCtx) ([]runSetup, error) {
 		return nil, err
 	}
 	for i := range numFormats {
-		ss, err := r.buildFormatSetups(ec, i, reps)
+		ss, err := r.buildFormatSetups(ec, format(i), reps)
 		if err != nil {
 			return nil, err
 		}
@@ -166,7 +167,7 @@ func (r *Runner) buildDirectSetups(ec evalCtx, reps int) ([]runSetup, error) {
 	return setups, nil
 }
 
-func (r *Runner) buildFormatSetups(ec evalCtx, i, reps int) ([]runSetup, error) {
+func (r *Runner) buildFormatSetups(ec evalCtx, i format, reps int) ([]runSetup, error) {
 	var setups []runSetup
 	for rep := range reps {
 		ss, err := r.buildRepSetups(ec, i, rep)
@@ -183,7 +184,7 @@ type setupCandidate struct {
 	fn    func() (runSetup, error)
 }
 
-func (r *Runner) buildRepSetups(ec evalCtx, i, rep int) ([]runSetup, error) {
+func (r *Runner) buildRepSetups(ec evalCtx, i format, rep int) ([]runSetup, error) {
 	var setups []runSetup
 	for _, c := range r.repCandidates(ec, i, rep) {
 		s, err := r.buildRepSetup(c.label, rep, c.fn)
@@ -197,7 +198,7 @@ func (r *Runner) buildRepSetups(ec evalCtx, i, rep int) ([]runSetup, error) {
 	return setups, nil
 }
 
-func (r *Runner) repCandidates(ec evalCtx, i, rep int) []setupCandidate {
+func (r *Runner) repCandidates(ec evalCtx, i format, rep int) []setupCandidate {
 	return []setupCandidate{
 		{"mcp-" + fmtLabel[i], func() (runSetup, error) { return r.mcpSetup(ec, i, rep) }},
 		{"cli-" + fmtLabel[i], func() (runSetup, error) { return r.cliSetup(ec, i, rep) }},
@@ -216,7 +217,7 @@ func (r *Runner) buildRepSetup(label string, rep int, build func() (runSetup, er
 	return s, nil
 }
 
-func (r *Runner) proxySetup(ec evalCtx, i, rep int) (runSetup, error) {
+func (r *Runner) proxySetup(ec evalCtx, i format, rep int) (runSetup, error) {
 	env, p := ec.Env, ec.Params
 	callDir := env.DebugDir(fmt.Sprintf("proxy-%s-%d", fmtLabel[i], rep+1))
 	cfg, err := r.proxyMCPConfig(env, p.Servers, callDir, i)
@@ -257,7 +258,7 @@ func (r *Runner) rawSetup(ec evalCtx, rep int) (runSetup, error) {
 	), nil
 }
 
-func (r *Runner) mcpSetup(ec evalCtx, i, rep int) (runSetup, error) {
+func (r *Runner) mcpSetup(ec evalCtx, i format, rep int) (runSetup, error) {
 	env, p := ec.Env, ec.Params
 	callDir := env.DebugDir(fmt.Sprintf("mcp-%s-%d", fmtLabel[i], rep+1))
 	cfg, err := r.miniMCPConfig(env, p.Servers, callDir, i)
@@ -273,7 +274,7 @@ func (r *Runner) mcpSetup(ec evalCtx, i, rep int) (runSetup, error) {
 	), nil
 }
 
-func (r *Runner) cliSetup(ec evalCtx, i, rep int) (runSetup, error) {
+func (r *Runner) cliSetup(ec evalCtx, i format, rep int) (runSetup, error) {
 	env, p := ec.Env, ec.Params
 	callDir := env.DebugDir(fmt.Sprintf("cli-%s-%d", fmtLabel[i], rep+1))
 	cfgDir, err := r.miniCLIConfigDir(env, p.Servers, callDir, i)
@@ -303,7 +304,8 @@ func (r *Runner) cliSetup(ec evalCtx, i, rep int) (runSetup, error) {
 
 type mcpRunSetupParams struct {
 	kind                                 string
-	idx, rep                             int
+	idx                                  format
+	rep                                  int
 	callDir, workDir, cfg, allowed, task string
 }
 
@@ -315,7 +317,8 @@ func newMCPRunSetup(p mcpRunSetupParams) runSetup {
 }
 
 type CLIRunSetupParams struct {
-	Idx, Rep                                 int
+	Idx                                      format
+	Rep                                      int
 	CallDir, WorkDir, WrapDir, Allowed, Task string
 }
 
@@ -328,7 +331,7 @@ func newCLIRunSetup(p CLIRunSetupParams) runSetup {
 
 type jobResult struct {
 	kind string
-	idx  int
+	idx  format
 	rep  int
 	r    ClaudeResult
 }
@@ -399,9 +402,9 @@ func assignEvalResults(eval *EvalResult, b runBuckets, want func(string) bool) {
 		eval.Direct = RunStats{Runs: b.direct}
 	}
 	for i := range numFormats {
-		assignIndexedRunStat(&eval.MCP[i], b.mcp[i], want(modeLabel("mcp", i)))
-		assignIndexedRunStat(&eval.CLI[i], b.cli[i], want(modeLabel("cli", i)))
-		assignIndexedRunStat(&eval.Proxy[i], b.proxy[i], want(modeLabel("proxy", i)))
+		assignIndexedRunStat(&eval.MCP[i], b.mcp[i], want(modeLabel("mcp", format(i))))
+		assignIndexedRunStat(&eval.CLI[i], b.cli[i], want(modeLabel("cli", format(i))))
+		assignIndexedRunStat(&eval.Proxy[i], b.proxy[i], want(modeLabel("proxy", format(i))))
 	}
 }
 

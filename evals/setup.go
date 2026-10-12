@@ -53,7 +53,7 @@ func rawMCPConfig(env *Env, r *Runner, servers map[string]string, callLogDir str
 	return writeMCPConfig(env, map[string]any{"mcpServers": mcpServers})
 }
 
-func (r *Runner) miniMCPConfig(env *Env, servers map[string]string, callLogDir string, format int) (string, error) {
+func (r *Runner) miniMCPConfig(env *Env, servers map[string]string, callLogDir string, format format) (string, error) {
 	configDir, err := r.buildMiniConfigDir(env, servers, callLogDir, format)
 	if err != nil {
 		return "", err
@@ -77,7 +77,12 @@ func (r *Runner) miniMCPConfig(env *Env, servers map[string]string, callLogDir s
 	})
 }
 
-func (r *Runner) miniCLIConfigDir(env *Env, servers map[string]string, callLogDir string, format int) (string, error) {
+func (r *Runner) miniCLIConfigDir(
+	env *Env,
+	servers map[string]string,
+	callLogDir string,
+	format format,
+) (string, error) {
 	return r.buildMiniConfigDir(env, servers, callLogDir, format)
 }
 
@@ -85,7 +90,7 @@ func (r *Runner) buildMiniConfigDir(
 	env *Env,
 	servers map[string]string,
 	callLogDir string,
-	format int,
+	format format,
 ) (string, error) {
 	configDir := env.TempDir()
 	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(miniConfigYAML(format)), 0o600); err != nil {
@@ -102,7 +107,7 @@ func (r *Runner) buildMiniConfigDir(
 	return configDir, nil
 }
 
-func miniConfigYAML(format int) string {
+func miniConfigYAML(format format) string {
 	switch format {
 	case fmtToon:
 		return "response_format: toon\n"
@@ -175,7 +180,7 @@ func inlineProjections(bundled []byte) []byte {
 	return []byte("projections:\n" + strings.Join(lines, "\n") + "\n")
 }
 
-func (r *Runner) proxyMCPConfig(env *Env, servers map[string]string, callLogDir string, format int) (string, error) {
+func (r *Runner) proxyMCPConfig(env *Env, servers map[string]string, callLogDir string, format format) (string, error) {
 	configDir, err := r.writeMiniProxyConfig(env, servers, callLogDir, format)
 	if err != nil {
 		return "", err
@@ -187,7 +192,7 @@ func (r *Runner) writeMiniProxyConfig(
 	env *Env,
 	servers map[string]string,
 	callLogDir string,
-	format int,
+	format format,
 ) (string, error) {
 	configDir := env.TempDir()
 	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(miniConfigYAML(format)), 0o600); err != nil {
