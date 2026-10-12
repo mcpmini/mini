@@ -126,6 +126,19 @@ func TestSummary_skipsImportNotesAndFailuresShowEvenAfterTheScreens(t *testing.T
 	)
 }
 
+func TestSummary_quotesAnEntryNameThatWouldWriteToTheTerminal(t *testing.T) {
+	got := plainSummary(Report{
+		ConfigDir: "/config",
+		Import: ImportPlan{Skipped: []SkippedServer{
+			{Agent: "team.json", Name: "evil\x1b]0;owned\a", Cause: SwitchedOffSkip{}},
+		}},
+	})
+	requireLines(t, got, `Not imported: "evil\x1b]0;owned\a" switched off in team.json`+"\n")
+	if strings.ContainsRune(got, '\x1b') {
+		t.Errorf("summary %q holds an escape character", got)
+	}
+}
+
 func TestSummary_agentsNotConnectedAreToldToRunInitAgain(t *testing.T) {
 	mini := agents.MiniEntry{Command: "/opt/mini", Args: []string{"--config", "/srv/my mini", "connect"}}
 	claude := agents.Agent{Name: "Claude Code", ConfigPath: "/home/u/.claude.json"}

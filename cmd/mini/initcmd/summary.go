@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/mcpmini/mini/internal/config"
 )
@@ -167,24 +169,34 @@ func writeSteps(b *strings.Builder, r Report) {
 }
 
 func skippedLine(s SkippedServer, configDir string) string {
+	entry := printableEntryName(s.Name)
 	switch cause := s.Cause.(type) {
 	case EmptyNameSkip:
 		return fmt.Sprintf("%q in %s: its name has no letters or digits mini can use", s.Name, s.Agent)
 	case SwitchedOffSkip:
-		return fmt.Sprintf("%s switched off in %s", s.Name, s.Agent)
+		return fmt.Sprintf("%s switched off in %s", entry, s.Agent)
 	case SecondConfigSkip:
-		return fmt.Sprintf("%s in %s: a different config under that name is imported instead", s.Name, s.Agent)
+		return fmt.Sprintf("%s in %s: a different config under that name is imported instead", entry, s.Agent)
 	case NameInMiniSkip:
 		name := NormalizeName(s.Name)
 		return fmt.Sprintf(
 			"%s in %s: mini already has a different %s; to use this one, edit %s",
-			s.Name,
+			entry,
 			s.Agent,
 			name,
 			config.ServerPath(configDir, name),
 		)
 	case UnexpandableRefsSkip:
-		return fmt.Sprintf("%s kept in %s: uses %s", s.Name, s.Agent, strings.Join(cause.Refs, ", "))
+		return fmt.Sprintf("%s kept in %s: uses %s", entry, s.Agent, strings.Join(cause.Refs, ", "))
 	}
-	return fmt.Sprintf("%s not imported from %s", s.Name, s.Agent)
+	return fmt.Sprintf("%s not imported from %s", entry, s.Agent)
+}
+
+// An entry's name comes from an agent's config, possibly someone else's --from file, so one holding
+// control characters is quoted rather than written to the terminal as-is.
+func printableEntryName(name string) string {
+	if strings.IndexFunc(name, func(r rune) bool { return !unicode.IsPrint(r) }) >= 0 {
+		return strconv.Quote(name)
+	}
+	return name
 }

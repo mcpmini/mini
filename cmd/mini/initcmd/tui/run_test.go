@@ -331,6 +331,25 @@ func TestRun_LoginsDescribesTheCursorsServerFromTheCatalog(t *testing.T) {
 	}
 }
 
+func TestRun_ReviewSaysWhichPicksTheSaveCouldNotAdd(t *testing.T) {
+	configDir := t.TempDir()
+	// A file where mini's internal dir goes stops the save from staging anything.
+	testutil.WriteFile(t, filepath.Join(configDir, "internal"), "")
+	var view string
+	program := func(m tea.Model) error {
+		pressingAndDelivering("space", "tab", "enter")(m)
+		view = shown(m.(*app))
+		return nil
+	}
+	c := catalog.Catalog{Entries: []catalog.Entry{{Name: "plain", URL: "https://mcp.plain.example/mcp"}}}
+	if _, err := Run(Params{Setup: setupFor(configDir), LoadCatalog: fromCatalog(c), Program: program}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(view, "Couldn't add plain to mini") {
+		t.Errorf("screen after the save:\n%s\nwant it to say plain couldn't be added", view)
+	}
+}
+
 func TestRun_quittingCancelsAPendingLoginBeforeReturning(t *testing.T) {
 	cancelled := false
 	startLogin := func(ctx context.Context, _, _ string) (Login, error) {

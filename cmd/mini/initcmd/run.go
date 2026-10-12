@@ -49,6 +49,11 @@ func failedAll(servers []config.ServerConfig, err error) []ServerError {
 	return failed
 }
 
+// SaveFailures are the servers the last save couldn't stage.
+func (r *Run) SaveFailures() []ServerError {
+	return r.last.Failed
+}
+
 // Added names the servers this run adds to mini, less any unticked since.
 func (r *Run) Added() []string {
 	return r.session.Written()

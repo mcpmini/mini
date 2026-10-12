@@ -36,6 +36,7 @@ func reviewOf(
 		added = append(added, st.Name)
 	}
 	s := newReviewScreen(reviewParams{
+		saveFailures:  noSaveFailures,
 		added:         func() []string { return added },
 		statuses:      func() ([]initcmd.ServerStatus, error) { return statuses, nil },
 		checking:      func() map[string]bool { return checking },

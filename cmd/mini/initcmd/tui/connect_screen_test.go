@@ -75,11 +75,12 @@ func connectScreenFor(
 	withMini map[string]bool,
 ) (*connectScreen, tea.Cmd) {
 	s := newConnectScreen(connectParams{
-		agents:   list,
-		withMini: withMini,
-		plan:     func() (connectPlan, error) { return plan, nil },
-		added:    noneAdded,
-		statuses: noStatuses,
+		saveFailures: noSaveFailures,
+		agents:       list,
+		withMini:     withMini,
+		plan:         func() (connectPlan, error) { return plan, nil },
+		added:        noneAdded,
+		statuses:     noStatuses,
 	})
 	s.resize(200, 30)
 	t.Cleanup(s.checks.cancelAndWait)
@@ -245,10 +246,11 @@ func TestConnectScreen_leavingDoesNotWaitForTheChecksToStop(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		stuck := &stuckPlan{unblock: make(chan struct{})}
 		s := newConnectScreen(connectParams{
-			agents:   namedAgents("Claude"),
-			plan:     func() (connectPlan, error) { return stuck, nil },
-			statuses: noStatuses,
-			added:    noneAdded,
+			saveFailures: noSaveFailures,
+			agents:       namedAgents("Claude"),
+			plan:         func() (connectPlan, error) { return stuck, nil },
+			statuses:     noStatuses,
+			added:        noneAdded,
 		})
 		showScreen(s)
 		a := framed(s, true)
@@ -286,11 +288,12 @@ func (p *stuckPlan) Check(context.Context) initcmd.Removals {
 func TestConnectScreen_anAgentAlreadyConnectedIsMarkedWithOnlyOneToConnect(t *testing.T) {
 	plan := newFakePlan(nil)
 	s := newConnectScreen(connectParams{
-		agents:   namedAgents("Claude", "Codex"),
-		withMini: map[string]bool{"Codex": true},
-		plan:     func() (connectPlan, error) { return plan, nil },
-		statuses: noStatuses,
-		added:    noneAdded,
+		saveFailures: noSaveFailures,
+		agents:       namedAgents("Claude", "Codex"),
+		withMini:     map[string]bool{"Codex": true},
+		plan:         func() (connectPlan, error) { return plan, nil },
+		statuses:     noStatuses,
+		added:        noneAdded,
 	})
 	t.Cleanup(s.checks.cancelAndWait)
 	s.resize(60, 30)
@@ -447,3 +450,5 @@ func TestConnectScreen_twoTickedAgentsShowAllThreeChoicesAndTheirLinesAtOnce(t *
 		}
 	}
 }
+
+func noSaveFailures() []initcmd.ServerError { return nil }

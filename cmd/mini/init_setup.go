@@ -69,9 +69,12 @@ func importSources(f initFlags) ([]agents.Agent, error) {
 	if err != nil {
 		return nil, err
 	}
-	// The user named this source, so it fails the run before anything is written.
-	if _, err := source.Read(source.ConfigPath); err != nil {
+	// The user named this source, so it fails the run before anything is written. It's read once: a
+	// pipe such as --from <(...) is empty the second time.
+	servers, err := source.Read(source.ConfigPath)
+	if err != nil {
 		return nil, err
 	}
+	source.Read = func(string) (map[string]agents.Server, error) { return servers, nil }
 	return []agents.Agent{source}, nil
 }

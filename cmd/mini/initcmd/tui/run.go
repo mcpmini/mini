@@ -100,6 +100,7 @@ func newScreens(p Params, run *initcmd.Run) screens {
 	ui.logins = newLogins(p, run, loginsParams{statuses: statuses, steps: steps, describe: catalogs.description})
 	ui.review = newReviewScreen(reviewParams{
 		added:         run.Added,
+		saveFailures:  run.SaveFailures,
 		statuses:      statuses,
 		checking:      run.Checking,
 		steps:         steps,
@@ -124,11 +125,12 @@ type serverStatuses func() ([]initcmd.ServerStatus, error)
 
 func newConnects(setup initcmd.Setup, run *initcmd.Run, statuses serverStatuses) *connectScreen {
 	return newConnectScreen(connectParams{
-		agents:   setup.AgentsToConnect,
-		withMini: setup.AgentsWithMini(),
-		plan:     func() (connectPlan, error) { return run.PlanConnect() },
-		added:    run.Added,
-		statuses: statuses,
+		agents:       setup.AgentsToConnect,
+		withMini:     setup.AgentsWithMini(),
+		plan:         func() (connectPlan, error) { return run.PlanConnect() },
+		added:        run.Added,
+		saveFailures: run.SaveFailures,
+		statuses:     statuses,
 	})
 }
 
