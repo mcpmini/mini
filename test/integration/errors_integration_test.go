@@ -11,6 +11,7 @@ import (
 )
 
 func TestIntegrationError_upstreamRPCError(t *testing.T) {
+	t.Parallel()
 	client := faultServer(t,
 		map[string]string{"get_item": `{"id":1}`},
 		map[string]any{"tool": "get_item", "method": "tools/call", "type": "rpc_error", "message": "upstream exploded"},
@@ -23,6 +24,7 @@ func TestIntegrationError_upstreamRPCError(t *testing.T) {
 }
 
 func TestIntegrationError_toolTimeout(t *testing.T) {
+	t.Parallel()
 	client := faultServer(t,
 		map[string]string{"get_item": `{"id":1}`},
 		map[string]any{"tool": "get_item", "method": "tools/call", "type": "delay", "delay_ms": 2000},
@@ -35,6 +37,7 @@ func TestIntegrationError_toolTimeout(t *testing.T) {
 }
 
 func TestIntegrationError_unknownServer(t *testing.T) {
+	t.Parallel()
 	_, isErr := quickServer(t, map[string]string{"x": `{}`}).execToolAllowError("doesnotexist", "x", nil)
 	if !isErr {
 		t.Error("expected isError=true for unknown server")
@@ -42,6 +45,7 @@ func TestIntegrationError_unknownServer(t *testing.T) {
 }
 
 func TestIntegrationError_unknownTool(t *testing.T) {
+	t.Parallel()
 	_, isErr := quickServer(t, map[string]string{"x": `{}`}).execToolAllowError("svc", "nonexistent", nil)
 	if !isErr {
 		t.Error("expected isError=true for unknown tool")
@@ -54,6 +58,7 @@ func TestIntegrationError_unknownTool(t *testing.T) {
 // is important so that one broken server config doesn't block all other
 // upstreams from working.
 func TestIntegrationError_upstreamNeverStarts(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	configtest.WriteServer(t, cfg, config.ServerConfig{Name: "bad", Command: "/nonexistent_binary_xyz_does_not_exist"})
 
@@ -69,6 +74,7 @@ func TestIntegrationError_upstreamNeverStarts(t *testing.T) {
 }
 
 func TestIntegrationError_malformedRequest(t *testing.T) {
+	t.Parallel()
 	client := quickServer(t, map[string]string{"get_item": `{"id":1}`})
 	fmt.Fprint(client.stdin, "NOT_VALID_JSON_GARBAGE\n")
 	e := client.execEnvelope("svc", "get_item", nil)

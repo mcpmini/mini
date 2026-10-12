@@ -8,6 +8,7 @@ import (
 )
 
 func TestIntegrationListTools_paginatesAcrossPages(t *testing.T) {
+	t.Parallel()
 	fixtures := map[string]string{
 		"tool_a": `{"result":"a"}`,
 		"tool_b": `{"result":"b"}`,
