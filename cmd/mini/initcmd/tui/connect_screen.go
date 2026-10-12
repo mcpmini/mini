@@ -258,12 +258,12 @@ func (s *connectScreen) body(height int, focused bool) string {
 	return strings.Join(append(note, s.agents.view(max(height-len(note), 1), focused)), "\n")
 }
 
-// A server the save couldn't stage is missing from what will be added, so the screens after the
-// save say why rather than leave the user to find it gone.
+// A server the save couldn't add, change or remove isn't as the user picked it, so the screens after
+// the save say so rather than leave the user to find out after finishing.
 func saveFailureLines(failed []initcmd.ServerError, width int) []string {
 	var lines []string
 	for _, f := range failed {
-		text := fmt.Sprintf("✗ Couldn't add %s to mini: %s", f.Name, firstLine(f.Err))
+		text := fmt.Sprintf("✗ mini couldn't save %s: %s", f.Name, firstLine(f.Err))
 		lines = append(lines, strings.Split(ansi.Wrap(text, max(width, 20), ""), "\n")...)
 	}
 	return lines

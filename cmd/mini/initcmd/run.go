@@ -49,7 +49,7 @@ func failedAll(servers []config.ServerConfig, err error) []ServerError {
 	return failed
 }
 
-// SaveFailures are the servers the last save couldn't stage.
+// SaveFailures are the servers the last save couldn't add, change or remove.
 func (r *Run) SaveFailures() []ServerError {
 	return r.last.Failed
 }

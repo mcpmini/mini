@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -119,6 +120,17 @@ func pickedNames(s *connectScreen) []string {
 		names = append(names, agent.Name)
 	}
 	return names
+}
+
+func TestConnectScreen_saysWhichServersTheSaveCouldNotSave(t *testing.T) {
+	s, _ := connectScreenFor(t, newFakePlan(nil), namedAgents("Claude"), nil)
+	s.p.saveFailures = func() []initcmd.ServerError {
+		return []initcmd.ServerError{{Name: "linear", Err: errors.New("disk full")}}
+	}
+	s.refresh()
+	if text := connectText(s); !strings.Contains(text, "✗ mini couldn't save linear: disk full") {
+		t.Errorf("Connect:\n%s\nwant it to say linear couldn't be saved", text)
+	}
 }
 
 func TestConnectScreen_withOneAgentOffersOnlyTheOptions(t *testing.T) {

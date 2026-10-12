@@ -169,7 +169,7 @@ func writeSteps(b *strings.Builder, r Report) {
 }
 
 func skippedLine(s SkippedServer, configDir string) string {
-	entry := printableEntryName(s.Name)
+	entry := PrintableEntryName(s.Name)
 	switch cause := s.Cause.(type) {
 	case EmptyNameSkip:
 		return fmt.Sprintf("%q in %s: its name has no letters or digits mini can use", s.Name, s.Agent)
@@ -192,9 +192,9 @@ func skippedLine(s SkippedServer, configDir string) string {
 	return fmt.Sprintf("%s not imported from %s", entry, s.Agent)
 }
 
-// An entry's name comes from an agent's config, possibly someone else's --from file, so one holding
-// control characters is quoted rather than written to the terminal as-is.
-func printableEntryName(name string) string {
+// PrintableEntryName quotes an agent entry's name that holds characters a terminal would act on: the
+// name comes from an agent's config, possibly someone else's --from file.
+func PrintableEntryName(name string) string {
 	if strings.IndexFunc(name, func(r rune) bool { return !unicode.IsPrint(r) }) >= 0 {
 		return strconv.Quote(name)
 	}

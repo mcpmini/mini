@@ -386,6 +386,20 @@ func TestRunAddImport(t *testing.T) {
 		}
 	})
 
+	t.Run("an entry name that would write to the terminal is quoted", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "claude.json")
+		testutil.WriteFile(t, path, `{"mcpServers":{"evil\u001b]0;owned\u0007":{"command":"run","disabled":true}}}`)
+		var out bytes.Buffer
+
+		if err := runAdd(t.TempDir(), []string{"--from-claude", path}, &out); err != nil {
+			t.Fatalf("runAdd: %v", err)
+		}
+
+		if strings.ContainsRune(out.String(), '\x1b') || !strings.Contains(out.String(), `"evil\x1b]0;owned\a"`) {
+			t.Errorf("output %q, want the name quoted with no escape character", out.String())
+		}
+	})
+
 	for _, tt := range []struct {
 		name       string
 		configured string

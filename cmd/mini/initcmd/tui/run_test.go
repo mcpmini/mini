@@ -345,8 +345,8 @@ func TestRun_ReviewSaysWhichPicksTheSaveCouldNotAdd(t *testing.T) {
 	if _, err := Run(Params{Setup: setupFor(configDir), LoadCatalog: fromCatalog(c), Program: program}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(view, "Couldn't add plain to mini") {
-		t.Errorf("screen after the save:\n%s\nwant it to say plain couldn't be added", view)
+	if !strings.Contains(view, "mini couldn't save plain") {
+		t.Errorf("screen after the save:\n%s\nwant it to say plain couldn't be saved", view)
 	}
 }
 
