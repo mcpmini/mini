@@ -245,9 +245,10 @@ func TestConnectScreen_leavingDoesNotWaitForTheChecksToStop(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		stuck := &stuckPlan{unblock: make(chan struct{})}
 		s := newConnectScreen(connectParams{
-			agents: namedAgents("Claude"),
-			plan:   func() (connectPlan, error) { return stuck, nil },
-			added:  noneAdded,
+			agents:   namedAgents("Claude"),
+			plan:     func() (connectPlan, error) { return stuck, nil },
+			statuses: noStatuses,
+			added:    noneAdded,
 		})
 		showScreen(s)
 		a := framed(s, true)
@@ -288,6 +289,7 @@ func TestConnectScreen_anAgentAlreadyConnectedIsMarkedWithOnlyOneToConnect(t *te
 		agents:   namedAgents("Claude", "Codex"),
 		withMini: map[string]bool{"Codex": true},
 		plan:     func() (connectPlan, error) { return plan, nil },
+		statuses: noStatuses,
 		added:    noneAdded,
 	})
 	t.Cleanup(s.checks.cancelAndWait)

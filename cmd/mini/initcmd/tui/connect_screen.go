@@ -37,8 +37,12 @@ type connectScreen struct {
 	agents *list
 	chosen initcmd.ConnectChoice
 	checks connectChecks
-	width  int
+	// needingLogin is read when the checks finish, not on every redraw: it reads token files.
+	needingLogin map[string]bool
+	width        int
 }
+
+const miniConnected = "mini already connected"
 
 func newConnectScreen(p connectParams) *connectScreen {
 	return &connectScreen{p: p, ticked: map[string]bool{}, agents: newList(nil, nil)}
@@ -69,7 +73,7 @@ func (s *connectScreen) refresh() {
 		}
 	}
 	for _, name := range s.alreadyConnected {
-		connected = append(connected, row{key: name, label: name, detail: "mini already connected"})
+		connected = append(connected, row{key: name, label: name, detail: miniConnected})
 	}
 	s.agents = newList(rows, s.ticked)
 	s.agents.untickable = connected
@@ -81,7 +85,7 @@ func (s *connectScreen) agentDetail(agent string) string {
 	case replaced == "":
 		return ""
 	case s.p.withMini[agent]:
-		return "mini already connected · also configured with " + replaced
+		return miniConnected + " · also configured with " + replaced
 	}
 	return "configured with " + replaced
 }
@@ -99,6 +103,7 @@ func (s *connectScreen) leave() {
 func (s *connectScreen) update(msg tea.Msg) tea.Cmd {
 	if msg, ok := msg.(connectChecked); ok {
 		s.checks.finished(msg)
+		s.needingLogin = s.serversNeedingLogin()
 	}
 	return nil
 }
@@ -206,13 +211,19 @@ func dontWorkYet(names []string) string {
 	return fmt.Sprintf("%s %s work in mini yet.", initcmd.JoinAnd(names), verb)
 }
 
-func (s *connectScreen) splitNeedingLogin(servers []string) (login, failing []string) {
+func (s *connectScreen) serversNeedingLogin() map[string]bool {
 	//nolint:errcheck // Unreadable statuses only lose the login hint; the servers still read as not working.
 	statuses, _ := s.p.statuses()
+	login := map[string]bool{}
+	for _, status := range statuses {
+		login[status.Name] = status.Readiness == initcmd.NeedsLogin
+	}
+	return login
+}
+
+func (s *connectScreen) splitNeedingLogin(servers []string) (login, failing []string) {
 	for _, name := range servers {
-		if slices.ContainsFunc(statuses, func(st initcmd.ServerStatus) bool {
-			return st.Name == name && st.Readiness == initcmd.NeedsLogin
-		}) {
+		if s.needingLogin[name] {
 			login = append(login, name)
 		} else {
 			failing = append(failing, name)
