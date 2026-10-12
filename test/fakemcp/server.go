@@ -26,10 +26,15 @@ func serveRequest(handler *mcpHandler, sink *outputSink, line []byte) error {
 		return nil
 	}
 	result := handler.dispatch(req)
-	if result.exit {
+	switch result.(type) {
+	case exitResult:
 		os.Exit(1)
+	case continueResult:
+		return nil
+	case responseResult, rawWriteResult:
+		return sink.writeResult(result)
 	}
-	return sink.writeResult(result)
+	return nil
 }
 
 func parseRequest(line []byte) (transport.Request, bool) {

@@ -162,14 +162,14 @@ func startFakeMCPProcess(t *testing.T, fixtures string) io.Reader {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd.Stdin, err = os.Open(os.DevNull) // fakemcp uses stdin for MCP protocol traffic
+	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { cmd.Process.Kill(); cmd.Wait() }) //nolint:errcheck
+	t.Cleanup(func() { stdin.Close(); cmd.Process.Kill(); cmd.Wait() }) //nolint:errcheck
 	return stderrPipe
 }
 
