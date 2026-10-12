@@ -3,6 +3,7 @@ package initcmd
 import (
 	"context"
 
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/server"
 )
@@ -96,6 +97,13 @@ func (p ConnectPlan) allDuplicates() []map[string]string {
 		all = append(all, a.duplicates)
 	}
 	return all
+}
+
+func (s Setup) discover() discoverFunc {
+	if s.Discover != nil {
+		return s.Discover
+	}
+	return auth.Discover
 }
 
 func (s Setup) probe() probeFunc {

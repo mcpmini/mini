@@ -2,29 +2,13 @@ package initcmd
 
 import (
 	"context"
-	"slices"
 	"time"
 
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
-	"github.com/mcpmini/mini/internal/ops"
 )
 
 const oauthCheckTimeout = 5 * time.Second
-
-func oauthTargets(configDir string, names []string) []config.ServerConfig {
-	servers, err := config.LoadServers(configDir)
-	if err != nil {
-		return nil // a later init step hits the same error and reports it
-	}
-	var targets []config.ServerConfig
-	for _, sc := range servers.Loaded {
-		if slices.Contains(names, sc.Name) && ops.MayNeedOAuth(sc) {
-			targets = append(targets, sc)
-		}
-	}
-	return targets
-}
 
 type probeParams struct {
 	configDir string

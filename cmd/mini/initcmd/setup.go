@@ -12,14 +12,13 @@ import (
 
 // Setup is what one init run imports and adds. Writing it never edits an agent or opens a browser.
 type Setup struct {
-	ConfigDir string
-	Import    []agents.Agent
-	Add       []catalog.Entry
-	// Catalog tells which servers need a token or the user's own app.
-	Catalog         []catalog.Entry
+	ConfigDir       string
+	Import          []agents.Agent
+	Add             []catalog.Entry
 	AgentsToConnect []agents.Agent
 	SelfPath        string
 	Probe           probeFunc
+	Discover        discoverFunc
 }
 
 // Report is what a run did, for the summary.
@@ -66,7 +65,6 @@ func RunUnattended(s Setup) Report {
 type Plan struct {
 	Import  ImportPlan
 	Add     []catalog.Entry
-	Catalog []catalog.Entry
 	written WrittenServers
 }
 
@@ -78,7 +76,6 @@ func (s Setup) Plan() (Plan, error) {
 	return Plan{
 		Import:  PlanImport(ImportParams{Agents: s.Import, Written: written, SelfPath: s.SelfPath}),
 		Add:     s.Add,
-		Catalog: s.Catalog,
 		written: written,
 	}, nil
 }

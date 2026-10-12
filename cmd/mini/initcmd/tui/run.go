@@ -69,7 +69,6 @@ func (f *flow) save() {
 }
 
 func (f *flow) finish() Outcome {
-	f.run.Plan.Catalog = f.ui.catalog(f.run.Plan)
 	out := Outcome{Saved: true, Report: f.run.Finish(context.Background(), f.ui.connects.chosenConnect())}
 	out.Report.Interactive = f.interactive
 	out.Report.Import.DropOfferedSkips()
@@ -95,7 +94,7 @@ func newScreens(p Params, run *initcmd.Run) screens {
 		catalogs.update(catalogs.start()())
 	}
 	ui := screens{imports: imports, catalogs: catalogs}
-	statuses := func() ([]initcmd.ServerStatus, error) { return run.ServerStatuses(ui.catalog(run.Plan)) }
+	statuses := run.ServerStatuses
 	ui.connects = newConnects(p.Setup, run, statuses)
 	steps := newServerSteps(p.Setup.ConfigDir)
 	ui.logins = newLogins(p, run, statuses, steps)
@@ -147,14 +146,6 @@ func (ui screens) savePoint() int {
 func (ui screens) pick(plan *initcmd.Plan) {
 	ui.imports.pick(plan.Import.Candidates)
 	plan.Add = ui.catalogs.picks()
-	plan.Catalog = ui.catalog(*plan)
-}
-
-func (ui screens) catalog(plan initcmd.Plan) []catalog.Entry {
-	if entries, ok := ui.catalogs.entries(); ok {
-		return entries
-	}
-	return plan.Catalog
 }
 
 func (p Params) program() func(m tea.Model) error {

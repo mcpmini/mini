@@ -2,6 +2,8 @@ package initcmd
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/mcpmini/mini/internal/auth"
@@ -47,13 +49,14 @@ func credentialSteps(authKind, setupURL string) (intro string, block []string) {
 	return "", nil
 }
 
-// holdsPlaceholder reports whether the user uncommented the steps without finishing them.
-func holdsPlaceholder(sc config.ServerConfig) bool {
-	for _, value := range sc.Headers {
-		if strings.Contains(value, tokenPlaceholder) {
-			return true
-		}
-	}
+// The user uncommented the steps without finishing them, so mini would send the placeholder.
+func holdsTokenPlaceholder(sc config.ServerConfig) bool {
+	return slices.ContainsFunc(slices.Collect(maps.Values(sc.Headers)), func(value string) bool {
+		return strings.Contains(value, tokenPlaceholder)
+	})
+}
+
+func holdsAppPlaceholder(sc config.ServerConfig) bool {
 	return sc.Auth != nil &&
 		(sc.Auth.ClientID == clientIDPlaceholder || sc.Auth.ClientSecret == clientSecretPlaceholder)
 }

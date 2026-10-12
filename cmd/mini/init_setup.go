@@ -29,7 +29,6 @@ func setupFromFlags(configDir string, f initFlags) (initcmd.Setup, error) {
 		ConfigDir:       configDir,
 		Import:          sources,
 		Add:             requested,
-		Catalog:         entries,
 		AgentsToConnect: agentsToConnect(),
 		SelfPath:        selfPath(),
 	}, nil

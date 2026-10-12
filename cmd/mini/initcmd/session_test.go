@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
@@ -294,5 +295,74 @@ func TestSessionClose_cancelsAndWaitsForChecks(t *testing.T) {
 
 	if _, finished := probe.counts(); finished != 1 || s.Running()["open"] {
 		t.Errorf("after Close: finished = %d, checking = %v; want the check finished", finished, s.Running()["open"])
+	}
+}
+
+// fakeDiscovery answers each server URL with its authorization server's metadata, or an error.
+type fakeDiscovery struct {
+	mu         sync.Mutex
+	metas      map[string]*auth.ServerMeta
+	discovered []string
+}
+
+func (f *fakeDiscovery) discover(_ context.Context, serverURL string) (*auth.ServerMeta, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.discovered = append(f.discovered, serverURL)
+	if meta, ok := f.metas[serverURL]; ok {
+		return meta, nil
+	}
+	return nil, errors.New("discovery failed")
+}
+
+func oauthServer(name, clientID string) config.ServerConfig {
+	sc := httpServer(name, "https://"+name+".example/mcp")
+	sc.Auth = &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: clientID}
+	return sc
+}
+
+func TestSessionChecks_discoveryNamesTheLoginsThatNeedTheUsersOwnApp(t *testing.T) {
+	stage, miniDir := t.TempDir(), t.TempDir()
+	for _, sc := range []config.ServerConfig{oauthServer("asana", ""), oauthServer("own", "my-app"), oauthServer("box", "")} {
+		configtest.WriteServer(t, miniDir, sc)
+	}
+	if err := auth.SaveRegistration(miniDir, "box", &auth.Registration{ClientID: "registered-earlier"}); err != nil {
+		t.Fatal(err)
+	}
+	discovery := &fakeDiscovery{metas: map[string]*auth.ServerMeta{
+		"https://asana.example/mcp":  {},
+		"https://github.example/mcp": {},
+		"https://linear.example/mcp": {RegistrationURL: "https://linear.example/register"},
+		"https://notion.example/mcp": {CIMDSupported: true},
+	}}
+	var probed []string
+	var mu sync.Mutex
+	probe := func(_ context.Context, dir string, sc config.ServerConfig) error {
+		mu.Lock()
+		probed = append(probed, sc.Name)
+		mu.Unlock()
+		return config.MarkOAuthDetected(dir, sc.Name)
+	}
+	s := newSession(sessionParams{ConfigDir: stage, MiniDir: miniDir, Probe: probe, Discover: discovery.discover})
+	t.Cleanup(s.Close)
+
+	s.Sync([]config.ServerConfig{
+		httpServer("github", "https://github.example/mcp"), httpServer("linear", "https://linear.example/mcp"),
+		httpServer("notion", "https://notion.example/mcp"), httpServer("flaky", "https://flaky.example/mcp"),
+	}, nil)
+	s.WaitChecks()
+
+	if got := s.NoSelfRegistration(); !reflect.DeepEqual(got, map[string]bool{"asana": true, "github": true}) {
+		t.Errorf("no self-registration = %v, want asana and github: neither offers DCR or CIMD, and flaky's "+
+			"failed discovery proves nothing", got)
+	}
+	slices.Sort(probed)
+	if !slices.Equal(probed, []string{"flaky", "github", "linear", "notion"}) {
+		t.Errorf("probed = %v, want only this run's servers: asana was the user's before", probed)
+	}
+	for _, url := range []string{"https://own.example/mcp", "https://box.example/mcp"} {
+		if slices.Contains(discovery.discovered, url) {
+			t.Errorf("discovered %s, want it skipped: it already has a client ID", url)
+		}
 	}
 }

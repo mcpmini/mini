@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/mcpmini/mini/cmd/mini/initcmd"
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
 )
@@ -804,7 +805,10 @@ func TestLoginsScreen_whileALoginWaitsTheFooterGivesEscOneMeaning(t *testing.T) 
 func TestRun_aByHandServerPointsAtTheFileItWillHaveInMini(t *testing.T) {
 	configDir := t.TempDir()
 	setup := setupFor(configDir)
-	setup.Probe = func(context.Context, string, config.ServerConfig) error { return errors.New("401") }
+	setup.Probe = func(_ context.Context, dir string, sc config.ServerConfig) error {
+		return config.MarkOAuthDetected(dir, sc.Name)
+	}
+	setup.Discover = func(context.Context, string) (*auth.ServerMeta, error) { return &auth.ServerMeta{}, nil }
 	token := catalog.Entry{Name: "github", URL: "https://mcp.github.example/mcp", Auth: catalog.AuthToken}
 	var view string
 	program := func(m tea.Model) error {

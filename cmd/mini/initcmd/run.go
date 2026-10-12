@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
 )
 
@@ -23,7 +22,10 @@ type Run struct {
 
 func (s Setup) Start(p Plan) *Run {
 	st := newStage(s.ConfigDir)
-	return &Run{Plan: p, setup: s, stage: st, session: newSession(sessionParams{ConfigDir: st.dir, Probe: s.probe()})}
+	session := newSession(
+		sessionParams{ConfigDir: st.dir, MiniDir: s.ConfigDir, Probe: s.probe(), Discover: s.discover()},
+	)
+	return &Run{Plan: p, setup: s, stage: st, session: session}
 }
 
 // Save stages the plan's servers and starts checking the new ones for OAuth. It returns the servers
@@ -61,18 +63,19 @@ func (r *Run) ConfigDirFor(server string) string {
 }
 
 // ServerStatuses are mini's servers with the ones this run adds.
-func (r *Run) ServerStatuses(entries []catalog.Entry) ([]ServerStatus, error) {
-	inMini, err := ServerStatuses(r.setup.ConfigDir, entries)
+func (r *Run) ServerStatuses() ([]ServerStatus, error) {
+	noSelfRegistration := r.session.NoSelfRegistration()
+	inMini, err := ServerStatuses(r.setup.ConfigDir, noSelfRegistration)
 	if err != nil || !r.stage.created {
 		return inMini, err
 	}
-	added, err := ServerStatuses(r.stage.dir, entries)
+	added, err := ServerStatuses(r.stage.dir, noSelfRegistration)
 	all := slices.Concat(inMini, added)
 	slices.SortFunc(all, func(a, b ServerStatus) int { return strings.Compare(a.Name, b.Name) })
 	return all, err
 }
 
-// Checking names the servers whose OAuth check is still running.
+// Checking names the servers whose OAuth or registration check is still running.
 func (r *Run) Checking() map[string]bool {
 	return r.session.Running()
 }
@@ -115,6 +118,6 @@ func (r *Run) report(c commitResult) Report {
 	report.AlreadyConfigured, report.AddCoveredByImport = adds.alreadyConfigured, adds.coveredByImport
 	report.WriteErrors = slices.Concat(r.last.Failed, c.failed)
 	report.Import.keepOnly(report.Import.importedOf(c.committed))
-	report.Servers, report.ReadServersErr = ServerStatuses(r.setup.ConfigDir, p.Catalog)
+	report.Servers, report.ReadServersErr = ServerStatuses(r.setup.ConfigDir, r.session.NoSelfRegistration())
 	return report
 }

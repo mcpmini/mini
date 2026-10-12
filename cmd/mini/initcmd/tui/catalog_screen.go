@@ -25,7 +25,6 @@ type catalogScreen struct {
 	loaded            bool
 	loadErr           error
 	popular           []string
-	loadedEntries     []catalog.Entry
 	byCategory        []catalog.Entry
 	checked           map[string]bool
 	grid              *catalogGrid
@@ -61,7 +60,7 @@ func (s *catalogScreen) update(msg tea.Msg) tea.Cmd {
 	}
 	s.loaded, s.loadErr = true, loaded.err
 	c := loaded.catalog
-	s.popular, s.loadedEntries = c.Popular, c.Entries
+	s.popular = c.Popular
 	if loaded.err == nil {
 		s.byCategory = initcmd.GroupByCategory(c.Entries)
 	}
@@ -202,11 +201,6 @@ func (s *catalogScreen) keys() string {
 
 func (s *catalogScreen) filterLine() string {
 	return s.grid.filter.line()
-}
-
-// entries is the catalog the screen offered from, once it has loaded.
-func (s *catalogScreen) entries() ([]catalog.Entry, bool) {
-	return s.loadedEntries, s.loaded && s.loadErr == nil
 }
 
 // Until it loads the screen isn't empty: the user waits on it rather than skipping it.
