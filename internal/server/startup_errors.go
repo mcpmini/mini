@@ -31,7 +31,7 @@ func (s *Server) serverNotReadyError(server string) (*response.Envelope, bool) {
 		return nil, false
 	}
 	state := s.startup.state(server, s.clock.Now())
-	if state.phase() == "connected" {
+	if state.phase() == phaseConnected {
 		return nil, false
 	}
 	return response.BuildError(state.errorCode(), state.reason(server), state.retryable(), state.action()), true

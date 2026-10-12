@@ -4,6 +4,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -111,5 +112,34 @@ func TestMissingStartupStatusDoesNotInventATrustFailure(t *testing.T) {
 		if state.retryable() || state.action() != "" {
 			t.Error("missing startup status must not request retries or authorization")
 		}
+	}
+}
+
+func TestStartupPhasePreservesWireValues(t *testing.T) {
+	cases := []struct {
+		name   string
+		status startupStatus
+		phase  startupPhase
+		wire   string
+	}{
+		{name: "connected", status: connectedStatus{}, phase: phaseConnected, wire: `{"state":"connected"}`},
+		{name: "connecting", status: connectingStatus{}, phase: phaseConnecting, wire: `{"state":"connecting"}`},
+		{name: "delayed", status: delayedStatus{}, phase: phaseDelayed, wire: `{"state":"delayed"}`},
+		{name: "auth", status: needsAuthStatus{}, phase: phaseFailed, wire: `{"state":"failed"}`},
+		{name: "environment", status: needsEnvStatus{}, phase: phaseFailed, wire: `{"state":"failed"}`},
+		{name: "trust", status: notTrustedStatus{}, phase: phaseFailed, wire: `{"state":"failed"}`},
+		{name: "missing", phase: phaseFailed, wire: `{"state":"failed"}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			phase := (startupState{status: tc.status}).phase()
+			if phase != tc.phase {
+				t.Errorf("phase = %q, want %q", phase, tc.phase)
+			}
+			got, err := json.Marshal(map[string]any{"state": phase})
+			if err != nil || string(got) != tc.wire {
+				t.Errorf("wire phase = %s, %v; want %s", got, err, tc.wire)
+			}
+		})
 	}
 }

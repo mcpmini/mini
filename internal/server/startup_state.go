@@ -15,6 +15,15 @@ import (
 // Above the cold start measured in #322 (6 s) and well inside the 30 s request timeouts of Claude Code, Codex and opencode.
 const startupHold = 10 * time.Second
 
+type startupPhase string
+
+const (
+	phaseConnected  startupPhase = "connected"
+	phaseConnecting startupPhase = "connecting"
+	phaseDelayed    startupPhase = "delayed"
+	phaseFailed     startupPhase = "failed"
+)
+
 //sumtype:decl
 type startupStatus interface {
 	startupStatus()
@@ -122,18 +131,18 @@ type startupState struct {
 	status startupStatus
 }
 
-func (st startupState) phase() string {
+func (st startupState) phase() startupPhase {
 	switch st.status.(type) {
 	case connectedStatus:
-		return "connected"
+		return phaseConnected
 	case connectingStatus:
-		return "connecting"
+		return phaseConnecting
 	case delayedStatus:
-		return "delayed"
+		return phaseDelayed
 	case needsAuthStatus, needsEnvStatus, notTrustedStatus:
-		return "failed"
+		return phaseFailed
 	}
-	return "failed"
+	return phaseFailed
 }
 
 func terminalStartupFailure(err error) (startupFailure, bool) {
