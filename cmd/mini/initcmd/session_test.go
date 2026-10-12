@@ -404,6 +404,25 @@ func TestSessionChecks_aServerRefusingWithoutOAuthNeedsACredential(t *testing.T)
 			t.Errorf("keyed.yaml changed:\n%s", after)
 		}
 	})
+	t.Run("a server rewritten so it no longer refuses loses the mark", func(t *testing.T) {
+		var refuse sync.Map
+		refuse.Store("https://old.example/mcp", true)
+		probe := func(ctx context.Context, dir string, sc config.ServerConfig) error {
+			if _, ok := refuse.Load(sc.URL); ok {
+				return refusesWithoutOAuth(ctx, dir, sc)
+			}
+			return nil
+		}
+		s := newSession(sessionParams{ConfigDir: t.TempDir(), Probe: probe, Discover: (&fakeDiscovery{}).discover})
+		t.Cleanup(s.Close)
+		s.Sync([]config.ServerConfig{httpServer("files", "https://old.example/mcp")}, nil)
+		s.WaitChecks()
+		s.Sync([]config.ServerConfig{httpServer("files", "https://new.example/mcp")}, nil)
+		s.WaitChecks()
+		if got := s.Findings().NeedsCredential; len(got) > 0 {
+			t.Errorf("needs credential = %v, want none: the rewritten files answered its probe", got)
+		}
+	})
 	t.Run("a probe cut short proves nothing", func(t *testing.T) {
 		probe := func(ctx context.Context, dir string, sc config.ServerConfig) error {
 			<-ctx.Done()
