@@ -74,8 +74,13 @@ jobs:
         run: go test -race -tags test -timeout 120s ./...
 
   integration:
+    name: integration (parallel ${{ matrix.parallel }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        parallel: [4, 8, 16, 32]
     steps:
       - uses: actions/checkout@v4
 
@@ -102,7 +107,9 @@ jobs:
       - name: Integration tests
         # Explicitly not using cached results because go's test caching cannot detect changes to our test binaries
         # We want integration tests to run cleanly every single time
-        run: go test -race -count=1 -tags integration,test -run '^TestIntegration' -timeout 180s ./...
+        run: |
+          echo "nproc=$(nproc) GOMAXPROCS=$(go env GOMAXPROCS) parallel=${{ matrix.parallel }}"
+          go test -race -count=1 -parallel ${{ matrix.parallel }} -tags integration,test -run '^TestIntegration' -timeout 180s ./...
 
   ci:
     runs-on: ubuntu-latest
