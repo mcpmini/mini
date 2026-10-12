@@ -419,7 +419,7 @@ func TestLoginsScreen_theWarningGoesOnceEveryMCPIsLoggedIn(t *testing.T) {
 
 func TestLoginsScreen_aFailedLoginWarnsNoMoreOnceACheckFindsTheMCPReady(t *testing.T) {
 	logins := newFakeLogins("linear")
-	checks := newFakeChecks(initcmd.ServerStatus{Name: "linear", Readiness: initcmd.NeedsLogin})
+	checks := newFakeChecks(initcmd.ServerStatus{Name: "linear", Readiness: initcmd.NeedsLoginState{}})
 	s := checks.screen()
 	s.p.startLogin = logins.start
 	s.resize(200, 30)
@@ -429,7 +429,7 @@ func TestLoginsScreen_aFailedLoginWarnsNoMoreOnceACheckFindsTheMCPReady(t *testi
 	if text := loginsText(s); !strings.Contains(text, oneLoginLeft) {
 		t.Fatalf("screen:\n%s\nwant the warning after the failed login", text)
 	}
-	checks.statuses[0].Readiness = initcmd.Ready
+	checks.statuses[0].Readiness = initcmd.ReadyState{}
 	s.refresh()
 	if text := loginsText(s); strings.Contains(text, "⚠") {
 		t.Errorf("screen:\n%s\nwant no warning: linear works now", text)

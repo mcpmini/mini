@@ -259,7 +259,7 @@ func (s *loginsScreen) skippedLoginWarning() []string {
 
 func (s *loginsScreen) notLoggedIn(status initcmd.ServerStatus) bool {
 	err, tried := s.results[status.Name]
-	return status.Readiness == initcmd.NeedsLogin && (!tried || err != nil)
+	return status.NeedsLogin() && (!tried || err != nil)
 }
 
 func (s *loginsScreen) byHandList() []string {
