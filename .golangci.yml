@@ -33,6 +33,9 @@ linters:
     - nolintlint
 
   settings:
+    gochecksumtype:
+      # A default case would otherwise count as handling every variant, hiding a forgotten new one
+      default-signifies-exhaustive: false
     govet:
       enable:
         - shadow
