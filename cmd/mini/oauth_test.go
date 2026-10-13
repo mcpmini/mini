@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"testing"
@@ -106,4 +107,20 @@ func TestServe_tokenExpiresMidSession_toolCallRefreshesAndSucceeds(t *testing.T)
 			t.Errorf("tools/call Authorization = %q, want Bearer refreshed", got)
 		}
 	})
+}
+
+func TestRefreshAndSaveToken_presentsTheRefreshTokenAnotherProcessRotatedTo(t *testing.T) {
+	configDir, tokenEp := t.TempDir(), newTestTokenEndpoint(t)
+	sc := oauthServerConfig("live", "http://localhost:1/mcp", tokenEp.srv.URL, true)
+	expired := time.Now().Add(-time.Hour)
+	rotated := &oauth2.Token{AccessToken: "a2", RefreshToken: "r2", Expiry: expired}
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: configDir, ServerName: "live", Token: rotated})
+	loadedBeforeTheRotation := &oauth2.Token{AccessToken: "a1", RefreshToken: "r1", Expiry: expired}
+
+	if _, err := refreshAndSaveToken(context.Background(), configDir, &sc, loadedBeforeTheRotation); err != nil {
+		t.Fatalf("refreshAndSaveToken: %v", err)
+	}
+	if got, _ := tokenEp.refreshToken.Load().(string); got != "r2" {
+		t.Errorf("refresh_token sent = %q, want r2: r1 was already rotated away", got)
+	}
 }

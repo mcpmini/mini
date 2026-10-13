@@ -52,7 +52,7 @@ func (p *tokenProvider) proactiveRefreshLocked() error {
 }
 
 func (p *tokenProvider) refreshLocked(stillNeeded func() bool) error {
-	// One deadline covers the lock wait and the exchange, so p.mu is never held past refreshTimeout.
+	// The lock wait counts against refreshTimeout too, since callers queue on p.mu behind it.
 	refreshCtx, cancel := context.WithTimeout(p.lifetime, refreshTimeout)
 	defer cancel()
 	return p.tokenLock().Do(refreshCtx, func(f auth.TokenFile) error {

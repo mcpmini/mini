@@ -21,7 +21,9 @@ func holdTokenLock(t *testing.T, lock auth.TokenLock) (release func()) {
 	t.Helper()
 	held := make(chan struct{})
 	releaseCh := make(chan struct{})
+	unlocked := make(chan struct{})
 	go func() {
+		defer close(unlocked)
 		err := lock.Do(context.Background(), func(auth.TokenFile) error {
 			close(held)
 			<-releaseCh
@@ -32,7 +34,10 @@ func holdTokenLock(t *testing.T, lock auth.TokenLock) (release func()) {
 		}
 	}()
 	<-held
-	return func() { close(releaseCh) }
+	return func() {
+		close(releaseCh)
+		<-unlocked
+	}
 }
 
 func TestTokenLock_saveWaitsOutAHolderThenWrites(t *testing.T) {

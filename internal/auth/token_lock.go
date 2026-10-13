@@ -16,12 +16,12 @@ import (
 	"github.com/mcpmini/mini/internal/fileio"
 )
 
-// TokenSaveWait outlasts the longest a refresh holds the lock (the provider bounds one at 10s), so a
-// finished browser login waits out a refresh in progress instead of being dropped.
+// TokenSaveWait outlasts a provider refresh (bounded at 10s), so a finished browser login waits out
+// a refresh in progress instead of being dropped.
 const TokenSaveWait = 30 * time.Second
 
-// TokenLock serializes reading, refreshing and writing a server's token across mini processes: a
-// rotating refresh token used twice gets the whole login revoked.
+// TokenLock serializes reading, refreshing and writing a server's token across mini processes: an
+// authorization server may revoke the whole login when a rotating refresh token is used twice.
 type TokenLock struct {
 	ConfigDir  string
 	ServerName string
@@ -29,7 +29,7 @@ type TokenLock struct {
 	Clock clock.Clock
 }
 
-// TokenFile is a server's token file while its TokenLock is held.
+// TokenFile is a server's token file as handed to a TokenLock.Do callback.
 type TokenFile struct {
 	configDir  string
 	serverName string

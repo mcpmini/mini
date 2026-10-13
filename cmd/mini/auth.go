@@ -218,8 +218,12 @@ func refreshUnlessRefreshed(
 	sc *config.ServerConfig,
 	t *oauth2.Token,
 ) (*oauth2.Token, error) {
-	if saved, err := f.Load(); err == nil && saved.Valid() {
+	saved, err := f.Load()
+	if err == nil && saved.Valid() {
 		return saved, nil
+	}
+	if err == nil && saved.RefreshToken != "" {
+		t = saved
 	}
 	refreshed, err := auth.Refresh(ctx, sc.Auth, t)
 	if err != nil {
