@@ -5,7 +5,6 @@ package provider_test
 import (
 	"context"
 	"os"
-	"sync"
 	"testing"
 	"time"
 
@@ -92,10 +91,7 @@ func TestCommitAuthorizedToken_duringRefresh_browserTokenWins(t *testing.T) {
 
 	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: f.dir, ServerName: "srv", Token: storedToken(time.Time{})})
 	f.endpoint.AccessToken = "refresh-result"
-	rawReceived, rawRelease := gateNextTokenRequest(t, f.endpoint)
-	var once sync.Once
-	release := func() { once.Do(rawRelease) }
-	t.Cleanup(release)
+	rawReceived, release := gateNextTokenRequest(t, f.endpoint)
 
 	prov, err := f.registry.GetOrCreate(params)
 	if err != nil {

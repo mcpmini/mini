@@ -124,3 +124,19 @@ func TestRefreshAndSaveToken_presentsTheRefreshTokenAnotherProcessRotatedTo(t *t
 		t.Errorf("refresh_token sent = %q, want r2: r1 was already rotated away", got)
 	}
 }
+
+func TestRefreshAndSaveToken_usesTheTokenAnotherProcessAlreadyRefreshed(t *testing.T) {
+	configDir, tokenEp := t.TempDir(), newTestTokenEndpoint(t)
+	sc := oauthServerConfig("live", "http://localhost:1/mcp", tokenEp.srv.URL, true)
+	refreshed := &oauth2.Token{AccessToken: "a2", RefreshToken: "r2", Expiry: time.Now().Add(time.Hour)}
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: configDir, ServerName: "live", Token: refreshed})
+	loadedBeforeTheRefresh := &oauth2.Token{AccessToken: "a1", RefreshToken: "r1", Expiry: time.Now().Add(-time.Hour)}
+
+	got, err := refreshAndSaveToken(context.Background(), configDir, &sc, loadedBeforeTheRefresh)
+	if err != nil {
+		t.Fatalf("refreshAndSaveToken: %v", err)
+	}
+	if got.AccessToken != "a2" || tokenEp.hits.Load() != 0 {
+		t.Errorf("got %q after %d token requests; want a2 with none", got.AccessToken, tokenEp.hits.Load())
+	}
+}

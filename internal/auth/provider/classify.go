@@ -13,8 +13,6 @@ func refreshNeedsReauth(err error) bool {
 		return false
 	}
 	switch {
-	case tokenEndpointGone(err):
-		return true
 	case isOAuthTransientCode(re.ErrorCode):
 		return false
 	case isOAuthReauthCode(re.ErrorCode):

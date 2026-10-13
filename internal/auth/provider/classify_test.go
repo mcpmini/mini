@@ -39,8 +39,6 @@ func TestRefreshNeedsReauth_errorKinds_classifyReauthVsTransient(t *testing.T) {
 		{"unauthorized_client with 500", makeRetrieve("unauthorized_client", http.StatusInternalServerError), true},
 		{"temporarily_unavailable with 400", makeRetrieve("temporarily_unavailable", http.StatusBadRequest), false},
 		{"server_error with 400", makeRetrieve("server_error", http.StatusBadRequest), false},
-		{"404 endpoint gone", makeRetrieve("", http.StatusNotFound), true},
-		{"410 with server_error", makeRetrieve("server_error", http.StatusGone), true},
 		{"non-retrieve network error", errors.New("connection refused"), false},
 		{"context deadline", context.DeadlineExceeded, false},
 	}

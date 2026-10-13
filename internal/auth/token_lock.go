@@ -16,8 +16,8 @@ import (
 	"github.com/mcpmini/mini/internal/fileio"
 )
 
-// TokenSaveWait outlasts a provider refresh (bounded at 10s), so a finished browser login waits out
-// a refresh in progress instead of being dropped.
+// TokenSaveWait outlasts a provider refresh, so a finished browser login waits out a refresh in
+// progress instead of being dropped.
 const TokenSaveWait = 30 * time.Second
 
 // TokenLock serializes reading, refreshing and writing a server's token across mini processes: an

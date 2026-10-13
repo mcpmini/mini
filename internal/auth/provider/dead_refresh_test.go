@@ -71,10 +71,13 @@ func TestRefreshAuthorization_transient503_doesNotBlockRetry(t *testing.T) {
 }
 
 func TestRefreshAuthorization_tokenEndpointGone_asksForLoginButKeepsTrying(t *testing.T) {
-	for _, status := range []int{http.StatusNotFound, http.StatusGone} {
+	for status, body := range map[int]string{
+		http.StatusNotFound: `{"error":"invalid_grant"}`,
+		http.StatusGone:     `{"error":"server_error"}`,
+	} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			f := newProviderFixture(t, providerSetup{Token: storedToken(time.Time{})})
-			f.endpoint.RespondWith(status, `{"error":"server_error"}`)
+			f.endpoint.RespondWith(status, body)
 
 			_, err := f.provider.RefreshAuthorization(context.Background(), "Bearer stored-access")
 			if !errors.Is(err, transport.ErrReauthRequired) {

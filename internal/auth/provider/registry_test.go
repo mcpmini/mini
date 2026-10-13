@@ -191,8 +191,7 @@ func TestProviderRegistry_close_abortsInFlightRefresh(t *testing.T) {
 	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: expired})
 
 	endpoint := authtest.NewTokenServer(t)
-	received, release := gateNextTokenRequest(t, endpoint)
-	t.Cleanup(func() { release() })
+	received, _ := gateNextTokenRequest(t, endpoint)
 
 	params := provider.Params{
 		AuthConfig: &config.AuthConfig{
@@ -317,8 +316,7 @@ func TestProviderRegistry_forget(t *testing.T) {
 			},
 		})
 		endpoint := authtest.NewTokenServer(t)
-		received, release := gateNextTokenRequest(t, endpoint)
-		t.Cleanup(func() { release() })
+		received, _ := gateNextTokenRequest(t, endpoint)
 		params := oauthParams(dir, "https://mcp.example.com/mcp")
 		params.AuthConfig.TokenURL = endpoint.Srv.URL + "/token"
 		params.Clock = clock.NewFakeAt(epoch)
