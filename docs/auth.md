@@ -159,13 +159,13 @@ Common errors:
 - **`<field>: NAME isn't set where mini runs`** (or `aren't set` for several): see [Environment variables](#environment-variables).
 - **`<field>: ${NAME} isn't expanded`**: `${...}` was used in a field that doesn't expand it. See [Environment variables](#environment-variables).
 
-If `mini auth <name>` fails with **no client_id configured and server provides no registration endpoint**, the MCP needs a custom OAuth app. See [requires a custom OAuth app](#requires-a-custom-oauth-app).
+If `mini auth <name>` fails with **no client_id configured and server provides no registration endpoint**, the MCP needs a custom OAuth app. See [requires a custom OAuth app](#requires-a-custom-oauth-app). If it fails with **the server only accepts mini's client metadata document, which lists callback port 6464**, remove `auth.callback_port` or set up your own app.
 
 ## How mini decides
 
 If the MCP asks for OAuth, mini reads its authorization server's metadata:
 
-- If the server lets clients register themselves (dynamic client registration or client ID metadata documents), mini can log in by itself: **requires a login**.
+- If the server lets clients register themselves (client ID metadata documents or dynamic client registration), mini can log in by itself: **requires a login**. Client ID metadata documents only work on the default callback port, 6464, so with `auth.callback_port` set to another port, mini needs dynamic client registration.
 - If it doesn't, the provider only accepts apps registered by hand: **requires a custom OAuth app**. The same line shows while the file still holds `<your app's client ID>` or `<your app's client secret>`.
 
 **requires manual configuration** means one of:

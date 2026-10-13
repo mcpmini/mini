@@ -36,5 +36,5 @@ func (c registrationCheck) selfRegisters(ctx context.Context) (selfRegisters, kn
 	if err != nil {
 		return false, false
 	}
-	return meta.RegistrationURL != "" || meta.CIMDSupported, true
+	return meta.RegistrationURL != "" || auth.CanUseClientMetadataDocument(c.server.Auth, meta), true
 }

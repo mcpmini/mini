@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func resolveParams(configDir, serverName string) auth.ResolveEndpointsParams {
@@ -62,6 +64,23 @@ func TestResolveEndpoints_cimd(t *testing.T) {
 	}
 	if sc.Auth.ResourceURL != sc.URL {
 		t.Errorf("ResourceURL = %q, want %q", sc.Auth.ResourceURL, sc.URL)
+	}
+}
+
+func TestClientMetadataDocumentListsTheRedirectMiniSends(t *testing.T) {
+	data := testutil.ReadFile(t, "../../oauth/client-metadata.json")
+	var doc struct {
+		ClientID     string   `json:"client_id"`
+		RedirectURIs []string `json:"redirect_uris"`
+	}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc.ClientID != auth.ClientMetadataURL {
+		t.Errorf("client_id = %q, want %q", doc.ClientID, auth.ClientMetadataURL)
+	}
+	if sent := auth.ResolvedCallbackURI(nil); !slices.Contains(doc.RedirectURIs, sent) {
+		t.Errorf("redirect_uris = %v, missing %q", doc.RedirectURIs, sent)
 	}
 }
 
@@ -148,8 +167,6 @@ func configuredOAuthServer(serverURL string) *config.ServerConfig {
 }
 
 func TestResolveEndpoints_cachedRegistrationBeforeCIMD(t *testing.T) {
-	// Servers like Linear advertise CIMD but reject arbitrary metadata URLs.
-	// A cached DCR client_id must win over CIMD to avoid re-fetching and failing.
 	asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":                "https://as.example.com/authorize",
 		"token_endpoint":                        "https://as.example.com/token",
@@ -179,36 +196,75 @@ func TestResolveEndpoints_cachedRegistrationBeforeCIMD(t *testing.T) {
 	}
 }
 
-func TestResolveEndpoints_dcrBeforeCIMD(t *testing.T) {
-	// Servers like Linear advertise CIMD but reject unknown metadata URLs; DCR must be tried first.
-	var dcrCalled bool
-	regSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		dcrCalled = true
-		json.NewEncoder(w).Encode(map[string]string{"client_id": "dcr-client-id"}) //nolint:errcheck
-	}))
-	defer regSrv.Close()
+func TestResolveEndpoints_serverWithCIMDAndDCR(t *testing.T) {
+	tests := []struct {
+		name         string
+		callbackPort int
+		wantClientID string
+	}{
+		{name: "default_callback_port_uses_cimd", wantClientID: auth.ClientMetadataURL},
+		{name: "custom_callback_port_registers", callbackPort: 7777, wantClientID: "dcr-client-id"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var registeredRedirects []string
+			regSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var req struct {
+					RedirectURIs []string `json:"redirect_uris"`
+				}
+				json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck // an empty request fails the redirect assertion
+				registeredRedirects = req.RedirectURIs
+				json.NewEncoder(w).Encode(map[string]string{"client_id": "dcr-client-id"}) //nolint:errcheck
+			}))
+			defer regSrv.Close()
+			asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+				"authorization_endpoint":                "https://as.example.com/authorize",
+				"token_endpoint":                        "https://as.example.com/token",
+				"client_id_metadata_document_supported": true,
+				"registration_endpoint":                 regSrv.URL + "/register",
+				"code_challenge_methods_supported":      []string{"S256"},
+			})
+			defer asSrv.Close()
+			sc := &config.ServerConfig{
+				URL:  asSrv.URL + "/mcp",
+				Auth: &config.AuthConfig{Type: "oauth2", CallbackPort: tc.callbackPort},
+			}
 
+			if err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(t.TempDir(), "srv")); err != nil {
+				t.Fatal(err)
+			}
+
+			if sc.Auth.ClientID != tc.wantClientID {
+				t.Errorf("ClientID = %q, want %q", sc.Auth.ClientID, tc.wantClientID)
+			}
+			var wantRegistered []string
+			if tc.callbackPort != 0 {
+				wantRegistered = []string{auth.ResolvedCallbackURI(sc.Auth)}
+			}
+			if !slices.Equal(registeredRedirects, wantRegistered) {
+				t.Errorf("registered redirect URIs = %v, want %v", registeredRedirects, wantRegistered)
+			}
+		})
+	}
+}
+
+func TestResolveEndpoints_cimdOnlyServerWithCustomCallbackPortNamesThePort(t *testing.T) {
 	asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":                "https://as.example.com/authorize",
 		"token_endpoint":                        "https://as.example.com/token",
 		"client_id_metadata_document_supported": true,
-		"registration_endpoint":                 regSrv.URL + "/register",
 		"code_challenge_methods_supported":      []string{"S256"},
 	})
 	defer asSrv.Close()
-
 	sc := &config.ServerConfig{
 		URL:  asSrv.URL + "/mcp",
-		Auth: &config.AuthConfig{Type: "oauth2"},
+		Auth: &config.AuthConfig{Type: "oauth2", CallbackPort: 7777},
 	}
-	if err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(t.TempDir(), "srv")); err != nil {
-		t.Fatal(err)
-	}
-	if !dcrCalled {
-		t.Error("DCR endpoint was not called: CIMD must have been used instead")
-	}
-	if sc.Auth.ClientID != "dcr-client-id" {
-		t.Errorf("ClientID = %q, want dcr-client-id", sc.Auth.ClientID)
+
+	err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(t.TempDir(), "srv"))
+
+	if err == nil || !strings.Contains(err.Error(), "callback port 6464") {
+		t.Errorf("err = %v, want it to name the callback port the metadata document lists", err)
 	}
 }
 

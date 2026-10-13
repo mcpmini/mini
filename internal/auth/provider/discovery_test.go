@@ -43,6 +43,7 @@ type discoveryFixtureParams struct {
 	directTokenURL bool
 	expiredToken   bool
 	clientID       string
+	callbackPort   int
 	initialDCR     *auth.Registration
 }
 
@@ -64,7 +65,7 @@ func newDiscoveryFixture(t *testing.T, p discoveryFixtureParams) *discoveryFixtu
 	f.endpoint = authtest.NewTokenServer(t)
 	f.endpoint.AccessToken = "new-access"
 	f.endpoint.RefreshToken = "new-refresh"
-	ac := &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: p.clientID}
+	ac := &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: p.clientID, CallbackPort: p.callbackPort}
 	pp := provider.Params{ConfigDir: f.dir, ServerName: "srv", Clock: f.clock, AuthConfig: ac}
 	if p.directTokenURL {
 		ac.TokenURL = f.endpoint.Srv.URL + "/token"
@@ -185,6 +186,11 @@ func TestRefreshAuthorization_clientIDAfterRediscovery(t *testing.T) {
 			fp:           discoveryFixtureParams{cimdSupported: true, clientID: "my-configured-client"},
 			wantClientID: "my-configured-client",
 			denyClientID: auth.ClientMetadataURL,
+		},
+		{
+			name:         "cimd_login_keeps_cimd_client_id_after_the_callback_port_changes",
+			fp:           discoveryFixtureParams{cimdSupported: true, callbackPort: 7777},
+			wantClientID: auth.ClientMetadataURL,
 		},
 		{
 			name:         "no_cimd_advert_does_not_use_cimd_client_id",
