@@ -39,7 +39,7 @@ func (p *tokenProvider) inProactiveBackoffLocked() bool {
 }
 
 func (p *tokenProvider) proactiveRefreshLocked() error {
-	err := p.refreshLocked()
+	err := p.refreshLocked(p.shouldRefreshLocked)
 	if err == nil {
 		return nil
 	}
@@ -51,31 +51,54 @@ func (p *tokenProvider) proactiveRefreshLocked() error {
 	return nil
 }
 
-func (p *tokenProvider) refreshLocked() error {
+func (p *tokenProvider) refreshLocked(stillNeeded func() bool) error {
+	// One deadline covers the lock wait and the exchange, so p.mu is never held past refreshTimeout.
+	refreshCtx, cancel := context.WithTimeout(p.lifetime, refreshTimeout)
+	defer cancel()
+	return p.tokenLock().Do(refreshCtx, func(f auth.TokenFile) error {
+		p.reloadPersistedTokenLocked(f.Load)
+		if !stillNeeded() {
+			return nil
+		}
+		return p.exchangeAndPersistLocked(refreshCtx, f)
+	})
+}
+
+func (p *tokenProvider) exchangeAndPersistLocked(ctx context.Context, f auth.TokenFile) error {
 	if p.token.RefreshToken == "" {
 		return p.remedyError(fmt.Errorf("no refresh token stored for %s", p.serverName))
 	}
 	if p.token.RefreshToken == p.deadRefreshToken {
 		return p.deadRefreshErr
 	}
-	refreshCtx, cancel := context.WithTimeout(p.lifetime, refreshTimeout)
-	defer cancel()
-	if err := p.maybeDiscoverAndApplyLocked(refreshCtx); err != nil {
+	if err := p.maybeDiscoverAndApplyLocked(ctx); err != nil {
 		return err
 	}
-	refreshed, err := p.exchangeRefreshTokenLocked(refreshCtx)
+	refreshed, err := p.exchangeRefreshTokenLocked(ctx)
 	if err != nil {
-		if refreshNeedsReauth(err) {
-			p.deadRefreshToken = p.token.RefreshToken
-			p.deadRefreshErr = p.remedyError(fmt.Errorf("refresh token: %w", err))
-			return p.deadRefreshErr
-		}
-		return fmt.Errorf("%s: token refresh failed (transient): %w", p.serverName, err)
+		return p.refreshFailureLocked(err)
 	}
 	p.token = refreshed
 	p.resetRefreshStateLocked()
-	p.persistRefreshedToken(refreshed)
+	p.persistRefreshedToken(f, refreshed)
 	return nil
+}
+
+func (p *tokenProvider) refreshFailureLocked(err error) error {
+	switch {
+	case tokenEndpointGone(err):
+		// Not marked dead: the refresh token may still work where a fresh login discovers the endpoint.
+		return p.remedyError(fmt.Errorf("token endpoint gone: %w", err))
+	case refreshNeedsReauth(err):
+		p.deadRefreshToken = p.token.RefreshToken
+		p.deadRefreshErr = p.remedyError(fmt.Errorf("refresh token: %w", err))
+		return p.deadRefreshErr
+	}
+	return fmt.Errorf("%s: token refresh failed (transient): %w", p.serverName, err)
+}
+
+func (p *tokenProvider) tokenLock() auth.TokenLock {
+	return auth.TokenLock{ConfigDir: p.configDir, ServerName: p.serverName, Clock: p.clock}
 }
 
 func (p *tokenProvider) exchangeRefreshTokenLocked(ctx context.Context) (*oauth2.Token, error) {
@@ -85,8 +108,8 @@ func (p *tokenProvider) exchangeRefreshTokenLocked(ctx context.Context) (*oauth2
 	return auth.Refresh(ctx, p.ac, &stale)
 }
 
-func (p *tokenProvider) persistRefreshedToken(refreshed *oauth2.Token) {
-	if err := auth.Save(p.configDir, p.serverName, refreshed); err != nil {
+func (p *tokenProvider) persistRefreshedToken(f auth.TokenFile, refreshed *oauth2.Token) {
+	if err := f.Save(refreshed); err != nil {
 		slog.Warn(
 			"persist refreshed oauth token failed; using refreshed token in memory",
 			"server",
@@ -99,8 +122,8 @@ func (p *tokenProvider) persistRefreshedToken(refreshed *oauth2.Token) {
 	p.persistedToken = cloneToken(refreshed)
 }
 
-func (p *tokenProvider) reloadPersistedTokenLocked() {
-	t, err := auth.Load(p.configDir, p.serverName)
+func (p *tokenProvider) reloadPersistedTokenLocked(load func() (*oauth2.Token, error)) {
+	t, err := load()
 	if err != nil || samePersistedToken(t, p.persistedToken) {
 		return
 	}

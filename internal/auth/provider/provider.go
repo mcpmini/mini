@@ -44,7 +44,7 @@ func (p *tokenProvider) Authorization(ctx context.Context) (string, error) {
 		return "", err
 	}
 	if p.shouldRefreshLocked() {
-		p.reloadPersistedTokenLocked()
+		p.reloadPersistedTokenLocked(p.loadUnlocked)
 	}
 	if p.shouldRefreshLocked() && !p.inProactiveBackoffLocked() {
 		//nolint:contextcheck // The provider mutex serializes rotation; persist it beyond this caller's cancellation.
@@ -64,12 +64,13 @@ func (p *tokenProvider) RefreshAuthorization(ctx context.Context, stale string) 
 	if bearerValue(p.token) != stale {
 		return bearerValue(p.token), nil
 	}
-	p.reloadPersistedTokenLocked()
+	p.reloadPersistedTokenLocked(p.loadUnlocked)
 	if bearerValue(p.token) != stale {
 		return bearerValue(p.token), nil
 	}
+	stillStale := func() bool { return bearerValue(p.token) == stale }
 	//nolint:contextcheck // The provider mutex serializes rotation; persist it beyond this caller's cancellation.
-	if err := p.refreshLocked(); err != nil {
+	if err := p.refreshLocked(stillStale); err != nil {
 		return "", err
 	}
 	return bearerValue(p.token), nil
@@ -103,6 +104,12 @@ func (p *tokenProvider) ensureTokenLocked() error {
 	return nil
 }
 
+// loadUnlocked is enough to adopt what another process saved; refreshLocked reads again under the
+// token lock before it exchanges anything.
+func (p *tokenProvider) loadUnlocked() (*oauth2.Token, error) {
+	return auth.Load(p.configDir, p.serverName)
+}
+
 func (p *tokenProvider) remedyError(cause error) error {
 	return transport.ReauthorizationError(p.serverName, cause)
 }
@@ -113,7 +120,7 @@ func (p *tokenProvider) commitBrowserToken(hydrated *config.AuthConfig, tok *oau
 	if p.retired {
 		return fmt.Errorf("%s: %w", p.serverName, errRetired)
 	}
-	if err := auth.Save(p.configDir, p.serverName, tok); err != nil {
+	if err := p.tokenLock().Save(p.lifetime, tok); err != nil {
 		return fmt.Errorf("persist oauth token: %w", err)
 	}
 	p.ac = hydrated

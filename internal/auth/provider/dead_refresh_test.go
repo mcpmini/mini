@@ -70,6 +70,29 @@ func TestRefreshAuthorization_transient503_doesNotBlockRetry(t *testing.T) {
 	}
 }
 
+func TestRefreshAuthorization_tokenEndpointGone_asksForLoginButKeepsTrying(t *testing.T) {
+	for _, status := range []int{http.StatusNotFound, http.StatusGone} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			f := newProviderFixture(t, providerSetup{Token: storedToken(time.Time{})})
+			f.endpoint.RespondWith(status, `{"error":"server_error"}`)
+
+			_, err := f.provider.RefreshAuthorization(context.Background(), "Bearer stored-access")
+			if !errors.Is(err, transport.ErrReauthRequired) {
+				t.Fatalf("first call: want ErrReauthRequired, got: %v", err)
+			}
+			hitsAfterFirst := f.endpoint.Hits.Load()
+			_, _ = f.provider.RefreshAuthorization(context.Background(), "Bearer stored-access") // only the hit counts
+			if hits := f.endpoint.Hits.Load(); hits <= hitsAfterFirst {
+				t.Errorf(
+					"endpoint hits = %d, want > %d: a gone endpoint must not mark the token dead",
+					hits,
+					hitsAfterFirst,
+				)
+			}
+		})
+	}
+}
+
 func TestRefreshAuthorization_newTokenFromMiniAuth_clearsDeadRefreshBlock(t *testing.T) {
 	f := newProviderFixture(t, providerSetup{Token: storedToken(time.Time{})})
 	f.endpoint.RespondWith(http.StatusBadRequest, `{"error":"invalid_grant"}`)

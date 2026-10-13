@@ -2,6 +2,8 @@ package config
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"time"
 )
 
@@ -309,6 +311,16 @@ func (a *AuthConfig) HeaderName() string {
 		return "Authorization"
 	}
 	return a.Header
+}
+
+func (a *AuthConfig) Clone() *AuthConfig {
+	if a == nil {
+		return nil
+	}
+	cp := *a
+	cp.Scopes = slices.Clone(a.Scopes)
+	cp.ExtraAuthParams = maps.Clone(a.ExtraAuthParams)
+	return &cp
 }
 
 // PermissionsConfig defines tool access tiers for a server.

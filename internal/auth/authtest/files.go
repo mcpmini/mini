@@ -1,11 +1,13 @@
 package authtest
 
 import (
+	"context"
 	"testing"
 
 	"golang.org/x/oauth2"
 
 	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/clock"
 )
 
 type TokenFile struct {
@@ -22,7 +24,8 @@ type RegistrationFile struct {
 
 func SaveToken(t testing.TB, p TokenFile) {
 	t.Helper()
-	if err := auth.Save(p.ConfigDir, p.ServerName, p.Token); err != nil {
+	lock := auth.TokenLock{ConfigDir: p.ConfigDir, ServerName: p.ServerName, Clock: clock.System()}
+	if err := lock.Save(context.Background(), p.Token); err != nil {
 		t.Fatalf("save token for %q: %v", p.ServerName, err)
 	}
 }

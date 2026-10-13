@@ -197,7 +197,7 @@ func TestRefreshAuthorization_callerCancelled_stillPersistsRotatedToken(t *testi
 	endpoint := authtest.NewTokenServer(t)
 	endpoint.AccessToken = "rotated-access"
 	endpoint.RefreshToken = "rotated-refresh"
-	received, release := gateNextTokenRequest(endpoint)
+	received, release := gateNextTokenRequest(t, endpoint)
 
 	p, err := provider.New(provider.Params{
 		AuthConfig: &config.AuthConfig{

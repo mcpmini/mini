@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/clock"
@@ -37,7 +36,7 @@ func resolveAuthConfigs(p Params) (configured, hydrated *config.AuthConfig, err 
 	if err != nil {
 		return nil, nil, err
 	}
-	configured = cloneAuthConfig(canonical.AuthConfig)
+	configured = canonical.AuthConfig.Clone()
 	if err := hydrateFromRegistration(canonical); err != nil {
 		return nil, nil, err
 	}
@@ -51,7 +50,7 @@ func canonicalizeParams(p Params) (Params, error) {
 	if p.Clock == nil {
 		p.Clock = clock.System()
 	}
-	p.AuthConfig = cloneAuthConfig(p.AuthConfig)
+	p.AuthConfig = p.AuthConfig.Clone()
 	resourceURL := p.AuthConfig.ResourceURL
 	if resourceURL == "" {
 		resourceURL = p.ServerURL
@@ -80,20 +79,6 @@ func newTokenProvider(p Params, configured *config.AuthConfig) *tokenProvider {
 		clock:                  p.Clock,
 		lifetime:               lifetime,
 	}
-}
-
-func cloneAuthConfig(src *config.AuthConfig) *config.AuthConfig {
-	if src == nil {
-		return nil
-	}
-	cp := *src
-	if src.Scopes != nil {
-		cp.Scopes = append([]string{}, src.Scopes...)
-	}
-	if src.ExtraAuthParams != nil {
-		cp.ExtraAuthParams = maps.Clone(src.ExtraAuthParams)
-	}
-	return &cp
 }
 
 func hydrateFromRegistration(p Params) error {

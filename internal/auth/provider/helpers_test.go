@@ -3,6 +3,7 @@
 package provider_test
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -53,12 +54,14 @@ func storedToken(expiry time.Time) *oauth2.Token {
 	return &oauth2.Token{AccessToken: "stored-access", RefreshToken: "stored-refresh", Expiry: expiry}
 }
 
-func gateNextTokenRequest(m *authtest.TokenServer) (received <-chan struct{}, release func()) {
+func gateNextTokenRequest(t *testing.T, m *authtest.TokenServer) (received <-chan struct{}, release func()) {
 	ready := make(chan struct{})
 	gate := make(chan struct{})
 	m.Mu.Lock()
 	m.HoldReady = ready
 	m.HoldGate = gate
 	m.Mu.Unlock()
-	return ready, func() { close(gate) }
+	release = sync.OnceFunc(func() { close(gate) })
+	t.Cleanup(release) // a test failing before release would otherwise hang the server's Close
+	return ready, release
 }

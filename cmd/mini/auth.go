@@ -100,7 +100,7 @@ type browserLogin struct {
 func startBrowserLogin(ctx context.Context, p pkceFlowParams) (browserLogin, error) {
 	ctx, cancel := context.WithTimeout(ctx, loginTimeout)
 	params := auth.BeginLoginParams{ConfigDir: p.configDir, ServerName: p.serverName, Clock: clock.System()}
-	login, err := auth.BeginLogin(ctx, p.sc, params)
+	login, err := auth.BeginLogin(ctx, *p.sc, params)
 	if err != nil {
 		cancel()
 		return browserLogin{}, err
@@ -119,7 +119,7 @@ func finishBrowserLogin(ctx context.Context, login *auth.BrowserLogin, p pkceFlo
 	if err != nil {
 		return nil, fmt.Errorf("auth flow: %w", err)
 	}
-	if err := auth.Save(p.configDir, p.serverName, token); err != nil {
+	if err := tokenLock(p.configDir, p.serverName).Save(ctx, token); err != nil {
 		return nil, fmt.Errorf("save token: %w", err)
 	}
 	return token, nil
@@ -199,15 +199,40 @@ func refreshAndSaveToken(
 		printNotice(os.Stderr, "mini: resolve resource URL for %s: %v\n", sc.Name, err)
 		return nil, err
 	}
-	refreshed, err := auth.Refresh(ctx, sc.Auth, t)
+	var refreshed *oauth2.Token
+	err := tokenLock(configDir, sc.Name).Do(ctx, func(f auth.TokenFile) error {
+		var refreshErr error
+		refreshed, refreshErr = refreshUnlessRefreshed(ctx, f, sc, t)
+		return refreshErr
+	})
 	if err != nil {
 		printNotice(os.Stderr, "mini: refresh token for %s failed — run: mini auth %s\n", sc.Name, sc.Name)
 		return nil, err
 	}
-	if saveErr := auth.Save(configDir, sc.Name, refreshed); saveErr != nil {
+	return refreshed, nil
+}
+
+func refreshUnlessRefreshed(
+	ctx context.Context,
+	f auth.TokenFile,
+	sc *config.ServerConfig,
+	t *oauth2.Token,
+) (*oauth2.Token, error) {
+	if saved, err := f.Load(); err == nil && saved.Valid() {
+		return saved, nil
+	}
+	refreshed, err := auth.Refresh(ctx, sc.Auth, t)
+	if err != nil {
+		return nil, err
+	}
+	if saveErr := f.Save(refreshed); saveErr != nil {
 		printNotice(os.Stderr, "mini: save refreshed token for %s: %v\n", sc.Name, saveErr)
 	}
 	return refreshed, nil
+}
+
+func tokenLock(configDir, serverName string) auth.TokenLock {
+	return auth.TokenLock{ConfigDir: configDir, ServerName: serverName, Clock: clock.System()}
 }
 
 var openBrowser = func(url string) error { return auth.OpenBrowser("", url) }

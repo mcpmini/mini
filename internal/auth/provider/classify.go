@@ -13,6 +13,8 @@ func refreshNeedsReauth(err error) bool {
 		return false
 	}
 	switch {
+	case tokenEndpointGone(err):
+		return true
 	case isOAuthTransientCode(re.ErrorCode):
 		return false
 	case isOAuthReauthCode(re.ErrorCode):
@@ -30,4 +32,12 @@ func isOAuthReauthCode(code string) bool {
 
 func isOAuthTransientCode(code string) bool {
 	return code == "temporarily_unavailable" || code == "server_error"
+}
+
+func tokenEndpointGone(err error) bool {
+	var re *oauth2.RetrieveError
+	if !errors.As(err, &re) || re.Response == nil {
+		return false
+	}
+	return re.Response.StatusCode == http.StatusNotFound || re.Response.StatusCode == http.StatusGone
 }

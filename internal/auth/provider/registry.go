@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"sync"
@@ -8,6 +9,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -93,7 +95,9 @@ func (c *Registry) CommitAuthorizedToken(params Params, tok *oauth2.Token) error
 	}
 	c.mu.Unlock()
 	if e == nil {
-		return auth.Save(params.ConfigDir, params.ServerName, tok)
+		clk := cmp.Or(params.Clock, clock.System())
+		lock := auth.TokenLock{ConfigDir: params.ConfigDir, ServerName: params.ServerName, Clock: clk}
+		return lock.Save(c.ctx, tok)
 	}
 	return e.provider.commitBrowserToken(hydrated, tok)
 }

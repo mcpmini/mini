@@ -82,7 +82,7 @@ func (s *Server) startPKCEFlow(
 ) (*auth.BrowserLogin, error) {
 	s.cancelExistingAuthFlow(serverName)
 	params := auth.BeginLoginParams{ConfigDir: s.configDir, ServerName: serverName, Clock: s.clock}
-	login, err := auth.BeginLogin(ctx, &sc, params)
+	login, err := auth.BeginLogin(ctx, sc, params)
 	if err != nil {
 		return nil, err
 	}

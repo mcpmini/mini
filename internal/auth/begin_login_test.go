@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -32,7 +33,7 @@ func TestBeginLogin_completesWithoutWritingToTerminal(t *testing.T) {
 
 	var token string
 	output := captureTerminalOutput(t, func() {
-		login, err := auth.BeginLogin(ctx, sc, beginLoginParams(t))
+		login, err := auth.BeginLogin(ctx, *sc, beginLoginParams(t))
 		if err != nil {
 			t.Fatalf("BeginLogin: %v", err)
 		}
@@ -53,6 +54,23 @@ func TestBeginLogin_completesWithoutWritingToTerminal(t *testing.T) {
 	}
 }
 
+func TestBeginLogin_leavesTheCallersConfigAsConfigured(t *testing.T) {
+	auth.UseEphemeralCallbackPort()
+	mock := authtest.NewTokenServer(t)
+	sc := config.ServerConfig{Name: "synthetic", URL: mock.Srv.URL + "/mcp", Auth: mock.AuthConfig()}
+	before := *sc.Auth.Clone()
+
+	login, err := auth.BeginLogin(context.Background(), sc, beginLoginParams(t))
+	if err != nil {
+		t.Fatalf("BeginLogin: %v", err)
+	}
+	login.Close() //nolint:errcheck // Close always returns nil
+
+	if !reflect.DeepEqual(*sc.Auth, before) {
+		t.Errorf("BeginLogin changed the caller's auth config:\n got  %+v\n want %+v", *sc.Auth, before)
+	}
+}
+
 func TestBeginLogin_discoveryFailureReleasesCallbackPort(t *testing.T) {
 	addr := freeLoopbackAddr(t)
 	auth.UseCallbackListenAddr(addr)
@@ -65,7 +83,7 @@ func TestBeginLogin_discoveryFailureReleasesCallbackPort(t *testing.T) {
 		Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2},
 	}
 
-	login, err := auth.BeginLogin(context.Background(), sc, beginLoginParams(t))
+	login, err := auth.BeginLogin(context.Background(), *sc, beginLoginParams(t))
 
 	if err == nil {
 		login.Close() //nolint:errcheck // Close always returns nil

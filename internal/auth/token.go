@@ -20,7 +20,7 @@ import (
 //   - gh CLI:    https://github.com/cli/go-gh/blob/55692c6b/pkg/config/config.go#L165
 //   - Heroku:    https://github.com/heroku/heroku-cli-command/blob/08b784b7/src/login.ts#L329
 //
-// To upgrade: swap Load/Save to use zalando/go-keyring (OS keychain) with file fallback for CI.
+// To upgrade: swap Load/save to use zalando/go-keyring (OS keychain) with file fallback for CI.
 func Load(configDir, serverName string) (*oauth2.Token, error) {
 	if !config.ValidServerName.MatchString(serverName) {
 		return nil, fmt.Errorf("invalid server name: %q", serverName)
@@ -36,7 +36,7 @@ func Load(configDir, serverName string) (*oauth2.Token, error) {
 	return &t, nil
 }
 
-func Save(configDir, serverName string, t *oauth2.Token) error {
+func save(configDir, serverName string, t *oauth2.Token) error {
 	if !config.ValidServerName.MatchString(serverName) {
 		return fmt.Errorf("invalid server name: %q", serverName)
 	}
