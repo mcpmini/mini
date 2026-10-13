@@ -16,9 +16,9 @@ import (
 	"github.com/mcpmini/mini/internal/fileio"
 )
 
-// TokenSaveWait outlasts a provider refresh, so a finished browser login waits out a refresh in
+// tokenSaveWait outlasts a provider refresh, so a finished browser login waits out a refresh in
 // progress instead of being dropped.
-const TokenSaveWait = 30 * time.Second
+const tokenSaveWait = 30 * time.Second
 
 // TokenLock serializes reading, refreshing and writing a server's token across mini processes: an
 // authorization server may revoke the whole login when a rotating refresh token is used twice.
@@ -58,9 +58,9 @@ func (l TokenLock) Do(ctx context.Context, fn func(TokenFile) error) error {
 	return fn(file)
 }
 
-// Save writes t under the lock, waiting up to TokenSaveWait for a refresh in progress.
+// Save writes t under the lock, waiting up to 30s for a refresh in progress.
 func (l TokenLock) Save(ctx context.Context, t *oauth2.Token) error {
-	ctx, cancel := context.WithTimeout(ctx, TokenSaveWait)
+	ctx, cancel := context.WithTimeout(ctx, tokenSaveWait)
 	defer cancel()
 	return l.Do(ctx, func(f TokenFile) error { return f.Save(t) })
 }
