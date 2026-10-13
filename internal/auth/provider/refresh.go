@@ -87,7 +87,7 @@ func (p *tokenProvider) exchangeAndPersistLocked(ctx context.Context, f auth.Tok
 func (p *tokenProvider) refreshFailureLocked(err error) error {
 	switch {
 	case tokenEndpointGone(err):
-		// Not marked dead: the refresh token may still work where a fresh login discovers the endpoint.
+		// Not marked dead: a 404/410 doesn't prove the refresh token is invalid.
 		return p.remedyError(fmt.Errorf("token endpoint gone: %w", err))
 	case refreshNeedsReauth(err):
 		p.deadRefreshToken = p.token.RefreshToken

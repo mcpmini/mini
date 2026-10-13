@@ -202,7 +202,7 @@ func refreshAndSaveToken(
 	var refreshed *oauth2.Token
 	err := tokenLock(configDir, sc.Name).Do(ctx, func(f auth.TokenFile) error {
 		var refreshErr error
-		refreshed, refreshErr = refreshUnlessRefreshed(ctx, f, sc, t)
+		refreshed, refreshErr = refreshUnlessRefreshed(ctx, f, cliRefresh{sc: sc, loaded: t})
 		return refreshErr
 	})
 	if err != nil {
@@ -212,12 +212,13 @@ func refreshAndSaveToken(
 	return refreshed, nil
 }
 
-func refreshUnlessRefreshed(
-	ctx context.Context,
-	f auth.TokenFile,
-	sc *config.ServerConfig,
-	t *oauth2.Token,
-) (*oauth2.Token, error) {
+type cliRefresh struct {
+	sc     *config.ServerConfig
+	loaded *oauth2.Token
+}
+
+func refreshUnlessRefreshed(ctx context.Context, f auth.TokenFile, r cliRefresh) (*oauth2.Token, error) {
+	t := r.loaded
 	saved, err := f.Load()
 	if err == nil && saved.Valid() {
 		return saved, nil
@@ -225,12 +226,12 @@ func refreshUnlessRefreshed(
 	if err == nil && saved.RefreshToken != "" {
 		t = saved
 	}
-	refreshed, err := auth.Refresh(ctx, sc.Auth, t)
+	refreshed, err := auth.Refresh(ctx, r.sc.Auth, t)
 	if err != nil {
 		return nil, err
 	}
 	if saveErr := f.Save(refreshed); saveErr != nil {
-		printNotice(os.Stderr, "mini: save refreshed token for %s: %v\n", sc.Name, saveErr)
+		printNotice(os.Stderr, "mini: save refreshed token for %s: %v\n", r.sc.Name, saveErr)
 	}
 	return refreshed, nil
 }

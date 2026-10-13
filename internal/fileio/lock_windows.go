@@ -11,7 +11,7 @@ import (
 
 func tryLock(f *os.File) error {
 	flags := uint32(windows.LOCKFILE_EXCLUSIVE_LOCK | windows.LOCKFILE_FAIL_IMMEDIATELY)
-	// LockFileEx needs a non-nil Overlapped even for synchronous use; one byte suffices for an advisory lock.
+	// LockFileEx needs a non-nil Overlapped even for synchronous use.
 	err := windows.LockFileEx(windows.Handle(f.Fd()), flags, 0, 1, 0, new(windows.Overlapped))
 	if errors.Is(err, windows.ERROR_LOCK_VIOLATION) {
 		return ErrLockHeld
