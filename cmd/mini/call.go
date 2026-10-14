@@ -172,11 +172,11 @@ func callPermissionError(perm *config.PermissionsConfig, toolName string, protec
 }
 
 func mustDialCall(ctx context.Context, configDir string, cc callContext) transport.Connection {
-	if cc.sc.Auth != nil && cc.sc.Auth.Type == config.AuthTypeOAuth2 {
-		injectToken(ctx, configDir, cc.sc)
-	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	conn, err := invoke.Dial(ctx, invoke.DialParams{Logger: logger, Config: cc.cfg, Server: *cc.sc, Clock: cc.clock})
+	conn, err := dialCLI(
+		ctx,
+		invoke.DialParams{Logger: logger, Config: cc.cfg, Server: *cc.sc, Clock: cc.clock, ConfigDir: configDir},
+	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "mini: connect to %s: %v\n", cc.serverName, err)
 		os.Exit(2)

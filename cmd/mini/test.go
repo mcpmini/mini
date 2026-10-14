@@ -39,7 +39,7 @@ func newTestCmd(opts *rootOptions) *cobra.Command {
 
 func runTest(configDir string, timeout time.Duration, out io.Writer) error {
 	ctx := context.Background()
-	srv, servers, err := buildTestServer(ctx, configDir)
+	srv, servers, err := buildTestServer(configDir)
 	if err != nil {
 		return err
 	}
@@ -59,12 +59,11 @@ func emptyTestMessage(servers []config.ServerConfig) string {
 	return "no enabled servers"
 }
 
-func buildTestServer(ctx context.Context, configDir string) (*server.Server, config.Servers, error) {
+func buildTestServer(configDir string) (*server.Server, config.Servers, error) {
 	cfg, servers, err := loadConfig(configDir)
 	if err != nil {
 		return nil, config.Servers{}, err
 	}
-	injectOAuthTokens(ctx, configDir, servers.Loaded)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	return server.New(server.Params{Config: cfg, ConfigDir: configDir, Logger: logger}), servers, nil
 }

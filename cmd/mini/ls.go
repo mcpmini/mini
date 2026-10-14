@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/mcpmini/mini/internal/clock"
-	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/invoke"
 	"github.com/mcpmini/mini/internal/transport"
 )
@@ -73,11 +72,11 @@ func dialServer(configDir, serverName string) (transport.Connection, error) {
 		return nil, err
 	}
 	ctx := context.Background()
-	if sc.Auth != nil && sc.Auth.Type == config.AuthTypeOAuth2 {
-		injectToken(ctx, configDir, sc)
-	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	conn, err := invoke.Dial(ctx, invoke.DialParams{Logger: logger, Config: cfg, Server: *sc, Clock: clock.System()})
+	conn, err := dialCLI(
+		ctx,
+		invoke.DialParams{Logger: logger, Config: cfg, Server: *sc, Clock: clock.System(), ConfigDir: configDir},
+	)
 	if err != nil {
 		return nil, fmt.Errorf("connect to %s: %w", serverName, err)
 	}

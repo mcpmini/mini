@@ -3,7 +3,6 @@
 package main
 
 import (
-	"context"
 	"io"
 	"log/slog"
 	"testing"
@@ -107,46 +106,4 @@ func TestServe_tokenExpiresMidSession_toolCallRefreshesAndSucceeds(t *testing.T)
 			t.Errorf("tools/call Authorization = %q, want Bearer refreshed", got)
 		}
 	})
-}
-
-func TestRefreshAndSaveToken_presentsTheRefreshTokenAnotherProcessRotatedTo(t *testing.T) {
-	configDir, tokenEp := t.TempDir(), newTestTokenEndpoint(t)
-	sc := oauthServerConfig("live", "http://localhost:1/mcp", tokenEp.srv.URL, true)
-	expired := time.Now().Add(-time.Hour)
-	rotated := &oauth2.Token{AccessToken: "a2", RefreshToken: "r2", Expiry: expired}
-	saveOAuthToken(t, configDir, sc, rotated)
-	loadedBeforeTheRotation := &auth.Login{
-		Resource: sc.URL,
-		TokenURL: sc.Auth.TokenURL,
-		Client:   auth.Client{Source: auth.ClientConfigured, ID: sc.Auth.ClientID},
-		Token:    &oauth2.Token{AccessToken: "a1", RefreshToken: "r1", Expiry: expired},
-	}
-
-	if _, err := refreshAndSaveToken(context.Background(), configDir, &sc, loadedBeforeTheRotation); err != nil {
-		t.Fatalf("refreshAndSaveToken: %v", err)
-	}
-	if got, _ := tokenEp.refreshToken.Load().(string); got != "r2" {
-		t.Errorf("refresh_token sent = %q, want r2: r1 was already rotated away", got)
-	}
-}
-
-func TestRefreshAndSaveToken_usesTheTokenAnotherProcessAlreadyRefreshed(t *testing.T) {
-	configDir, tokenEp := t.TempDir(), newTestTokenEndpoint(t)
-	sc := oauthServerConfig("live", "http://localhost:1/mcp", tokenEp.srv.URL, true)
-	refreshed := &oauth2.Token{AccessToken: "a2", RefreshToken: "r2", Expiry: time.Now().Add(time.Hour)}
-	saveOAuthToken(t, configDir, sc, refreshed)
-	loadedBeforeTheRefresh := &auth.Login{
-		Resource: sc.URL,
-		TokenURL: sc.Auth.TokenURL,
-		Client:   auth.Client{Source: auth.ClientConfigured, ID: sc.Auth.ClientID},
-		Token:    &oauth2.Token{AccessToken: "a1", RefreshToken: "r1", Expiry: time.Now().Add(-time.Hour)},
-	}
-
-	got, err := refreshAndSaveToken(context.Background(), configDir, &sc, loadedBeforeTheRefresh)
-	if err != nil {
-		t.Fatalf("refreshAndSaveToken: %v", err)
-	}
-	if got.Token.AccessToken != "a2" || tokenEp.hits.Load() != 0 {
-		t.Errorf("got %q after %d token requests; want a2 with none", got.Token.AccessToken, tokenEp.hits.Load())
-	}
 }

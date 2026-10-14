@@ -125,7 +125,6 @@ func runStatus(configDir string, out io.Writer) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	injectOAuthTokens(ctx, configDir, servers.Loaded)
 	srv := buildStatusServer(cfg, configDir)
 	defer srv.Close()
 	anyFailed, err := printStatusTable(statusTableParams{Context: ctx, Server: srv, Out: out, Servers: servers})
