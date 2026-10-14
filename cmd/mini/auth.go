@@ -7,8 +7,6 @@ import (
 	"os"
 	"time"
 
-	"golang.org/x/oauth2"
-
 	"github.com/spf13/cobra"
 
 	"github.com/mcpmini/mini/internal/auth"
@@ -66,12 +64,12 @@ type logInParams struct {
 	out       io.Writer
 }
 
-func logIn(p logInParams) (*oauth2.Token, error) {
+func logIn(p logInParams) (*auth.Login, error) {
 	token, err := doPKCEFlow(pkceFlowParamsFor(p.configDir, p.cfg, p.sc))
 	if err != nil {
 		return nil, err
 	}
-	printAuthResult(p.out, p.sc.Name, token.Expiry)
+	printAuthResult(p.out, p.sc.Name, token.Token.Expiry)
 	return token, nil
 }
 
@@ -81,7 +79,7 @@ func pkceFlowParamsFor(configDir string, cfg *config.Config, sc *config.ServerCo
 
 const loginTimeout = 5 * time.Minute
 
-func doPKCEFlow(p pkceFlowParams) (*oauth2.Token, error) {
+func doPKCEFlow(p pkceFlowParams) (*auth.Login, error) {
 	printNotice(os.Stdout, "Authorizing %s...\n", p.serverName)
 	login, err := startBrowserLogin(context.Background(), p)
 	if err != nil {
@@ -94,7 +92,7 @@ func doPKCEFlow(p pkceFlowParams) (*oauth2.Token, error) {
 // browserLogin is a login waiting on the browser; wait ends it and saves the token.
 type browserLogin struct {
 	url  string
-	wait func() (*oauth2.Token, error)
+	wait func() (*auth.Login, error)
 }
 
 func startBrowserLogin(ctx context.Context, p pkceFlowParams) (browserLogin, error) {
@@ -106,14 +104,14 @@ func startBrowserLogin(ctx context.Context, p pkceFlowParams) (browserLogin, err
 		return browserLogin{}, err
 	}
 	p.opener(login.AuthURL()) //nolint:errcheck // the caller shows the URL, so a failed open only costs a click
-	wait := func() (*oauth2.Token, error) {
+	wait := func() (*auth.Login, error) {
 		defer cancel()
 		return finishBrowserLogin(ctx, login, p)
 	}
 	return browserLogin{url: login.AuthURL(), wait: wait}, nil
 }
 
-func finishBrowserLogin(ctx context.Context, login *auth.BrowserLogin, p pkceFlowParams) (*oauth2.Token, error) {
+func finishBrowserLogin(ctx context.Context, login *auth.BrowserLogin, p pkceFlowParams) (*auth.Login, error) {
 	defer login.Close() //nolint:errcheck // Close always returns nil
 	token, err := login.Wait(ctx)
 	if err != nil {
@@ -158,7 +156,7 @@ func injectToken(ctx context.Context, configDir string, sc *config.ServerConfig)
 	if sc.UnsetEnv != nil {
 		return // dialing reports it; a refresh now would send a ${VAR} as the client secret
 	}
-	t, err := auth.Load(configDir, sc.Name)
+	login, err := auth.LoadLogin(configDir, sc.Name)
 	if auth.IsNotFound(err) {
 		return
 	}
@@ -166,43 +164,49 @@ func injectToken(ctx context.Context, configDir string, sc *config.ServerConfig)
 		printNotice(os.Stderr, "mini: load token for %s: %v\n", sc.Name, err)
 		return
 	}
-	t, err = ensureValidToken(ctx, configDir, sc, t)
+	if eligible, reason := auth.LoginEligible(login, *sc); !eligible {
+		printNotice(
+			os.Stderr,
+			"mini: login for %s does not match current settings (%s) — run: mini auth %s\n",
+			sc.Name,
+			reason,
+			sc.Name,
+		)
+		return
+	}
+	login, err = ensureValidToken(ctx, configDir, sc, login)
 	if err != nil {
 		return
 	}
-	auth.ApplyBearerToken(sc, t.AccessToken)
+	auth.ApplyBearerToken(sc, login.Token.AccessToken)
 }
 
 func ensureValidToken(
 	ctx context.Context,
 	configDir string,
 	sc *config.ServerConfig,
-	t *oauth2.Token,
-) (*oauth2.Token, error) {
-	if t.Valid() {
-		return t, nil
+	login *auth.Login,
+) (*auth.Login, error) {
+	if login.Token.Valid() {
+		return login, nil
 	}
-	if t.RefreshToken == "" {
+	if login.Token.RefreshToken == "" {
 		printNotice(os.Stderr, "mini: token for %s is expired — run: mini auth %s\n", sc.Name, sc.Name)
 		return nil, fmt.Errorf("expired")
 	}
-	return refreshAndSaveToken(ctx, configDir, sc, t)
+	return refreshAndSaveToken(ctx, configDir, sc, login)
 }
 
 func refreshAndSaveToken(
 	ctx context.Context,
 	configDir string,
 	sc *config.ServerConfig,
-	t *oauth2.Token,
-) (*oauth2.Token, error) {
-	if err := auth.ApplyResourceURL(sc); err != nil {
-		printNotice(os.Stderr, "mini: resolve resource URL for %s: %v\n", sc.Name, err)
-		return nil, err
-	}
-	var refreshed *oauth2.Token
-	err := tokenLock(configDir, sc.Name).Do(ctx, func(f auth.TokenFile) error {
+	login *auth.Login,
+) (*auth.Login, error) {
+	var refreshed *auth.Login
+	err := tokenLock(configDir, sc.Name).Do(ctx, func(f auth.LoginFile) error {
 		var refreshErr error
-		refreshed, refreshErr = refreshUnlessRefreshed(ctx, f, cliRefresh{sc: sc, loaded: t})
+		refreshed, refreshErr = refreshUnlessRefreshed(ctx, f, cliRefresh{sc: sc, loaded: login})
 		return refreshErr
 	})
 	if err != nil {
@@ -214,26 +218,34 @@ func refreshAndSaveToken(
 
 type cliRefresh struct {
 	sc     *config.ServerConfig
-	loaded *oauth2.Token
+	loaded *auth.Login
 }
 
-func refreshUnlessRefreshed(ctx context.Context, f auth.TokenFile, r cliRefresh) (*oauth2.Token, error) {
-	t := r.loaded
+func refreshUnlessRefreshed(ctx context.Context, f auth.LoginFile, r cliRefresh) (*auth.Login, error) {
+	login := r.loaded
 	saved, err := f.Load()
-	if err == nil && saved.Valid() {
-		return saved, nil
-	}
-	if err == nil && saved.RefreshToken != "" {
-		t = saved
-	}
-	refreshed, err := auth.Refresh(ctx, r.sc.Auth, t)
 	if err != nil {
 		return nil, err
 	}
-	if saveErr := f.Save(refreshed); saveErr != nil {
+	if eligible, reason := auth.LoginEligible(saved, *r.sc); !eligible {
+		return nil, fmt.Errorf("login does not match current settings: %s", reason)
+	}
+	if saved.Token.Valid() {
+		return saved, nil
+	}
+	if saved.Token.RefreshToken != "" {
+		login = saved
+	}
+	ac := login.RefreshConfig(r.sc.Auth)
+	refreshed, err := auth.Refresh(ctx, ac, login.Token)
+	if err != nil {
+		return nil, err
+	}
+	login.Token = refreshed
+	if saveErr := f.Save(login); saveErr != nil {
 		printNotice(os.Stderr, "mini: save refreshed token for %s: %v\n", r.sc.Name, saveErr)
 	}
-	return refreshed, nil
+	return login, nil
 }
 
 func tokenLock(configDir, serverName string) auth.TokenLock {

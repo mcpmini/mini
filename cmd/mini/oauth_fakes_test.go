@@ -17,6 +17,7 @@ import (
 
 	"golang.org/x/oauth2"
 
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
@@ -111,8 +112,8 @@ type oauthTestSetup struct {
 func newOAuthTestSetup(t *testing.T, tok *oauth2.Token, clk clock.Clock) *oauthTestSetup {
 	t.Helper()
 	configDir, token, upstream := t.TempDir(), newTestTokenEndpoint(t), newTestMCPUpstream(t)
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: configDir, ServerName: "live", Token: tok})
 	sc := oauthServerConfig("live", upstream.srv.URL, token.srv.URL, true)
+	saveOAuthToken(t, configDir, sc, tok)
 	p := BuildServerParams{
 		Cfg: &config.Config{}, ConfigDir: configDir,
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Servers: []config.ServerConfig{sc}, Clock: clk,
@@ -121,6 +122,18 @@ func newOAuthTestSetup(t *testing.T, tok *oauth2.Token, clk clock.Clock) *oauthT
 	t.Cleanup(srv.Close)
 	awaitConnected(t, srv, "live")
 	return &oauthTestSetup{srv: srv, token: token, upstream: upstream, configDir: configDir}
+}
+
+func saveOAuthToken(t *testing.T, configDir string, sc config.ServerConfig, token *oauth2.Token) {
+	t.Helper()
+	resource, err := auth.CanonicalResourceURI(sc.URL)
+	if err != nil {
+		t.Fatalf("canonicalize OAuth resource %q: %v", sc.URL, err)
+	}
+	authtest.SaveToken(t, authtest.TokenFile{
+		ConfigDir: configDir, ServerName: sc.Name, Resource: resource, TokenURL: sc.Auth.TokenURL,
+		Client: auth.Client{Source: auth.ClientConfigured, ID: sc.Auth.ClientID}, Token: token,
+	})
 }
 
 // startFromConfigDir writes p.Servers to disk first, the way a real startup

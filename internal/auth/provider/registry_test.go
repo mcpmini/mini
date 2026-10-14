@@ -20,6 +20,7 @@ import (
 func TestProviderRegistry_sameServer_returnsSameProvider(t *testing.T) {
 	registry := provider.NewRegistry()
 	params := provider.Params{
+		ServerURL: "https://resource.example.com/mcp",
 		AuthConfig: &config.AuthConfig{
 			Type:     config.AuthTypeOAuth2,
 			ClientID: "cid",
@@ -148,7 +149,14 @@ func TestProviderRegistry_authConfigDrift_redialReusesProvider(t *testing.T) {
 					Clock: clock.NewFake(),
 				}
 				tok := &oauth2.Token{AccessToken: "browser-access", RefreshToken: "browser-refresh"}
-				if err := reg.CommitAuthorizedToken(committed, tok); err != nil {
+				if err := reg.CommitAuthorizedToken(
+					committed,
+					issuingLogin(
+						committed,
+						auth.Client{Source: auth.ClientConfigured, ID: committed.AuthConfig.ClientID},
+						tok,
+					),
+				); err != nil {
 					t.Fatalf("CommitAuthorizedToken: %v", err)
 				}
 			},
@@ -185,15 +193,26 @@ func TestProviderRegistry_authConfigDrift_redialReusesProvider(t *testing.T) {
 }
 
 func TestProviderRegistry_close_abortsInFlightRefresh(t *testing.T) {
+	endpoint := authtest.NewTokenServer(t)
 	dir := t.TempDir()
 	epoch := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 	expired := &oauth2.Token{AccessToken: "old", RefreshToken: "r", Expiry: epoch.Add(-time.Second)}
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: expired})
+	authtest.SaveToken(
+		t,
+		authtest.TokenFile{
+			Resource:   "https://resource.example.com/mcp",
+			TokenURL:   endpoint.Srv.URL + "/token",
+			Client:     auth.Client{Source: auth.ClientConfigured, ID: "c"},
+			ConfigDir:  dir,
+			ServerName: "srv",
+			Token:      expired,
+		},
+	)
 
-	endpoint := authtest.NewTokenServer(t)
 	received, _ := gateNextTokenRequest(t, endpoint)
 
 	params := provider.Params{
+		ServerURL: "https://resource.example.com/mcp",
 		AuthConfig: &config.AuthConfig{
 			Type:     config.AuthTypeOAuth2,
 			ClientID: "c",
@@ -236,6 +255,7 @@ func TestProviderRegistry_close_abortsInFlightRefresh(t *testing.T) {
 }
 
 func TestProviderRegistry_forget(t *testing.T) {
+	endpoint := authtest.NewTokenServer(t)
 	oauthParams := func(dir, serverURL string) provider.Params {
 		return provider.Params{
 			AuthConfig: &config.AuthConfig{
@@ -254,6 +274,9 @@ func TestProviderRegistry_forget(t *testing.T) {
 		for _, nextURL := range []string{"https://mcp.example.com/mcp", "https://other.example.com/mcp"} {
 			dir := t.TempDir()
 			authtest.SaveToken(t, authtest.TokenFile{
+				Resource:   "https://mcp.example.com/mcp",
+				TokenURL:   "http://localhost:1/token",
+				Client:     auth.Client{Source: auth.ClientConfigured, ID: "cid"},
 				ConfigDir:  dir,
 				ServerName: "srv",
 				Token: &oauth2.Token{
@@ -288,7 +311,14 @@ func TestProviderRegistry_forget(t *testing.T) {
 		dir := t.TempDir()
 		authtest.SaveToken(
 			t,
-			authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: &oauth2.Token{AccessToken: "old"}},
+			authtest.TokenFile{
+				Resource:   "https://mcp.example.com/mcp",
+				TokenURL:   "http://localhost:1/token",
+				Client:     auth.Client{Source: auth.ClientConfigured, ID: "cid"},
+				ConfigDir:  dir,
+				ServerName: "srv",
+				Token:      &oauth2.Token{AccessToken: "old"},
+			},
 		)
 		registry := provider.NewRegistry()
 		old, err := registry.GetOrCreate(oauthParams(dir, "https://mcp.example.com/mcp"))
@@ -307,6 +337,9 @@ func TestProviderRegistry_forget(t *testing.T) {
 		dir := t.TempDir()
 		epoch := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 		authtest.SaveToken(t, authtest.TokenFile{
+			Resource:   "https://mcp.example.com/mcp",
+			TokenURL:   endpoint.Srv.URL + "/token",
+			Client:     auth.Client{Source: auth.ClientConfigured, ID: "cid"},
 			ConfigDir:  dir,
 			ServerName: "srv",
 			Token: &oauth2.Token{
@@ -315,7 +348,6 @@ func TestProviderRegistry_forget(t *testing.T) {
 				Expiry:       epoch.Add(-time.Second),
 			},
 		})
-		endpoint := authtest.NewTokenServer(t)
 		received, _ := gateNextTokenRequest(t, endpoint)
 		params := oauthParams(dir, "https://mcp.example.com/mcp")
 		params.AuthConfig.TokenURL = endpoint.Srv.URL + "/token"
@@ -343,12 +375,12 @@ func TestProviderRegistry_forget(t *testing.T) {
 			t.Fatal("Forget did not abort the in-flight refresh within 5s")
 		}
 
-		saved, err := auth.Load(dir, "srv")
+		saved, err := auth.LoadLogin(dir, "srv")
 		if err != nil {
 			t.Fatal(err)
 		}
-		if saved.AccessToken != "old" {
-			t.Errorf("saved token = %q after Forget, want the refresh's token never saved", saved.AccessToken)
+		if saved.Token.AccessToken != "old" {
+			t.Errorf("saved token = %q after Forget, want the refresh's token never saved", saved.Token.AccessToken)
 		}
 	})
 }

@@ -21,13 +21,23 @@ func TestRefresh_expiredToken_returnsNewTokenAndSendsResource(t *testing.T) {
 	mock := authtest.NewTokenServer(t)
 	dir := t.TempDir()
 	token := pkceToken(t, mock.AuthConfig())
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: token})
-	loaded, _ := auth.Load(dir, "srv")
-	loaded.Expiry = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	authtest.SaveToken(
+		t,
+		authtest.TokenFile{
+			ConfigDir:  dir,
+			ServerName: "srv",
+			Resource:   token.Resource,
+			TokenURL:   token.TokenURL,
+			Client:     token.Client,
+			Token:      token.Token,
+		},
+	)
+	loaded, _ := auth.LoadLogin(dir, "srv")
+	loaded.Token.Expiry = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 	mock.AccessToken = "refreshed-access-token"
 	ac := mock.AuthConfig()
 	ac.ResourceURL = "https://resource.example.com/mcp"
-	newTok, err := auth.Refresh(context.Background(), ac, loaded)
+	newTok, err := auth.Refresh(context.Background(), ac, loaded.Token)
 	if err != nil {
 		t.Fatalf("Refresh: %v", err)
 	}
@@ -153,8 +163,8 @@ func TestExchangeCode_withResourceURL_sendsResourceToTokenEndpoint(t *testing.T)
 		ResourceURL: resourceURL,
 	}
 	token := pkceToken(t, ac)
-	if token.AccessToken != "tok" {
-		t.Errorf("access token = %q, want tok", token.AccessToken)
+	if token.Token.AccessToken != "tok" {
+		t.Errorf("access token = %q, want tok", token.Token.AccessToken)
 	}
 	if len(capturedResourceValues) != 1 || capturedResourceValues[0] != resourceURL {
 		t.Errorf("resource values at token endpoint = %q, want [%q]", capturedResourceValues, resourceURL)

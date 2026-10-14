@@ -12,7 +12,6 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/mcpmini/mini/internal/auth"
-	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 )
@@ -22,12 +21,13 @@ func TestBuildAndStartConnecting_validAndDisabledOAuthServers_makeNoTokenRequest
 	tokenEp := newTestTokenEndpoint(t)
 	mcp := newTestMCPUpstream(t)
 	validTok := &oauth2.Token{AccessToken: "stored-access", RefreshToken: "r1", Expiry: time.Now().Add(time.Hour)}
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: configDir, ServerName: "live", Token: validTok})
+	live := oauthServerConfig("live", mcp.srv.URL, tokenEp.srv.URL, true)
+	saveOAuthToken(t, configDir, live, validTok)
 	expiredTok := &oauth2.Token{AccessToken: "dead-access", RefreshToken: "r2", Expiry: time.Now().Add(-time.Hour)}
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: configDir, ServerName: "idle", Token: expiredTok})
+	idle := oauthServerConfig("idle", "http://localhost:1", tokenEp.srv.URL, false)
+	saveOAuthToken(t, configDir, idle, expiredTok)
 	servers := []config.ServerConfig{
-		oauthServerConfig("live", mcp.srv.URL, tokenEp.srv.URL, true),
-		oauthServerConfig("idle", "http://localhost:1", tokenEp.srv.URL, false),
+		live, idle,
 	}
 	srv := startFromConfigDir(t,
 		BuildServerParams{
@@ -78,15 +78,15 @@ func TestServe_tokenExpiresMidSession_toolCallRefreshesAndSucceeds(t *testing.T)
 		if got := s.upstream.lastAuthFor("tools/call"); got != "Bearer refreshed" {
 			t.Errorf("tools/call Authorization = %q, want Bearer refreshed", got)
 		}
-		saved, err := auth.Load(s.configDir, "live")
+		saved, err := auth.LoadLogin(s.configDir, "live")
 		if err != nil {
 			t.Fatalf("Load: %v", err)
 		}
-		if saved.AccessToken != "refreshed" {
-			t.Errorf("persisted access = %q, want refreshed", saved.AccessToken)
+		if saved.Token.AccessToken != "refreshed" {
+			t.Errorf("persisted access = %q, want refreshed", saved.Token.AccessToken)
 		}
-		if saved.RefreshToken != "rotated" {
-			t.Errorf("persisted refresh = %q, want rotated", saved.RefreshToken)
+		if saved.Token.RefreshToken != "rotated" {
+			t.Errorf("persisted refresh = %q, want rotated", saved.Token.RefreshToken)
 		}
 	})
 
@@ -114,8 +114,13 @@ func TestRefreshAndSaveToken_presentsTheRefreshTokenAnotherProcessRotatedTo(t *t
 	sc := oauthServerConfig("live", "http://localhost:1/mcp", tokenEp.srv.URL, true)
 	expired := time.Now().Add(-time.Hour)
 	rotated := &oauth2.Token{AccessToken: "a2", RefreshToken: "r2", Expiry: expired}
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: configDir, ServerName: "live", Token: rotated})
-	loadedBeforeTheRotation := &oauth2.Token{AccessToken: "a1", RefreshToken: "r1", Expiry: expired}
+	saveOAuthToken(t, configDir, sc, rotated)
+	loadedBeforeTheRotation := &auth.Login{
+		Resource: sc.URL,
+		TokenURL: sc.Auth.TokenURL,
+		Client:   auth.Client{Source: auth.ClientConfigured, ID: sc.Auth.ClientID},
+		Token:    &oauth2.Token{AccessToken: "a1", RefreshToken: "r1", Expiry: expired},
+	}
 
 	if _, err := refreshAndSaveToken(context.Background(), configDir, &sc, loadedBeforeTheRotation); err != nil {
 		t.Fatalf("refreshAndSaveToken: %v", err)
@@ -129,14 +134,19 @@ func TestRefreshAndSaveToken_usesTheTokenAnotherProcessAlreadyRefreshed(t *testi
 	configDir, tokenEp := t.TempDir(), newTestTokenEndpoint(t)
 	sc := oauthServerConfig("live", "http://localhost:1/mcp", tokenEp.srv.URL, true)
 	refreshed := &oauth2.Token{AccessToken: "a2", RefreshToken: "r2", Expiry: time.Now().Add(time.Hour)}
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: configDir, ServerName: "live", Token: refreshed})
-	loadedBeforeTheRefresh := &oauth2.Token{AccessToken: "a1", RefreshToken: "r1", Expiry: time.Now().Add(-time.Hour)}
+	saveOAuthToken(t, configDir, sc, refreshed)
+	loadedBeforeTheRefresh := &auth.Login{
+		Resource: sc.URL,
+		TokenURL: sc.Auth.TokenURL,
+		Client:   auth.Client{Source: auth.ClientConfigured, ID: sc.Auth.ClientID},
+		Token:    &oauth2.Token{AccessToken: "a1", RefreshToken: "r1", Expiry: time.Now().Add(-time.Hour)},
+	}
 
 	got, err := refreshAndSaveToken(context.Background(), configDir, &sc, loadedBeforeTheRefresh)
 	if err != nil {
 		t.Fatalf("refreshAndSaveToken: %v", err)
 	}
-	if got.AccessToken != "a2" || tokenEp.hits.Load() != 0 {
-		t.Errorf("got %q after %d token requests; want a2 with none", got.AccessToken, tokenEp.hits.Load())
+	if got.Token.AccessToken != "a2" || tokenEp.hits.Load() != 0 {
+		t.Errorf("got %q after %d token requests; want a2 with none", got.Token.AccessToken, tokenEp.hits.Load())
 	}
 }

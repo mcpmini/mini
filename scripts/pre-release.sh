@@ -95,7 +95,7 @@ cat <<'EOF'
 
   Auth
   [ ] mini auth <server> starts PKCE flow and prints a URL
-  [ ] Token file created at ~/.mini/internal/<server>.token.json with 0600 permissions
+  [ ] Login record created at ~/.mini/internal/<server>.token.json with 0600 permissions and bound to its canonical resource, token endpoint, and selected client
 
   Response store
   [ ] ~/.mini/responses/ created with 0700 permissions

@@ -7,8 +7,6 @@ import (
 	"net/url"
 	"testing"
 
-	"golang.org/x/oauth2"
-
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/auth/provider"
@@ -62,7 +60,7 @@ func startCIMDRefreshLogin(t *testing.T) (config.ServerConfig, *authtest.TokenSe
 	return sc, endpoint, login
 }
 
-func commitAndRefreshCIMDToken(t *testing.T, sc config.ServerConfig, token *oauth2.Token) {
+func commitAndRefreshCIMDToken(t *testing.T, sc config.ServerConfig, token *auth.Login) {
 	t.Helper()
 	registry := provider.NewRegistry()
 	defer registry.Close()
@@ -80,7 +78,7 @@ func commitAndRefreshCIMDToken(t *testing.T, sc config.ServerConfig, token *oaut
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.RefreshAuthorization(t.Context(), "Bearer "+token.AccessToken); err != nil {
+	if _, err := p.RefreshAuthorization(t.Context(), "Bearer "+token.Token.AccessToken); err != nil {
 		t.Fatal(err)
 	}
 }

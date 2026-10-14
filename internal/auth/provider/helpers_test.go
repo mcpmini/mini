@@ -9,6 +9,7 @@ import (
 
 	"golang.org/x/oauth2"
 
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
@@ -37,11 +38,22 @@ func newProviderFixture(t *testing.T, s providerSetup) *providerFixture {
 		s.Auth = &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid"}
 	}
 	s.Auth.TokenURL = f.endpoint.Srv.URL + "/token"
+	resourceURL := "https://resource.example.com/mcp"
 	if s.Token != nil {
-		authtest.SaveToken(t, authtest.TokenFile{ConfigDir: f.dir, ServerName: "srv", Token: s.Token})
+		authtest.SaveToken(
+			t,
+			authtest.TokenFile{
+				ConfigDir:  f.dir,
+				ServerName: "srv",
+				Resource:   resourceURL,
+				TokenURL:   s.Auth.TokenURL,
+				Client:     auth.Client{Source: auth.ClientConfigured, ID: s.Auth.ClientID},
+				Token:      s.Token,
+			},
+		)
 	}
 	p, err := provider.New(provider.Params{
-		AuthConfig: s.Auth, ConfigDir: f.dir, ServerName: "srv", Clock: f.clock,
+		AuthConfig: s.Auth, ConfigDir: f.dir, ServerName: "srv", ServerURL: resourceURL, Clock: f.clock,
 	})
 	if err != nil {
 		t.Fatal(err)

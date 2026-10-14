@@ -290,7 +290,7 @@ func TestAddServerFromAgent_aTokenRefreshForTheNamesEarlierServerLeavesNoToken(t
 	if err := <-added; err != nil {
 		t.Fatal(err)
 	}
-	if _, err := auth.Load(srv.configDir, "svc"); !auth.IsNotFound(err) {
+	if _, err := auth.LoadLogin(srv.configDir, "svc"); !auth.IsNotFound(err) {
 		t.Errorf(
 			"token after add_server: %v, want none: the earlier svc's refresh saved it after the add cleared it",
 			err,
@@ -369,7 +369,7 @@ func TestRemoveServerFromAgent_aTokenRefreshFinishingMidRemoveLeavesNoToken(t *t
 	resume()
 	<-removed
 
-	if _, err := auth.Load(srv.configDir, "svc"); !auth.IsNotFound(err) {
+	if _, err := auth.LoadLogin(srv.configDir, "svc"); !auth.IsNotFound(err) {
 		t.Errorf("token after remove_server: %v, want none: a refresh that finished mid-remove saved it back", err)
 	}
 }
@@ -379,16 +379,16 @@ func TestRemoveServerFromAgent_aTokenRefreshFinishingMidRemoveLeavesNoToken(t *t
 func startTokenRefresh(t *testing.T, srv *Server) (finish func(), refreshed <-chan struct{}) {
 	t.Helper()
 	epoch := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	endpoint, refreshReached, finish := gatedTokenEndpoint(t)
 	authtest.SaveToken(t, authtest.TokenFile{
-		ConfigDir:  srv.configDir,
-		ServerName: "svc",
+		ConfigDir: srv.configDir, ServerName: "svc", Resource: "http://127.0.0.1:1/mcp",
+		TokenURL: endpoint + "/token", Client: auth.Client{Source: auth.ClientConfigured, ID: "c"},
 		Token: &oauth2.Token{
 			AccessToken:  "old",
 			RefreshToken: "r",
 			Expiry:       epoch.Add(-time.Second),
 		},
 	})
-	endpoint, refreshReached, finish := gatedTokenEndpoint(t)
 	login, err := srv.providerRegistry.GetOrCreate(provider.Params{
 		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "c", TokenURL: endpoint + "/token"},
 		ConfigDir:  srv.configDir,
@@ -416,10 +416,13 @@ func TestCommitTokenUnlessRemoved(t *testing.T) {
 
 	t.Run("saves the token of a login whose server is still there", func(t *testing.T) {
 		srv := newInstallTestServer(t)
-		if err := srv.commitTokenUnlessRemoved(login(srv), &oauth2.Token{AccessToken: "fresh"}); err != nil {
+		if err := srv.commitTokenUnlessRemoved(login(srv), &auth.Login{
+			Resource: "http://127.0.0.1:1/mcp", TokenURL: "http://127.0.0.1:1/token",
+			Client: auth.Client{Source: auth.ClientConfigured, ID: "c"}, Token: &oauth2.Token{AccessToken: "fresh"},
+		}); err != nil {
 			t.Fatal(err)
 		}
-		if tok, err := auth.Load(srv.configDir, "svc"); err != nil || tok.AccessToken != "fresh" {
+		if tok, err := auth.LoadLogin(srv.configDir, "svc"); err != nil || tok.Token.AccessToken != "fresh" {
 			t.Errorf("saved token = %v, %v; want fresh", tok, err)
 		}
 	})
@@ -428,12 +431,15 @@ func TestCommitTokenUnlessRemoved(t *testing.T) {
 		startedBeforeTheRemove := login(srv)
 		srv.detachAndCloseServer("svc")
 
-		err := srv.commitTokenUnlessRemoved(startedBeforeTheRemove, &oauth2.Token{AccessToken: "late"})
+		err := srv.commitTokenUnlessRemoved(startedBeforeTheRemove, &auth.Login{
+			Resource: "http://127.0.0.1:1/mcp", TokenURL: "http://127.0.0.1:1/token",
+			Client: auth.Client{Source: auth.ClientConfigured, ID: "c"}, Token: &oauth2.Token{AccessToken: "late"},
+		})
 
 		if !errors.Is(err, errServerRemoved) {
 			t.Errorf("commit = %v, want errServerRemoved", err)
 		}
-		if _, err := auth.Load(srv.configDir, "svc"); !auth.IsNotFound(err) {
+		if _, err := auth.LoadLogin(srv.configDir, "svc"); !auth.IsNotFound(err) {
 			t.Errorf("token after a refused commit: %v, want none", err)
 		}
 	})

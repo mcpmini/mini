@@ -18,19 +18,32 @@ func TestSaveTokenWritesSuppliedValuesAndReplacesExisting(t *testing.T) {
 	SaveToken(t, TokenFile{
 		ConfigDir:  dir,
 		ServerName: "svc",
+		Resource:   "https://svc.example.com",
+		TokenURL:   "https://issuer.example.com/token",
+		Client:     auth.Client{Source: auth.ClientConfigured, ID: "test-client"},
 		Token: &oauth2.Token{
 			AccessToken:  "old",
 			RefreshToken: "old-refresh",
 		},
 	})
 	want := &oauth2.Token{AccessToken: "new", TokenType: "Bearer", Expiry: time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC)}
-	SaveToken(t, TokenFile{ConfigDir: dir, ServerName: "svc", Token: want})
-	var got oauth2.Token
+	SaveToken(
+		t,
+		TokenFile{
+			ConfigDir:  dir,
+			ServerName: "svc",
+			Resource:   "https://svc.example.com",
+			TokenURL:   "https://issuer.example.com/token",
+			Client:     auth.Client{Source: auth.ClientConfigured, ID: "test-client"},
+			Token:      want,
+		},
+	)
+	var got auth.Login
 	if err := json.Unmarshal(testutil.ReadFile(t, filepath.Join(dir, "internal", "svc.token.json")), &got); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(&got, want) {
-		t.Fatalf("saved token = %#v, want %#v", &got, want)
+	if !reflect.DeepEqual(got.Token, want) {
+		t.Fatalf("saved token = %#v, want %#v", got.Token, want)
 	}
 }
 

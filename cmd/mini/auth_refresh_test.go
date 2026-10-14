@@ -9,7 +9,6 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
 )
 
@@ -31,7 +30,7 @@ func TestInjectToken_expiredToken_refreshSendsCanonicalResource(t *testing.T) {
 		RefreshToken: "old-refresh",
 		Expiry:       time.Now().Add(-time.Hour),
 	}
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: expired})
+	saveOAuthToken(t, dir, *sc, expired)
 
 	injectToken(context.Background(), dir, sc)
 

@@ -13,7 +13,7 @@ type discoverFunc func(ctx context.Context, serverURL string) (*auth.ServerMeta,
 // A browser login needs a client ID: the user's own app, one registered earlier, or one the
 // authorization server lets mini register itself.
 func needsRegistrationCheck(configDir string, sc config.ServerConfig) bool {
-	if !sc.UsesOAuthLogin() || sc.Auth.ClientID != "" || !needsLogin(configDir, sc.Name) {
+	if !sc.UsesOAuthLogin() || sc.Auth.ClientID != "" || !needsLogin(configDir, sc) {
 		return false
 	}
 	_, err := auth.LoadRegistration(configDir, sc.Name)

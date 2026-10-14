@@ -10,6 +10,7 @@ import (
 
 	"golang.org/x/oauth2"
 
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
@@ -35,8 +36,23 @@ func configureResult(t *testing.T, srv *server.Server, args map[string]any) map[
 	return result
 }
 
+func writeAuthStatusServer(t *testing.T, dir string) {
+	t.Helper()
+	configtest.WriteServer(t, dir, config.ServerConfig{
+		Name:      "myserver",
+		Transport: "http",
+		URL:       "https://myserver.example.com/mcp",
+		Auth: &config.AuthConfig{
+			Type:     config.AuthTypeOAuth2,
+			ClientID: "test-client",
+			TokenURL: "https://myserver.example.com/oauth/token",
+		},
+	})
+}
+
 func TestAuthStatus_noToken_returnsUnauthorized(t *testing.T) {
 	dir := t.TempDir()
+	writeAuthStatusServer(t, dir)
 	srv := newServerWithDir(t, dir)
 
 	result := configureResult(t, srv, map[string]any{
@@ -54,16 +70,23 @@ func TestAuthStatus_noToken_returnsUnauthorized(t *testing.T) {
 
 func TestAuthStatus_validToken_returnsAuthorized(t *testing.T) {
 	dir := t.TempDir()
-	authtest.SaveToken(t, authtest.TokenFile{
-		ConfigDir:  dir,
-		ServerName: "myserver",
-		Token: &oauth2.Token{
-			AccessToken:  "test-access-token",
-			RefreshToken: "test-refresh-token",
-			TokenType:    "Bearer",
-			Expiry:       time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC),
+	writeAuthStatusServer(t, dir)
+	authtest.SaveToken(
+		t,
+		authtest.TokenFile{
+			ConfigDir:  dir,
+			ServerName: "myserver",
+			Resource:   "https://myserver.example.com/mcp",
+			TokenURL:   "https://myserver.example.com/oauth/token",
+			Client:     auth.Client{Source: auth.ClientConfigured, ID: "test-client"},
+			Token: &oauth2.Token{
+				AccessToken:  "test-access-token",
+				RefreshToken: "test-refresh-token",
+				TokenType:    "Bearer",
+				Expiry:       time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC),
+			},
 		},
-	})
+	)
 
 	result := configureResult(t, newServerWithDir(t, dir), map[string]any{
 		"action": "auth_status",
@@ -79,15 +102,22 @@ func TestAuthStatus_validToken_returnsAuthorized(t *testing.T) {
 
 func TestAuthStatus_expiredToken_returnsUnauthorized(t *testing.T) {
 	dir := t.TempDir()
-	authtest.SaveToken(t, authtest.TokenFile{
-		ConfigDir:  dir,
-		ServerName: "myserver",
-		Token: &oauth2.Token{
-			AccessToken: "old-token",
-			TokenType:   "Bearer",
-			Expiry:      time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
+	writeAuthStatusServer(t, dir)
+	authtest.SaveToken(
+		t,
+		authtest.TokenFile{
+			ConfigDir:  dir,
+			ServerName: "myserver",
+			Resource:   "https://myserver.example.com/mcp",
+			TokenURL:   "https://myserver.example.com/oauth/token",
+			Client:     auth.Client{Source: auth.ClientConfigured, ID: "test-client"},
+			Token: &oauth2.Token{
+				AccessToken: "old-token",
+				TokenType:   "Bearer",
+				Expiry:      time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
+			},
 		},
-	})
+	)
 
 	result := configureResult(t, newServerWithDir(t, dir), map[string]any{
 		"action": "auth_status",

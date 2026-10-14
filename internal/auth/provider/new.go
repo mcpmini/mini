@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/clock"
@@ -15,32 +14,21 @@ type Params struct {
 	ConfigDir  string
 	ServerName string
 	ServerURL  string
+	UnsetEnv   error
 	Clock      clock.Clock
 	Lifetime   context.Context
 }
 
 func buildTokenProvider(p Params) (*tokenProvider, error) {
-	configured, hydrated, err := resolveAuthConfigs(p)
+	configured, err := canonicalizeParams(p)
 	if err != nil {
 		return nil, err
 	}
 	if p.Clock == nil {
 		p.Clock = clock.System()
 	}
-	p.AuthConfig = hydrated
-	return newTokenProvider(p, configured), nil
-}
-
-func resolveAuthConfigs(p Params) (configured, hydrated *config.AuthConfig, err error) {
-	canonical, err := canonicalizeParams(p)
-	if err != nil {
-		return nil, nil, err
-	}
-	configured = canonical.AuthConfig.Clone()
-	if err := hydrateFromRegistration(canonical); err != nil {
-		return nil, nil, err
-	}
-	return configured, canonical.AuthConfig, nil
+	p = configured
+	return newTokenProvider(p, configured.AuthConfig), nil
 }
 
 func canonicalizeParams(p Params) (Params, error) {
@@ -51,16 +39,10 @@ func canonicalizeParams(p Params) (Params, error) {
 		p.Clock = clock.System()
 	}
 	p.AuthConfig = p.AuthConfig.Clone()
-	resourceURL := p.AuthConfig.ResourceURL
-	if resourceURL == "" {
-		resourceURL = p.ServerURL
-	}
-	if resourceURL != "" {
-		canonical, err := auth.CanonicalResourceURI(resourceURL)
-		if err != nil {
+	if p.ServerURL != "" {
+		if _, err := auth.CanonicalResourceURI(p.ServerURL); err != nil {
 			return Params{}, err
 		}
-		p.AuthConfig.ResourceURL = canonical
 	}
 	return p, nil
 }
@@ -71,28 +53,12 @@ func newTokenProvider(p Params, configured *config.AuthConfig) *tokenProvider {
 		lifetime = context.Background()
 	}
 	return &tokenProvider{
-		ac:                     p.AuthConfig,
-		preHydrationAuthConfig: configured,
-		configDir:              p.ConfigDir,
-		serverName:             p.ServerName,
-		serverURL:              p.ServerURL,
-		clock:                  p.Clock,
-		lifetime:               lifetime,
+		configuredAuth: configured,
+		configDir:      p.ConfigDir,
+		serverName:     p.ServerName,
+		serverURL:      p.ServerURL,
+		unsetEnv:       p.UnsetEnv,
+		clock:          p.Clock,
+		lifetime:       lifetime,
 	}
-}
-
-func hydrateFromRegistration(p Params) error {
-	if p.AuthConfig.ClientID != "" {
-		return nil
-	}
-	_, err := auth.ApplyExistingClientReg(auth.ClientRegParams{
-		ConfigDir:  p.ConfigDir,
-		ServerName: p.ServerName,
-		AuthConfig: p.AuthConfig,
-		Now:        p.Clock.Now(),
-	})
-	if err != nil {
-		return fmt.Errorf("load client registration for %s: %w", p.ServerName, err)
-	}
-	return nil
 }

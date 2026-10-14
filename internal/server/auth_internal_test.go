@@ -8,13 +8,20 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 	"time"
 
+	"golang.org/x/oauth2"
+
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
+	"github.com/mcpmini/mini/internal/auth/provider"
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/testutil"
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 func newInternalAuthTestServer(t *testing.T) *Server {
@@ -22,6 +29,103 @@ func newInternalAuthTestServer(t *testing.T) *Server {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
 	return New(Params{Config: cfg, ConfigDir: t.TempDir(), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+}
+
+func statusOAuthServer(url, tokenURL string) config.ServerConfig {
+	return config.ServerConfig{
+		Name: "svc", Transport: "http", URL: url,
+		Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "client", TokenURL: tokenURL},
+	}
+}
+
+func saveStatusLogin(t *testing.T, srv *Server, sc config.ServerConfig, accessToken string) {
+	t.Helper()
+	resource, err := auth.CanonicalResourceURI(sc.URL)
+	if err != nil {
+		t.Fatalf("canonicalize OAuth resource: %v", err)
+	}
+	authtest.SaveToken(t, authtest.TokenFile{
+		ConfigDir: srv.configDir, ServerName: sc.Name, Resource: resource, TokenURL: sc.Auth.TokenURL,
+		Client: auth.Client{Source: auth.ClientConfigured, ID: sc.Auth.ClientID},
+		Token:  &oauth2.Token{AccessToken: accessToken, Expiry: time.Now().Add(time.Hour)},
+	})
+}
+
+func authStatusResult(t *testing.T, srv *Server) map[string]any {
+	t.Helper()
+	result, err := srv.handleAuthStatus("svc")
+	if err != nil {
+		t.Fatalf("auth_status: %v", err)
+	}
+	status, ok := result.(map[string]any)
+	if !ok {
+		t.Fatalf("auth_status result = %T, want map", result)
+	}
+	return status
+}
+
+func statusProvider(t *testing.T, srv *Server, sc config.ServerConfig) transport.AuthorizationProvider {
+	t.Helper()
+	provider, err := srv.providerRegistry.GetOrCreate(provider.Params{
+		AuthConfig: sc.Auth, ConfigDir: srv.configDir, ServerName: sc.Name, ServerURL: sc.URL, Clock: clock.System(),
+	})
+	if err != nil {
+		t.Fatalf("create OAuth provider: %v", err)
+	}
+	return provider
+}
+
+func startStatusProvider(t *testing.T, srv *Server, sc config.ServerConfig) {
+	t.Helper()
+	provider := statusProvider(t, srv, sc)
+	if _, err := provider.Authorization(t.Context()); err != nil {
+		t.Fatalf("initial provider authorization: %v", err)
+	}
+}
+
+func assertUnauthorizedStatus(t *testing.T, got map[string]any, remedy string) {
+	t.Helper()
+	if got["authorized"] != false || got["remedy"] != remedy {
+		t.Errorf("auth_status = %v, want unauthorized with remedy %q", got, remedy)
+	}
+}
+
+func TestAuthStatus_liveProviderUsesItsConfiguredServerSnapshot(t *testing.T) {
+	srv := newInternalAuthTestServer(t)
+	t.Cleanup(srv.Close)
+	serverX := statusOAuthServer("https://svc.example.com/mcp", "https://auth.example.com/token")
+	serverY := statusOAuthServer("https://new.example.com/mcp", "https://new-auth.example.com/token")
+	configtest.WriteServer(t, srv.configDir, serverX)
+	saveStatusLogin(t, srv, serverX, "token-x")
+	startStatusProvider(t, srv, serverX)
+
+	configtest.WriteServer(t, srv.configDir, serverY)
+	saveStatusLogin(t, srv, serverY, "token-y")
+
+	first := authStatusResult(t, srv)
+	assertUnauthorizedStatus(t, first, "configuration changed; restart mini")
+	if first["reason"] != "the server URL changed" {
+		t.Errorf("auth_status reason = %v, want the provider's original server URL mismatch", first["reason"])
+	}
+	for range 2 {
+		if got := authStatusResult(t, srv); !reflect.DeepEqual(got, first) {
+			t.Errorf("repeated auth_status = %v, want stable result %v", got, first)
+		}
+	}
+}
+
+func TestAuthStatus_initiallyIneligibleLoginAsksForAuth(t *testing.T) {
+	srv := newInternalAuthTestServer(t)
+	t.Cleanup(srv.Close)
+	serverX := statusOAuthServer("https://svc.example.com/mcp", "https://auth.example.com/token")
+	serverY := statusOAuthServer("https://new.example.com/mcp", "https://new-auth.example.com/token")
+	configtest.WriteServer(t, srv.configDir, serverX)
+	saveStatusLogin(t, srv, serverY, "token-y")
+	provider := statusProvider(t, srv, serverX)
+	if _, err := provider.Authorization(t.Context()); err == nil {
+		t.Fatal("initial authorization accepted a login bound to another server URL")
+	}
+	assertUnauthorizedStatus(t, authStatusResult(t, srv), "run mini auth svc")
 }
 
 func TestCancelExistingAuthFlow_closesListenerSynchronously(t *testing.T) {
@@ -117,7 +221,10 @@ func TestRunAuthFlow_loginCompletingAfterRemoveServerDoesNotReinstall(t *testing
 			srv := newInternalAuthTestServer(t)
 			t.Cleanup(srv.Close)
 			ac := authtest.NewTokenServer(t).AuthConfig()
-			installAtStartAuth := srv.replacingInstall(config.ServerConfig{Name: "svc", Command: echomcp, Auth: ac})
+			ac.ResourceURL = "https://resource.example.com/mcp"
+			installAtStartAuth := srv.replacingInstall(
+				config.ServerConfig{Name: "svc", Command: echomcp, URL: ac.ResourceURL, Auth: ac},
+			)
 			login := authtest.StartLogin(t, ac)
 
 			if tc.remove {
@@ -183,6 +290,7 @@ func stalledAuthInitialize(t *testing.T) (string, <-chan struct{}) {
 func startCompletedAuthFlow(t *testing.T, srv *Server, sc config.ServerConfig) context.Context {
 	t.Helper()
 	sc.Auth = authtest.NewTokenServer(t).AuthConfig()
+	sc.Auth.ResourceURL = sc.URL
 	login := authtest.StartLogin(t, sc.Auth)
 	auth.BufferCallbackCode(login, "test-auth-code")
 	ctx, cancel := context.WithCancel(t.Context())

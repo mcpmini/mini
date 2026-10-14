@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"golang.org/x/oauth2"
-
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/fileio"
@@ -29,23 +27,22 @@ type TokenLock struct {
 	Clock clock.Clock
 }
 
-// TokenFile is a server's token file as handed to a TokenLock.Do callback.
-type TokenFile struct {
+type LoginFile struct {
 	configDir  string
 	serverName string
 }
 
-func (f TokenFile) Load() (*oauth2.Token, error) { return Load(f.configDir, f.serverName) }
+func (f LoginFile) Load() (*Login, error) { return LoadLogin(f.configDir, f.serverName) }
 
-func (f TokenFile) Save(t *oauth2.Token) error { return save(f.configDir, f.serverName, t) }
+func (f LoginFile) Save(login *Login) error { return saveLogin(f.configDir, f.serverName, login) }
 
 // Do runs fn holding the lock, waiting for another holder until ctx ends. If the lock can't be taken
 // at all, fn runs unlocked: a network mount without file locks keeps working, unprotected.
-func (l TokenLock) Do(ctx context.Context, fn func(TokenFile) error) error {
+func (l TokenLock) Do(ctx context.Context, fn func(LoginFile) error) error {
 	if !config.ValidServerName.MatchString(l.ServerName) {
 		return fmt.Errorf("invalid server name: %q", l.ServerName)
 	}
-	file := TokenFile{configDir: l.ConfigDir, serverName: l.ServerName}
+	file := LoginFile{configDir: l.ConfigDir, serverName: l.ServerName}
 	unlock, err := l.acquire(ctx)
 	if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
 		return fmt.Errorf("wait for another mini process to finish with %s's token: %w", l.ServerName, err)
@@ -58,11 +55,11 @@ func (l TokenLock) Do(ctx context.Context, fn func(TokenFile) error) error {
 	return fn(file)
 }
 
-// Save writes t under the lock, waiting up to 30s for a refresh in progress.
-func (l TokenLock) Save(ctx context.Context, t *oauth2.Token) error {
+// Save writes a login record under the lock, waiting up to 30s for a refresh in progress.
+func (l TokenLock) Save(ctx context.Context, login *Login) error {
 	ctx, cancel := context.WithTimeout(ctx, tokenSaveWait)
 	defer cancel()
-	return l.Do(ctx, func(f TokenFile) error { return f.Save(t) })
+	return l.Do(ctx, func(f LoginFile) error { return f.Save(login) })
 }
 
 func (l TokenLock) acquire(ctx context.Context) (unlock func(), err error) {

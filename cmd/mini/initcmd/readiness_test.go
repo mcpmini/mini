@@ -9,6 +9,7 @@ import (
 
 	"golang.org/x/oauth2"
 
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
@@ -45,6 +46,9 @@ func TestServerStatuses(t *testing.T) {
 		authtest.TokenFile{
 			ConfigDir:  dir,
 			ServerName: "loggedin",
+			Resource:   "https://loggedin.example.com/mcp",
+			TokenURL:   "https://loggedin.example.com/oauth/token",
+			Client:     auth.Client{Source: auth.ClientRegistered, ID: "registered-client"},
 			Token:      &oauth2.Token{AccessToken: "t", Expiry: time.Now().Add(time.Hour)},
 		},
 	)

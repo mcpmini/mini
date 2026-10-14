@@ -14,6 +14,7 @@ import (
 
 	"golang.org/x/oauth2"
 
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
@@ -177,15 +178,21 @@ func TestServerClose_inFlightOAuthRefresh_isAborted(t *testing.T) {
 	t.Cleanup(func() { release(); tokenSrv.Close() })
 
 	dir := t.TempDir()
-	authtest.SaveToken(t, authtest.TokenFile{
-		ConfigDir:  dir,
-		ServerName: "oauth-svc",
-		Token: &oauth2.Token{
-			AccessToken:  "expired-access",
-			RefreshToken: "old-refresh",
-			Expiry:       time.Now().Add(-time.Hour),
+	authtest.SaveToken(
+		t,
+		authtest.TokenFile{
+			ConfigDir:  dir,
+			ServerName: "oauth-svc",
+			Resource:   tokenSrv.URL,
+			TokenURL:   tokenSrv.URL,
+			Client:     auth.Client{Source: auth.ClientConfigured, ID: "test-client"},
+			Token: &oauth2.Token{
+				AccessToken:  "expired-access",
+				RefreshToken: "old-refresh",
+				Expiry:       time.Now().Add(-time.Hour),
+			},
 		},
-	})
+	)
 
 	cfg := config.DefaultConfig()
 	cfg.DangerousAllowPrivateURLs = true

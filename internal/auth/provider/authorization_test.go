@@ -6,12 +6,14 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"golang.org/x/oauth2"
 
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
@@ -114,7 +116,7 @@ func TestAuthorization_nearExpiry_refreshesBeforeTokenExpires(t *testing.T) {
 func TestAuthorization_noStoredToken_saysNotLoggedIn(t *testing.T) {
 	f := newProviderFixture(t, providerSetup{})
 	_, err := f.provider.Authorization(context.Background())
-	if err == nil || err.Error() != "srv is not logged in; run `mini auth srv`" {
+	if err == nil || !strings.Contains(err.Error(), "mini auth srv") {
 		t.Fatalf("error = %v, want the not-logged-in remedy without file details", err)
 	}
 	if !errors.Is(err, transport.ErrReauthRequired) {
@@ -267,7 +269,17 @@ func TestAuthorization_newerStoredTokenDuringBackoff_refreshesWithoutWaiting(t *
 		RefreshToken: "newer-refresh",
 		Expiry:       epoch.Add(3 * time.Minute),
 	}
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: f.dir, ServerName: "srv", Token: newer})
+	authtest.SaveToken(
+		t,
+		authtest.TokenFile{
+			Resource:   "https://resource.example.com/mcp",
+			TokenURL:   f.endpoint.Srv.URL + "/token",
+			Client:     auth.Client{Source: auth.ClientConfigured, ID: "cid"},
+			ConfigDir:  f.dir,
+			ServerName: "srv",
+			Token:      newer,
+		},
+	)
 	f.endpoint.Status.Store(http.StatusOK)
 	got, err := f.provider.Authorization(context.Background())
 	if err != nil {
@@ -282,12 +294,23 @@ func TestAuthorization_newerStoredTokenDuringBackoff_refreshesWithoutWaiting(t *
 }
 
 func TestAuthorization_newerStoredTokenInWindow_usedWithoutRefreshing(t *testing.T) {
+	endpoint := authtest.NewTokenServer(t)
 	clk := clock.NewFake()
 	dir := t.TempDir()
 	t1 := &oauth2.Token{AccessToken: "t1-access", RefreshToken: "t1-refresh", Expiry: clk.Now().Add(10 * time.Minute)}
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: t1})
-	endpoint := authtest.NewTokenServer(t)
+	authtest.SaveToken(
+		t,
+		authtest.TokenFile{
+			Resource:   "https://resource.example.com/mcp",
+			TokenURL:   endpoint.Srv.URL + "/token",
+			Client:     auth.Client{Source: auth.ClientConfigured, ID: "cid"},
+			ConfigDir:  dir,
+			ServerName: "srv",
+			Token:      t1,
+		},
+	)
 	p, err := provider.New(provider.Params{
+		ServerURL: "https://resource.example.com/mcp",
 		AuthConfig: &config.AuthConfig{
 			Type:     config.AuthTypeOAuth2,
 			ClientID: "cid",
@@ -305,7 +328,17 @@ func TestAuthorization_newerStoredTokenInWindow_usedWithoutRefreshing(t *testing
 	}
 	clk.Advance(6 * time.Minute)
 	t2 := &oauth2.Token{AccessToken: "t2-access", RefreshToken: "t2-refresh", Expiry: clk.Now().Add(30 * time.Minute)}
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: t2})
+	authtest.SaveToken(
+		t,
+		authtest.TokenFile{
+			Resource:   "https://resource.example.com/mcp",
+			TokenURL:   endpoint.Srv.URL + "/token",
+			Client:     auth.Client{Source: auth.ClientConfigured, ID: "cid"},
+			ConfigDir:  dir,
+			ServerName: "srv",
+			Token:      t2,
+		},
+	)
 	got, err := p.Authorization(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -323,11 +356,15 @@ func TestAuthorization_browserLoginDuringBackoff_refreshesWithoutWaiting(t *test
 	mock := authtest.NewTokenServer(t)
 	dir := t.TempDir()
 	authtest.SaveToken(t, authtest.TokenFile{
+		Resource:   "https://resource.example.com/mcp",
+		TokenURL:   mock.Srv.URL + "/token",
+		Client:     auth.Client{Source: auth.ClientConfigured, ID: "cid"},
 		ConfigDir:  dir,
 		ServerName: "srv",
 		Token:      storedToken(epoch.Add(time.Minute)),
 	})
 	params := provider.Params{
+		ServerURL:  "https://resource.example.com/mcp",
 		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: mock.Srv.URL + "/token"},
 		ConfigDir:  dir, ServerName: "srv", Clock: clock.NewFakeAt(epoch),
 	}
@@ -345,7 +382,10 @@ func TestAuthorization_browserLoginDuringBackoff_refreshesWithoutWaiting(t *test
 		RefreshToken: "browser-refresh",
 		Expiry:       epoch.Add(time.Minute),
 	}
-	if err := registry.CommitAuthorizedToken(params, browserTok); err != nil {
+	if err := registry.CommitAuthorizedToken(
+		params,
+		issuingLogin(params, auth.Client{Source: auth.ClientConfigured, ID: params.AuthConfig.ClientID}, browserTok),
+	); err != nil {
 		t.Fatal(err)
 	}
 	mock.Status.Store(http.StatusOK)

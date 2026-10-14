@@ -36,30 +36,40 @@ type ResolveEndpointsParams struct {
 // into sc.Auth.ResourceURL. Endpoint discovery is skipped when AuthURL,
 // TokenURL, and ClientID are all already set.
 func ResolveEndpoints(ctx context.Context, sc *config.ServerConfig, p ResolveEndpointsParams) error {
-	if sc.UnsetEnv != nil {
-		return sc.UnsetEnv
+	_, err := ResolveEndpointsWithClient(ctx, sc, p)
+	return err
+}
+
+func ResolveEndpointsWithClient(
+	ctx context.Context,
+	sc *config.ServerConfig,
+	p ResolveEndpointsParams,
+) (Client, error) {
+	if p.Clock == nil {
+		p.Clock = clock.System()
 	}
-	if err := ApplyResourceURL(sc); err != nil {
-		return err
+	if err := prepareLoginAuth(sc); err != nil {
+		return Client{}, err
 	}
 	a := sc.Auth
+	configuredClientID := a.ClientID
 	if a.AuthURL != "" && a.TokenURL != "" && a.ClientID != "" {
-		return nil
+		return Client{Source: ClientConfigured, ID: a.ClientID}, nil
 	}
 	meta, err := DiscoverAndApply(ctx, sc.URL, a)
 	if err != nil {
-		return err
+		return Client{}, err
 	}
-	if a.ClientID == "" {
-		return resolveClientID(ctx, ClientRegParams{
-			ConfigDir:  p.ConfigDir,
-			ServerName: p.ServerName,
-			AuthConfig: a,
-			Meta:       meta,
-			Now:        p.Clock.Now(),
-		})
+	if configuredClientID != "" {
+		return Client{Source: ClientConfigured, ID: configuredClientID}, nil
 	}
-	return nil
+	return resolveClientID(ctx, ClientRegParams{
+		ConfigDir:  p.ConfigDir,
+		ServerName: p.ServerName,
+		AuthConfig: a,
+		Meta:       meta,
+		Now:        p.Clock.Now(),
+	})
 }
 
 // DiscoverAndApply fills in a's missing OAuth endpoints from the server's discovery metadata.
@@ -113,18 +123,36 @@ type ClientRegParams struct {
 	Now        time.Time
 }
 
-func resolveClientID(ctx context.Context, p ClientRegParams) error {
-	found, err := ApplyExistingClientReg(p)
-	if err != nil || found {
-		return err
+func resolveClientID(ctx context.Context, p ClientRegParams) (Client, error) {
+	reg, err := LoadRegistration(p.ConfigDir, p.ServerName)
+	if err == nil {
+		if applyErr := applyRegistration(p.AuthConfig, reg, p.Now); applyErr != nil {
+			return Client{}, applyErr
+		}
+		return registrationClient(reg, p.Now), nil
+	}
+	if !IsNotFound(err) {
+		return Client{}, err
 	}
 	// The spec deprecates DCR, keeping it as the fallback when CIMD can't be used.
 	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/b488c166/docs/specification/2026-07-28/basic/authorization/client-registration.mdx?plain=1#L13-L18
 	if CanUseClientMetadataDocument(p.AuthConfig, p.Meta) {
 		p.AuthConfig.ClientID = ClientMetadataURL
-		return nil
+		return Client{Source: ClientMetadataDocument, ID: ClientMetadataURL}, nil
 	}
 	return dynamicRegister(ctx, p)
+}
+
+func registrationClient(reg *Registration, now time.Time) Client {
+	client := Client{Source: ClientRegistered, ID: reg.ClientID}
+	if secretApplies(reg, now) {
+		client.Secret = reg.ClientSecret
+		client.AuthMethod = reg.TokenEndpointAuthMethod
+		if client.Secret != "" && client.AuthMethod == "" {
+			client.AuthMethod = "client_secret_basic"
+		}
+	}
+	return client
 }
 
 // CanUseClientMetadataDocument reports whether mini can identify itself to the server by its published
@@ -133,15 +161,15 @@ func CanUseClientMetadataDocument(a *config.AuthConfig, meta *ServerMeta) bool {
 	return meta != nil && meta.CIMDSupported && ResolvedCallbackPort(a) == LoopbackCallbackPort
 }
 
-func dynamicRegister(ctx context.Context, p ClientRegParams) error {
+func dynamicRegister(ctx context.Context, p ClientRegParams) (Client, error) {
 	a := p.AuthConfig
 	regURL, err := registrationURL(p.Meta)
 	if err != nil {
-		return err
+		return Client{}, err
 	}
 	result, err := Register(ctx, regURL, ResolvedCallbackURI(a))
 	if err != nil {
-		return err
+		return Client{}, err
 	}
 	reg := &Registration{
 		ClientID:                result.ClientID,
@@ -150,9 +178,12 @@ func dynamicRegister(ctx context.Context, p ClientRegParams) error {
 		ClientSecretExpiresAt:   result.ClientSecretExpiresAt,
 	}
 	if err := applyRegistration(a, reg, p.Now); err != nil {
-		return err
+		return Client{}, err
 	}
-	return SaveRegistration(p.ConfigDir, p.ServerName, reg)
+	if err := SaveRegistration(p.ConfigDir, p.ServerName, reg); err != nil {
+		return Client{}, err
+	}
+	return registrationClient(reg, p.Now), nil
 }
 
 func registrationURL(meta *ServerMeta) (string, error) {
@@ -228,5 +259,22 @@ func validateRegistrationConsistency(reg *Registration) error {
 			reg.TokenEndpointAuthMethod,
 		)
 	}
+	return nil
+}
+
+func prepareLoginAuth(sc *config.ServerConfig) error {
+	if sc.UnsetEnv != nil {
+		return sc.UnsetEnv
+	}
+	resource, err := CanonicalResourceURI(sc.URL)
+	if err != nil {
+		return err
+	}
+	a := sc.Auth
+	if a.ClientID == "" {
+		a.ClientSecret = ""
+		a.TokenEndpointAuthMethod = ""
+	}
+	a.ResourceURL = resource
 	return nil
 }

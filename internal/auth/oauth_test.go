@@ -16,12 +16,12 @@ import (
 	"github.com/mcpmini/mini/internal/testutil"
 )
 
-func lockedSave(configDir, serverName string, tok *oauth2.Token) error {
+func lockedSave(configDir, serverName string, login *auth.Login) error {
 	lock := auth.TokenLock{ConfigDir: configDir, ServerName: serverName, Clock: clock.System()}
-	return lock.Save(context.Background(), tok)
+	return lock.Save(context.Background(), login)
 }
 
-func pkceToken(t *testing.T, ac *config.AuthConfig) *oauth2.Token {
+func pkceToken(t *testing.T, ac *config.AuthConfig) *auth.Login {
 	t.Helper()
 	login := authtest.StartLogin(t, ac)
 	authtest.CompleteAuthorization(t, login.AuthURL(), "test-auth-code")
@@ -41,20 +41,20 @@ func TestTokenSaveLoad(t *testing.T) {
 	if err := lockedSave(dir, "myserver", token); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
-	loaded, err := auth.Load(dir, "myserver")
+	loaded, err := auth.LoadLogin(dir, "myserver")
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if loaded.AccessToken != token.AccessToken {
-		t.Errorf("loaded token = %q, want %q", loaded.AccessToken, token.AccessToken)
+	if loaded.Token.AccessToken != token.Token.AccessToken {
+		t.Errorf("loaded token = %q, want %q", loaded.Token.AccessToken, token.Token.AccessToken)
 	}
-	if !loaded.Valid() {
+	if !loaded.Token.Valid() {
 		t.Error("loaded token should be valid")
 	}
 }
 
 func TestIsNotFound(t *testing.T) {
-	_, err := auth.Load(t.TempDir(), "nonexistent")
+	_, err := auth.LoadLogin(t.TempDir(), "nonexistent")
 	if !auth.IsNotFound(err) {
 		t.Errorf("expected IsNotFound=true for missing token, got false (err: %v)", err)
 	}
@@ -82,7 +82,7 @@ func TestSaveTightensExistingTokenPermissions(t *testing.T) {
 	); err != nil { //fileiolint:allow loose permissions exercise credential hardening
 		t.Fatal(err)
 	}
-	if err := lockedSave(dir, "myserver", &oauth2.Token{AccessToken: "secret"}); err != nil {
+	if err := lockedSave(dir, "myserver", boundLogin(&oauth2.Token{AccessToken: "secret"})); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	info, err := os.Stat(path)
@@ -106,7 +106,7 @@ func TestSaveReplacesSymlinkInsteadOfFollowingIt(t *testing.T) {
 	if err := os.Symlink(target, path); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
-	if err := lockedSave(dir, "myserver", &oauth2.Token{AccessToken: "secret"}); err != nil {
+	if err := lockedSave(dir, "myserver", boundLogin(&oauth2.Token{AccessToken: "secret"})); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	got := testutil.ReadFile(t, target)
@@ -141,14 +141,14 @@ func assertTokenFilesPrivate(t *testing.T, tokensDir string) {
 
 func TestSave_invalidServerName(t *testing.T) {
 	token := &oauth2.Token{AccessToken: "tok"}
-	err := lockedSave(t.TempDir(), "bad name!", token)
+	err := lockedSave(t.TempDir(), "bad name!", boundLogin(token))
 	if err == nil {
 		t.Error("expected error for invalid server name")
 	}
 }
 
 func TestLoad_invalidServerName(t *testing.T) {
-	_, err := auth.Load(t.TempDir(), "bad name!")
+	_, err := auth.LoadLogin(t.TempDir(), "bad name!")
 	if err == nil {
 		t.Error("expected error for invalid server name")
 	}
@@ -185,12 +185,42 @@ func TestBuildAuthURL_extraParamsDoNotOverrideResource(t *testing.T) {
 func TestTokenValidAfterForcedExpiry(t *testing.T) {
 	mock := authtest.NewTokenServer(t)
 	dir := t.TempDir()
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: pkceToken(t, mock.AuthConfig())})
-	loaded, _ := auth.Load(dir, "srv")
-	loaded.Expiry = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: loaded})
-	reloaded, _ := auth.Load(dir, "srv")
-	if reloaded.Valid() {
+	login := pkceToken(t, mock.AuthConfig())
+	authtest.SaveToken(
+		t,
+		authtest.TokenFile{
+			ConfigDir:  dir,
+			ServerName: "srv",
+			Resource:   login.Resource,
+			TokenURL:   login.TokenURL,
+			Client:     login.Client,
+			Token:      login.Token,
+		},
+	)
+	loaded, _ := auth.LoadLogin(dir, "srv")
+	loaded.Token.Expiry = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	authtest.SaveToken(
+		t,
+		authtest.TokenFile{
+			ConfigDir:  dir,
+			ServerName: "srv",
+			Resource:   loaded.Resource,
+			TokenURL:   loaded.TokenURL,
+			Client:     loaded.Client,
+			Token:      loaded.Token,
+		},
+	)
+	reloaded, _ := auth.LoadLogin(dir, "srv")
+	if reloaded.Token.Valid() {
 		t.Error("token should be invalid after forced expiry")
+	}
+}
+
+func boundLogin(token *oauth2.Token) *auth.Login {
+	return &auth.Login{
+		Resource: "https://resource.example.com",
+		TokenURL: "https://token.example.com/token",
+		Client:   auth.Client{Source: auth.ClientConfigured, ID: "test-client"},
+		Token:    token,
 	}
 }

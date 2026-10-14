@@ -7,8 +7,6 @@ import (
 	"io/fs"
 	"time"
 
-	"golang.org/x/oauth2"
-
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/config"
@@ -141,19 +139,19 @@ func (s *Server) clearAuthFlow(serverName string, flow *authFlowState) {
 
 func (s *Server) awaitAuthAndReconnect(ctx context.Context, install upstreamInstall, login *auth.BrowserLogin) {
 	sc := install.cfg
-	token, err := login.Wait(ctx)
+	savedLogin, err := login.Wait(ctx)
 	if err != nil {
 		s.logger.Error("oauth flow failed", "server", sc.Name, "err", err)
 		return
 	}
-	if err := s.commitTokenUnlessRemoved(install, token); err != nil {
+	if err := s.commitTokenUnlessRemoved(install, savedLogin); err != nil {
 		s.logger.Error("commit oauth token failed", "server", sc.Name, "err", err)
 		return
 	}
 	s.reconnectWithToken(ctx, install)
 }
 
-func (s *Server) commitTokenUnlessRemoved(install upstreamInstall, token *oauth2.Token) error {
+func (s *Server) commitTokenUnlessRemoved(install upstreamInstall, login *auth.Login) error {
 	s.serverOpMu.Lock()
 	defer s.serverOpMu.Unlock()
 	// A remove bumps the generation under serverOpMu before deleting the token, so a login that
@@ -161,7 +159,7 @@ func (s *Server) commitTokenUnlessRemoved(install upstreamInstall, token *oauth2
 	if s.removeGen[install.cfg.Name] != install.removeGen {
 		return fmt.Errorf("server %q: %w", install.cfg.Name, errServerRemoved)
 	}
-	return s.providerRegistry.CommitAuthorizedToken(s.providerParamsFor(install.cfg), token)
+	return s.providerRegistry.CommitAuthorizedToken(s.providerParamsFor(install.cfg), login)
 }
 
 func (s *Server) providerParamsFor(sc config.ServerConfig) provider.Params {
@@ -170,6 +168,7 @@ func (s *Server) providerParamsFor(sc config.ServerConfig) provider.Params {
 		ConfigDir:  s.configDir,
 		ServerName: sc.Name,
 		ServerURL:  sc.URL,
+		UnsetEnv:   sc.UnsetEnv,
 		Clock:      s.clock,
 	}
 }
@@ -193,14 +192,34 @@ func (s *Server) handleAuthStatus(serverName string) (any, error) {
 	if err := validateServerName(serverName); err != nil {
 		return nil, err
 	}
-	t, err := auth.Load(s.configDir, serverName)
-	if auth.IsNotFound(err) {
-		return map[string]any{"server": serverName, "authorized": false}, nil
+	if snapshot, remedy, ok := s.providerRegistry.OfflineLoginSnapshot(serverName); ok {
+		return authStatusFromSnapshot(serverName, snapshot, remedy), nil
 	}
+	sc, err := s.loadOAuthServerConfig(serverName)
 	if err != nil {
-		return nil, fmt.Errorf("load token: %w", err)
+		return nil, err
 	}
-	return buildAuthStatusResult(serverName, t.Valid(), t.Expiry), nil
+	snapshot := auth.ReadLoginSnapshot(s.configDir, serverName, sc)
+	remedy := snapshot.State.Remedy(serverName)
+	return authStatusFromSnapshot(serverName, snapshot, remedy), nil
+}
+
+func authStatusFromSnapshot(serverName string, snapshot auth.LoginSnapshot, remedy string) map[string]any {
+	result := buildAuthStatusResult(serverName, snapshot.State == auth.Valid, loginExpiry(snapshot.Login))
+	if snapshot.Reason != "" {
+		result["reason"] = snapshot.Reason
+	}
+	if remedy != "" {
+		result["remedy"] = remedy
+	}
+	return result
+}
+
+func loginExpiry(login *auth.Login) time.Time {
+	if login == nil || login.Token == nil {
+		return time.Time{}
+	}
+	return login.Token.Expiry
 }
 
 func buildAuthStatusResult(serverName string, valid bool, expiry time.Time) map[string]any {

@@ -16,21 +16,26 @@ import (
 )
 
 type tokenProvider struct {
-	ac                     *config.AuthConfig
-	preHydrationAuthConfig *config.AuthConfig
-	configDir              string
-	serverName             string
-	serverURL              string
-	clock                  clock.Clock
-	lifetime               context.Context
+	configuredAuth *config.AuthConfig
+	configDir      string
+	serverName     string
+	serverURL      string
+	unsetEnv       error
+	clock          clock.Clock
+	lifetime       context.Context
 
-	mu               sync.Mutex
-	token            *oauth2.Token
-	persistedToken   *oauth2.Token
-	proactiveRetryAt time.Time
-	deadRefreshToken string
-	deadRefreshErr   error
-	retired          bool
+	mu                sync.Mutex
+	login             *auth.Login
+	persistedLogin    *auth.Login
+	observedLogin     bool
+	observedDiskLogin *auth.Login
+	observedDiskError string
+	diskChanged       bool
+	loginReason       string
+	proactiveRetryAt  time.Time
+	deadRefreshToken  string
+	deadRefreshErr    error
+	retired           bool
 }
 
 func New(p Params) (transport.AuthorizationProvider, error) {
@@ -44,7 +49,9 @@ func (p *tokenProvider) Authorization(ctx context.Context) (string, error) {
 		return "", err
 	}
 	if p.shouldRefreshLocked() {
-		p.reloadPersistedTokenLocked(p.loadUnlocked)
+		if err := p.reloadPersistedLoginLocked(p.loadUnlocked); err != nil {
+			return "", err
+		}
 	}
 	if p.shouldRefreshLocked() && !p.inProactiveBackoffLocked() {
 		//nolint:contextcheck // The provider mutex serializes rotation; persist it beyond this caller's cancellation.
@@ -52,7 +59,7 @@ func (p *tokenProvider) Authorization(ctx context.Context) (string, error) {
 			return "", err
 		}
 	}
-	return bearerValue(p.token), nil
+	return bearerValue(p.login.Token), nil
 }
 
 func (p *tokenProvider) RefreshAuthorization(ctx context.Context, stale string) (string, error) {
@@ -61,19 +68,21 @@ func (p *tokenProvider) RefreshAuthorization(ctx context.Context, stale string) 
 	if err := p.ensureTokenLocked(); err != nil {
 		return "", err
 	}
-	if bearerValue(p.token) != stale {
-		return bearerValue(p.token), nil
+	if bearerValue(p.login.Token) != stale {
+		return bearerValue(p.login.Token), nil
 	}
-	p.reloadPersistedTokenLocked(p.loadUnlocked)
-	if bearerValue(p.token) != stale {
-		return bearerValue(p.token), nil
+	if err := p.reloadPersistedLoginLocked(p.loadUnlocked); err != nil {
+		return "", err
 	}
-	stillStale := func() bool { return bearerValue(p.token) == stale }
+	if bearerValue(p.login.Token) != stale {
+		return bearerValue(p.login.Token), nil
+	}
+	stillStale := func() bool { return bearerValue(p.login.Token) == stale }
 	//nolint:contextcheck // The provider mutex serializes rotation; persist it beyond this caller's cancellation.
 	if err := p.refreshLocked(stillStale); err != nil {
 		return "", err
 	}
-	return bearerValue(p.token), nil
+	return bearerValue(p.login.Token), nil
 }
 
 var errRetired = errors.New("its server was removed")
@@ -82,51 +91,109 @@ func (p *tokenProvider) retire() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.retired = true
-	p.token = nil
+	p.login = nil
 }
 
 func (p *tokenProvider) ensureTokenLocked() error {
 	if p.retired {
 		return fmt.Errorf("%s: %w", p.serverName, errRetired)
 	}
-	if p.token != nil {
+	if p.login != nil {
 		return nil
 	}
-	t, err := auth.Load(p.configDir, p.serverName)
+	login, err := auth.LoadLogin(p.configDir, p.serverName)
+	p.recordDiskLogin(login, err)
 	if auth.IsNotFound(err) {
-		return transport.NotLoggedInError(p.serverName)
+		return p.loginRemedy("login file is missing")
 	}
 	if err != nil {
-		return p.remedyError(fmt.Errorf("load token: %w", err))
+		return p.loginRemedy(fmt.Errorf("load login: %w", err).Error())
 	}
-	p.token = t
-	p.persistedToken = cloneToken(t)
+	if eligible, reason := auth.LoginEligible(login, p.serverConfig()); !eligible {
+		return p.loginRemedy(reason)
+	}
+	p.login = login
+	p.persistedLogin = cloneLogin(login)
 	return nil
 }
 
 // loadUnlocked is enough to adopt what another process saved; refreshLocked reads again under the
 // token lock before it exchanges anything.
-func (p *tokenProvider) loadUnlocked() (*oauth2.Token, error) {
-	return auth.Load(p.configDir, p.serverName)
+func (p *tokenProvider) loadUnlocked() (*auth.Login, error) {
+	return auth.LoadLogin(p.configDir, p.serverName)
+}
+
+func (p *tokenProvider) serverConfig() config.ServerConfig {
+	return config.ServerConfig{Name: p.serverName, URL: p.serverURL, Auth: p.configuredAuth, UnsetEnv: p.unsetEnv}
+}
+
+func (p *tokenProvider) loginRemedy(reason string) error {
+	p.loginReason = reason
+	return fmt.Errorf("%s; %s: %w", reason, p.loginRemedyText(), transport.NotLoggedInError(p.serverName))
+}
+
+func (p *tokenProvider) loginRemedyText() string {
+	if p.diskChanged {
+		return "configuration changed; restart mini"
+	}
+	return "run mini auth " + p.serverName
+}
+
+func (p *tokenProvider) offlineLoginSnapshot() (auth.LoginSnapshot, string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	login, err := p.loadUnlocked()
+	p.recordDiskLogin(login, err)
+	snapshot := auth.EvaluateLoginAt(
+		auth.LoginEvaluation{Login: login, LoadErr: err, Server: p.serverConfig(), Now: p.clock.Now()},
+	)
+	if snapshot.State == auth.ForOtherSettings || snapshot.State == auth.Missing || snapshot.State == auth.Unreadable {
+		p.loginReason = snapshot.Reason
+		return snapshot, p.loginRemedyText()
+	}
+	p.adoptLoginLocked(login)
+	if snapshot.State == auth.Expired {
+		return snapshot, "run mini auth " + p.serverName
+	}
+	return snapshot, ""
+}
+
+func (p *tokenProvider) recordDiskLogin(login *auth.Login, err error) {
+	errText := ""
+	if err != nil {
+		errText = err.Error()
+	}
+	changed := p.observedLogin && (errText != p.observedDiskError || !samePersistedLogin(login, p.observedDiskLogin))
+	if changed {
+		p.diskChanged = true
+	}
+	p.observedLogin = true
+	p.observedDiskError = errText
+	p.observedDiskLogin = cloneLogin(login)
 }
 
 func (p *tokenProvider) remedyError(cause error) error {
 	return transport.ReauthorizationError(p.serverName, cause)
 }
 
-func (p *tokenProvider) commitBrowserToken(hydrated *config.AuthConfig, tok *oauth2.Token) error {
+func (p *tokenProvider) commitBrowserToken(configured *config.AuthConfig, login *auth.Login) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.retired {
 		return fmt.Errorf("%s: %w", p.serverName, errRetired)
 	}
-	if err := p.tokenLock().Save(p.lifetime, tok); err != nil {
+	if err := p.tokenLock().Save(p.lifetime, login); err != nil {
 		return fmt.Errorf("persist oauth token: %w", err)
 	}
-	p.ac = hydrated
-	p.token = tok
+	p.configuredAuth = configured.Clone()
+	p.login = cloneLogin(login)
 	p.resetRefreshStateLocked()
-	p.persistedToken = cloneToken(tok)
+	p.persistedLogin = cloneLogin(login)
+	p.observedLogin = true
+	p.observedDiskLogin = cloneLogin(login)
+	p.observedDiskError = ""
+	p.diskChanged = false
+	p.loginReason = ""
 	return nil
 }
 

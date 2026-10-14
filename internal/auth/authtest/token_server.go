@@ -19,19 +19,20 @@ type TokenServer struct {
 	Hits   atomic.Int32
 	Status atomic.Int32
 
-	Mu             sync.Mutex
-	Refreshed      bool
-	ResourceValues []string
-	LastGrant      string
-	LastRefresh    string
-	LastClientID   string
-	LastSecret     string
-	LastBasicAuth  string
-	LastResource   string
-	HoldReady      chan struct{}
-	HoldGate       chan struct{}
-	OverrideStatus int
-	OverrideBody   []byte
+	Mu              sync.Mutex
+	Refreshed       bool
+	ResourceValues  []string
+	LastGrant       string
+	LastRefresh     string
+	LastClientID    string
+	LastSecret      string
+	LastBasicAuth   string
+	LastBasicSecret string
+	LastResource    string
+	HoldReady       chan struct{}
+	HoldGate        chan struct{}
+	OverrideStatus  int
+	OverrideBody    []byte
 }
 
 func NewTokenServer(t *testing.T) *TokenServer {
@@ -106,8 +107,9 @@ func (m *TokenServer) captureRequestFields(r *http.Request) {
 	m.LastClientID = r.FormValue("client_id")
 	m.LastSecret = r.FormValue("client_secret")
 	m.LastResource = r.FormValue("resource")
-	if user, _, ok := r.BasicAuth(); ok {
+	if user, password, ok := r.BasicAuth(); ok {
 		m.LastBasicAuth = user
+		m.LastBasicSecret = password
 	}
 }
 

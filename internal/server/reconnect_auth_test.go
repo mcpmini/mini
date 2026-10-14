@@ -15,6 +15,7 @@ import (
 
 	"golang.org/x/oauth2"
 
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
@@ -93,7 +94,17 @@ func TestReconnect_transientTokenRefreshKeepsLoop(t *testing.T) {
 	defer srv.Close()
 
 	tok := &oauth2.Token{AccessToken: "old-access", RefreshToken: "old-refresh"}
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: configDir, ServerName: "svc", Token: tok})
+	authtest.SaveToken(
+		t,
+		authtest.TokenFile{
+			ConfigDir:  configDir,
+			ServerName: "svc",
+			Resource:   mcpSrv.URL,
+			TokenURL:   tokenSrv.URL,
+			Client:     auth.Client{Source: auth.ClientConfigured, ID: "c"},
+			Token:      tok,
+		},
+	)
 
 	var errOnCall bool
 	srv.AddConnection(context.Background(), config.ServerConfig{

@@ -18,6 +18,7 @@ import (
 	"golang.org/x/oauth2"
 	"gopkg.in/yaml.v3"
 
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
@@ -243,14 +244,6 @@ func TestStartAuth_e2e_withStaleToken_browserTokenUsedOnFirstRequest(t *testing.
 	const browserToken = "browser-token"
 
 	dir := t.TempDir()
-	authtest.SaveToken(t, authtest.TokenFile{
-		ConfigDir:  dir,
-		ServerName: "srv",
-		Token: &oauth2.Token{
-			AccessToken: staleToken,
-		},
-	})
-
 	var mu sync.Mutex
 	acceptedToken := ""
 	var unauthorizedAfterAuth atomic.Int32
@@ -312,6 +305,17 @@ func TestStartAuth_e2e_withStaleToken_browserTokenUsedOnFirstRequest(t *testing.
 			TokenURL: tokenSrv.URL + "/token",
 		},
 	})
+	authtest.SaveToken(
+		t,
+		authtest.TokenFile{
+			ConfigDir:  dir,
+			ServerName: "srv",
+			Resource:   mcpSrv.URL,
+			TokenURL:   tokenSrv.URL + "/token",
+			Client:     auth.Client{Source: auth.ClientConfigured, ID: "test-client"},
+			Token:      &oauth2.Token{AccessToken: staleToken},
+		},
+	)
 
 	cfg := config.DefaultConfig()
 	cfg.DisableAuthBrowserOpen = true

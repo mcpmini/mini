@@ -13,6 +13,9 @@ import (
 type TokenFile struct {
 	ConfigDir  string
 	ServerName string
+	Resource   string
+	TokenURL   string
+	Client     auth.Client
 	Token      *oauth2.Token
 }
 
@@ -25,7 +28,8 @@ type RegistrationFile struct {
 func SaveToken(t testing.TB, p TokenFile) {
 	t.Helper()
 	lock := auth.TokenLock{ConfigDir: p.ConfigDir, ServerName: p.ServerName, Clock: clock.System()}
-	if err := lock.Save(context.Background(), p.Token); err != nil {
+	login := &auth.Login{Resource: p.Resource, TokenURL: p.TokenURL, Client: p.Client, Token: p.Token}
+	if err := lock.Save(context.Background(), login); err != nil {
 		t.Fatalf("save token for %q: %v", p.ServerName, err)
 	}
 }

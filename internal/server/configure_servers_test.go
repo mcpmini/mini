@@ -188,13 +188,19 @@ func TestConfigAddServer_aConfiguredOrRunningName_isRefusedAndLeftAlone(t *testi
 		if err := e.srv.AddConnection(t.Context(), config.ServerConfig{Name: "svc"}, running); err != nil {
 			t.Fatal(err)
 		}
-		authtest.SaveToken(t, authtest.TokenFile{
-			ConfigDir:  e.dir,
-			ServerName: "svc",
-			Token: &oauth2.Token{
-				AccessToken: "running-token",
+		authtest.SaveToken(
+			t,
+			authtest.TokenFile{
+				ConfigDir:  e.dir,
+				ServerName: "svc",
+				Resource:   "https://svc.example.com/mcp",
+				TokenURL:   "https://svc.example.com/oauth/token",
+				Client:     auth.Client{Source: auth.ClientConfigured, ID: "test-client"},
+				Token: &oauth2.Token{
+					AccessToken: "running-token",
+				},
 			},
-		})
+		)
 
 		text, failed := e.addServer(
 			map[string]any{"name": "svc", "transport": "http", "url": newMCPTestServer(t, pingTools).URL},
@@ -207,7 +213,7 @@ func TestConfigAddServer_aConfiguredOrRunningName_isRefusedAndLeftAlone(t *testi
 			t.Error("refused add_server disconnected the running svc")
 		}
 		e.assertNotSaved("svc")
-		if tok, err := auth.Load(e.dir, "svc"); err != nil || tok == nil {
+		if tok, err := auth.LoadLogin(e.dir, "svc"); err != nil || tok == nil {
 			t.Errorf("the running server's token is gone (%v, %v)", tok, err)
 		}
 	})
@@ -475,13 +481,19 @@ func TestConfigRemoveServer(t *testing.T) {
 			})
 			removed := httptest.NewServer(handler)
 			t.Cleanup(removed.Close)
-			authtest.SaveToken(t, authtest.TokenFile{
-				ConfigDir:  e.dir,
-				ServerName: "svc",
-				Token: &oauth2.Token{
-					AccessToken: "old-token",
+			authtest.SaveToken(
+				t,
+				authtest.TokenFile{
+					ConfigDir:  e.dir,
+					ServerName: "svc",
+					Resource:   removed.URL,
+					TokenURL:   "http://auth.example/token",
+					Client:     auth.Client{Source: auth.ClientConfigured, ID: "test-client"},
+					Token: &oauth2.Token{
+						AccessToken: "old-token",
+					},
 				},
-			})
+			)
 			if err := e.connectUserOAuthServer("svc", removed.URL); err != nil || oldTokenSent.Load() == 0 {
 				t.Fatalf("precondition: the removed server never used its login: %v", err)
 			}

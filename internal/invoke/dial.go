@@ -70,6 +70,7 @@ func attachAuthProvider(cfg *transport.HTTPConnectionConfig, p DialParams) error
 		ConfigDir:  p.ConfigDir,
 		ServerName: p.Server.Name,
 		ServerURL:  p.Server.URL,
+		UnsetEnv:   p.Server.UnsetEnv,
 		Clock:      p.Clock,
 	}
 	provider, err := p.ProviderRegistry.GetOrCreate(params)

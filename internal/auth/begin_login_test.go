@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -42,7 +43,7 @@ func TestBeginLogin_completesWithoutWritingToTerminal(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Wait: %v", err)
 		}
-		token = got.AccessToken
+		token = got.Token.AccessToken
 	})
 
 	if token != "test-access-token" {
@@ -50,6 +51,185 @@ func TestBeginLogin_completesWithoutWritingToTerminal(t *testing.T) {
 	}
 	if output != "" {
 		t.Errorf("login wrote to the terminal: %q", output)
+	}
+}
+
+func TestBeginLogin_leavesTheCallersConfigAsConfigured(t *testing.T) {
+	auth.UseEphemeralCallbackPort()
+	mock := authtest.NewTokenServer(t)
+	sc := config.ServerConfig{Name: "synthetic", URL: mock.Srv.URL + "/mcp", Auth: mock.AuthConfig()}
+	before := *sc.Auth.Clone()
+
+	login, err := auth.BeginLogin(context.Background(), sc, beginLoginParams(t))
+	if err != nil {
+		t.Fatalf("BeginLogin: %v", err)
+	}
+	login.Close() //nolint:errcheck // Close always returns nil
+
+	if !reflect.DeepEqual(*sc.Auth, before) {
+		t.Errorf("BeginLogin changed the caller's auth config:\n got  %+v\n want %+v", *sc.Auth, before)
+	}
+}
+
+func TestBeginLogin_persistsTheClientSelectedForTheExchange(t *testing.T) {
+	auth.UseLoopbackEndpoints()
+	auth.UseLoopbackHTTPClient()
+	t.Cleanup(auth.ResetEndpointValidation)
+	mock := authtest.NewTokenServer(t)
+	as := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+		"authorization_endpoint":           mock.Srv.URL + "/authorize",
+		"token_endpoint":                   mock.Srv.URL + "/token",
+		"code_challenge_methods_supported": []string{"S256"},
+	})
+	dir := t.TempDir()
+	wantClient := auth.Registration{
+		ClientID: "selected-client", ClientSecret: "selected-secret", TokenEndpointAuthMethod: "client_secret_post",
+	}
+	if err := auth.SaveRegistration(dir, "synthetic", &wantClient); err != nil {
+		t.Fatal(err)
+	}
+	sc := config.ServerConfig{
+		Name: "synthetic", URL: as.URL + "/mcp",
+		Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2},
+	}
+	login, err := auth.BeginLogin(
+		context.Background(),
+		sc,
+		auth.BeginLoginParams{ConfigDir: dir, ServerName: sc.Name, Clock: clock.NewFake()},
+	)
+	if err != nil {
+		t.Fatalf("BeginLogin: %v", err)
+	}
+	defer login.Close() //nolint:errcheck // Close always returns nil
+	if saveErr := auth.SaveRegistration(dir, sc.Name, &auth.Registration{
+		ClientID:                wantClient.ClientID,
+		ClientSecret:            "replacement-secret",
+		TokenEndpointAuthMethod: "client_secret_basic",
+	}); saveErr != nil {
+		t.Fatal(saveErr)
+	}
+	authtest.CompleteAuthorization(t, login.AuthURL(), "test-auth-code")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	got, err := login.Wait(ctx)
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	want := auth.Client{
+		Source:     auth.ClientRegistered,
+		ID:         wantClient.ClientID,
+		Secret:     wantClient.ClientSecret,
+		AuthMethod: wantClient.TokenEndpointAuthMethod,
+	}
+	if got.Client != want {
+		t.Errorf("login client = %+v, want selected exchange client %+v", got.Client, want)
+	}
+	if got.TokenURL != mock.Srv.URL+"/token" {
+		t.Errorf("login token URL = %q, want selected endpoint %q", got.TokenURL, mock.Srv.URL+"/token")
+	}
+	mock.Mu.Lock()
+	defer mock.Mu.Unlock()
+	if mock.LastSecret != wantClient.ClientSecret || mock.LastBasicAuth != "" || mock.LastBasicSecret != "" {
+		t.Errorf(
+			"exchange form secret = %q, basic user = %q, basic secret = %q; want selected post secret",
+			mock.LastSecret,
+			mock.LastBasicAuth,
+			mock.LastBasicSecret,
+		)
+	}
+}
+
+func TestBeginLogin_keepsTheStartedClientWhenConfigChangesBeforeCallback(t *testing.T) {
+	auth.UseLoopbackHTTPClient()
+	mock := authtest.NewTokenServer(t)
+	sc := config.ServerConfig{
+		Name: "synthetic", URL: "https://resource.example.com/mcp",
+		Auth: &config.AuthConfig{
+			Type: config.AuthTypeOAuth2, AuthURL: mock.Srv.URL + "/authorize", TokenURL: mock.Srv.URL + "/token",
+			ClientID: "client-x", ClientSecret: "secret-x", TokenEndpointAuthMethod: "client_secret_post",
+		},
+	}
+	login, err := auth.BeginLogin(
+		context.Background(),
+		sc,
+		auth.BeginLoginParams{ConfigDir: t.TempDir(), ServerName: sc.Name},
+	)
+	if err != nil {
+		t.Fatalf("BeginLogin: %v", err)
+	}
+	defer login.Close() //nolint:errcheck // Close always returns nil
+	sc.Auth.ClientID = "client-y"
+	sc.Auth.ClientSecret = "secret-y"
+	sc.Auth.TokenURL = "https://other.example.com/token"
+	authtest.CompleteAuthorization(t, login.AuthURL(), "test-auth-code")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	got, err := login.Wait(ctx)
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	want := auth.Client{Source: auth.ClientConfigured, ID: "client-x"}
+	if got.Client != want || got.TokenURL != mock.Srv.URL+"/token" ||
+		got.Resource != "https://resource.example.com/mcp" {
+		t.Fatalf("login binding = %+v, want client X and its started endpoints/resource", got)
+	}
+	mock.Mu.Lock()
+	defer mock.Mu.Unlock()
+	if mock.LastClientID != "client-x" || mock.LastSecret != "secret-x" || mock.LastSecret == "secret-y" {
+		t.Errorf("exchange used client=%q secret=%q, want client X secret", mock.LastClientID, mock.LastSecret)
+	}
+}
+
+func TestBeginLogin_publicDCRDoesNotUseOrphanConfiguredSecret(t *testing.T) {
+	auth.UseLoopbackEndpoints()
+	auth.UseLoopbackHTTPClient()
+	t.Cleanup(auth.ResetEndpointValidation)
+	mock := authtest.NewTokenServer(t)
+	as := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+		"authorization_endpoint":           mock.Srv.URL + "/authorize",
+		"token_endpoint":                   mock.Srv.URL + "/token",
+		"code_challenge_methods_supported": []string{"S256"},
+	})
+	dir := t.TempDir()
+	if err := auth.SaveRegistration(
+		dir,
+		"synthetic",
+		&auth.Registration{ClientID: "public-client", TokenEndpointAuthMethod: "none"},
+	); err != nil {
+		t.Fatal(err)
+	}
+	sc := config.ServerConfig{
+		Name: "synthetic",
+		URL:  as.URL + "/mcp",
+		Auth: &config.AuthConfig{
+			Type:                    config.AuthTypeOAuth2,
+			ClientSecret:            "orphan-secret",
+			TokenEndpointAuthMethod: "client_secret_post",
+		},
+	}
+	login, err := auth.BeginLogin(
+		context.Background(),
+		sc,
+		auth.BeginLoginParams{ConfigDir: dir, ServerName: sc.Name, Clock: clock.NewFake()},
+	)
+	if err != nil {
+		t.Fatalf("BeginLogin: %v", err)
+	}
+	defer login.Close() //nolint:errcheck // Close always returns nil
+	authtest.CompleteAuthorization(t, login.AuthURL(), "test-auth-code")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	got, err := login.Wait(ctx)
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if got.Client != (auth.Client{Source: auth.ClientRegistered, ID: "public-client"}) {
+		t.Errorf("login client = %+v, want public registered client without credentials", got.Client)
+	}
+	mock.Mu.Lock()
+	defer mock.Mu.Unlock()
+	if mock.LastSecret != "" || mock.LastBasicSecret != "" {
+		t.Errorf("public exchange included a secret: form=%q basic=%q", mock.LastSecret, mock.LastBasicSecret)
 	}
 }
 
@@ -106,7 +286,9 @@ func TestBrowserLogin_callbackServerFailureEndsWait(t *testing.T) {
 func TestBrowserLogin_callbackThatArrivedBeforeServerFailureStillCompletes(t *testing.T) {
 	mock := authtest.NewTokenServer(t)
 	listener := newFailingListener(t)
-	login, err := auth.StartBrowserLogin(mock.AuthConfig(), listener)
+	ac := mock.AuthConfig()
+	ac.ResourceURL = "https://resource.example.com"
+	login, err := auth.StartBrowserLogin(ac, listener)
 	if err != nil {
 		t.Fatalf("StartBrowserLogin: %v", err)
 	}

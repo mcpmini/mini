@@ -24,7 +24,7 @@ func holdTokenLock(t *testing.T, lock auth.TokenLock) (release func()) {
 	unlocked := make(chan struct{})
 	go func() {
 		defer close(unlocked)
-		err := lock.Do(context.Background(), func(auth.TokenFile) error {
+		err := lock.Do(context.Background(), func(auth.LoginFile) error {
 			close(held)
 			<-releaseCh
 			return nil
@@ -45,7 +45,7 @@ func TestTokenLock_saveWaitsOutAHolderThenWrites(t *testing.T) {
 	lock := auth.TokenLock{ConfigDir: t.TempDir(), ServerName: "srv", Clock: fake}
 	release := holdTokenLock(t, lock)
 	saved := make(chan error, 1)
-	go func() { saved <- lock.Save(context.Background(), &oauth2.Token{AccessToken: "login"}) }()
+	go func() { saved <- lock.Save(context.Background(), testLogin(&oauth2.Token{AccessToken: "login"})) }()
 
 	testutil.WaitForTimers(t, fake, 1)
 	release()
@@ -53,8 +53,8 @@ func TestTokenLock_saveWaitsOutAHolderThenWrites(t *testing.T) {
 	if err := <-saved; err != nil {
 		t.Fatalf("Save: %v", err)
 	}
-	got, err := auth.Load(lock.ConfigDir, "srv")
-	if err != nil || got.AccessToken != "login" {
+	got, err := auth.LoadLogin(lock.ConfigDir, "srv")
+	if err != nil || got.Token.AccessToken != "login" {
 		t.Errorf("token on disk = %v, %v; want the saved login", got, err)
 	}
 }
@@ -67,7 +67,7 @@ func TestTokenLock_waitEndingSkipsTheWork(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	ran := false
 	done := make(chan error, 1)
-	go func() { done <- lock.Do(ctx, func(auth.TokenFile) error { ran = true; return nil }) }()
+	go func() { done <- lock.Do(ctx, func(auth.LoginFile) error { ran = true; return nil }) }()
 
 	testutil.WaitForTimers(t, fake, 1)
 	cancel()
@@ -87,11 +87,20 @@ func TestTokenLock_unusableLockFileStillRunsTheWork(t *testing.T) {
 	}
 	lock := auth.TokenLock{ConfigDir: dir, ServerName: "srv", Clock: clock.NewFake()}
 
-	err := lock.Save(context.Background(), &oauth2.Token{AccessToken: "login"})
+	err := lock.Save(context.Background(), testLogin(&oauth2.Token{AccessToken: "login"}))
 	if err != nil {
 		t.Fatalf("Save: %v", err)
 	}
-	if got, err := auth.Load(dir, "srv"); err != nil || got.AccessToken != "login" {
+	if got, err := auth.LoadLogin(dir, "srv"); err != nil || got.Token.AccessToken != "login" {
 		t.Errorf("token on disk = %v, %v; want the saved login", got, err)
+	}
+}
+
+func testLogin(token *oauth2.Token) *auth.Login {
+	return &auth.Login{
+		Resource: "https://srv.example.com",
+		TokenURL: "https://issuer.example.com/token",
+		Client:   auth.Client{Source: auth.ClientConfigured, ID: "test-client"},
+		Token:    token,
 	}
 }

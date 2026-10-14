@@ -11,6 +11,10 @@ import (
 // StartLogin starts a BrowserLogin on a free IPv4 loopback port and closes it at test cleanup.
 func StartLogin(t *testing.T, ac *config.AuthConfig) *auth.BrowserLogin {
 	t.Helper()
+	if ac.ResourceURL == "" {
+		ac = ac.Clone()
+		ac.ResourceURL = "https://resource.example.com"
+	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen: %v", err)

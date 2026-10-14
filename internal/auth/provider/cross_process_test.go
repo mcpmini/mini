@@ -57,6 +57,7 @@ func secondProcess(t *testing.T, first *providerFixture) (transport.Authorizatio
 	t.Helper()
 	secondClock := clock.NewFake()
 	second, err := provider.New(provider.Params{
+		ServerURL: "https://resource.example.com/mcp",
 		AuthConfig: &config.AuthConfig{
 			Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: first.endpoint.Srv.URL + "/token",
 		},
@@ -83,7 +84,9 @@ func TestRefreshAuthorization_loginSavedDuringARefreshIsKept(t *testing.T) {
 	loginClock := clock.NewFake()
 	login := auth.TokenLock{ConfigDir: f.dir, ServerName: "srv", Clock: loginClock}
 	saved := make(chan error, 1)
-	go func() { saved <- login.Save(context.Background(), &oauth2.Token{AccessToken: "fresh-login"}) }()
+	go func() {
+		saved <- login.Save(context.Background(), &auth.Login{Resource: "https://resource.example.com/mcp", TokenURL: f.endpoint.Srv.URL + "/token", Client: auth.Client{Source: auth.ClientConfigured, ID: "cid"}, Token: &oauth2.Token{AccessToken: "fresh-login"}})
+	}()
 	testutil.WaitForTimers(t, loginClock, 1)
 
 	release()
@@ -92,7 +95,7 @@ func TestRefreshAuthorization_loginSavedDuringARefreshIsKept(t *testing.T) {
 	if err := <-saved; err != nil {
 		t.Fatalf("login save: %v", err)
 	}
-	if got, err := auth.Load(f.dir, "srv"); err != nil || got.AccessToken != "fresh-login" {
+	if got, err := auth.LoadLogin(f.dir, "srv"); err != nil || got.Token.AccessToken != "fresh-login" {
 		t.Errorf("token on disk = %v, %v; want the login saved last", got, err)
 	}
 }
