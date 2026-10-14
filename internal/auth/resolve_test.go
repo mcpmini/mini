@@ -180,6 +180,7 @@ func TestResolveEndpoints_cachedRegistrationBeforeCIMD(t *testing.T) {
 		ConfigDir:  dir,
 		ServerName: "srv",
 		Registration: &auth.Registration{
+			Issuer:   asSrv.URL,
 			ClientID: "cached-id",
 		},
 	})

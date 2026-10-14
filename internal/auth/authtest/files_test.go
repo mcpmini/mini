@@ -53,11 +53,12 @@ func TestSaveRegistrationWritesSuppliedValuesAndReplacesExisting(t *testing.T) {
 		ConfigDir:  dir,
 		ServerName: "svc",
 		Registration: &auth.Registration{
+			Issuer:       "https://issuer.test",
 			ClientID:     "old",
 			ClientSecret: "old-secret",
 		},
 	})
-	want := &auth.Registration{ClientID: "new", TokenEndpointAuthMethod: "none"}
+	want := &auth.Registration{Issuer: "https://issuer.test", ClientID: "new", TokenEndpointAuthMethod: "none"}
 	SaveRegistration(t, RegistrationFile{ConfigDir: dir, ServerName: "svc", Registration: want})
 	var got auth.Registration
 	if err := json.Unmarshal(testutil.ReadFile(t, filepath.Join(dir, "internal", "svc.dcr.json")), &got); err != nil {

@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"errors"
 	"fmt"
 	"html"
 	"net/http"
@@ -15,15 +16,41 @@ type loginCallbackResult struct {
 	err  error
 }
 
-func callbackHandler(state string, results chan<- loginCallbackResult) http.Handler {
+type callbackHandlerParams struct {
+	state                string
+	issuer               string
+	responseIssSupported bool
+	results              chan<- loginCallbackResult
+}
+
+func callbackHandler(p callbackHandlerParams) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
-		if q.Get("state") != state {
+		if q.Get("state") != p.state {
 			http.Error(w, "state mismatch", http.StatusBadRequest)
 			return
 		}
-		completeLoginCallback(w, q, results)
+		if callbackIssuerRejected(q, p) {
+			result := loginCallbackResult{err: errors.New("oauth authorization response issuer rejected")}
+			writeLoginResponse(w, "Authorization response rejected. Start the login again, then close this tab.")
+			select {
+			case p.results <- result:
+			default:
+			}
+			return
+		}
+		completeLoginCallback(w, q, p.results)
 	})
+}
+
+func callbackIssuerRejected(q url.Values, p callbackHandlerParams) bool {
+	if p.issuer == "" {
+		return false
+	}
+	if q.Has("iss") {
+		return q.Get("iss") != p.issuer
+	}
+	return p.responseIssSupported
 }
 
 func completeLoginCallback(w http.ResponseWriter, q url.Values, results chan<- loginCallbackResult) {

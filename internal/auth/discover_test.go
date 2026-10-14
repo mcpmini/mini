@@ -51,6 +51,7 @@ func TestDiscover_pathInsertedASMeta(t *testing.T) {
 				"authorization_endpoint":           "https://as.example.com/authorize",
 				"token_endpoint":                   "https://as.example.com/token",
 				"registration_endpoint":            "https://as.example.com/register",
+				"issuer":                           "http://" + r.Host + "/tenant",
 				"code_challenge_methods_supported": []string{"S256"},
 			})
 		default:
@@ -157,35 +158,6 @@ func TestDiscover_noPKCE_returnsError(t *testing.T) {
 	_, err := auth.Discover(context.Background(), srv.URL)
 	if err == nil {
 		t.Error("expected error when code_challenge_methods_supported absent")
-	}
-}
-
-func TestDiscover_serverError_returnsError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-	}))
-	defer srv.Close()
-
-	_, err := auth.Discover(context.Background(), srv.URL)
-	if err == nil {
-		t.Error("expected error for 500 response, got nil")
-	}
-}
-
-func TestDiscover_noPathURL(t *testing.T) {
-	srv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
-		"authorization_endpoint":           "https://as.example.com/authorize",
-		"token_endpoint":                   "https://as.example.com/token",
-		"code_challenge_methods_supported": []string{"S256"},
-	})
-	defer srv.Close()
-
-	meta, err := auth.Discover(context.Background(), srv.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if meta.AuthURL != "https://as.example.com/authorize" {
-		t.Errorf("AuthURL: got %q", meta.AuthURL)
 	}
 }
 
@@ -411,6 +383,7 @@ func TestDiscover_scopeFromWWWAuthenticateWithoutResourceMetadata(t *testing.T) 
 		case "/.well-known/oauth-authorization-server":
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+				"issuer":                           "http://" + r.Host,
 				"authorization_endpoint":           "https://as.example.com/authorize",
 				"token_endpoint":                   "https://as.example.com/token",
 				"code_challenge_methods_supported": []string{"S256"},

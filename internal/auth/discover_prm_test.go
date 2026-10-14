@@ -218,7 +218,7 @@ func TestDiscover_prmValidJSONWithoutJSONContentTypeIsUsed(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(
 			[]byte(
-				`{"authorization_endpoint":"` + "http://" + r.Host + `/authorize","token_endpoint":"` + "http://" + r.Host + `/token","code_challenge_methods_supported":["S256"]}`,
+				`{"issuer":"` + "http://" + r.Host + `","authorization_endpoint":"` + "http://" + r.Host + `/authorize","token_endpoint":"` + "http://" + r.Host + `/token","code_challenge_methods_supported":["S256"]}`,
 			),
 		) //nolint:errcheck
 	}))

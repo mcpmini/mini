@@ -333,16 +333,21 @@ func TestSessionChecks_discoveryNamesTheLoginsThatNeedTheUsersOwnApp(t *testing.
 	for _, sc := range []config.ServerConfig{oauthServer("asana", ""), oauthServer("own", "my-app"), oauthServer("box", "")} {
 		configtest.WriteServer(t, miniDir, sc)
 	}
-	if err := auth.SaveRegistration(miniDir, "box", &auth.Registration{ClientID: "registered-earlier"}); err != nil {
+	if err := auth.SaveRegistration(miniDir, "box", &auth.Registration{
+		Issuer: "https://box.example", ClientID: "registered-earlier",
+	}); err != nil {
 		t.Fatal(err)
 	}
 	discovery := &fakeDiscovery{metas: map[string]*auth.ServerMeta{
-		"https://asana.example/mcp":  {},
-		"https://github.example/mcp": {},
-		"https://linear.example/mcp": {RegistrationURL: "https://linear.example/register"},
-		"https://notion.example/mcp": {CIMDSupported: true},
-		"https://sentry.example/mcp": {CIMDSupported: true},
-		"https://pinned.example/mcp": {CIMDSupported: true},
+		"https://asana.example/mcp":  {Issuer: "https://asana.example"},
+		"https://github.example/mcp": {Issuer: "https://github.example"},
+		"https://box.example/mcp":    {Issuer: "https://box.example"},
+		"https://linear.example/mcp": {
+			Issuer: "https://linear.example", RegistrationURL: "https://linear.example/register",
+		},
+		"https://notion.example/mcp": {Issuer: "https://notion.example", CIMDSupported: true},
+		"https://sentry.example/mcp": {Issuer: "https://sentry.example", CIMDSupported: true},
+		"https://pinned.example/mcp": {Issuer: "https://pinned.example", CIMDSupported: true},
 	}}
 	var probed []string
 	var mu sync.Mutex
@@ -386,10 +391,11 @@ func TestSessionChecks_discoveryNamesTheLoginsThatNeedTheUsersOwnApp(t *testing.
 	if !slices.Contains(discovery.discovered, "https://sentry.example/mcp") {
 		t.Error("sentry's authorization server wasn't discovered, want it checked without a probe")
 	}
-	for _, url := range []string{"https://own.example/mcp", "https://box.example/mcp"} {
-		if slices.Contains(discovery.discovered, url) {
-			t.Errorf("discovered %s, want it skipped: it already has a client ID", url)
-		}
+	if slices.Contains(discovery.discovered, "https://own.example/mcp") {
+		t.Error("discovered configured own-client server")
+	}
+	if !slices.Contains(discovery.discovered, "https://box.example/mcp") {
+		t.Error("issuer discovery was skipped for the stored registration")
 	}
 }
 

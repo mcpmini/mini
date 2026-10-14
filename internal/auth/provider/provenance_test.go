@@ -83,6 +83,7 @@ func TestRefreshAuthorization_externalLoginAdoptsItsRecordedRegisteredClient(t *
 		ConfigDir:  dir,
 		ServerName: "srv",
 		Registration: &auth.Registration{
+			Issuer:   "https://issuer.test",
 			ClientID: "dcr-v1",
 		},
 	})
@@ -117,6 +118,7 @@ func TestRefreshAuthorization_externalLoginAdoptsItsRecordedRegisteredClient(t *
 		ConfigDir:  dir,
 		ServerName: "srv",
 		Registration: &auth.Registration{
+			Issuer:   "https://issuer.test",
 			ClientID: "dcr-v2",
 		},
 	})

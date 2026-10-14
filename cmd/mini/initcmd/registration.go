@@ -16,14 +16,14 @@ func needsRegistrationCheck(configDir string, sc config.ServerConfig) bool {
 	if !sc.UsesOAuthLogin() || sc.Auth.ClientID != "" || !needsLogin(configDir, sc) {
 		return false
 	}
-	_, err := auth.LoadRegistration(configDir, sc.Name)
-	return auth.IsNotFound(err)
+	return true
 }
 
 type registrationCheck struct {
-	server   config.ServerConfig
-	clock    clock.Clock
-	discover discoverFunc
+	configDir string
+	server    config.ServerConfig
+	clock     clock.Clock
+	discover  discoverFunc
 }
 
 // selfRegisters follows the spec's discovery to the authorization server's metadata. A server that
@@ -36,5 +36,18 @@ func (c registrationCheck) selfRegisters(ctx context.Context) (selfRegisters, kn
 	if err != nil {
 		return false, false
 	}
-	return meta.RegistrationURL != "" || auth.CanUseClientMetadataDocument(c.server.Auth, meta), true
+	reg, err := auth.LoadRegistration(c.configDir, c.server.Name)
+	if err != nil && !auth.IsNotFound(err) {
+		return false, false
+	}
+	if auth.IsNotFound(err) {
+		reg = nil
+	}
+	choice, err := auth.SelectClient(auth.ClientSelectionParams{
+		AuthConfig: c.server.Auth, Registration: reg, Meta: meta, Now: c.clock.Now(),
+	})
+	if err != nil {
+		return false, true
+	}
+	return choice.Register || choice.Client.ID != "", true
 }

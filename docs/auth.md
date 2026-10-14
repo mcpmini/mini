@@ -22,6 +22,10 @@ mini opens your browser to the provider's sign-in page and prints the URL in cas
 
 Login files from older mini versions contain only a token and are not reused. Run `mini auth <name>` to create a login bound to the current server settings.
 
+mini checks the authorization server metadata `issuer` against the identifier discovered for that server before using its endpoints. If the issuer does not match, correct the provider's discovery metadata or configure your own OAuth client with `auth.client_id`, `auth.auth_url`, and `auth.token_url`. When every metadata candidate returns 404, only a configured client can use mini's origin-based endpoint fallback.
+
+Dynamic client registrations are saved with the issuer that created them. mini reuses a registration only for that issuer, while the token endpoint still matches its advertised endpoint. An older registration without an issuer is ignored and must be registered again or replaced by your own client. When login uses the discovered authorization endpoint, any callback `iss` must exactly match the validated issuer; if response-issuer support is advertised, `iss` must also be present. A mismatch or required missing value ends the login without exchanging the code.
+
 ## requires a custom OAuth app
 
 Open the MCP's file first. If its comment says to create a token, as GitHub's does, follow [requires manual configuration](#requires-manual-configuration) instead; a token is quicker than an OAuth app.

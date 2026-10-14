@@ -11,6 +11,7 @@ import (
 )
 
 type Registration struct {
+	Issuer   string `json:"issuer"`
 	ClientID string `json:"client_id"`
 
 	// Populated when the AS registered mini as confidential (RFC 7591 §3.2.1).
@@ -38,6 +39,9 @@ func LoadRegistration(configDir, serverName string) (*Registration, error) {
 func SaveRegistration(configDir, serverName string, r *Registration) error {
 	if !config.ValidServerName.MatchString(serverName) {
 		return fmt.Errorf("invalid server name: %q", serverName)
+	}
+	if r == nil || r.Issuer == "" {
+		return fmt.Errorf("client registration issuer is required")
 	}
 	path := registrationPath(configDir, serverName)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {

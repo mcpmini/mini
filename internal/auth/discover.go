@@ -24,11 +24,13 @@ var noRedirectClient = transport.NewNoRedirectClient(transport.NoRedirectClientO
 
 // ServerMeta contains OAuth endpoints discovered for an MCP server.
 type ServerMeta struct {
-	AuthURL         string
-	TokenURL        string
-	RegistrationURL string
-	CIMDSupported   bool
-	Scopes          []string // from WWW-Authenticate scope param or PRM scopes_supported (spec priority)
+	Issuer               string
+	AuthURL              string
+	TokenURL             string
+	RegistrationURL      string
+	CIMDSupported        bool
+	ResponseIssSupported bool
+	Scopes               []string // from WWW-Authenticate scope param or PRM scopes_supported (spec priority)
 }
 
 // asRef is the result of authorization-server discovery: which AS to use and what scopes it suggests.
@@ -111,7 +113,11 @@ func parseWWWAuthParam(header, param string) string {
 }
 
 func asURLFromPRMProbe(ctx context.Context, serverURL string) (asRef, error) {
-	u, err := url.Parse(serverURL)
+	resource, err := CanonicalResourceURI(serverURL)
+	if err != nil {
+		return asRef{}, fmt.Errorf("parse server URL: %w", err)
+	}
+	u, err := url.Parse(resource)
 	if err != nil {
 		return asRef{}, fmt.Errorf("parse server URL: %w", err)
 	}
@@ -210,7 +216,7 @@ func discoverASMeta(ctx context.Context, asURL string) (*ServerMeta, error) {
 		return nil, fmt.Errorf("parse AS URL: %w", err)
 	}
 	for _, candidate := range asMetaCandidates(u) {
-		meta, err := fetchASMeta(ctx, candidate)
+		meta, err := fetchASMeta(ctx, candidate, asURL)
 		if err != nil {
 			return nil, err
 		}
@@ -242,14 +248,16 @@ func asMetaCandidates(u *url.URL) []string {
 }
 
 type rawASMeta struct {
-	AuthURL         string   `json:"authorization_endpoint"`
-	TokenURL        string   `json:"token_endpoint"`
-	RegistrationURL string   `json:"registration_endpoint"`
-	CIMDSupported   bool     `json:"client_id_metadata_document_supported"`
-	PKCEMethods     []string `json:"code_challenge_methods_supported"`
+	Issuer               string   `json:"issuer"`
+	AuthURL              string   `json:"authorization_endpoint"`
+	TokenURL             string   `json:"token_endpoint"`
+	RegistrationURL      string   `json:"registration_endpoint"`
+	CIMDSupported        bool     `json:"client_id_metadata_document_supported"`
+	ResponseIssSupported bool     `json:"authorization_response_iss_parameter_supported"`
+	PKCEMethods          []string `json:"code_challenge_methods_supported"`
 }
 
-func fetchASMeta(ctx context.Context, metaURL string) (*ServerMeta, error) {
+func fetchASMeta(ctx context.Context, metaURL, issuer string) (*ServerMeta, error) {
 	resp, err := doDiscoveryRequest(ctx, metaURL)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -265,30 +273,52 @@ func fetchASMeta(ctx context.Context, metaURL string) (*ServerMeta, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("oauth discovery: status %d from %s", resp.StatusCode, metaURL)
 	}
-	return decodeASMeta(resp.Body, metaURL)
+	return decodeASMeta(resp.Body, metaURL, issuer)
 }
 
-func decodeASMeta(body io.Reader, metaURL string) (*ServerMeta, error) {
+func decodeASMeta(body io.Reader, metaURL, issuer string) (*ServerMeta, error) {
 	var raw rawASMeta
 	if err := json.NewDecoder(io.LimitReader(body, maxAuthBodyBytes)).Decode(&raw); err != nil {
 		return nil, fmt.Errorf("oauth discovery: decode metadata from %s: %w", metaURL, err)
+	}
+	if err := validateASMeta(raw, metaURL, issuer); err != nil {
+		return nil, err
+	}
+	return &ServerMeta{
+		Issuer:               raw.Issuer,
+		AuthURL:              raw.AuthURL,
+		TokenURL:             raw.TokenURL,
+		RegistrationURL:      raw.RegistrationURL,
+		CIMDSupported:        raw.CIMDSupported,
+		ResponseIssSupported: raw.ResponseIssSupported,
+	}, nil
+}
+
+func validateASMeta(raw rawASMeta, metaURL, issuer string) error {
+	if raw.Issuer == "" || (raw.Issuer != issuer && raw.Issuer != strings.TrimSuffix(issuer, "/")) {
+		return fmt.Errorf(
+			"oauth discovery: issuer in metadata from %s does not match the discovered authorization server; "+
+				"configure your own client with auth.client_id, auth.auth_url, and auth.token_url",
+			metaURL,
+		)
+	}
+	if raw.AuthURL == "" || raw.TokenURL == "" {
+		return fmt.Errorf(
+			"oauth discovery: metadata from %s is missing authorization_endpoint or token_endpoint",
+			metaURL,
+		)
 	}
 	// MCP spec MUST: refuse if code_challenge_methods_supported is absent or lacks S256.
 	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/977e7481/docs/specification/2025-11-25/basic/authorization.mdx?plain=1#L603-L607
 	// Applies only to fetched AS metadata; fallback path proceeds without — mini always sends S256, so the AS rejects if unsupported.
 	if !pkceS256Supported(raw.PKCEMethods) {
-		return nil, fmt.Errorf(
+		return fmt.Errorf(
 			"oauth discovery: authorization server %s does not support PKCE S256 (code_challenge_methods_supported=%v)",
 			metaURL,
 			raw.PKCEMethods,
 		)
 	}
-	return &ServerMeta{
-		AuthURL:         raw.AuthURL,
-		TokenURL:        raw.TokenURL,
-		RegistrationURL: raw.RegistrationURL,
-		CIMDSupported:   raw.CIMDSupported,
-	}, nil
+	return nil
 }
 
 func pkceS256Supported(methods []string) bool {

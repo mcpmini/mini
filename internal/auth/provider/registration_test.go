@@ -44,6 +44,7 @@ func TestNewProvider_savedRegisteredClient_usesItsConfidentialCredentials(t *tes
 			ConfigDir:  dir,
 			ServerName: "srv",
 			Registration: &auth.Registration{
+				Issuer:                  "https://issuer.test",
 				ClientID:                "issued-client",
 				ClientSecret:            "replacement-secret",
 				TokenEndpointAuthMethod: "client_secret_basic",
@@ -92,6 +93,7 @@ func TestNewProvider_inconsistentRegistration_doesNotChangeSavedLogin(t *testing
 			ConfigDir:  dir,
 			ServerName: "srv",
 			Registration: &auth.Registration{
+				Issuer:                  "https://issuer.test",
 				ClientID:                "orphan",
 				ClientSecret:            "orphan-secret",
 				TokenEndpointAuthMethod: "none",
@@ -209,6 +211,7 @@ func TestNewProvider_explicitClientID_ignoresStoredRegistration(t *testing.T) {
 			ConfigDir:  dir,
 			ServerName: "srv",
 			Registration: &auth.Registration{
+				Issuer:                  "https://issuer.test",
 				ClientID:                "stale-id",
 				ClientSecret:            "stale-secret",
 				TokenEndpointAuthMethod: "client_secret_basic",

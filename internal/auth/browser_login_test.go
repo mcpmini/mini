@@ -4,12 +4,15 @@ package auth_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"html"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -99,6 +102,190 @@ func TestPKCECallback_stateMismatchRejected(t *testing.T) {
 	if waitErr == nil {
 		t.Error("Wait should not succeed after state mismatch")
 	}
+}
+
+func TestPKCECallback_issuerRejectionEndsLoginBeforeRenderingProviderError(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		query url.Values
+	}{
+		{name: "wrong issuer with code", query: url.Values{"code": {"code"}, "iss": {"https://attacker.example"}}},
+		{name: "missing required issuer with code", query: url.Values{"code": {"code"}}},
+		{name: "wrong issuer with provider error", query: url.Values{"error": {"access_denied"}, "error_description": {"provider-secret-text"}, "iss": {"https://attacker.example"}}},
+		{name: "missing required issuer with provider error", query: url.Values{"error": {"access_denied"}, "error_description": {"provider-secret-text"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			login, exchanges := startIssuerBoundLogin(t, issuerBoundLoginTestParams{responseIssSupported: true})
+			defer closeIssuerBoundLogin(t, login)
+			response := requestIssuerCallback(t, login, tc.query)
+			if response.status != http.StatusOK || strings.Contains(response.body, "provider-secret-text") {
+				t.Fatalf("callback = %d %q, want fixed secret-safe rejection", response.status, response.body)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_, err := login.Wait(ctx)
+			if err == nil || err.Error() != "oauth authorization response issuer rejected" {
+				t.Fatalf("Wait error = %v, want fixed issuer rejection", err)
+			}
+			if got := exchanges.Load(); got != 0 {
+				t.Fatalf("token requests = %d, want no code exchange", got)
+			}
+		})
+	}
+}
+
+func TestPKCECallback_acceptsMissingIssuerWhenNotAdvertised(t *testing.T) {
+	login, exchanges := startIssuerBoundLogin(t, issuerBoundLoginTestParams{})
+	defer closeIssuerBoundLogin(t, login)
+	response := requestIssuerCallback(t, login, url.Values{"code": {"valid-code"}})
+	if response.status != http.StatusOK {
+		t.Fatalf(
+			"callback = %d %q, want accepted callback without advertised iss support",
+			response.status,
+			response.body,
+		)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := login.Wait(ctx); err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if got := exchanges.Load(); got != 1 {
+		t.Fatalf("token requests = %d, want one code exchange", got)
+	}
+}
+
+func TestPKCECallback_wrongStateDoesNotAbortIssuerValidation(t *testing.T) {
+	login, exchanges := startIssuerBoundLogin(t, issuerBoundLoginTestParams{responseIssSupported: true})
+	defer closeIssuerBoundLogin(t, login)
+	wrongState := requestIssuerCallback(t, login, url.Values{
+		"state": {"wrong"}, "iss": {"https://attacker.example"}, "error_description": {"provider-secret-text"},
+	})
+	if wrongState.status != http.StatusBadRequest || !strings.Contains(wrongState.body, "state mismatch") {
+		t.Fatalf("wrong-state response = %d %q, want state mismatch", wrongState.status, wrongState.body)
+	}
+	valid := requestIssuerCallback(t, login, url.Values{
+		"code": {"valid-code"}, "iss": {issuerFromLogin(t, login)},
+	})
+	if valid.status != http.StatusOK {
+		t.Fatalf("valid callback = %d %q", valid.status, valid.body)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := login.Wait(ctx); err != nil {
+		t.Fatalf("Wait after valid callback: %v", err)
+	}
+	if got := exchanges.Load(); got != 1 {
+		t.Fatalf("token requests = %d, want exactly one valid code exchange", got)
+	}
+}
+
+func closeIssuerBoundLogin(t *testing.T, login *auth.BrowserLogin) {
+	t.Helper()
+	if err := login.Close(); err != nil {
+		t.Errorf("close login: %v", err)
+	}
+}
+
+type issuerBoundLoginTestParams struct {
+	responseIssSupported bool
+	configuredAuthURL    string
+}
+
+func TestPKCECallback_ignoresIssuerWhenConfiguredAuthURLOverridesDiscovery(t *testing.T) {
+	login, exchanges := startIssuerBoundLogin(t, issuerBoundLoginTestParams{
+		responseIssSupported: true, configuredAuthURL: "https://override.example/authorize",
+	})
+	defer closeIssuerBoundLogin(t, login)
+	response := requestIssuerCallback(t, login, url.Values{"code": {"valid-code"}, "iss": {"https://attacker.example"}})
+	if response.status != http.StatusOK {
+		t.Fatalf("callback = %d %q, want accepted callback without issuer expectation", response.status, response.body)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := login.Wait(ctx); err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if got := exchanges.Load(); got != 1 {
+		t.Fatalf("token requests = %d, want exchange without issuer expectation", got)
+	}
+}
+
+func startIssuerBoundLogin(t *testing.T, p issuerBoundLoginTestParams) (*auth.BrowserLogin, *atomic.Int32) {
+	t.Helper()
+	auth.UseEphemeralCallbackPort()
+	auth.UseLoopbackEndpoints()
+	t.Cleanup(auth.ResetEndpointValidation)
+	var exchanges atomic.Int32
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/.well-known/oauth-authorization-server":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"issuer":                 server.URL,
+				"authorization_endpoint": server.URL + "/authorize",
+				"token_endpoint":         server.URL + "/token",
+				"authorization_response_iss_parameter_supported": p.responseIssSupported,
+				"code_challenge_methods_supported":               []string{"S256"},
+			})
+		case "/token":
+			exchanges.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"access_token": "access", "token_type": "Bearer", "expires_in": 3600,
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	login, err := auth.BeginLogin(context.Background(), config.ServerConfig{
+		Name: "issuer-bound",
+		URL:  server.URL + "/mcp",
+		Auth: &config.AuthConfig{
+			Type: config.AuthTypeOAuth2, ClientID: "configured-client", AuthURL: p.configuredAuthURL,
+		},
+	}, auth.BeginLoginParams{ConfigDir: t.TempDir(), ServerName: "issuer-bound"})
+	if err != nil {
+		t.Fatalf("BeginLogin: %v", err)
+	}
+	return login, &exchanges
+}
+
+func requestIssuerCallback(t *testing.T, login *auth.BrowserLogin, query url.Values) loginCallbackResponse {
+	t.Helper()
+	parsed, err := url.Parse(login.AuthURL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if query.Get("state") == "" {
+		query.Set("state", parsed.Query().Get("state"))
+	}
+	callback := authtest.LoopbackRedirectURI(t, login.AuthURL())
+	callback.RawQuery = query.Encode()
+	resp, err := http.Get(callback.String())
+	if err != nil {
+		t.Fatalf("GET callback: %v", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return loginCallbackResponse{status: resp.StatusCode, body: string(body)}
+}
+
+func issuerFromLogin(t *testing.T, login *auth.BrowserLogin) string {
+	t.Helper()
+	parsed, err := url.Parse(login.AuthURL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	resource, err := url.Parse(parsed.Query().Get("resource"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resource.Scheme + "://" + resource.Host
 }
 
 func TestPKCECallback_providerErrorEndsLogin(t *testing.T) {

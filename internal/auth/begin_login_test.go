@@ -83,6 +83,7 @@ func TestBeginLogin_persistsTheClientSelectedForTheExchange(t *testing.T) {
 	})
 	dir := t.TempDir()
 	wantClient := auth.Registration{
+		Issuer:   as.URL,
 		ClientID: "selected-client", ClientSecret: "selected-secret", TokenEndpointAuthMethod: "client_secret_post",
 	}
 	if err := auth.SaveRegistration(dir, "synthetic", &wantClient); err != nil {
@@ -102,6 +103,7 @@ func TestBeginLogin_persistsTheClientSelectedForTheExchange(t *testing.T) {
 	}
 	defer login.Close() //nolint:errcheck // Close always returns nil
 	if saveErr := auth.SaveRegistration(dir, sc.Name, &auth.Registration{
+		Issuer:                  as.URL,
 		ClientID:                wantClient.ClientID,
 		ClientSecret:            "replacement-secret",
 		TokenEndpointAuthMethod: "client_secret_basic",
@@ -194,7 +196,7 @@ func TestBeginLogin_publicDCRDoesNotUseOrphanConfiguredSecret(t *testing.T) {
 	if err := auth.SaveRegistration(
 		dir,
 		"synthetic",
-		&auth.Registration{ClientID: "public-client", TokenEndpointAuthMethod: "none"},
+		&auth.Registration{Issuer: as.URL, ClientID: "public-client", TokenEndpointAuthMethod: "none"},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +225,7 @@ func TestBeginLogin_publicDCRDoesNotUseOrphanConfiguredSecret(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Wait: %v", err)
 	}
-	if got.Client != (auth.Client{Source: auth.ClientRegistered, ID: "public-client"}) {
+	if got.Client != (auth.Client{Source: auth.ClientRegistered, ID: "public-client", AuthMethod: "none"}) {
 		t.Errorf("login client = %+v, want public registered client without credentials", got.Client)
 	}
 	mock.Mu.Lock()

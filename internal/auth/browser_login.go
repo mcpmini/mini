@@ -20,16 +20,18 @@ var ErrLoginClosed = errors.New("oauth browser login closed")
 
 // BrowserLogin owns a callback listener and drives an OAuth2 PKCE exchange.
 type BrowserLogin struct {
-	server      *http.Server
-	serving     sync.WaitGroup
-	results     chan loginCallbackResult
-	closed      chan struct{}
-	closeOnce   sync.Once
-	authURL     string
-	oauth2Cfg   *oauth2.Config
-	verifier    string
-	resourceURL string
-	login       Login
+	server               *http.Server
+	serving              sync.WaitGroup
+	results              chan loginCallbackResult
+	closed               chan struct{}
+	closeOnce            sync.Once
+	authURL              string
+	oauth2Cfg            *oauth2.Config
+	verifier             string
+	resourceURL          string
+	issuer               string
+	responseIssSupported bool
+	login                Login
 }
 
 type BeginLoginParams = ResolveEndpointsParams
@@ -42,7 +44,8 @@ func BeginLogin(ctx context.Context, sc config.ServerConfig, p BeginLoginParams)
 		return nil, err
 	}
 	sc.Auth = sc.Auth.Clone()
-	client, resolveErr := ResolveEndpointsWithClient(ctx, &sc, p)
+	configuredAuthURL := sc.Auth.AuthURL
+	client, meta, resolveErr := ResolveEndpointsWithClient(ctx, &sc, p)
 	if resolveErr != nil {
 		listener.Close() //nolint:errcheck // listener cleanup cannot replace the endpoint-resolution error returned to the caller
 		return nil, fmt.Errorf("resolve oauth endpoints: %w", resolveErr)
@@ -53,11 +56,22 @@ func BeginLogin(ctx context.Context, sc config.ServerConfig, p BeginLoginParams)
 		return nil, err
 	}
 	sc.Auth.ResourceURL = resource
-	login, err := startBrowserLogin(sc.Auth, listener, client)
+	issuer, responseIssSupported := callbackIssuerPolicy(meta, configuredAuthURL)
+	login, err := startBrowserLogin(browserLoginParams{
+		authConfig: sc.Auth, listener: listener, client: client,
+		expectedIssuer: issuer, responseIssSupported: responseIssSupported,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("start oauth login: %w", err)
 	}
 	return login, nil
+}
+
+func callbackIssuerPolicy(meta *ServerMeta, configuredAuthURL string) (string, bool) {
+	if meta == nil || meta.Issuer == "" || (configuredAuthURL != "" && configuredAuthURL != meta.AuthURL) {
+		return "", false
+	}
+	return meta.Issuer, meta.ResponseIssSupported
 }
 
 var callbackListenAddr = func(ac *config.AuthConfig) string {
@@ -76,17 +90,19 @@ func listenCallback(ctx context.Context, ac *config.AuthConfig) (net.Listener, e
 // StartBrowserLogin takes ownership of listener, closing it on error.
 func StartBrowserLogin(ac *config.AuthConfig, listener net.Listener) (*BrowserLogin, error) {
 	client := Client{Source: ClientConfigured, ID: ac.ClientID}
-	if ac.ClientID == ClientMetadataURL {
-		client.Source = ClientMetadataDocument
-	}
-	return startBrowserLogin(ac, listener, client)
+	return startBrowserLogin(browserLoginParams{authConfig: ac, listener: listener, client: client})
 }
 
-func startBrowserLogin(
-	ac *config.AuthConfig,
-	listener net.Listener,
-	client Client,
-) (*BrowserLogin, error) {
+type browserLoginParams struct {
+	authConfig           *config.AuthConfig
+	listener             net.Listener
+	client               Client
+	expectedIssuer       string
+	responseIssSupported bool
+}
+
+func startBrowserLogin(p browserLoginParams) (*BrowserLogin, error) {
+	ac, listener, client := p.authConfig, p.listener, p.client
 	resource := ac.ResourceURL
 	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
 	if !ok {
@@ -97,13 +113,16 @@ func startBrowserLogin(
 	login := &BrowserLogin{
 		results: make(chan loginCallbackResult, 1), closed: make(chan struct{}),
 		oauth2Cfg: cfg, verifier: verifier, resourceURL: resource,
+		issuer: p.expectedIssuer, responseIssSupported: p.responseIssSupported,
 		login: Login{Resource: resource, TokenURL: ac.TokenURL, Client: client},
 		authURL: buildAuthURL(cfg, buildAuthURLParams{
 			state: state, verifier: verifier,
 			resourceURL: ac.ResourceURL, extraAuthParams: ac.ExtraAuthParams,
 		}),
 	}
-	login.serve(listener, callbackHandler(state, login.results))
+	login.serve(listener, callbackHandler(callbackHandlerParams{
+		state: state, issuer: p.expectedIssuer, responseIssSupported: p.responseIssSupported, results: login.results,
+	}))
 	return login, nil
 }
 

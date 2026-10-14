@@ -155,6 +155,7 @@ func TestCommitAuthorizedToken_loginOwnsTheIssuingRegisteredClient(t *testing.T)
 	params := f.paramsFor(&config.AuthConfig{Type: config.AuthTypeOAuth2})
 
 	reg1 := &auth.Registration{
+		Issuer:                  "https://issuer.test",
 		ClientID:                "dcr-v1",
 		ClientSecret:            "secret-v1",
 		TokenEndpointAuthMethod: "client_secret_basic",
@@ -191,6 +192,7 @@ func TestCommitAuthorizedToken_loginOwnsTheIssuingRegisteredClient(t *testing.T)
 	}
 
 	reg2 := &auth.Registration{
+		Issuer:                  "https://issuer.test",
 		ClientID:                "dcr-v2",
 		ClientSecret:            "secret-v2",
 		TokenEndpointAuthMethod: "client_secret_basic",
@@ -353,6 +355,7 @@ func TestCommitAuthorizedToken_externalLoginCarriesItsOwnClient(t *testing.T) {
 	params := f.paramsFor(&config.AuthConfig{Type: config.AuthTypeOAuth2})
 
 	reg1 := &auth.Registration{
+		Issuer:                  "https://issuer.test",
 		ClientID:                "dcr-v1",
 		ClientSecret:            "secret-v1",
 		TokenEndpointAuthMethod: "client_secret_basic",
@@ -407,6 +410,7 @@ func TestCommitAuthorizedToken_externalLoginCarriesItsOwnClient(t *testing.T) {
 	}
 
 	reg2 := &auth.Registration{
+		Issuer:                  "https://issuer.test",
 		ClientID:                "dcr-v2",
 		ClientSecret:            "secret-v2",
 		TokenEndpointAuthMethod: "client_secret_basic",

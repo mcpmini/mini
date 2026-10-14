@@ -457,6 +457,7 @@ func saveCredentials(t *testing.T, dir, name string) {
 		ConfigDir:  dir,
 		ServerName: name,
 		Registration: &auth.Registration{
+			Issuer:   "https://issuer.test",
 			ClientID: "old-client",
 		},
 	})

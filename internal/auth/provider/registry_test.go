@@ -84,6 +84,7 @@ func TestProviderRegistry_authConfigDrift_redialReusesProvider(t *testing.T) {
 					ConfigDir:  dir,
 					ServerName: "srv",
 					Registration: &auth.Registration{
+						Issuer:                  "https://issuer.test",
 						ClientID:                "dcr-client",
 						ClientSecret:            "secret",
 						TokenEndpointAuthMethod: "client_secret_basic",
@@ -118,6 +119,7 @@ func TestProviderRegistry_authConfigDrift_redialReusesProvider(t *testing.T) {
 					ConfigDir:  dir,
 					ServerName: "srv",
 					Registration: &auth.Registration{
+						Issuer:   "https://issuer.test",
 						ClientID: "dcr-new",
 					},
 				})

@@ -100,13 +100,13 @@ func (s *session) recordFindings(ctx context.Context, configDir, name string, pr
 		return
 	}
 	if needsRegistrationCheck(configDir, sc) {
-		s.checkRegistration(ctx, sc)
+		s.checkRegistration(ctx, configDir, sc)
 	}
 }
 
-func (s *session) checkRegistration(ctx context.Context, sc config.ServerConfig) {
+func (s *session) checkRegistration(ctx context.Context, configDir string, sc config.ServerConfig) {
 	name := sc.Name
-	check := registrationCheck{server: sc, clock: s.p.Clock, discover: s.p.Discover}
+	check := registrationCheck{configDir: configDir, server: sc, clock: s.p.Clock, discover: s.p.Discover}
 	selfRegisters, known := check.selfRegisters(ctx)
 	if !known {
 		return

@@ -4,6 +4,7 @@ package auth_test
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/auth"
@@ -12,7 +13,7 @@ import (
 
 func TestSaveLoadRegistration(t *testing.T) {
 	dir := t.TempDir()
-	reg := &auth.Registration{ClientID: "my-client-id"}
+	reg := &auth.Registration{Issuer: "https://issuer.test", ClientID: "my-client-id"}
 
 	if err := auth.SaveRegistration(dir, "myserver", reg); err != nil {
 		t.Fatalf("save: %v", err)
@@ -39,6 +40,13 @@ func TestSaveRegistration_invalidName(t *testing.T) {
 	}
 }
 
+func TestSaveRegistration_requiresIssuer(t *testing.T) {
+	err := auth.SaveRegistration(t.TempDir(), "srv", &auth.Registration{ClientID: "client"})
+	if err == nil || !strings.Contains(err.Error(), "issuer is required") {
+		t.Fatalf("SaveRegistration error = %v, want required issuer", err)
+	}
+}
+
 func TestLoadRegistration_invalidName(t *testing.T) {
 	if _, err := auth.LoadRegistration(t.TempDir(), "bad name!"); err == nil {
 		t.Error("expected error for invalid server name")
@@ -48,6 +56,7 @@ func TestLoadRegistration_invalidName(t *testing.T) {
 func TestSaveLoadRegistration_confidentialClientFields(t *testing.T) {
 	dir := t.TempDir()
 	reg := &auth.Registration{
+		Issuer:                  "https://issuer.test",
 		ClientID:                "confidential-id",
 		ClientSecret:            "sk-test-usurp-roundtrip",
 		TokenEndpointAuthMethod: "client_secret_basic",
@@ -76,7 +85,7 @@ func TestSaveRegistration_filePermissions(t *testing.T) {
 	if err := auth.SaveRegistration(
 		dir,
 		"myserver",
-		&auth.Registration{ClientID: "id1", ClientSecret: "secret"},
+		&auth.Registration{Issuer: "https://issuer.test", ClientID: "id1", ClientSecret: "secret"},
 	); err != nil {
 		t.Fatalf("save: %v", err)
 	}
@@ -94,14 +103,14 @@ func TestSaveRegistration_overwritesExistingAtomically(t *testing.T) {
 	if err := auth.SaveRegistration(
 		dir,
 		"myserver",
-		&auth.Registration{ClientID: "old-id", ClientSecret: "old-secret"},
+		&auth.Registration{Issuer: "https://issuer.test", ClientID: "old-id", ClientSecret: "old-secret"},
 	); err != nil {
 		t.Fatalf("first save: %v", err)
 	}
 	if err := auth.SaveRegistration(
 		dir,
 		"myserver",
-		&auth.Registration{ClientID: "new-id", ClientSecret: "new-secret"},
+		&auth.Registration{Issuer: "https://issuer.test", ClientID: "new-id", ClientSecret: "new-secret"},
 	); err != nil {
 		t.Fatalf("second save: %v", err)
 	}
@@ -116,7 +125,9 @@ func TestSaveRegistration_overwritesExistingAtomically(t *testing.T) {
 
 func TestSaveRegistration_createsDir(t *testing.T) {
 	dir := t.TempDir()
-	if err := auth.SaveRegistration(dir, "svc", &auth.Registration{ClientID: "id1"}); err != nil {
+	if err := auth.SaveRegistration(dir, "svc", &auth.Registration{
+		Issuer: "https://issuer.test", ClientID: "id1",
+	}); err != nil {
 		t.Fatalf("save: %v", err)
 	}
 	reg, err := auth.LoadRegistration(dir, "svc")

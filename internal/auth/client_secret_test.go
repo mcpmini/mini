@@ -73,30 +73,45 @@ func hydrateFromSavedRegistration(
 	clk clock.Clock,
 ) *config.AuthConfig {
 	t.Helper()
+	ac, err := resolveSavedRegistration(t, reg, tokenURL, clk)
+	if err != nil {
+		t.Fatalf("ResolveEndpoints: %v", err)
+	}
+	return ac
+}
+
+func resolveSavedRegistration(
+	t *testing.T,
+	reg *auth.Registration,
+	tokenURL string,
+	clk clock.Clock,
+) (*config.AuthConfig, error) {
+	t.Helper()
 	dir := t.TempDir()
-	authtest.SaveRegistration(t, authtest.RegistrationFile{ConfigDir: dir, ServerName: "srv", Registration: reg})
 	asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":           "https://as.example.com/authorize",
-		"token_endpoint":                   "https://as.example.com/token",
+		"token_endpoint":                   tokenURL,
 		"code_challenge_methods_supported": []string{"S256"},
 	})
 	t.Cleanup(asSrv.Close)
+	reg.Issuer = asSrv.URL
+	authtest.SaveRegistration(t, authtest.RegistrationFile{ConfigDir: dir, ServerName: "srv", Registration: reg})
 
 	sc := &config.ServerConfig{
 		URL: asSrv.URL + "/mcp",
-		// pre-set AuthURL/TokenURL so discovery never overwrites them — a loopback TokenURL
-		// from discovery metadata would fail validateEndpointURL
 		Auth: &config.AuthConfig{
 			Type:     "oauth2",
 			AuthURL:  "https://as.example.com/authorize",
 			TokenURL: tokenURL,
 		},
 	}
+	auth.UseLoopbackEndpoints()
+	t.Cleanup(auth.ResetEndpointValidation)
 	params := auth.ResolveEndpointsParams{ConfigDir: dir, ServerName: "srv", Clock: clk}
 	if err := auth.ResolveEndpoints(context.Background(), sc, params); err != nil {
-		t.Fatalf("ResolveEndpoints: %v", err)
+		return nil, err
 	}
-	return sc.Auth
+	return sc.Auth, nil
 }
 
 func exchangeAndRefresh(t *testing.T, ac *config.AuthConfig) {
@@ -196,7 +211,7 @@ func TestHydratedRegistration_noSecretLeavesPublicClientUnchanged(t *testing.T) 
 
 	if ac.ClientSecret != "" || ac.TokenEndpointAuthMethod != "" {
 		t.Fatalf(
-			"expected no secret/method hydrated for public client, got secret=%q method=%q",
+			"expected public client credentials not to be copied into config, got secret=%q method=%q",
 			ac.ClientSecret,
 			ac.TokenEndpointAuthMethod,
 		)
@@ -224,12 +239,22 @@ func TestRegistrationExpiry_appliesOrIgnoresSecretByBoundary(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := &auth.Registration{
+				Issuer:                  "https://as.example.com",
 				ClientID:                "expiry-client",
 				ClientSecret:            "sk-test-usurp-expiry",
 				TokenEndpointAuthMethod: "client_secret_basic",
 				ClientSecretExpiresAt:   tc.expiresAt,
 			}
-			ac := hydrateFromSavedRegistration(t, reg, "https://as.example.com/token", clock.NewFakeAt(base))
+			ac, err := resolveSavedRegistration(t, reg, "https://as.example.com/token", clock.NewFakeAt(base))
+			if !tc.wantApplied {
+				if err == nil {
+					t.Fatal("expired confidential registration was reused")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ResolveEndpoints: %v", err)
+			}
 			if got := ac.ClientSecret != ""; got != tc.wantApplied {
 				t.Errorf("secret applied = %v, want %v (ClientSecret=%q)", got, tc.wantApplied, ac.ClientSecret)
 			}
@@ -282,16 +307,17 @@ func TestRegistrationInconsistency_failsResolutionNamingTheField(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			authtest.SaveRegistration(
-				t,
-				authtest.RegistrationFile{ConfigDir: dir, ServerName: "srv", Registration: tc.reg},
-			)
 			asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 				"authorization_endpoint":           "https://as.example.com/authorize",
 				"token_endpoint":                   "https://as.example.com/token",
 				"code_challenge_methods_supported": []string{"S256"},
 			})
 			defer asSrv.Close()
+			tc.reg.Issuer = asSrv.URL
+			authtest.SaveRegistration(
+				t,
+				authtest.RegistrationFile{ConfigDir: dir, ServerName: "srv", Registration: tc.reg},
+			)
 
 			sc := &config.ServerConfig{URL: asSrv.URL + "/mcp", Auth: &config.AuthConfig{Type: "oauth2"}}
 			params := auth.ResolveEndpointsParams{ConfigDir: dir, ServerName: "srv", Clock: clock.System()}
@@ -345,6 +371,9 @@ func TestResolveEndpoints_freshDCRCapturesAndPersistsConfidentialClient(t *testi
 	if err != nil {
 		t.Fatalf("LoadRegistration: %v", err)
 	}
+	if persisted.Issuer != asSrv.URL {
+		t.Errorf("persisted issuer = %q, want %q", persisted.Issuer, asSrv.URL)
+	}
 	if persisted.ClientSecret != "sk-test-usurp-fresh" || persisted.TokenEndpointAuthMethod != "client_secret_post" {
 		t.Errorf("persisted registration missing confidential-client fields: %+v", persisted)
 	}
@@ -362,11 +391,13 @@ func freshDCRToExchange(t *testing.T, dcrResponse map[string]any) (*config.AuthC
 
 	asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":           "https://as.example.com/authorize",
-		"token_endpoint":                   "https://as.example.com/token",
+		"token_endpoint":                   tokenSrv.srv.URL,
 		"registration_endpoint":            regSrv.URL + "/register",
 		"code_challenge_methods_supported": []string{"S256"},
 	})
 	t.Cleanup(asSrv.Close)
+	auth.UseLoopbackEndpoints()
+	t.Cleanup(auth.ResetEndpointValidation)
 
 	sc := &config.ServerConfig{
 		URL: asSrv.URL + "/mcp",
@@ -424,6 +455,7 @@ func TestClientSecretNeverAppearsInResolutionOrExchangeErrors(t *testing.T) {
 	const secret = "sk-test-usurp-should-not-leak"
 	dir := t.TempDir()
 	reg := &auth.Registration{
+		Issuer:                  "https://issuer.test",
 		ClientID:                "leak-check-client",
 		ClientSecret:            secret,
 		TokenEndpointAuthMethod: "client_secret_basic",
