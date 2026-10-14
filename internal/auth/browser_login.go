@@ -34,13 +34,12 @@ type BrowserLogin struct {
 type BeginLoginParams = ResolveEndpointsParams
 
 // BeginLogin binds the callback port before discovery, so a busy port fails before a client is
-// registered. Endpoints resolve into a copy: the caller's sc stays its configured settings.
+// registered.
 func BeginLogin(ctx context.Context, sc config.ServerConfig, p BeginLoginParams) (*BrowserLogin, error) {
 	listener, err := listenCallback(ctx, sc.Auth)
 	if err != nil {
 		return nil, err
 	}
-	sc.Auth = sc.Auth.Clone()
 	if resolveErr := ResolveEndpoints(ctx, &sc, p); resolveErr != nil {
 		listener.Close() //nolint:errcheck // listener cleanup cannot replace the endpoint-resolution error returned to the caller
 		return nil, fmt.Errorf("resolve oauth endpoints: %w", resolveErr)
