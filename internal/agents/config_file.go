@@ -2,6 +2,7 @@ package agents
 
 import (
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"strings"
 )
@@ -22,8 +23,19 @@ func parseAnyJSON(data []byte) (map[string]Server, error) {
 	if err := json.Unmarshal(data, &keys); err != nil {
 		return nil, err
 	}
-	if keys.MCPServers == nil && keys.MCP != nil {
+	switch {
+	case keys.MCPServers != nil:
+		return ParseClaude(data)
+	case hasOpenClawServers(keys.MCP):
 		return parseOpenClaw(data)
 	}
-	return ParseClaude(data)
+	return nil, errors.New("no mcpServers key (Claude, Cursor, Windsurf) or mcp.servers key (OpenClaw); " +
+		"a .toml file is read as Codex's config")
+}
+
+func hasOpenClawServers(mcp json.RawMessage) bool {
+	var section struct {
+		Servers json.RawMessage `json:"servers"`
+	}
+	return json.Unmarshal(mcp, &section) == nil && section.Servers != nil
 }
