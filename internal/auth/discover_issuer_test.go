@@ -19,8 +19,18 @@ func TestDiscover_rejectsInvalidIssuerAndMissingRequiredEndpoints(t *testing.T) 
 		name string
 		meta func(string) map[string]any
 	}{
-		{name: "missing issuer", meta: func(string) map[string]any { return map[string]any{} }},
-		{name: "mismatched issuer", meta: func(string) map[string]any { return map[string]any{"issuer": "https://attacker.example"} }},
+		{name: "missing issuer", meta: func(string) map[string]any {
+			return map[string]any{
+				"authorization_endpoint": "https://as.example/authorize", "token_endpoint": "https://as.example/token",
+				"code_challenge_methods_supported": []string{"S256"},
+			}
+		}},
+		{name: "mismatched issuer", meta: func(string) map[string]any {
+			return map[string]any{
+				"issuer": "https://attacker.example", "authorization_endpoint": "https://as.example/authorize",
+				"token_endpoint": "https://as.example/token", "code_challenge_methods_supported": []string{"S256"},
+			}
+		}},
 		{name: "missing authorization endpoint", meta: func(issuer string) map[string]any {
 			return map[string]any{"issuer": issuer, "token_endpoint": "https://as.example/token", "code_challenge_methods_supported": []string{"S256"}}
 		}},
