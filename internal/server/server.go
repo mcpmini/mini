@@ -34,7 +34,7 @@ type Server struct {
 	daemonAuthToken      string
 	allowNonLoopbackHost bool
 	providerRegistry     *provider.Registry
-	// Held across each add_server, remove_server and reload removal of one name, so its saved and live states agree.
+	// Held across each add_server, remove_server and config check of one name, so its saved and live states agree.
 	serverNames nameLocks
 	// Lock ordering: serverNames → persistMu → serverOpMu → stateMu → authMu.
 	// stateMu is the innermost hot-path lock (RLock on every request);
@@ -49,6 +49,7 @@ type Server struct {
 	reconnectWg sync.WaitGroup // tracks all active reconnectLoop goroutines
 	refreshWg   sync.WaitGroup
 	connector   *upstreamConnector
+	reloadLoop  backgroundLoop
 }
 
 func (s *Server) notifyAllSessions() {

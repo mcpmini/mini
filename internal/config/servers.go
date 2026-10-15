@@ -61,6 +61,18 @@ func ServerDirFiles(configDir string) ([]string, error) {
 	return paths, nil
 }
 
+func ServerNames(configDir string) ([]string, error) {
+	paths, err := ServerDirFiles(configDir)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, len(paths))
+	for i, path := range paths {
+		names[i] = serverNameFromPath(path)
+	}
+	return names, nil
+}
+
 func (s Servers) Find(name string) (ServerConfig, bool) {
 	i := slices.IndexFunc(s.Loaded, func(sc ServerConfig) bool { return sc.Name == name })
 	if i < 0 {
@@ -97,11 +109,25 @@ func (s Servers) IsEnabled(name string) bool {
 }
 
 func LoadServer(configDir, name string) (ServerConfig, error) {
-	path, err := existingServerPath(configDir, name)
-	if err != nil {
-		return ServerConfig{}, err
+	sc, found, err := LookupServer(configDir, name)
+	if err == nil && !found {
+		err = fmt.Errorf("read %s: %w", ServerPath(configDir, name), fs.ErrNotExist)
 	}
-	return loadServerFile(configDir, path)
+	return sc, err
+}
+
+// LookupServer returns found false with a nil error only when the server files were listed and none
+// is name's: a listing error must never read as a deleted server.
+func LookupServer(configDir, name string) (sc ServerConfig, found bool, err error) {
+	path, err := existingServerPath(configDir, name)
+	if errors.Is(err, fs.ErrNotExist) {
+		return ServerConfig{}, false, nil
+	}
+	if err != nil {
+		return ServerConfig{}, false, err
+	}
+	sc, err = loadServerFile(configDir, path)
+	return sc, true, err
 }
 
 func existingServerPath(configDir, name string) (string, error) {
@@ -109,7 +135,11 @@ func existingServerPath(configDir, name string) (string, error) {
 		return "", err
 	}
 	path := ServerPath(configDir, name)
-	if !ServerFileExists(configDir, name) {
+	exists, err := ServerFileExists(configDir, name)
+	if err != nil {
+		return "", err
+	}
+	if !exists {
 		return "", fmt.Errorf("read %s: %w", path, fs.ErrNotExist)
 	}
 	return path, nil

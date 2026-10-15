@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"github.com/mcpmini/mini/internal/clock"
 )
 
 var errStoppedWaiting = errors.New("mini is shutting down")
@@ -11,16 +13,26 @@ var errStoppedWaiting = errors.New("mini is shutting down")
 // Codex keeps the first tools/list it gets for the whole session, so a list built before the servers
 // connect would hide their tools for good; waitForStartup holds it until no server is still connecting.
 func (s *Server) waitForStartup(ctx context.Context) error {
+	if _, _, connecting := s.startupWaitTarget(); !connecting {
+		return nil
+	}
+	// Each config edit opens a new window, so repeated edits must not extend one listing past the
+	// client's request timeout.
+	hold, endHold := clock.WithTimeout(ctx, s.clock, startupHold)
+	defer endHold()
 	for {
 		changed, until, connecting := s.startupWaitTarget()
 		if !connecting {
 			return nil
 		}
 		timer := s.clock.NewTimer(s.clock.Until(until))
-		err := s.awaitStartupChange(ctx, changed, timer.Chan())
+		err := s.awaitStartupChange(hold, changed, timer.Chan())
 		timer.Stop()
-		if err != nil {
+		if errors.Is(err, errStoppedWaiting) {
 			return err
+		}
+		if err != nil {
+			return ctx.Err() // nil when only the hold ran out
 		}
 	}
 }

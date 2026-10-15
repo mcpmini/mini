@@ -7,6 +7,7 @@ import (
 	"os"
 	"slices"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -16,9 +17,42 @@ import (
 const configPollInterval = 5 * time.Second
 
 // StartConfigReload applies server and projection edits on disk to a live
-// server without restart. Stops when ctx is canceled.
+// server without restart. Stops when ctx is canceled or the server closes.
 func (s *Server) StartConfigReload(ctx context.Context) {
-	go s.runConfigReload(ctx, nil)
+	s.reloadLoop.start(ctx, func(ctx context.Context) { s.runConfigReload(ctx, nil) })
+}
+
+// backgroundLoop lets Close stop a loop and wait for it, so nothing the loop starts outlives Close.
+type backgroundLoop struct {
+	mu      sync.Mutex
+	stopped bool
+	cancel  context.CancelFunc
+	wg      sync.WaitGroup
+}
+
+func (l *backgroundLoop) start(ctx context.Context, run func(context.Context)) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.stopped || l.cancel != nil {
+		return
+	}
+	ctx, l.cancel = context.WithCancel(ctx)
+	l.wg.Add(1)
+	go func() {
+		defer l.wg.Done()
+		run(ctx)
+	}()
+}
+
+func (l *backgroundLoop) stop() {
+	l.mu.Lock()
+	l.stopped = true
+	cancel := l.cancel
+	l.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	l.wg.Wait()
 }
 
 func (s *Server) runConfigReload(ctx context.Context, afterCheck func()) {
@@ -29,6 +63,7 @@ func (s *Server) runConfigReload(ctx context.Context, afterCheck func()) {
 	// Startup read the config before this poller existed; an edit made in
 	// between is only caught by applying the config once now.
 	s.applyConfig()
+	s.applyServerFiles(ctx)
 	ticker := s.clock.NewTicker(configPollInterval)
 	defer ticker.Stop()
 	afterCheck()
@@ -36,6 +71,7 @@ func (s *Server) runConfigReload(ctx context.Context, afterCheck func()) {
 		select {
 		case <-ticker.Chan():
 			last = s.reloadIfConfigChanged(last)
+			s.applyServerFiles(ctx)
 			afterCheck()
 		case <-ctx.Done():
 			return
@@ -59,12 +95,11 @@ func (s *Server) reloadIfConfigChanged(last map[string]string) map[string]string
 }
 
 func (s *Server) applyConfig() map[string]int {
-	servers, fresh, err := s.applyReload()
+	_, fresh, err := s.applyReload()
 	if err != nil {
 		s.logger.Warn("config reload: keeping the current config", "err", err)
 		return nil
 	}
-	s.removeServersGoneFromConfig(servers)
 	return fresh
 }
 

@@ -136,13 +136,12 @@ func ServerPath(configDir, name string) string {
 
 // ServerFileExists matches the name exactly: a case-insensitive disk would otherwise
 // treat "GitHub" as github.yaml, and act on that server under the wrong name.
-func ServerFileExists(configDir, name string) bool {
-	path := ServerPath(configDir, name)
-	entries, err := os.ReadDir(filepath.Dir(path))
+func ServerFileExists(configDir, name string) (bool, error) {
+	paths, err := ServerDirFiles(configDir)
 	if err != nil {
-		return false
+		return false, err
 	}
-	return slices.ContainsFunc(entries, func(e os.DirEntry) bool { return e.Name() == filepath.Base(path) })
+	return slices.Contains(paths, ServerPath(configDir, name)), nil
 }
 
 func serverNameFromPath(path string) string {

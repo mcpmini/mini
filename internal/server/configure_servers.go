@@ -29,8 +29,8 @@ func (s *Server) saveAndConnect(ctx context.Context, sc config.ServerConfig) err
 		return errAlreadyRunning(sc.Name)
 	}
 	// Checked before changeSavedServer, which would stop a configured server's login or retries.
-	if config.ServerFileExists(s.configDir, sc.Name) {
-		return errAlreadyConfigured(sc.Name)
+	if err := s.refuseConfiguredName(sc.Name); err != nil {
+		return err
 	}
 	err := s.changeSavedServer(sc.Name, func() error {
 		_, err := ops.AddServer(s.configDir, sc)
@@ -50,6 +50,17 @@ func (s *Server) saveAndConnect(ctx context.Context, sc config.ServerConfig) err
 	return nil
 }
 
+func (s *Server) refuseConfiguredName(name string) error {
+	exists, err := config.ServerFileExists(s.configDir, name)
+	if err != nil {
+		return fmt.Errorf("add_server: %w", err)
+	}
+	if exists {
+		return errAlreadyConfigured(name)
+	}
+	return nil
+}
+
 func (s *Server) connectSaved(ctx context.Context, name string) (config.ServerConfig, error) {
 	saved, err := config.LoadServer(s.configDir, name)
 	if err != nil {
@@ -65,7 +76,7 @@ func (s *Server) connectSaved(ctx context.Context, name string) (config.ServerCo
 func (s *Server) rollBackAdd(name string) error {
 	if err := s.removeSavedServer(name); err != nil {
 		return fmt.Errorf(
-			"add_server: %s is still saved, so it will start next time; remove it with remove_server: %w",
+			"add_server: %s is still saved, so mini will keep trying to connect it; remove it with remove_server: %w",
 			name,
 			err,
 		)
@@ -106,7 +117,7 @@ func (s *Server) removeServerFromAgent(name string) (any, error) {
 	defer unlock()
 	if err := s.removeSavedServer(name); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf(
-			"remove_server: %s is disconnected but still saved, so it will start next time: %w",
+			"remove_server: %s is still saved, so mini will connect it again; try remove_server again: %w",
 			name,
 			err,
 		)

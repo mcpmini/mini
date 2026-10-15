@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	holdTimer    = 1
+	holdTimer    = 2 // the window and the hold's own deadline
 	backoffTimer = 1
 )
 

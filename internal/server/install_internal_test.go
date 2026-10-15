@@ -40,7 +40,7 @@ func newInstallTestServer(t *testing.T) *Server {
 	return srv
 }
 
-func TestRemoveConfigServer_keepsANameSavedAgainSinceTheServerSetWasLoaded(t *testing.T) {
+func TestApplyServerFile_keepsANameSavedAgainSinceTheServerSetWasLoaded(t *testing.T) {
 	srv := newInstallTestServer(t)
 	if err := srv.AddConnection(
 		t.Context(),
@@ -53,14 +53,14 @@ func TestRemoveConfigServer_keepsANameSavedAgainSinceTheServerSetWasLoaded(t *te
 	path := filepath.Join(srv.configDir, "servers", "svc.yaml")
 	configtest.WriteServer(t, srv.configDir, config.ServerConfig{Name: "svc", Command: "run"})
 
-	if srv.removeConfigServer("svc") {
-		t.Error("removeConfigServer removed svc while its file is saved and enabled")
+	if srv.applyServerFile(t.Context(), "svc") {
+		t.Error("applyServerFile removed svc while its file is saved and enabled")
 	}
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
-	if !srv.removeConfigServer("svc") {
-		t.Error("removeConfigServer kept svc after its file was deleted")
+	if !srv.applyServerFile(t.Context(), "svc") {
+		t.Error("applyServerFile kept svc after its file was deleted")
 	}
 }
 
@@ -344,8 +344,22 @@ func TestRetryStartupAfter_stopsForFailuresARetryCantFix(t *testing.T) {
 func TestRollBackAdd_reportsAServerItCouldNotRemove(t *testing.T) {
 	srv := newInstallTestServer(t)
 
-	if err := srv.rollBackAdd("svc"); err == nil || !strings.Contains(err.Error(), "remove it with remove_server") {
-		t.Errorf("rollBackAdd = %v, want the agent told the server is still saved", err)
+	want := "svc is still saved, so mini will keep trying to connect it; remove it with remove_server"
+	if err := srv.rollBackAdd("svc"); err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("rollBackAdd = %v, want %q", err, want)
+	}
+}
+
+func TestRemoveServerFromAgent_reportsAServerItCouldNotRemove(t *testing.T) {
+	srv := newInstallTestServer(t)
+	undeletable := filepath.Join(config.ServerPath(srv.configDir, "svc"), "keep")
+	testutil.WriteFile(t, undeletable, "")
+
+	_, err := srv.removeServerFromAgent("svc")
+
+	want := "svc is still saved, so mini will connect it again; try remove_server again"
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("removeServerFromAgent = %v, want %q", err, want)
 	}
 }
 

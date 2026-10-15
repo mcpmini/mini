@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/transport"
 )
@@ -78,6 +79,32 @@ func TestWaitForStartup_endsWhenTheRequestIsCanceled(t *testing.T) {
 
 	if err := srv.waitForStartup(ctx); !errors.Is(err, context.Canceled) {
 		t.Errorf("waitForStartup with a canceled request = %v, want context.Canceled", err)
+	}
+}
+
+func TestWaitForStartup_aWindowOpenedDuringTheHoldDoesNotExtendIt(t *testing.T) {
+	srv := newInstallTestServer(t)
+	fc := clock.NewFake()
+	srv.clock = fc
+	srv.recordConfigServers([]config.ServerConfig{{Name: "svc"}})
+	srv.openConnectWindow("svc")
+	done := make(chan error, 1)
+	go func() { done <- srv.waitForStartup(t.Context()) }()
+	if err := fc.BlockUntilContext(t.Context(), 2); err != nil {
+		t.Fatal("the hold never started its timers:", err)
+	}
+
+	fc.Advance(startupHold - time.Second)
+	srv.openConnectWindow("svc")
+	fc.Advance(startupHold - time.Second)
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("waitForStartup = %v, want nil at its deadline", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("a window reopened during the hold kept the listing waiting past startupHold")
 	}
 }
 

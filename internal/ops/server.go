@@ -43,7 +43,11 @@ func RemoveServer(configDir, name string) error {
 		return err
 	}
 	path := config.ServerPath(configDir, name)
-	if !config.ServerFileExists(configDir, name) {
+	exists, err := config.ServerFileExists(configDir, name)
+	if err != nil {
+		return fmt.Errorf("remove %s: %w", path, err)
+	}
+	if !exists {
 		return fmt.Errorf("remove %s: %w", path, fs.ErrNotExist)
 	}
 	// The server file goes last: if cleanup fails, the server stays configured and the remove can be retried.

@@ -185,7 +185,7 @@ func TestApplyConfig_keepsServersAndProjectionsWhileTheServerFilesCantBeListed(t
 	})
 
 	srv.applyConfig()
-	removedByName := srv.removeConfigServer("svc")
+	removedByName := srv.applyServerFile(t.Context(), "svc")
 
 	if !srv.isConfigServer("svc") || removedByName {
 		t.Error("svc was removed because its servers dir couldn't be listed, as if every server file were gone")
