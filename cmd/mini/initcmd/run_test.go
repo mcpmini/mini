@@ -51,7 +51,7 @@ func TestRun(t *testing.T) {
 		if _, finished := probe.counts(); finished != 1 {
 			t.Errorf("checks finished = %d, want 1: a check still running could write after Close", finished)
 		}
-		if config.ServerFileExists(setup.ConfigDir, "notes") {
+		if configtest.ServerSaved(t, setup.ConfigDir, "notes") {
 			t.Error("notes is in mini after Close, want nothing saved until Finish")
 		}
 		assertNoStage(t, run)
@@ -121,15 +121,15 @@ func TestRun(t *testing.T) {
 		}
 		run := mustStart(t, setup, Plan{Add: setup.Add})
 		run.Save()
-		if config.ServerFileExists(setup.ConfigDir, "notes") {
+		if configtest.ServerSaved(t, setup.ConfigDir, "notes") {
 			t.Fatal("notes is in mini after Save, want it staged until Finish")
 		}
 
 		report := run.Finish(context.Background(), ConnectParams{Choice: DontConnect})
 
-		if !config.ServerFileExists(setup.ConfigDir, "notes") || len(report.WriteErrors) > 0 {
+		if !configtest.ServerSaved(t, setup.ConfigDir, "notes") || len(report.WriteErrors) > 0 {
 			t.Errorf("notes in mini = %v, write errors %v; want notes committed",
-				config.ServerFileExists(setup.ConfigDir, "notes"), report.WriteErrors)
+				configtest.ServerSaved(t, setup.ConfigDir, "notes"), report.WriteErrors)
 		}
 		assertNoStage(t, run)
 	})

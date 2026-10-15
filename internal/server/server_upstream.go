@@ -308,6 +308,7 @@ func (s *Server) runSessionEviction(ctx context.Context, maxIdle time.Duration, 
 }
 
 func (s *Server) Close() {
+	s.reloadLoop.stop()
 	s.ReleaseStartupHolds()
 	cancelAuthFlows(s.takeAuthFlows())
 	s.connector.stop()

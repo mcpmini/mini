@@ -120,6 +120,50 @@ func TestServerReload_deletedServerFile_removesServerAndNotifiesAgents(t *testin
 	agent.waitForLine("notifications/tools/list_changed")
 }
 
+func TestServerReload_savedServer_connectsAndNotifiesAgents(t *testing.T) {
+	disabled := false
+	cases := map[string]func(e *serverReloadEnv){
+		"new file": func(*serverReloadEnv) {},
+		"disabled server enabled": func(e *serverReloadEnv) {
+			e.writeServer(config.ServerConfig{Name: "svc", Transport: "http", URL: e.upstream.URL, Enabled: &disabled})
+			e.connectConfigured()
+			e.advanceTick()
+			e.assertRemoved("svc")
+		},
+	}
+	for name, setUp := range cases {
+		t.Run(name, func(t *testing.T) {
+			e := newServerReloadEnv(t)
+			e.startWithServers("kept")
+			setUp(e)
+			agent := openAgent(t, e.srv)
+
+			e.writeServer(config.ServerConfig{Name: "svc", Transport: "http", URL: e.upstream.URL})
+			e.advanceTick()
+			e.srv.WaitForStartupConnects()
+
+			e.assertConnected("svc", "kept")
+			agent.waitForLine("notifications/tools/list_changed")
+		})
+	}
+}
+
+func TestServerReload_aNewFileSavedInPartsConnectsOnceComplete(t *testing.T) {
+	for name, partial := range map[string]string{"empty": "", "half written": "transport: http\n"} {
+		t.Run(name, func(t *testing.T) {
+			e := newServerReloadEnv(t)
+			e.startPoller()
+
+			testutil.WriteFile(t, e.serverPath("svc"), partial)
+			e.advanceTick()
+			e.writeServer(config.ServerConfig{Name: "svc", Transport: "http", URL: e.upstream.URL})
+			e.advanceTick()
+
+			eventually(t, func() bool { return e.srv.ToolCount("svc") > 0 })
+		})
+	}
+}
+
 func TestServerReload_disabledServer_isRemoved(t *testing.T) {
 	t.Run("with working projections", func(t *testing.T) {
 		e := newServerReloadEnv(t)

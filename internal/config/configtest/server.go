@@ -29,3 +29,12 @@ func writeYAML(t testing.TB, value any) []byte {
 	}
 	return data
 }
+
+func ServerSaved(t testing.TB, dir, name string) bool {
+	t.Helper()
+	exists, err := config.ServerFileExists(dir, name)
+	if err != nil {
+		t.Fatalf("look for server %s: %v", name, err)
+	}
+	return exists
+}

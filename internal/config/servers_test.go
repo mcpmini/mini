@@ -342,6 +342,34 @@ func TestLoadServer_aNameDifferingOnlyInCaseIsNotFound(t *testing.T) {
 	}
 }
 
+func TestLookupServer_tellsAMissingFileFromOneItCannotLookFor(t *testing.T) {
+	dir := t.TempDir()
+	if _, found, err := config.LookupServer(dir, "svc"); found || err != nil {
+		t.Errorf("LookupServer with no servers dir = found %v, %v; want not found", found, err)
+	}
+	configtest.WriteServer(t, dir, config.ServerConfig{Name: "svc", Command: "echo"})
+	if sc, found, err := config.LookupServer(dir, "svc"); !found || err != nil || sc.Command != "echo" {
+		t.Errorf("LookupServer(svc) = %+v, found %v, %v; want the saved server", sc, found, err)
+	}
+	if _, found, err := config.LookupServer(dir, "SVC"); found || err != nil {
+		t.Errorf("LookupServer(SVC) = found %v, %v; want not found, not svc.yaml under another name", found, err)
+	}
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "broken.yaml"), "bad: [yaml\n")
+	if _, found, err := config.LookupServer(dir, "broken"); !found || err == nil {
+		t.Errorf("LookupServer(broken) = found %v, %v; want found with its parse error", found, err)
+	}
+
+	unlistable := t.TempDir()
+	testutil.WriteFile(t, filepath.Join(unlistable, "servers"), "not a directory\n")
+	if _, found, err := config.LookupServer(unlistable, "svc"); found || err == nil {
+		t.Errorf(
+			"LookupServer with an unlistable servers dir = found %v, %v; want an error, not a missing file",
+			found,
+			err,
+		)
+	}
+}
+
 func TestLoadServer_readsBackTheProjectionsAServerFileWasWrittenWith(t *testing.T) {
 	dir := t.TempDir()
 	written := config.ServerConfig{Name: "svc", Command: "echo", Projections: map[string]*config.ProjectionConfig{

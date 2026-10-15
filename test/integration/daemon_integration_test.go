@@ -455,6 +455,23 @@ func TestIntegrationDaemon_removedServerFile_dropsToolsWithoutRestart(t *testing
 	waitUntilListed(t, client, listing{tool: "svc__get_item", listed: false})
 }
 
+func TestIntegrationDaemon_addedServer_listedWithoutRestart(t *testing.T) {
+	t.Parallel()
+	cfg := daemonForTest(t)
+	startDaemon(t, cfg)
+	client := connectProxy(t, cfg)
+	client.sendNotification("notifications/initialized", nil)
+	waitUntilListed(t, client, listing{tool: "svc__get_item", listed: true})
+
+	fixtures := mockFixtureDir(t, map[string]string{"get_other": `{"id":2}`})
+	add := exec.Command(miniBin, "--config", cfg, "add", "added", "--", fakemcpBin, "--fixtures", fixtures)
+	if out, err := add.CombinedOutput(); err != nil {
+		t.Fatalf("mini add: %v\n%s", err, out)
+	}
+
+	waitUntilListed(t, client, listing{tool: "added__get_other", listed: true})
+}
+
 type listing struct {
 	tool   string
 	listed bool

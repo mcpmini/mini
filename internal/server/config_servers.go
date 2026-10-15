@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"slices"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -27,41 +28,54 @@ func (s *Server) configServerNames() []string {
 	return names
 }
 
-func (s *Server) removeServersGoneFromConfig(servers config.Servers) {
+// applyServerFiles connects and removes servers to match servers/. It looks at every name each tick,
+// so a name skipped while busy or broken is picked up once it isn't.
+func (s *Server) applyServerFiles(ctx context.Context) {
+	names, err := s.namesToApply()
+	if err != nil {
+		return // a listing error must never remove servers; the next tick tries again
+	}
 	removed := false
-	for _, name := range s.configServerNames() {
-		if !goneFromConfig(servers, name) {
-			continue
-		}
-		if s.removeConfigServer(name) {
-			s.logger.Info("server removed by config change", "server", name)
-			removed = true
-		}
+	for _, name := range names {
+		removed = s.applyServerFile(ctx, name) || removed
 	}
 	if removed {
 		s.notifyAllSessions()
 	}
 }
 
-func goneFromConfig(servers config.Servers, name string) bool {
-	return !servers.IsBroken(name) && !servers.IsEnabled(name)
+func (s *Server) namesToApply() ([]string, error) {
+	saved, err := config.ServerNames(s.configDir)
+	if err != nil {
+		return nil, err
+	}
+	names := append(s.configServerNames(), saved...)
+	slices.Sort(names)
+	return slices.Compact(names), nil
 }
 
-func (s *Server) removeConfigServer(name string) bool {
-	unlock := s.serverNames.lock(name)
+func (s *Server) applyServerFile(ctx context.Context, name string) (removed bool) {
+	unlock, ok := s.serverNames.tryLock(name)
+	if !ok {
+		return false
+	}
 	defer unlock()
-	if !s.isConfigServer(name) {
-		return false
-	}
-	servers, err := config.LoadServers(s.configDir)
+	sc, found, err := config.LookupServer(s.configDir, name)
 	if err != nil {
-		return false // the server files can't be listed now, so nothing shows the server is gone
-	}
-	if !goneFromConfig(servers, name) {
 		return false
 	}
-	s.detachAndCloseServer(name)
-	return true
+	wanted := found && sc.IsEnabled()
+	switch {
+	case !wanted && s.isConfigServer(name):
+		s.detachAndCloseServer(name)
+		s.logger.Info("server removed by config change", "server", name)
+		return true
+	// An empty or half-written file decodes without error.
+	case wanted && !s.isKnownServer(name) && (sc.Command != "" || sc.URL != ""):
+		s.logger.Info("server added by config change", "server", name)
+		s.ConnectUpstreams(ctx, []config.ServerConfig{sc})
+	}
+	return false
 }
 
 func (s *Server) isKnownServer(name string) bool {

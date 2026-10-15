@@ -14,6 +14,26 @@ type nameLock struct {
 
 func (l *nameLocks) lock(name string) (unlock func()) {
 	l.mu.Lock()
+	nl := l.entryLocked(name)
+	nl.refs++
+	l.mu.Unlock()
+	nl.Lock()
+	return func() { l.release(name, nl) }
+}
+
+func (l *nameLocks) tryLock(name string) (unlock func(), ok bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	nl := l.entryLocked(name)
+	// A held lock has refs > 0, so failing here leaves no entry behind.
+	if !nl.TryLock() {
+		return nil, false
+	}
+	nl.refs++
+	return func() { l.release(name, nl) }, true
+}
+
+func (l *nameLocks) entryLocked(name string) *nameLock {
 	if l.locks == nil {
 		l.locks = make(map[string]*nameLock)
 	}
@@ -22,10 +42,7 @@ func (l *nameLocks) lock(name string) (unlock func()) {
 		nl = &nameLock{}
 		l.locks[name] = nl
 	}
-	nl.refs++
-	l.mu.Unlock()
-	nl.Lock()
-	return func() { l.release(name, nl) }
+	return nl
 }
 
 func (l *nameLocks) release(name string, nl *nameLock) {

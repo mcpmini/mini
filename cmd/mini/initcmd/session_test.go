@@ -100,7 +100,7 @@ func TestSessionSync_isADeltaAgainstThisRun(t *testing.T) {
 		result.Failed != nil {
 		t.Errorf("result = %+v, want dropped removed and new added", result)
 	}
-	if config.ServerFileExists(dir, "dropped") {
+	if configtest.ServerSaved(t, dir, "dropped") {
 		t.Error("the unticked server's file is still there")
 	}
 	if got := testutil.ReadFile(t, keptPath); string(got) != string(marked) {
@@ -202,7 +202,7 @@ func TestSessionSync_neverRemovesServersFromBeforeTheRun(t *testing.T) {
 		t.Errorf("failed = %+v, want existing reported as already configured", result.Failed)
 	}
 	s.Sync(nil, nil)
-	if !config.ServerFileExists(dir, "existing") {
+	if !configtest.ServerSaved(t, dir, "existing") {
 		t.Error("a server configured before the run was removed")
 	}
 }
