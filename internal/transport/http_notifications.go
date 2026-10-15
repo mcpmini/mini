@@ -219,7 +219,7 @@ func (c *HTTPConnection) currentAuth(ctx context.Context) string {
 
 func shouldStopListener(ctx context.Context, url string, status int) bool {
 	if status == http.StatusMethodNotAllowed {
-		slog.Warn("upstream advertises tool changes but rejects notification stream", "url", url)
+		slog.Debug("upstream advertises tool changes but rejects notification stream", "url", url)
 		return true
 	}
 	return ctx.Err() != nil
