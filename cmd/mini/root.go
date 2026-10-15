@@ -53,6 +53,24 @@ func configureRootCmd(root *cobra.Command, opts *rootOptions) {
 		return fmt.Errorf("cannot determine default config directory; pass --config DIR: %w", opts.defaultConfigErr)
 	}
 	root.AddCommand(subcommands(opts)...)
+	logToFileWhileRunning(root, opts)
+}
+
+func logToFileWhileRunning(cmd *cobra.Command, opts *rootOptions) {
+	for _, sub := range cmd.Commands() {
+		logToFileWhileRunning(sub, opts)
+	}
+	run := cmd.RunE
+	if run == nil {
+		return
+	}
+	cmd.RunE = func(c *cobra.Command, args []string) error {
+		if opts.configDir != "" {
+			// connect and daemon replace this with their own logger once their config is loaded.
+			defer newLogFile(opts.configDir, "cli.log").redirect()()
+		}
+		return run(c, args)
+	}
 }
 
 func configFreeCommand(cmd *cobra.Command) bool {

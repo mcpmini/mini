@@ -4,10 +4,16 @@ package main
 
 import (
 	"bytes"
+	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
+
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestPersistentConfigPosition(t *testing.T) {
@@ -68,5 +74,39 @@ func TestMissingDefaultConfigRequiresExplicitDirectory(t *testing.T) {
 	err = run("--config", dir, "call", "server", "tool", "--json", "--raw")
 	if err == nil || !strings.Contains(err.Error(), "choose only one output mode") {
 		t.Errorf("call PreRunE error = %v, want output mode validation", err)
+	}
+}
+
+func TestCommandLogsGoToAFileNotTheTerminal(t *testing.T) {
+	var terminal bytes.Buffer
+	previous := slog.Default()
+	terminalLogger := slog.New(slog.NewTextHandler(&terminal, nil))
+	slog.SetDefault(terminalLogger)
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	configDir := t.TempDir()
+	failed := errors.New("server unhealthy")
+	root := &cobra.Command{Use: "mini", SilenceErrors: true, SilenceUsage: true}
+	parent := &cobra.Command{Use: "daemon"}
+	parent.AddCommand(&cobra.Command{Use: "status", RunE: func(*cobra.Command, []string) error {
+		slog.Warn("upstream http request retrying")
+		return failed
+	}})
+	root.AddCommand(parent)
+	logToFileWhileRunning(root, &rootOptions{configDir: configDir})
+	root.SetArgs([]string{"daemon", "status"})
+
+	if err := root.Execute(); !errors.Is(err, failed) {
+		t.Fatalf("err = %v, want the command's own error", err)
+	}
+
+	if terminal.Len() != 0 {
+		t.Errorf("terminal got %q, want no log lines", terminal.String())
+	}
+	logged := testutil.ReadFile(t, filepath.Join(configDir, "internal", "cli.log"))
+	if !strings.Contains(string(logged), "upstream http request retrying") {
+		t.Errorf("cli.log = %q, want the warning", logged)
+	}
+	if slog.Default() != terminalLogger {
+		t.Error("logging was not handed back after the failed command")
 	}
 }
