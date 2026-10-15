@@ -478,3 +478,37 @@ func TestClientSecretNeverAppearsInResolutionOrExchangeErrors(t *testing.T) {
 		t.Errorf("exchange error leaked the client_secret: %q", exchangeErr.Error())
 	}
 }
+
+func TestConfiguredSecretWithoutClientID_isNeverSentWithTheCIMDClient(t *testing.T) {
+	tokenSrv := newCapturingTokenServer(t)
+	asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+		"authorization_endpoint":                "https://as.example.com/authorize",
+		"token_endpoint":                        "https://as.example.com/token",
+		"client_id_metadata_document_supported": true,
+		"code_challenge_methods_supported":      []string{"S256"},
+	})
+	t.Cleanup(asSrv.Close)
+	const secret = "sk-test-configured-without-id"
+	sc := &config.ServerConfig{URL: asSrv.URL + "/mcp", Auth: &config.AuthConfig{
+		Type: "oauth2", AuthURL: "https://as.example.com/authorize", TokenURL: tokenSrv.srv.URL,
+		ClientSecret: secret, TokenEndpointAuthMethod: "client_secret_post",
+	}}
+	params := auth.ResolveEndpointsParams{ConfigDir: t.TempDir(), ServerName: "srv", Clock: clock.System()}
+	if _, err := auth.ResolveEndpoints(context.Background(), sc, params); err != nil {
+		t.Fatalf("ResolveEndpoints: %v", err)
+	}
+
+	exchangeAndRefresh(t, sc.Auth)
+
+	sentWithSecret := "Basic " + basicAuthValue(auth.ClientMetadataURL, secret)
+	for label, obs := range map[string]authObservation{"exchange": tokenSrv.exchange, "refresh": tokenSrv.refresh} {
+		if obs.formClientSecret != "" || obs.authorizationHeader == sentWithSecret {
+			t.Errorf(
+				"%s sent the configured secret: form=%q header=%q",
+				label,
+				obs.formClientSecret,
+				obs.authorizationHeader,
+			)
+		}
+	}
+}

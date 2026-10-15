@@ -69,14 +69,14 @@ func LoadLoginFor(configDir string, sc config.ServerConfig) (*Login, error) {
 		return nil, err
 	}
 	if err := login.MatchesConfig(sc); err != nil {
-		return nil, MismatchedLogin(err)
+		return nil, mismatchedLogin(err)
 	}
 	return login, nil
 }
 
-// MismatchedLogin says why a login can't be used. A running mini still holds the config it started
+// mismatchedLogin says why a login can't be used. A running mini still holds the config it started
 // with, so a login made after editing the config needs a restart too.
-func MismatchedLogin(cause error) error {
+func mismatchedLogin(cause error) error {
 	return fmt.Errorf(
 		"the login was made for other settings (%w); after logging in again, restart mini if it's running",
 		cause,
