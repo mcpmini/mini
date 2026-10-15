@@ -14,8 +14,9 @@ import (
 )
 
 type authFlowState struct {
-	cancel context.CancelFunc
-	login  *auth.BrowserLogin
+	cancel   context.CancelFunc
+	login    *auth.BrowserLogin
+	settings config.ServerConfig
 }
 
 func (s *Server) handleStartAuth(ctx context.Context, serverName string) (any, error) {
@@ -36,12 +37,13 @@ func (s *Server) handleStartAuth(ctx context.Context, serverName string) (any, e
 	if contextErr := ctx.Err(); contextErr != nil {
 		return nil, contextErr
 	}
+	settings := withOwnAuth(sc)
 	install := s.replacingInstall(sc)
 	login, err := s.startPKCEFlow(ctx, serverName, sc)
 	if err != nil {
 		return nil, err
 	}
-	authCtx, flow, err := s.registerAuthFlow(ctx, serverName, login)
+	authCtx, flow, err := s.registerAuthFlow(ctx, login, settings)
 	if err != nil {
 		return nil, err
 	}
@@ -90,15 +92,15 @@ func (s *Server) startPKCEFlow(
 
 func (s *Server) registerAuthFlow(
 	ctx context.Context,
-	serverName string,
 	login *auth.BrowserLogin,
+	settings config.ServerConfig,
 ) (context.Context, *authFlowState, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, nil, errors.Join(err, login.Close())
 	}
 	authCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Minute)
-	state := &authFlowState{cancel: cancel, login: login}
-	s.storeAuthFlow(serverName, state)
+	state := &authFlowState{cancel: cancel, login: login, settings: settings}
+	s.storeAuthFlow(settings.Name, state)
 	return authCtx, state, nil
 }
 
@@ -106,6 +108,15 @@ func (s *Server) storeAuthFlow(serverName string, state *authFlowState) {
 	s.authMu.Lock()
 	s.authFlows[serverName] = state
 	s.authMu.Unlock()
+}
+
+// loginInFlightFor is true while start_auth logs in with sc's settings: once it finishes, its own
+// reconnect applies them.
+func (s *Server) loginInFlightFor(sc config.ServerConfig) bool {
+	s.authMu.Lock()
+	defer s.authMu.Unlock()
+	flow := s.authFlows[sc.Name]
+	return flow != nil && sameSettings(flow.settings, sc)
 }
 
 func (s *Server) hasAuthFlow(serverName string) bool {
@@ -133,7 +144,7 @@ func (s *Server) runAuthFlow(ctx context.Context, install upstreamInstall, flow 
 	defer s.authWg.Done()
 	defer flow.cancel()
 	defer s.clearAuthFlow(install.cfg.Name, flow)
-	s.awaitAuthAndReconnect(ctx, install, flow.login)
+	s.awaitAuthAndReconnect(ctx, install, flow)
 }
 
 func (s *Server) clearAuthFlow(serverName string, flow *authFlowState) {
@@ -144,9 +155,9 @@ func (s *Server) clearAuthFlow(serverName string, flow *authFlowState) {
 	s.authMu.Unlock()
 }
 
-func (s *Server) awaitAuthAndReconnect(ctx context.Context, install upstreamInstall, login *auth.BrowserLogin) {
+func (s *Server) awaitAuthAndReconnect(ctx context.Context, install upstreamInstall, flow *authFlowState) {
 	sc := install.cfg
-	savedLogin, err := login.Wait(ctx)
+	savedLogin, err := flow.login.Wait(ctx)
 	if err != nil {
 		s.logger.Error("oauth flow failed", "server", sc.Name, "err", err)
 		return
@@ -155,7 +166,18 @@ func (s *Server) awaitAuthAndReconnect(ctx context.Context, install upstreamInst
 		s.logger.Error("commit oauth token failed", "server", sc.Name, "err", err)
 		return
 	}
-	s.reconnectWithToken(ctx, install)
+	if s.reconnectWithToken(ctx, install) {
+		s.recordLoginSettings(install, flow.settings)
+	}
+}
+
+// An edit or remove applied since the login started has its own record, which this mustn't replace.
+func (s *Server) recordLoginSettings(install upstreamInstall, settings config.ServerConfig) {
+	s.serverOpMu.Lock()
+	defer s.serverOpMu.Unlock()
+	if s.removeGen[install.cfg.Name] == install.removeGen {
+		s.recordSettings(settings)
+	}
 }
 
 func (s *Server) commitTokenUnlessRemoved(install upstreamInstall, login *auth.Login) error {
@@ -179,7 +201,7 @@ func (s *Server) providerParamsFor(sc config.ServerConfig) provider.Params {
 	}
 }
 
-func (s *Server) reconnectWithToken(ctx context.Context, install upstreamInstall) {
+func (s *Server) reconnectWithToken(ctx context.Context, install upstreamInstall) bool {
 	serverName := install.cfg.Name
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -188,10 +210,11 @@ func (s *Server) reconnectWithToken(ctx context.Context, install upstreamInstall
 	// old upstream in-place; on failure the old upstream is untouched.
 	if err := s.addUpstream(ctx, install); err != nil {
 		s.logger.Error("reconnect after auth failed", "server", serverName, "err", err)
-	} else {
-		s.notifyAllSessions()
-		s.logger.Info("reconnected after auth", "server", serverName)
+		return false
 	}
+	s.notifyAllSessions()
+	s.logger.Info("reconnected after auth", "server", serverName)
+	return true
 }
 
 func (s *Server) handleAuthStatus(serverName string) (any, error) {

@@ -346,8 +346,8 @@ func TestRefreshAuthorization_loginSavedForOtherSettings_isNeitherUsedNorOverwri
 	saveLoginFor(t, edited, &oauth2.Token{AccessToken: "login-for-new-url", RefreshToken: "new-refresh"})
 
 	_, err = p.RefreshAuthorization(context.Background(), "Bearer stored-access")
-	if err == nil || !strings.Contains(err.Error(), "restart mini") {
-		t.Fatalf("RefreshAuthorization = %v, want the restart remedy", err)
+	if err == nil || !strings.Contains(err.Error(), "mini auth") {
+		t.Fatalf("RefreshAuthorization = %v, want the login remedy", err)
 	}
 	if hits := f.endpoint.Hits.Load(); hits != 0 {
 		t.Errorf("token endpoint hits = %d, want 0", hits)

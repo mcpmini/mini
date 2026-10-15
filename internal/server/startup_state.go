@@ -166,6 +166,10 @@ func (s *Server) openConnectWindow(name string) {
 
 func (s *Server) recordStartupFailure(in upstreamInstall, failure startupFailure) {
 	loginSavedAt := s.loginSavedAt(in.cfg.Name)
+	// A 401 may have made mini note the server uses OAuth, which every later load merges in. Recorded
+	// with it, the next check doesn't take the note for an edit of the file.
+	detected := in.cfg
+	config.MergeDetectedOAuth(s.configDir, &detected)
 	s.serverOpMu.Lock()
 	defer s.serverOpMu.Unlock()
 	if s.removeGen[in.cfg.Name] != in.removeGen {
@@ -176,6 +180,9 @@ func (s *Server) recordStartupFailure(in upstreamInstall, failure startupFailure
 	s.startup.recordFailure(in.cfg.Name, failure)
 	if record, ok := s.configServers[in.cfg.Name]; ok {
 		record.loginSavedAt = loginSavedAt
+		if record.settings.Auth == nil {
+			record.settings.Auth = detected.Auth
+		}
 		s.configServers[in.cfg.Name] = record
 	}
 }
@@ -234,7 +241,8 @@ func (st startupState) reason(name string) string {
 func (status needsEnvStatus) reason(name string) string {
 	return fmt.Sprintf(
 		"server %q needs %s, which the running mini was started without. "+
-			"Ask the user to provide what's missing; mini picks it up only when it starts again.",
+			"Ask the user to write what's missing into its server file, which mini applies within seconds, "+
+			"or to set it where mini runs and restart mini.",
 		name, envVarList(status.envVars))
 }
 
@@ -254,5 +262,5 @@ func (needsAuthStatus) reason(name string) string {
 func (notTrustedStatus) reason(name string) string {
 	return fmt.Sprintf(
 		"server %q runs a command an agent added, so mini won't start it until a person trusts it. "+
-			"Ask the user to delete agent_added from its server file; mini picks the change up only when it starts again.", name)
+			"Ask the user to delete agent_added from its server file; mini starts it within seconds of the save.", name)
 }

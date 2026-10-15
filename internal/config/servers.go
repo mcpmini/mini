@@ -164,8 +164,13 @@ func mergeKnownAuth(dir string, sc *ServerConfig) {
 		sc.Auth = ac
 		return
 	}
+	MergeDetectedOAuth(dir, sc)
+}
+
+// MergeDetectedOAuth gives sc OAuth when mini detected it from a 401 and nothing else sets its auth.
+func MergeDetectedOAuth(dir string, sc *ServerConfig) {
 	// A marker can outlive the server that earned it, and an agent's server never gets OAuth.
-	if !sc.AgentAdded && readServerMeta(dir, sc.Name).OAuthDetected {
+	if sc.Auth == nil && !sc.AgentAdded && readServerMeta(dir, sc.Name).OAuthDetected {
 		sc.Auth = &AuthConfig{Type: AuthTypeOAuth2}
 	}
 }
