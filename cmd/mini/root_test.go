@@ -4,10 +4,15 @@ package main
 
 import (
 	"bytes"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
+
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestPersistentConfigPosition(t *testing.T) {
@@ -68,5 +73,34 @@ func TestMissingDefaultConfigRequiresExplicitDirectory(t *testing.T) {
 	err = run("--config", dir, "call", "server", "tool", "--json", "--raw")
 	if err == nil || !strings.Contains(err.Error(), "choose only one output mode") {
 		t.Errorf("call PreRunE error = %v, want output mode validation", err)
+	}
+}
+
+func TestCommandLogsGoToAFileNotTheTerminal(t *testing.T) {
+	var terminal bytes.Buffer
+	previous := slog.Default()
+	terminalLogger := slog.New(slog.NewTextHandler(&terminal, nil))
+	slog.SetDefault(terminalLogger)
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	configDir := t.TempDir()
+	root := newRootCmd()
+	root.AddCommand(&cobra.Command{Use: "retry", Run: func(*cobra.Command, []string) {
+		slog.Warn("upstream http request retrying")
+	}})
+	root.SetArgs([]string{"--config", configDir, "retry"})
+
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	if terminal.Len() != 0 {
+		t.Errorf("terminal got %q, want no log lines", terminal.String())
+	}
+	logged := testutil.ReadFile(t, filepath.Join(configDir, "internal", "cli.log"))
+	if !strings.Contains(string(logged), "upstream http request retrying") {
+		t.Errorf("cli.log = %q, want the warning", logged)
+	}
+	if slog.Default() != terminalLogger {
+		t.Error("logging was not handed back after the command")
 	}
 }

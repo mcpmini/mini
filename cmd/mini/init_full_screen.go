@@ -15,7 +15,7 @@ func runFullScreenInit(configDir string) error {
 	if err != nil {
 		return err
 	}
-	logs := newUILogs(configDir)
+	logs := newLogFile(configDir, "init.log")
 	restore := logs.redirect()
 	out, runErr := tui.Run(tui.Params{
 		Setup:       setup,

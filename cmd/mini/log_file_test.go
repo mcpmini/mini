@@ -10,10 +10,10 @@ import (
 	"github.com/mcpmini/mini/internal/testutil"
 )
 
-func TestUILogs(t *testing.T) {
+func TestLogFile(t *testing.T) {
 	t.Run("a run that logs nothing leaves no file", func(t *testing.T) {
 		configDir := t.TempDir()
-		logs := newUILogs(configDir)
+		logs := newLogFile(configDir, "test.log")
 		logs.redirect()()
 		if path, ok := logs.written(); ok {
 			t.Errorf("written = %s, want nothing", path)
@@ -24,7 +24,7 @@ func TestUILogs(t *testing.T) {
 	})
 	t.Run("what is logged lands in the file, and the log goes back afterward", func(t *testing.T) {
 		before := log.Writer()
-		logs := newUILogs(t.TempDir())
+		logs := newLogFile(t.TempDir(), "test.log")
 		restore := logs.redirect()
 		log.Print("probe failed")
 		restore()
@@ -36,7 +36,7 @@ func TestUILogs(t *testing.T) {
 			t.Errorf("log file = %q, want the logged line", data)
 		}
 		if log.Writer() != before {
-			t.Error("the log still writes to the UI file after restore")
+			t.Error("the log still writes to the file after restore")
 		}
 	})
 }

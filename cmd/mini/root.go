@@ -21,6 +21,7 @@ func main() {
 type rootOptions struct {
 	configDir        string
 	defaultConfigErr error
+	restoreLog       func()
 }
 
 func newRootCmd() *cobra.Command {
@@ -47,12 +48,27 @@ func configureRootCmd(root *cobra.Command, opts *rootOptions) {
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return usageErrf("%v", err) })
 	root.PersistentFlags().StringVar(&opts.configDir, "config", opts.configDir, "config directory")
 	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
-		if opts.defaultConfigErr == nil || opts.configDir != "" || configFreeCommand(cmd) {
-			return nil
+		if opts.configDir == "" {
+			return requireConfigDir(cmd, opts)
 		}
-		return fmt.Errorf("cannot determine default config directory; pass --config DIR: %w", opts.defaultConfigErr)
+		// connect and daemon replace this with their own logger once their config is loaded.
+		opts.restoreLog = newLogFile(opts.configDir, "cli.log").redirect()
+		return nil
 	}
+	cobra.OnFinalize(func() {
+		if opts.restoreLog != nil {
+			opts.restoreLog()
+			opts.restoreLog = nil
+		}
+	})
 	root.AddCommand(subcommands(opts)...)
+}
+
+func requireConfigDir(cmd *cobra.Command, opts *rootOptions) error {
+	if opts.defaultConfigErr == nil || configFreeCommand(cmd) {
+		return nil
+	}
+	return fmt.Errorf("cannot determine default config directory; pass --config DIR: %w", opts.defaultConfigErr)
 }
 
 func configFreeCommand(cmd *cobra.Command) bool {
