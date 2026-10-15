@@ -147,12 +147,15 @@ func TestConfigStatus_aFailureARetryCantFixIsReportedWithItsRemedy(t *testing.T)
 					Names: []string{"MINI_TEST_UNSET_A", "MINI_TEST_UNSET_B"},
 				},
 			},
-			wantReason: []string{"MINI_TEST_UNSET_A, MINI_TEST_UNSET_B", "starts again"},
+			wantReason: []string{
+				"MINI_TEST_UNSET_A, MINI_TEST_UNSET_B",
+				"server file, which mini applies within seconds",
+			},
 		},
 		{
 			name:       "command an agent added",
 			server:     config.ServerConfig{Name: "svc", Command: "true", AgentAdded: true},
-			wantReason: []string{"agent_added", "starts again"},
+			wantReason: []string{"agent_added", "within seconds"},
 		},
 	}
 	for _, tc := range cases {

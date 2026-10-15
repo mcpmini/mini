@@ -4,10 +4,12 @@ package server
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
@@ -138,6 +140,97 @@ func recordNeedsAuth(t *testing.T, srv *Server) config.ServerConfig {
 func writeLogin(t *testing.T, srv *Server) {
 	t.Helper()
 	testutil.WriteFile(t, auth.TokenPath(srv.configDir, "svc"), "{}")
+}
+
+func TestApplyServerFile_anEditCancelsALoginStartedForTheOldSettings(t *testing.T) {
+	srv, sc := newNeedsAuthServer(t)
+	cancelled := false
+	login := authtest.StartLogin(t, &config.AuthConfig{
+		Type:     config.AuthTypeOAuth2,
+		ClientID: "c",
+		AuthURL:  "https://auth.example.com/authorize",
+		TokenURL: "https://auth.example.com/token",
+	})
+	srv.storeAuthFlow("svc", &authFlowState{cancel: func() { cancelled = true }, login: login})
+
+	sc.Args = []string{"--moved"}
+	configtest.WriteServer(t, srv.configDir, sc)
+	srv.applyServerFile(t.Context(), "svc")
+	srv.connector.wait()
+
+	if !cancelled || srv.hasAuthFlow("svc") {
+		t.Error("a login for svc's old settings is still waiting after svc was edited")
+	}
+}
+
+func TestSettingsChanged_OAuthMiniDetectedFromA401IsNotAnEdit(t *testing.T) {
+	srv := newInstallTestServer(t)
+	saved := config.ServerConfig{Name: "svc", Transport: "http", URL: "https://mcp.example.com/mcp"}
+	configtest.WriteServer(t, srv.configDir, saved)
+	srv.recordConfigServers([]config.ServerConfig{saved})
+
+	if err := config.MarkOAuthDetected(srv.configDir, "svc"); err != nil {
+		t.Fatal(err)
+	}
+	srv.recordStartupFailure(srv.startupInstall(saved), needsAuthStatus{})
+
+	loaded, _, err := config.LookupServer(srv.configDir, "svc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Auth == nil {
+		t.Fatal("the OAuth mini detected isn't merged into the loaded config, so this test proves nothing")
+	}
+	if srv.settingsChanged(loaded) {
+		t.Error(
+			"the OAuth mini detected after a 401 reads as an edit, so the next check reconnects svc and cancels its login",
+		)
+	}
+}
+
+func TestSettingsChanged_aLoginFillingInTheRecordedAuthIsNotAnEdit(t *testing.T) {
+	srv := newInstallTestServer(t)
+	saved := config.ServerConfig{
+		Name: "svc",
+		URL:  "https://mcp.example.com",
+		Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2},
+	}
+	running := saved
+	srv.recordConfigServers([]config.ServerConfig{running})
+
+	running.Auth.ResourceURL = "https://mcp.example.com"
+	running.Auth.TokenURL = "https://auth.example.com/token"
+
+	fresh := saved
+	fresh.Auth = &config.AuthConfig{Type: config.AuthTypeOAuth2}
+	if srv.settingsChanged(fresh) {
+		t.Error("endpoints a login wrote into the running config read as an edit of the file")
+	}
+}
+
+func TestSameSettings(t *testing.T) {
+	disabled := false
+	base := config.ServerConfig{Name: "svc", URL: "https://mcp.example.com"}
+	same := map[string]func(*config.ServerConfig){
+		"projections": func(sc *config.ServerConfig) {
+			sc.Projections = map[string]*config.ProjectionConfig{"*": {IncludeOnly: []string{"a"}}}
+		},
+		"broken projections": func(sc *config.ServerConfig) { sc.ProjectionsErr = &config.SourceError{} },
+		"unset env":          func(sc *config.ServerConfig) { sc.UnsetEnv = errors.New("unset") },
+		"enabled":            func(sc *config.ServerConfig) { sc.Enabled = &disabled },
+	}
+	for name, edit := range same {
+		edited := base
+		edit(&edited)
+		if !sameSettings(base, edited) {
+			t.Errorf("%s: want no reconnect for a change that applies without one", name)
+		}
+	}
+	trusted := base
+	trusted.AgentAdded = true
+	if sameSettings(base, trusted) {
+		t.Error("agent_added: want a reconnect, so trusting a server starts it")
+	}
 }
 
 func TestClose_stopsTheConfigReloadLoop(t *testing.T) {

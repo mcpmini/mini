@@ -49,12 +49,13 @@ func TestApplyServerFile_keepsANameSavedAgainSinceTheServerSetWasLoaded(t *testi
 	); err != nil {
 		t.Fatal(err)
 	}
-	srv.recordConfigServers([]config.ServerConfig{{Name: "svc"}})
+	saved := config.ServerConfig{Name: "svc", Command: "run"}
+	srv.recordConfigServers([]config.ServerConfig{saved})
 	path := filepath.Join(srv.configDir, "servers", "svc.yaml")
-	configtest.WriteServer(t, srv.configDir, config.ServerConfig{Name: "svc", Command: "run"})
+	configtest.WriteServer(t, srv.configDir, saved)
 
 	if srv.applyServerFile(t.Context(), "svc") {
-		t.Error("applyServerFile removed svc while its file is saved and enabled")
+		t.Error("applyServerFile dropped svc while its file is saved, enabled and unchanged")
 	}
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
