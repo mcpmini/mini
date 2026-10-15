@@ -323,6 +323,11 @@ func oauthServer(name, clientID string) config.ServerConfig {
 	return sc
 }
 
+func customCallbackPort(sc config.ServerConfig) config.ServerConfig {
+	sc.Auth.CallbackPort = 7777
+	return sc
+}
+
 func TestSessionChecks_discoveryNamesTheLoginsThatNeedTheUsersOwnApp(t *testing.T) {
 	stage, miniDir := t.TempDir(), t.TempDir()
 	for _, sc := range []config.ServerConfig{oauthServer("asana", ""), oauthServer("own", "my-app"), oauthServer("box", "")} {
@@ -337,6 +342,7 @@ func TestSessionChecks_discoveryNamesTheLoginsThatNeedTheUsersOwnApp(t *testing.
 		"https://linear.example/mcp": {RegistrationURL: "https://linear.example/register"},
 		"https://notion.example/mcp": {CIMDSupported: true},
 		"https://sentry.example/mcp": {CIMDSupported: true},
+		"https://pinned.example/mcp": {CIMDSupported: true},
 	}}
 	var probed []string
 	var mu sync.Mutex
@@ -353,16 +359,21 @@ func TestSessionChecks_discoveryNamesTheLoginsThatNeedTheUsersOwnApp(t *testing.
 	t.Cleanup(s.Close)
 
 	s.Sync([]config.ServerConfig{
-		httpServer("github", "https://github.example/mcp"), httpServer("linear", "https://linear.example/mcp"),
-		httpServer("notion", "https://notion.example/mcp"), httpServer("flaky", "https://flaky.example/mcp"),
-		httpServer("keyed", "https://keyed.example/mcp"), oauthServer("sentry", ""),
+		httpServer("github", "https://github.example/mcp"),
+		httpServer("linear", "https://linear.example/mcp"),
+		httpServer("notion", "https://notion.example/mcp"),
+		httpServer("flaky", "https://flaky.example/mcp"),
+		httpServer("keyed", "https://keyed.example/mcp"),
+		oauthServer("sentry", ""),
+		customCallbackPort(oauthServer("pinned", "")),
 	}, nil)
 	s.WaitChecks()
 
 	findings := s.Findings()
-	if got := findings.NoSelfRegistration; !reflect.DeepEqual(got, map[string]bool{"asana": true, "github": true}) {
-		t.Errorf("no self-registration = %v, want asana and github: neither offers DCR or CIMD, and flaky's "+
-			"failed discovery proves nothing", got)
+	want := map[string]bool{"asana": true, "github": true, "pinned": true}
+	if got := findings.NoSelfRegistration; !reflect.DeepEqual(got, want) {
+		t.Errorf("no self-registration = %v, want asana and github, which offer neither DCR nor CIMD, and pinned, "+
+			"whose callback port mini's metadata document doesn't list; flaky's failed discovery proves nothing", got)
 	}
 	if got := findings.NeedsCredential; !reflect.DeepEqual(got, map[string]bool{"keyed": true}) {
 		t.Errorf("needs credential = %v, want keyed: it refused the probe without an OAuth challenge", got)

@@ -118,27 +118,26 @@ func resolveClientID(ctx context.Context, p ClientRegParams) error {
 	if err != nil || found {
 		return err
 	}
-	// DCR before CIMD: servers like Linear advertise CIMD but only accept pre-approved metadata URLs,
-	// rejecting ours with "Invalid client". MCP spec §Client Registration Approaches uses SHOULD.
-	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/977e7481/docs/specification/2025-11-25/basic/authorization.mdx?plain=1#L204-L208
-	if p.Meta != nil && p.Meta.RegistrationURL != "" {
-		return dynamicRegister(ctx, p)
-	}
-	if p.Meta != nil && p.Meta.CIMDSupported {
+	// The spec deprecates DCR, keeping it as the fallback when CIMD can't be used.
+	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/b488c166/docs/specification/2026-07-28/basic/authorization/client-registration.mdx?plain=1#L13-L18
+	if CanUseClientMetadataDocument(p.AuthConfig, p.Meta) {
 		p.AuthConfig.ClientID = ClientMetadataURL
 		return nil
 	}
 	return dynamicRegister(ctx, p)
 }
 
+// CanUseClientMetadataDocument reports whether mini can identify itself to the server by its published
+// metadata document, whose redirect URIs list only the default callback port.
+func CanUseClientMetadataDocument(a *config.AuthConfig, meta *ServerMeta) bool {
+	return meta != nil && meta.CIMDSupported && ResolvedCallbackPort(a) == LoopbackCallbackPort
+}
+
 func dynamicRegister(ctx context.Context, p ClientRegParams) error {
-	a, meta := p.AuthConfig, p.Meta
-	regURL := ""
-	if meta != nil {
-		regURL = meta.RegistrationURL
-	}
-	if regURL == "" {
-		return fmt.Errorf("no client_id configured and server provides no registration endpoint")
+	a := p.AuthConfig
+	regURL, err := registrationURL(p.Meta)
+	if err != nil {
+		return err
 	}
 	result, err := Register(ctx, regURL, ResolvedCallbackURI(a))
 	if err != nil {
@@ -154,6 +153,17 @@ func dynamicRegister(ctx context.Context, p ClientRegParams) error {
 		return err
 	}
 	return SaveRegistration(p.ConfigDir, p.ServerName, reg)
+}
+
+func registrationURL(meta *ServerMeta) (string, error) {
+	switch {
+	case meta != nil && meta.RegistrationURL != "":
+		return meta.RegistrationURL, nil
+	case meta != nil && meta.CIMDSupported:
+		return "", fmt.Errorf("the server only accepts mini's client metadata document, which lists callback port %d; "+
+			"remove auth.callback_port or set auth.client_id to your own app", LoopbackCallbackPort)
+	}
+	return "", fmt.Errorf("no client_id configured and server provides no registration endpoint")
 }
 
 // ApplyExistingClientReg reports whether a stored client registration was found and applied to p.AuthConfig.
