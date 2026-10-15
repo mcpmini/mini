@@ -135,7 +135,11 @@ func (s *Server) detachAndCloseServer(serverName string) {
 
 func (s *Server) detachAndCloseLocked(serverName string) {
 	s.removeGen[serverName]++
-	if u := s.detachUpstream(serverName); u != nil {
+	s.closeDetached(serverName, s.detachUpstream(serverName))
+}
+
+func (s *Server) closeDetached(serverName string, u *upstreamServer) {
+	if u != nil {
 		u.shutdownAndClose()
 	}
 	s.sessions.closeServerConnections(serverName)
@@ -146,9 +150,19 @@ func (s *Server) detachAndCloseLocked(serverName string) {
 func (s *Server) detachUpstream(serverName string) *upstreamServer {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
+	delete(s.projections, serverName)
+	return s.detachUpstreamLocked(serverName)
+}
+
+func (s *Server) detachUpstreamKeepingProjections(serverName string) *upstreamServer {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	return s.detachUpstreamLocked(serverName)
+}
+
+func (s *Server) detachUpstreamLocked(serverName string) *upstreamServer {
 	u := s.upstreams[serverName]
 	delete(s.upstreams, serverName)
-	delete(s.projections, serverName)
 	delete(s.configServers, serverName)
 	s.startup.forget(serverName)
 	return u

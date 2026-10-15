@@ -165,6 +165,7 @@ func (s *Server) openConnectWindow(name string) {
 }
 
 func (s *Server) recordStartupFailure(in upstreamInstall, failure startupFailure) {
+	loginSavedAt := s.loginSavedAt(in.cfg.Name)
 	s.serverOpMu.Lock()
 	defer s.serverOpMu.Unlock()
 	if s.removeGen[in.cfg.Name] != in.removeGen {
@@ -173,6 +174,10 @@ func (s *Server) recordStartupFailure(in upstreamInstall, failure startupFailure
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
 	s.startup.recordFailure(in.cfg.Name, failure)
+	if record, ok := s.configServers[in.cfg.Name]; ok {
+		record.loginSavedAt = loginSavedAt
+		s.configServers[in.cfg.Name] = record
+	}
 }
 
 func (s *Server) markToolsReady(name string) {

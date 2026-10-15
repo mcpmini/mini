@@ -72,7 +72,7 @@ func newServer(
 		configDir:        configDir,
 		reg:              registry.New(),
 		upstreams:        make(map[string]*upstreamServer),
-		configServers:    make(map[string]bool),
+		configServers:    make(map[string]configServer),
 		startup:          newStartupTracker(),
 		stopWaiting:      make(chan struct{}),
 		removeGen:        make(map[string]uint64),

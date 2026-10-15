@@ -25,7 +25,7 @@ func Load(configDir, serverName string) (*oauth2.Token, error) {
 	if !config.ValidServerName.MatchString(serverName) {
 		return nil, fmt.Errorf("invalid server name: %q", serverName)
 	}
-	data, err := os.ReadFile(tokenPath(configDir, serverName))
+	data, err := os.ReadFile(TokenPath(configDir, serverName))
 	if err != nil {
 		return nil, err
 	}
@@ -40,7 +40,7 @@ func Save(configDir, serverName string, t *oauth2.Token) error {
 	if !config.ValidServerName.MatchString(serverName) {
 		return fmt.Errorf("invalid server name: %q", serverName)
 	}
-	path := tokenPath(configDir, serverName)
+	path := TokenPath(configDir, serverName)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
@@ -105,9 +105,9 @@ func DeleteCredentials(configDir, serverName string) error {
 
 // CredentialPaths are the files holding a server's login: its token and its registered client.
 func CredentialPaths(configDir, serverName string) []string {
-	return []string{tokenPath(configDir, serverName), registrationPath(configDir, serverName)}
+	return []string{TokenPath(configDir, serverName), registrationPath(configDir, serverName)}
 }
 
-func tokenPath(configDir, serverName string) string {
+func TokenPath(configDir, serverName string) string {
 	return filepath.Join(configDir, "internal", serverName+".token.json")
 }
