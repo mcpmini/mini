@@ -32,34 +32,34 @@ type ResolveEndpointsParams struct {
 }
 
 // ResolveEndpoints fills in missing OAuth endpoints on sc.Auth via RFC 9728
-// discovery and dynamic client registration. It always canonicalizes sc.URL
-// into sc.Auth.ResourceURL. Endpoint discovery is skipped when AuthURL,
-// TokenURL, and ClientID are all already set.
-func ResolveEndpoints(ctx context.Context, sc *config.ServerConfig, p ResolveEndpointsParams) error {
+// discovery and client registration, and returns the client the login uses. It
+// always canonicalizes sc.URL into sc.Auth.ResourceURL. Endpoint discovery is
+// skipped when AuthURL, TokenURL, and ClientID are all already set.
+func ResolveEndpoints(ctx context.Context, sc *config.ServerConfig, p ResolveEndpointsParams) (LoginClient, error) {
 	if sc.UnsetEnv != nil {
-		return sc.UnsetEnv
+		return LoginClient{}, sc.UnsetEnv
 	}
 	if err := ApplyResourceURL(sc); err != nil {
-		return err
+		return LoginClient{}, err
 	}
 	a := sc.Auth
-	if a.AuthURL != "" && a.TokenURL != "" && a.ClientID != "" {
-		return nil
+	if a.ClientID != "" {
+		_, err := DiscoverAndApply(ctx, sc.URL, a)
+		return LoginClient{ID: a.ClientID, Configured: true}, err
 	}
+	// A configured secret belongs to a configured client; never send it with a registered or CIMD id.
+	a.ClientSecret, a.TokenEndpointAuthMethod = "", ""
 	meta, err := DiscoverAndApply(ctx, sc.URL, a)
 	if err != nil {
-		return err
+		return LoginClient{}, err
 	}
-	if a.ClientID == "" {
-		return resolveClientID(ctx, ClientRegParams{
-			ConfigDir:  p.ConfigDir,
-			ServerName: p.ServerName,
-			AuthConfig: a,
-			Meta:       meta,
-			Now:        p.Clock.Now(),
-		})
-	}
-	return nil
+	return resolveClient(ctx, ClientRegParams{
+		ConfigDir:  p.ConfigDir,
+		ServerName: p.ServerName,
+		AuthConfig: a,
+		Meta:       meta,
+		Now:        p.Clock.Now(),
+	})
 }
 
 // DiscoverAndApply fills in a's missing OAuth endpoints from the server's discovery metadata.
@@ -113,18 +113,30 @@ type ClientRegParams struct {
 	Now        time.Time
 }
 
-func resolveClientID(ctx context.Context, p ClientRegParams) error {
-	found, err := ApplyExistingClientReg(p)
-	if err != nil || found {
-		return err
+func resolveClient(ctx context.Context, p ClientRegParams) (LoginClient, error) {
+	reg, err := LoadRegistration(p.ConfigDir, p.ServerName)
+	if err != nil && !IsNotFound(err) {
+		return LoginClient{}, err
+	}
+	if err == nil && registrationUsable(reg, p) {
+		return applyRegistration(p.AuthConfig, reg)
 	}
 	// The spec deprecates DCR, keeping it as the fallback when CIMD can't be used.
 	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/b488c166/docs/specification/2026-07-28/basic/authorization/client-registration.mdx?plain=1#L13-L18
 	if CanUseClientMetadataDocument(p.AuthConfig, p.Meta) {
 		p.AuthConfig.ClientID = ClientMetadataURL
-		return nil
+		return LoginClient{ID: ClientMetadataURL}, nil
 	}
 	return dynamicRegister(ctx, p)
+}
+
+// registrationUsable rejects a client registered with another authorization server, which wouldn't
+// know it and mustn't receive its secret, and a client whose secret expired, which can't log in.
+func registrationUsable(reg *Registration, p ClientRegParams) bool {
+	if reg.TokenURL != p.AuthConfig.TokenURL {
+		return false
+	}
+	return reg.ClientSecret == "" || secretApplies(reg, p.Now)
 }
 
 // CanUseClientMetadataDocument reports whether mini can identify itself to the server by its published
@@ -133,26 +145,28 @@ func CanUseClientMetadataDocument(a *config.AuthConfig, meta *ServerMeta) bool {
 	return meta != nil && meta.CIMDSupported && ResolvedCallbackPort(a) == LoopbackCallbackPort
 }
 
-func dynamicRegister(ctx context.Context, p ClientRegParams) error {
+func dynamicRegister(ctx context.Context, p ClientRegParams) (LoginClient, error) {
 	a := p.AuthConfig
 	regURL, err := registrationURL(p.Meta)
 	if err != nil {
-		return err
+		return LoginClient{}, err
 	}
 	result, err := Register(ctx, regURL, ResolvedCallbackURI(a))
 	if err != nil {
-		return err
+		return LoginClient{}, err
 	}
 	reg := &Registration{
 		ClientID:                result.ClientID,
 		ClientSecret:            result.ClientSecret,
 		TokenEndpointAuthMethod: result.TokenEndpointAuthMethod,
 		ClientSecretExpiresAt:   result.ClientSecretExpiresAt,
+		TokenURL:                a.TokenURL,
 	}
-	if err := applyRegistration(a, reg, p.Now); err != nil {
-		return err
+	client, err := applyRegistration(a, reg)
+	if err != nil {
+		return LoginClient{}, err
 	}
-	return SaveRegistration(p.ConfigDir, p.ServerName, reg)
+	return client, SaveRegistration(p.ConfigDir, p.ServerName, reg)
 }
 
 func registrationURL(meta *ServerMeta) (string, error) {
@@ -166,40 +180,21 @@ func registrationURL(meta *ServerMeta) (string, error) {
 	return "", fmt.Errorf("no client_id configured and server provides no registration endpoint")
 }
 
-// ApplyExistingClientReg reports whether a stored client registration was found and applied to p.AuthConfig.
-func ApplyExistingClientReg(p ClientRegParams) (bool, error) {
-	reg, err := LoadRegistration(p.ConfigDir, p.ServerName)
-	if err == nil {
-		return true, applyRegistration(p.AuthConfig, reg, p.Now)
-	}
-	if !IsNotFound(err) {
-		return false, err
-	}
-	return false, nil
-}
-
-func applyRegistration(a *config.AuthConfig, reg *Registration, now time.Time) error {
-	a.ClientID = reg.ClientID
+func applyRegistration(a *config.AuthConfig, reg *Registration) (LoginClient, error) {
 	// RFC 7591 §3.2.1: default when omitted is client_secret_basic
 	if reg.ClientSecret != "" && reg.TokenEndpointAuthMethod == "" {
 		reg.TokenEndpointAuthMethod = "client_secret_basic"
 	}
 	if err := validateRegistrationConsistency(reg); err != nil {
-		return err
+		return LoginClient{}, err
 	}
-	// treat as absent — token exchange surfaces the AS's own error instead of silent re-registration
-	if !secretApplies(reg, now) {
-		return nil
-	}
+	a.ClientID = reg.ClientID
 	a.ClientSecret = reg.ClientSecret
 	a.TokenEndpointAuthMethod = reg.TokenEndpointAuthMethod
-	return nil
+	return LoginClient{ID: reg.ClientID, Secret: reg.ClientSecret, AuthMethod: reg.TokenEndpointAuthMethod}, nil
 }
 
 func secretApplies(reg *Registration, now time.Time) bool {
-	if reg.ClientSecret == "" {
-		return false
-	}
 	if reg.ClientSecretExpiresAt == 0 {
 		return true
 	}

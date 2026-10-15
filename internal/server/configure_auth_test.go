@@ -35,8 +35,19 @@ func configureResult(t *testing.T, srv *server.Server, args map[string]any) map[
 	return result
 }
 
+func writeOAuthServer(t *testing.T, dir string) config.ServerConfig {
+	t.Helper()
+	sc := config.ServerConfig{
+		Name: "myserver", Transport: "http", URL: "https://mcp.example.com/mcp",
+		Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid"},
+	}
+	configtest.WriteServer(t, dir, sc)
+	return sc
+}
+
 func TestAuthStatus_noToken_returnsUnauthorized(t *testing.T) {
 	dir := t.TempDir()
+	writeOAuthServer(t, dir)
 	srv := newServerWithDir(t, dir)
 
 	result := configureResult(t, srv, map[string]any{
@@ -57,6 +68,7 @@ func TestAuthStatus_validToken_returnsAuthorized(t *testing.T) {
 	authtest.SaveToken(t, authtest.TokenFile{
 		ConfigDir:  dir,
 		ServerName: "myserver",
+		Server:     writeOAuthServer(t, dir),
 		Token: &oauth2.Token{
 			AccessToken:  "test-access-token",
 			RefreshToken: "test-refresh-token",
@@ -77,11 +89,33 @@ func TestAuthStatus_validToken_returnsAuthorized(t *testing.T) {
 	}
 }
 
+func TestAuthStatus_loginForAnotherURL_returnsUnauthorizedWithReason(t *testing.T) {
+	dir := t.TempDir()
+	madeFor := writeOAuthServer(t, dir)
+	madeFor.URL = "https://old.example.com/mcp"
+	authtest.SaveToken(t, authtest.TokenFile{
+		ConfigDir: dir, ServerName: "myserver", Server: madeFor,
+		Token: &oauth2.Token{AccessToken: "t", Expiry: time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC)},
+	})
+
+	result := configureResult(t, newServerWithDir(t, dir), map[string]any{
+		"action": "auth_status",
+		"server": "myserver",
+	})
+	if result["authorized"] != false {
+		t.Errorf("authorized = %v, want false for a login made for another URL", result["authorized"])
+	}
+	if reason, _ := result["reason"].(string); !strings.Contains(reason, "server URL changed") {
+		t.Errorf("reason = %q, want it to say the server URL changed", reason)
+	}
+}
+
 func TestAuthStatus_expiredToken_returnsUnauthorized(t *testing.T) {
 	dir := t.TempDir()
 	authtest.SaveToken(t, authtest.TokenFile{
 		ConfigDir:  dir,
 		ServerName: "myserver",
+		Server:     writeOAuthServer(t, dir),
 		Token: &oauth2.Token{
 			AccessToken: "old-token",
 			TokenType:   "Bearer",

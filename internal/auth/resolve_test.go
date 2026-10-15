@@ -56,7 +56,7 @@ func TestResolveEndpoints_cimd(t *testing.T) {
 		URL:  asSrv.URL + "/mcp",
 		Auth: &config.AuthConfig{Type: "oauth2"},
 	}
-	if err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(t.TempDir(), "srv")); err != nil {
+	if _, err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(t.TempDir(), "srv")); err != nil {
 		t.Fatal(err)
 	}
 	if sc.Auth.ClientID != auth.ClientMetadataURL {
@@ -90,7 +90,7 @@ func TestResolveEndpoints_refusesAServerWithAnUnsetVariable(t *testing.T) {
 	unset := errors.New("server srv: auth.client_secret: MINI_TEST_CLIENT_SECRET isn't set where mini runs")
 	sc.UnsetEnv = unset
 
-	err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(t.TempDir(), "srv"))
+	_, err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(t.TempDir(), "srv"))
 
 	if !errors.Is(err, unset) {
 		t.Errorf(
@@ -123,7 +123,11 @@ func TestResolveEndpoints_configuredEndpoints_canonicalizesResourceURL(t *testin
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			sc := configuredOAuthServer(tc.url)
-			if err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(t.TempDir(), "srv")); err != nil {
+			if _, err := auth.ResolveEndpoints(
+				context.Background(),
+				sc,
+				resolveParams(t.TempDir(), "srv"),
+			); err != nil {
 				t.Fatalf("ResolveEndpoints: %v", err)
 			}
 			if sc.Auth.ResourceURL != tc.want {
@@ -147,7 +151,11 @@ func TestResolveEndpoints_invalidServerURL_returnsError(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			sc := configuredOAuthServer(tc.url)
-			if err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(t.TempDir(), "srv")); err == nil {
+			if _, err := auth.ResolveEndpoints(
+				context.Background(),
+				sc,
+				resolveParams(t.TempDir(), "srv"),
+			); err == nil {
 				t.Fatal("ResolveEndpoints succeeded for invalid resource URL")
 			}
 		})
@@ -180,7 +188,7 @@ func TestResolveEndpoints_cachedRegistrationBeforeCIMD(t *testing.T) {
 		ConfigDir:  dir,
 		ServerName: "srv",
 		Registration: &auth.Registration{
-			ClientID: "cached-id",
+			ClientID: "cached-id", TokenURL: "https://as.example.com/token",
 		},
 	})
 
@@ -188,7 +196,7 @@ func TestResolveEndpoints_cachedRegistrationBeforeCIMD(t *testing.T) {
 		URL:  asSrv.URL + "/mcp",
 		Auth: &config.AuthConfig{Type: "oauth2"},
 	}
-	if err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(dir, "srv")); err != nil {
+	if _, err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(dir, "srv")); err != nil {
 		t.Fatal(err)
 	}
 	if sc.Auth.ClientID != "cached-id" {
@@ -230,7 +238,11 @@ func TestResolveEndpoints_serverWithCIMDAndDCR(t *testing.T) {
 				Auth: &config.AuthConfig{Type: "oauth2", CallbackPort: tc.callbackPort},
 			}
 
-			if err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(t.TempDir(), "srv")); err != nil {
+			if _, err := auth.ResolveEndpoints(
+				context.Background(),
+				sc,
+				resolveParams(t.TempDir(), "srv"),
+			); err != nil {
 				t.Fatal(err)
 			}
 
@@ -261,7 +273,7 @@ func TestResolveEndpoints_cimdOnlyServerWithCustomCallbackPortNamesThePort(t *te
 		Auth: &config.AuthConfig{Type: "oauth2", CallbackPort: 7777},
 	}
 
-	err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(t.TempDir(), "srv"))
+	_, err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(t.TempDir(), "srv"))
 
 	if err == nil || !strings.Contains(err.Error(), "callback port 6464") {
 		t.Errorf("err = %v, want it to name the callback port the metadata document lists", err)
@@ -303,7 +315,7 @@ func TestResolveEndpoints_rejectsLoopbackDiscoveredEndpoints(t *testing.T) {
 				URL:  asSrv.URL + "/mcp",
 				Auth: &config.AuthConfig{Type: "oauth2", ClientID: "pre-configured"},
 			}
-			err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(t.TempDir(), "srv"))
+			_, err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(t.TempDir(), "srv"))
 			if err == nil {
 				t.Fatal("expected loopback endpoint validation error")
 			}
@@ -342,7 +354,7 @@ func TestResolveEndpoints_scopesAutoPopulatedFromPRM(t *testing.T) {
 		URL:  mcpSrv.URL + "/mcp",
 		Auth: &config.AuthConfig{Type: "oauth2", ClientID: "pre-configured"},
 	}
-	if err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(t.TempDir(), "srv")); err != nil {
+	if _, err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(t.TempDir(), "srv")); err != nil {
 		t.Fatal(err)
 	}
 	if len(sc.Auth.Scopes) != 2 || sc.Auth.Scopes[0] != "channels:read" {
@@ -363,7 +375,7 @@ func TestResolveEndpoints_userScopesNotOverwritten(t *testing.T) {
 		URL:  asSrv.URL + "/mcp",
 		Auth: &config.AuthConfig{Type: "oauth2", ClientID: "pre-configured", Scopes: []string{"custom:scope"}},
 	}
-	if err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(t.TempDir(), "srv")); err != nil {
+	if _, err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(t.TempDir(), "srv")); err != nil {
 		t.Fatal(err)
 	}
 	if len(sc.Auth.Scopes) != 1 || sc.Auth.Scopes[0] != "custom:scope" {

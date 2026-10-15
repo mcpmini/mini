@@ -144,8 +144,8 @@ func TestPKCECallback_wrongStateErrorLeavesLoginUsable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("valid callback after wrong state: %v", err)
 	}
-	if token.AccessToken != "test-access-token" {
-		t.Fatalf("access token = %q, want test-access-token", token.AccessToken)
+	if token.Token.AccessToken != "test-access-token" {
+		t.Fatalf("access token = %q, want test-access-token", token.Token.AccessToken)
 	}
 }
 

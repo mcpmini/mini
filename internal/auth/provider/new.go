@@ -3,10 +3,7 @@ package provider
 import (
 	"context"
 	"errors"
-	"fmt"
-	"maps"
 
-	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 )
@@ -21,93 +18,24 @@ type Params struct {
 }
 
 func buildTokenProvider(p Params) (*tokenProvider, error) {
-	configured, hydrated, err := resolveAuthConfigs(p)
-	if err != nil {
-		return nil, err
-	}
-	if p.Clock == nil {
-		p.Clock = clock.System()
-	}
-	p.AuthConfig = hydrated
-	return newTokenProvider(p, configured), nil
-}
-
-func resolveAuthConfigs(p Params) (configured, hydrated *config.AuthConfig, err error) {
-	canonical, err := canonicalizeParams(p)
-	if err != nil {
-		return nil, nil, err
-	}
-	configured = cloneAuthConfig(canonical.AuthConfig)
-	if err := hydrateFromRegistration(canonical); err != nil {
-		return nil, nil, err
-	}
-	return configured, canonical.AuthConfig, nil
-}
-
-func canonicalizeParams(p Params) (Params, error) {
 	if p.AuthConfig == nil {
-		return Params{}, errors.New("AuthConfig is required")
+		return nil, errors.New("AuthConfig is required")
 	}
 	if p.Clock == nil {
 		p.Clock = clock.System()
 	}
-	p.AuthConfig = cloneAuthConfig(p.AuthConfig)
-	resourceURL := p.AuthConfig.ResourceURL
-	if resourceURL == "" {
-		resourceURL = p.ServerURL
-	}
-	if resourceURL != "" {
-		canonical, err := auth.CanonicalResourceURI(resourceURL)
-		if err != nil {
-			return Params{}, err
-		}
-		p.AuthConfig.ResourceURL = canonical
-	}
-	return p, nil
-}
-
-func newTokenProvider(p Params, configured *config.AuthConfig) *tokenProvider {
 	lifetime := p.Lifetime
 	if lifetime == nil {
 		lifetime = context.Background()
 	}
 	return &tokenProvider{
-		ac:                     p.AuthConfig,
-		preHydrationAuthConfig: configured,
-		configDir:              p.ConfigDir,
-		serverName:             p.ServerName,
-		serverURL:              p.ServerURL,
-		clock:                  p.Clock,
-		lifetime:               lifetime,
-	}
+		server:    configuredServer(p),
+		configDir: p.ConfigDir,
+		clock:     p.Clock,
+		lifetime:  lifetime,
+	}, nil
 }
 
-func cloneAuthConfig(src *config.AuthConfig) *config.AuthConfig {
-	if src == nil {
-		return nil
-	}
-	cp := *src
-	if src.Scopes != nil {
-		cp.Scopes = append([]string{}, src.Scopes...)
-	}
-	if src.ExtraAuthParams != nil {
-		cp.ExtraAuthParams = maps.Clone(src.ExtraAuthParams)
-	}
-	return &cp
-}
-
-func hydrateFromRegistration(p Params) error {
-	if p.AuthConfig.ClientID != "" {
-		return nil
-	}
-	_, err := auth.ApplyExistingClientReg(auth.ClientRegParams{
-		ConfigDir:  p.ConfigDir,
-		ServerName: p.ServerName,
-		AuthConfig: p.AuthConfig,
-		Now:        p.Clock.Now(),
-	})
-	if err != nil {
-		return fmt.Errorf("load client registration for %s: %w", p.ServerName, err)
-	}
-	return nil
+func configuredServer(p Params) config.ServerConfig {
+	return config.ServerConfig{Name: p.ServerName, URL: p.ServerURL, Auth: p.AuthConfig.Clone()}
 }

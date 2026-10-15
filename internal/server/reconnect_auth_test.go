@@ -92,14 +92,15 @@ func TestReconnect_transientTokenRefreshKeepsLoop(t *testing.T) {
 	srv := newTestServer(t, server.Params{ConfigDir: configDir, Clock: fakeClock})
 	defer srv.Close()
 
-	tok := &oauth2.Token{AccessToken: "old-access", RefreshToken: "old-refresh"}
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: configDir, ServerName: "svc", Token: tok})
-
-	var errOnCall bool
-	srv.AddConnection(context.Background(), config.ServerConfig{
+	sc := config.ServerConfig{
 		Name: "svc", Transport: "http", URL: mcpSrv.URL,
 		Auth: &config.AuthConfig{Type: "oauth2", ClientID: "c", TokenURL: tokenSrv.URL},
-	}, makeErrConn(&errOnCall))
+	}
+	tok := &oauth2.Token{AccessToken: "old-access", RefreshToken: "old-refresh"}
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: configDir, ServerName: "svc", Server: sc, Token: tok})
+
+	var errOnCall bool
+	srv.AddConnection(context.Background(), sc, makeErrConn(&errOnCall))
 
 	errOnCall = true
 	assertEnvelopeOK(t, srv, "svc", "ping", false)

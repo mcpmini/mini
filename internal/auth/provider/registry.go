@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"sync"
 
-	"golang.org/x/oauth2"
-
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/transport"
 )
@@ -79,12 +77,8 @@ func (c *Registry) Forget(serverName string) {
 	e.provider.retire()
 }
 
-// CommitAuthorizedToken saves tok and, if the server already has a provider, installs it there.
-func (c *Registry) CommitAuthorizedToken(params Params, tok *oauth2.Token) error {
-	_, hydrated, err := resolveAuthConfigs(params)
-	if err != nil {
-		return err
-	}
+// CommitAuthorizedToken saves login and, if the server already has a provider, installs it there.
+func (c *Registry) CommitAuthorizedToken(params Params, login *auth.Login) error {
 	c.mu.Lock()
 	e := c.m[params.ServerName]
 	if e != nil && !e.identity.matches(params) {
@@ -92,10 +86,10 @@ func (c *Registry) CommitAuthorizedToken(params Params, tok *oauth2.Token) error
 		return fmt.Errorf("server %q OAuth identity changed; refusing trusted commit", params.ServerName)
 	}
 	c.mu.Unlock()
-	if e == nil {
-		return auth.Save(params.ConfigDir, params.ServerName, tok)
+	if e != nil {
+		return e.provider.commitBrowserLogin(configuredServer(params), login)
 	}
-	return e.provider.commitBrowserToken(hydrated, tok)
+	return auth.SaveLogin(params.ConfigDir, params.ServerName, login)
 }
 
 func identityFrom(p Params) providerIdentity {

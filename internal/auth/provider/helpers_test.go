@@ -8,6 +8,7 @@ import (
 
 	"golang.org/x/oauth2"
 
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
@@ -15,11 +16,14 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
+const testServerURL = "https://mcp.example.com/mcp"
+
 type providerFixture struct {
 	dir      string
 	endpoint *authtest.TokenServer
 	clock    *clock.Fake
 	provider transport.AuthorizationProvider
+	params   provider.Params
 }
 
 type providerSetup struct {
@@ -36,17 +40,39 @@ func newProviderFixture(t *testing.T, s providerSetup) *providerFixture {
 		s.Auth = &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid"}
 	}
 	s.Auth.TokenURL = f.endpoint.Srv.URL + "/token"
-	if s.Token != nil {
-		authtest.SaveToken(t, authtest.TokenFile{ConfigDir: f.dir, ServerName: "srv", Token: s.Token})
+	params := provider.Params{
+		AuthConfig: s.Auth, ConfigDir: f.dir, ServerName: "srv", ServerURL: testServerURL, Clock: f.clock,
 	}
-	p, err := provider.New(provider.Params{
-		AuthConfig: s.Auth, ConfigDir: f.dir, ServerName: "srv", Clock: f.clock,
-	})
+	if s.Token != nil {
+		saveLoginFor(t, params, s.Token)
+	}
+	p, err := provider.New(params)
 	if err != nil {
 		t.Fatal(err)
 	}
 	f.provider = p
+	f.params = params
 	return f
+}
+
+func loginFor(t *testing.T, params provider.Params, token *oauth2.Token) *auth.Login {
+	t.Helper()
+	return authtest.LoginFor(t, config.ServerConfig{URL: params.ServerURL, Auth: params.AuthConfig}, token)
+}
+
+func loadSavedToken(configDir string) (*oauth2.Token, error) {
+	login, err := auth.LoadLogin(configDir, "srv")
+	if err != nil {
+		return nil, err
+	}
+	return login.Token, nil
+}
+
+func saveLoginFor(t *testing.T, params provider.Params, token *oauth2.Token) {
+	t.Helper()
+	if err := auth.SaveLogin(params.ConfigDir, params.ServerName, loginFor(t, params, token)); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func storedToken(expiry time.Time) *oauth2.Token {

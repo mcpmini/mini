@@ -32,7 +32,7 @@ func TestBeginLogin_completesWithoutWritingToTerminal(t *testing.T) {
 
 	var token string
 	output := captureTerminalOutput(t, func() {
-		login, err := auth.BeginLogin(ctx, sc, beginLoginParams(t))
+		login, err := auth.BeginLogin(ctx, *sc, beginLoginParams(t))
 		if err != nil {
 			t.Fatalf("BeginLogin: %v", err)
 		}
@@ -42,7 +42,7 @@ func TestBeginLogin_completesWithoutWritingToTerminal(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Wait: %v", err)
 		}
-		token = got.AccessToken
+		token = got.Token.AccessToken
 	})
 
 	if token != "test-access-token" {
@@ -65,7 +65,7 @@ func TestBeginLogin_discoveryFailureReleasesCallbackPort(t *testing.T) {
 		Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2},
 	}
 
-	login, err := auth.BeginLogin(context.Background(), sc, beginLoginParams(t))
+	login, err := auth.BeginLogin(context.Background(), *sc, beginLoginParams(t))
 
 	if err == nil {
 		login.Close() //nolint:errcheck // Close always returns nil
@@ -87,7 +87,7 @@ func TestBrowserLogin_callbackServerFailureEndsWait(t *testing.T) {
 
 	var waitErr error
 	output := captureTerminalOutput(t, func() {
-		login, err := auth.StartBrowserLogin(&config.AuthConfig{}, listener)
+		login, err := auth.StartBrowserLogin(&config.AuthConfig{}, listener, auth.LoginClient{})
 		if err != nil {
 			t.Fatalf("StartBrowserLogin: %v", err)
 		}
@@ -106,7 +106,7 @@ func TestBrowserLogin_callbackServerFailureEndsWait(t *testing.T) {
 func TestBrowserLogin_callbackThatArrivedBeforeServerFailureStillCompletes(t *testing.T) {
 	mock := authtest.NewTokenServer(t)
 	listener := newFailingListener(t)
-	login, err := auth.StartBrowserLogin(mock.AuthConfig(), listener)
+	login, err := auth.StartBrowserLogin(mock.AuthConfig(), listener, auth.LoginClient{})
 	if err != nil {
 		t.Fatalf("StartBrowserLogin: %v", err)
 	}

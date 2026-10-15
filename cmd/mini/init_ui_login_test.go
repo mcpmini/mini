@@ -43,7 +43,7 @@ func TestStartInitLogin_aCompletedLoginSavesTheToken(t *testing.T) {
 	if err := login.Wait(); err != nil {
 		t.Fatalf("Wait: %v", err)
 	}
-	if _, err := auth.Load(dir, "svc"); err != nil {
+	if _, err := auth.LoadLogin(dir, "svc"); err != nil {
 		t.Errorf("token after the login: %v, want it saved", err)
 	}
 }
@@ -66,7 +66,7 @@ func TestStartInitLogin_aCancelledLoginSavesAndLogsNothing(t *testing.T) {
 	if err := login.Wait(); err == nil {
 		t.Error("Wait after cancel returned nil, want the cancellation")
 	}
-	if _, err := auth.Load(dir, "svc"); !auth.IsNotFound(err) {
+	if _, err := auth.LoadLogin(dir, "svc"); !auth.IsNotFound(err) {
 		t.Errorf("token after a cancelled login: %v, want none", err)
 	}
 	if logged.Len() > 0 {

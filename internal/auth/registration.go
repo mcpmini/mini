@@ -18,6 +18,8 @@ type Registration struct {
 	ClientSecret            string `json:"client_secret,omitempty"`
 	TokenEndpointAuthMethod string `json:"token_endpoint_auth_method,omitempty"`
 	ClientSecretExpiresAt   int64  `json:"client_secret_expires_at,omitempty"`
+
+	TokenURL string `json:"token_url"`
 }
 
 func LoadRegistration(configDir, serverName string) (*Registration, error) {

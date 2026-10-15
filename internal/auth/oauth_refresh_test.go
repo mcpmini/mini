@@ -21,8 +21,11 @@ func TestRefresh_expiredToken_returnsNewTokenAndSendsResource(t *testing.T) {
 	mock := authtest.NewTokenServer(t)
 	dir := t.TempDir()
 	token := pkceToken(t, mock.AuthConfig())
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: token})
-	loaded, _ := auth.Load(dir, "srv")
+	if err := saveLogin(t, dir, "srv", token); err != nil {
+		t.Fatal(err)
+	}
+	saved, _ := auth.LoadLogin(dir, "srv")
+	loaded := saved.Token
 	loaded.Expiry = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 	mock.AccessToken = "refreshed-access-token"
 	ac := mock.AuthConfig()

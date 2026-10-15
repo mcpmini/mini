@@ -66,12 +66,34 @@ func (c *capturingTokenServer) handle(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func withTokenURL(reg *auth.Registration, tokenURL string) *auth.Registration {
+	reg.TokenURL = tokenURL
+	return reg
+}
+
 func hydrateFromSavedRegistration(
 	t *testing.T,
 	reg *auth.Registration,
 	tokenURL string,
 	clk clock.Clock,
 ) *config.AuthConfig {
+	t.Helper()
+	if reg.TokenURL == "" {
+		reg.TokenURL = tokenURL
+	}
+	ac, err := resolveWithSavedRegistration(t, reg, tokenURL, clk)
+	if err != nil {
+		t.Fatalf("ResolveEndpoints: %v", err)
+	}
+	return ac
+}
+
+func resolveWithSavedRegistration(
+	t *testing.T,
+	reg *auth.Registration,
+	tokenURL string,
+	clk clock.Clock,
+) (*config.AuthConfig, error) {
 	t.Helper()
 	dir := t.TempDir()
 	authtest.SaveRegistration(t, authtest.RegistrationFile{ConfigDir: dir, ServerName: "srv", Registration: reg})
@@ -93,10 +115,8 @@ func hydrateFromSavedRegistration(
 		},
 	}
 	params := auth.ResolveEndpointsParams{ConfigDir: dir, ServerName: "srv", Clock: clk}
-	if err := auth.ResolveEndpoints(context.Background(), sc, params); err != nil {
-		t.Fatalf("ResolveEndpoints: %v", err)
-	}
-	return sc.Auth
+	_, err := auth.ResolveEndpoints(context.Background(), sc, params)
+	return sc.Auth, err
 }
 
 func exchangeAndRefresh(t *testing.T, ac *config.AuthConfig) {
@@ -209,36 +229,42 @@ func TestHydratedRegistration_noSecretLeavesPublicClientUnchanged(t *testing.T) 
 	}
 }
 
-func TestRegistrationExpiry_appliesOrIgnoresSecretByBoundary(t *testing.T) {
+func TestSavedRegistration_reusedOnlyForItsTokenEndpointWhileItsSecretLasts(t *testing.T) {
+	const tokenURL = "https://as.example.com/token"
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	tests := []struct {
-		name        string
-		expiresAt   int64
-		wantApplied bool
+		name       string
+		registered string
+		expiresAt  int64
+		wantReused bool
 	}{
-		{"zero means never expires", 0, true},
-		{"future expiry applies secret", base.Add(time.Hour).Unix(), true},
-		{"exactly now is treated as expired", base.Unix(), false},
-		{"past is treated as expired", base.Add(-time.Hour).Unix(), false},
+		{name: "never expires", registered: tokenURL, expiresAt: 0, wantReused: true},
+		{name: "expires later", registered: tokenURL, expiresAt: base.Add(time.Hour).Unix(), wantReused: true},
+		{name: "expires exactly now", registered: tokenURL, expiresAt: base.Unix(), wantReused: false},
+		{name: "expired", registered: tokenURL, expiresAt: base.Add(-time.Hour).Unix(), wantReused: false},
+		{
+			name:       "registered with another authorization server",
+			registered: "https://old-as.example.com/token",
+			expiresAt:  0,
+			wantReused: false,
+		},
+		{name: "registered before mini recorded the endpoint", registered: "", expiresAt: 0, wantReused: false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := &auth.Registration{
-				ClientID:                "expiry-client",
-				ClientSecret:            "sk-test-usurp-expiry",
+				ClientID:                "saved-client",
+				ClientSecret:            "sk-test-usurp-saved",
 				TokenEndpointAuthMethod: "client_secret_basic",
 				ClientSecretExpiresAt:   tc.expiresAt,
+				TokenURL:                tc.registered,
 			}
-			ac := hydrateFromSavedRegistration(t, reg, "https://as.example.com/token", clock.NewFakeAt(base))
-			if got := ac.ClientSecret != ""; got != tc.wantApplied {
-				t.Errorf("secret applied = %v, want %v (ClientSecret=%q)", got, tc.wantApplied, ac.ClientSecret)
+			ac, err := resolveWithSavedRegistration(t, reg, tokenURL, clock.NewFakeAt(base))
+			if reused := err == nil && ac.ClientID == reg.ClientID; reused != tc.wantReused {
+				t.Errorf("reused = %v (client %q, err %v), want %v", reused, ac.ClientID, err, tc.wantReused)
 			}
-			if ac.ClientID != reg.ClientID {
-				t.Errorf(
-					"ClientID = %q, want %q — ClientID applies regardless of secret expiry",
-					ac.ClientID,
-					reg.ClientID,
-				)
+			if !tc.wantReused && ac.ClientSecret == reg.ClientSecret {
+				t.Error("the saved registration's secret was applied for a login that can't use it")
 			}
 		})
 	}
@@ -284,7 +310,11 @@ func TestRegistrationInconsistency_failsResolutionNamingTheField(t *testing.T) {
 			dir := t.TempDir()
 			authtest.SaveRegistration(
 				t,
-				authtest.RegistrationFile{ConfigDir: dir, ServerName: "srv", Registration: tc.reg},
+				authtest.RegistrationFile{
+					ConfigDir:    dir,
+					ServerName:   "srv",
+					Registration: withTokenURL(tc.reg, "https://as.example.com/token"),
+				},
 			)
 			asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 				"authorization_endpoint":           "https://as.example.com/authorize",
@@ -295,7 +325,7 @@ func TestRegistrationInconsistency_failsResolutionNamingTheField(t *testing.T) {
 
 			sc := &config.ServerConfig{URL: asSrv.URL + "/mcp", Auth: &config.AuthConfig{Type: "oauth2"}}
 			params := auth.ResolveEndpointsParams{ConfigDir: dir, ServerName: "srv", Clock: clock.System()}
-			err := auth.ResolveEndpoints(context.Background(), sc, params)
+			_, err := auth.ResolveEndpoints(context.Background(), sc, params)
 			if err == nil {
 				t.Fatal("expected resolution error for inconsistent registration metadata")
 			}
@@ -330,7 +360,7 @@ func TestResolveEndpoints_freshDCRCapturesAndPersistsConfidentialClient(t *testi
 
 	sc := &config.ServerConfig{URL: asSrv.URL + "/mcp", Auth: &config.AuthConfig{Type: "oauth2"}}
 	params := auth.ResolveEndpointsParams{ConfigDir: dir, ServerName: "srv", Clock: clock.System()}
-	if err := auth.ResolveEndpoints(context.Background(), sc, params); err != nil {
+	if _, err := auth.ResolveEndpoints(context.Background(), sc, params); err != nil {
 		t.Fatalf("ResolveEndpoints: %v", err)
 	}
 	if sc.Auth.ClientSecret != "sk-test-usurp-fresh" || sc.Auth.TokenEndpointAuthMethod != "client_secret_post" {
@@ -377,7 +407,7 @@ func freshDCRToExchange(t *testing.T, dcrResponse map[string]any) (*config.AuthC
 		},
 	}
 	params := auth.ResolveEndpointsParams{ConfigDir: dir, ServerName: "srv", Clock: clock.System()}
-	if err := auth.ResolveEndpoints(context.Background(), sc, params); err != nil {
+	if _, err := auth.ResolveEndpoints(context.Background(), sc, params); err != nil {
 		t.Fatalf("ResolveEndpoints: %v", err)
 	}
 	return sc.Auth, tokenSrv
@@ -446,5 +476,39 @@ func TestClientSecretNeverAppearsInResolutionOrExchangeErrors(t *testing.T) {
 	}
 	if strings.Contains(exchangeErr.Error(), secret) {
 		t.Errorf("exchange error leaked the client_secret: %q", exchangeErr.Error())
+	}
+}
+
+func TestConfiguredSecretWithoutClientID_isNeverSentWithTheCIMDClient(t *testing.T) {
+	tokenSrv := newCapturingTokenServer(t)
+	asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+		"authorization_endpoint":                "https://as.example.com/authorize",
+		"token_endpoint":                        "https://as.example.com/token",
+		"client_id_metadata_document_supported": true,
+		"code_challenge_methods_supported":      []string{"S256"},
+	})
+	t.Cleanup(asSrv.Close)
+	const secret = "sk-test-configured-without-id"
+	sc := &config.ServerConfig{URL: asSrv.URL + "/mcp", Auth: &config.AuthConfig{
+		Type: "oauth2", AuthURL: "https://as.example.com/authorize", TokenURL: tokenSrv.srv.URL,
+		ClientSecret: secret, TokenEndpointAuthMethod: "client_secret_post",
+	}}
+	params := auth.ResolveEndpointsParams{ConfigDir: t.TempDir(), ServerName: "srv", Clock: clock.System()}
+	if _, err := auth.ResolveEndpoints(context.Background(), sc, params); err != nil {
+		t.Fatalf("ResolveEndpoints: %v", err)
+	}
+
+	exchangeAndRefresh(t, sc.Auth)
+
+	sentWithSecret := "Basic " + basicAuthValue(auth.ClientMetadataURL, secret)
+	for label, obs := range map[string]authObservation{"exchange": tokenSrv.exchange, "refresh": tokenSrv.refresh} {
+		if obs.formClientSecret != "" || obs.authorizationHeader == sentWithSecret {
+			t.Errorf(
+				"%s sent the configured secret: form=%q header=%q",
+				label,
+				obs.formClientSecret,
+				obs.authorizationHeader,
+			)
+		}
 	}
 }

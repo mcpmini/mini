@@ -8,8 +8,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"golang.org/x/oauth2"
-
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/fileio"
 )
@@ -20,8 +18,8 @@ import (
 //   - gh CLI:    https://github.com/cli/go-gh/blob/55692c6b/pkg/config/config.go#L165
 //   - Heroku:    https://github.com/heroku/heroku-cli-command/blob/08b784b7/src/login.ts#L329
 //
-// To upgrade: swap Load/Save to use zalando/go-keyring (OS keychain) with file fallback for CI.
-func Load(configDir, serverName string) (*oauth2.Token, error) {
+// To upgrade: swap LoadLogin/SaveLogin to use zalando/go-keyring (OS keychain) with file fallback for CI.
+func LoadLogin(configDir, serverName string) (*Login, error) {
 	if !config.ValidServerName.MatchString(serverName) {
 		return nil, fmt.Errorf("invalid server name: %q", serverName)
 	}
@@ -29,22 +27,28 @@ func Load(configDir, serverName string) (*oauth2.Token, error) {
 	if err != nil {
 		return nil, err
 	}
-	var t oauth2.Token
-	if err := json.Unmarshal(data, &t); err != nil {
+	var l Login
+	if err := json.Unmarshal(data, &l); err != nil {
 		return nil, err
 	}
-	return &t, nil
+	if err := l.validate(); err != nil {
+		return nil, err
+	}
+	return &l, nil
 }
 
-func Save(configDir, serverName string, t *oauth2.Token) error {
+func SaveLogin(configDir, serverName string, l *Login) error {
 	if !config.ValidServerName.MatchString(serverName) {
 		return fmt.Errorf("invalid server name: %q", serverName)
+	}
+	if err := l.validate(); err != nil {
+		return err
 	}
 	path := TokenPath(configDir, serverName)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(t, "", "  ")
+	data, err := json.MarshalIndent(l, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -71,16 +75,17 @@ func (s TokenState) NeedsLogin() bool {
 	return s != TokenValid && s != TokenRefreshable
 }
 
-// ReadTokenState reads the stored token only; it never contacts the server.
-// err is non-nil only with TokenUnreadable and says why.
-func ReadTokenState(configDir, serverName string) (TokenState, error) {
-	token, err := Load(configDir, serverName)
+// ReadTokenState reads the stored login only; it never contacts the server. A login made for other
+// settings is unusable, so it counts as unreadable. err is non-nil only with TokenUnreadable and says why.
+func ReadTokenState(configDir string, sc config.ServerConfig) (TokenState, error) {
+	login, err := LoadLoginFor(configDir, sc)
 	if IsNotFound(err) {
 		return TokenMissing, nil
 	}
 	if err != nil {
 		return TokenUnreadable, err
 	}
+	token := login.Token
 	if token.Valid() {
 		return TokenValid, nil
 	}

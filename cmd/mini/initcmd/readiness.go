@@ -87,7 +87,7 @@ func serverStatus(configDir string, sc config.ServerConfig, findings CheckFindin
 		status.Readiness = NeedsTokenState{}
 	case holdsAppPlaceholder(sc):
 		status.Readiness = NeedsOwnAppState{}
-	case sc.UsesOAuthLogin() && needsLogin(configDir, sc.Name):
+	case sc.UsesOAuthLogin() && needsLogin(configDir, sc):
 		status.Readiness = NeedsLoginState{}
 		if sc.Auth.ClientID == "" && findings.NoSelfRegistration[sc.Name] {
 			status.Readiness = NeedsOwnAppState{}
@@ -97,9 +97,9 @@ func serverStatus(configDir string, sc config.ServerConfig, findings CheckFindin
 }
 
 // A refreshable token needs no login; ReadTokenState already counts it as usable.
-func needsLogin(configDir, name string) bool {
+func needsLogin(configDir string, sc config.ServerConfig) bool {
 	//nolint:errcheck // Unreadable token state conservatively requires login.
-	state, _ := auth.ReadTokenState(configDir, name)
+	state, _ := auth.ReadTokenState(configDir, sc)
 	return state.NeedsLogin()
 }
 

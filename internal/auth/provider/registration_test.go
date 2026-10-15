@@ -7,6 +7,7 @@ import (
 	"maps"
 	"reflect"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -20,88 +21,123 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
-func TestNewProvider_storedRegistration_usesConfidentialClientCredentials(t *testing.T) {
-	dir := t.TempDir()
-	reg := &auth.Registration{
-		ClientID:                "dcr-client",
-		ClientSecret:            "dcr-secret",
-		TokenEndpointAuthMethod: "client_secret_basic",
+func TestAuthorization_loginForOtherSettings_isNeverSent(t *testing.T) {
+	cases := []struct {
+		name string
+		edit func(*provider.Params)
+		want string
+	}{
+		{
+			"server URL",
+			func(p *provider.Params) { p.ServerURL = "https://moved.example.com/mcp" },
+			"server URL changed",
+		},
+		{"client_id", func(p *provider.Params) { p.AuthConfig.ClientID = "other-client" }, "client_id changed"},
+		{"client_id removed", func(p *provider.Params) { p.AuthConfig.ClientID = "" }, "client_id changed"},
+		{
+			"token_url",
+			func(p *provider.Params) { p.AuthConfig.TokenURL = "https://other.example/token" },
+			"token_url changed",
+		},
 	}
-	authtest.SaveRegistration(t, authtest.RegistrationFile{ConfigDir: dir, ServerName: "srv", Registration: reg})
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			endpoint := authtest.NewTokenServer(t)
+			params := directParams(t.TempDir(), endpoint)
+			saveLoginFor(t, params, storedToken(time.Time{}))
+			edited := params
+			edited.AuthConfig = params.AuthConfig.Clone()
+			tc.edit(&edited)
+			p, err := provider.New(edited)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := p.Authorization(context.Background())
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Authorization = %q, %v; want an error saying the %s", got, err, tc.want)
+			}
+		})
+	}
+}
+
+func TestRefreshAuthorization_registeredClient_refreshesAtItsEndpointWithItsSecret(t *testing.T) {
+	dir := t.TempDir()
 	endpoint := authtest.NewTokenServer(t)
-	ac := &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: endpoint.Srv.URL + "/token"}
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: storedToken(time.Time{})})
-	p, err := provider.New(provider.Params{AuthConfig: ac, ConfigDir: dir, ServerName: "srv", Clock: clock.NewFake()})
+	authtest.SaveRegistration(
+		t,
+		authtest.RegistrationFile{ConfigDir: dir, ServerName: "srv", Registration: &auth.Registration{
+			ClientID: "newer-dcr", ClientSecret: "newer-secret", TokenEndpointAuthMethod: "client_secret_basic",
+		}},
+	)
+	params := provider.Params{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2},
+		ConfigDir:  dir, ServerName: "srv", ServerURL: testServerURL, Clock: clock.NewFake(),
+	}
+	login := registeredLogin(t, params, storedToken(time.Time{}), "login-client")
+	login.TokenURL = endpoint.Srv.URL + "/token"
+	if err := auth.SaveLogin(dir, "srv", login); err != nil {
+		t.Fatal(err)
+	}
+	p, err := provider.New(params)
 	if err != nil {
-		t.Fatalf("NewProvider: %v", err)
+		t.Fatal(err)
 	}
 	if _, err := p.RefreshAuthorization(context.Background(), "Bearer stored-access"); err != nil {
 		t.Fatalf("RefreshAuthorization: %v", err)
 	}
 	endpoint.Mu.Lock()
-	basicUser := endpoint.LastBasicAuth
+	user, pass := endpoint.LastBasicAuth, endpoint.LastBasicPass
 	endpoint.Mu.Unlock()
-	if basicUser != "dcr-client" {
-		t.Errorf("refresh must authenticate with the registered confidential client, basic user = %q", basicUser)
+	if user != "login-client" || pass != "secret-login-client" {
+		t.Errorf("refresh authenticated as %q:%q, want the login's client login-client:secret-login-client", user, pass)
 	}
 }
 
-func TestNewProvider_inconsistentRegistration_returnsError(t *testing.T) {
-	dir := t.TempDir()
-	reg := &auth.Registration{ClientID: "dcr-client", ClientSecret: "orphan-secret", TokenEndpointAuthMethod: "none"}
-	authtest.SaveRegistration(t, authtest.RegistrationFile{ConfigDir: dir, ServerName: "srv", Registration: reg})
-	ac := &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: "http://localhost:1/token"}
-	if _, err := provider.New(
-		provider.Params{AuthConfig: ac, ConfigDir: dir, ServerName: "srv", Clock: clock.NewFake()},
-	); err == nil {
-		t.Fatal("expected construction error for inconsistent registration when no explicit client_id")
-	}
-}
-
-func TestNewProvider_noRegistration_actsAsPublicClient(t *testing.T) {
-	dir := t.TempDir()
+func TestRefreshAuthorization_configuredClient_secretComesFromConfigAndIsNeverSaved(t *testing.T) {
 	endpoint := authtest.NewTokenServer(t)
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: storedToken(time.Time{})})
-	ac := &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: endpoint.Srv.URL + "/token"}
-	p, err := provider.New(provider.Params{AuthConfig: ac, ConfigDir: dir, ServerName: "srv", Clock: clock.NewFake()})
+	params := directParams(t.TempDir(), endpoint)
+	params.AuthConfig.ClientSecret = "config-secret"
+	params.AuthConfig.TokenEndpointAuthMethod = "client_secret_basic"
+	saveLoginFor(t, params, storedToken(time.Time{}))
+	p, err := provider.New(params)
 	if err != nil {
-		t.Fatalf("missing registration must not error: %v", err)
+		t.Fatal(err)
 	}
-	if _, err := p.RefreshAuthorization(context.Background(), "Bearer stored-access"); err != nil {
-		t.Fatalf("RefreshAuthorization: %v", err)
+	if _, refreshErr := p.RefreshAuthorization(context.Background(), "Bearer stored-access"); refreshErr != nil {
+		t.Fatalf("RefreshAuthorization: %v", refreshErr)
 	}
 	endpoint.Mu.Lock()
-	basicUser, clientID := endpoint.LastBasicAuth, endpoint.LastClientID
+	pass := endpoint.LastBasicPass
 	endpoint.Mu.Unlock()
-	if basicUser != "" || clientID != "" {
-		t.Errorf("public client must not send credentials: basic=%q client_id=%q", basicUser, clientID)
+	if pass != "config-secret" {
+		t.Errorf("refresh sent secret %q, want config-secret", pass)
+	}
+	saved, err := auth.LoadLogin(params.ConfigDir, "srv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Client.Secret != "" {
+		t.Errorf("saved login holds client secret %q, want none for a configured client", saved.Client.Secret)
 	}
 }
 
 func TestNewProvider_concurrentConstruction_leavesSharedConfigUnchanged(t *testing.T) {
-	dir := t.TempDir()
-	reg := &auth.Registration{
-		ClientID:                "dcr-client",
-		ClientSecret:            "dcr-secret",
-		TokenEndpointAuthMethod: "client_secret_basic",
-	}
-	authtest.SaveRegistration(t, authtest.RegistrationFile{ConfigDir: dir, ServerName: "srv", Registration: reg})
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: storedToken(time.Time{})})
 	shared := &config.AuthConfig{
-		Type: config.AuthTypeOAuth2, TokenURL: "http://localhost:1/token",
+		Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: "http://localhost:1/token",
 		Scopes: []string{"read"}, ExtraAuthParams: map[string]string{"prompt": "consent"},
 	}
+	params := provider.Params{
+		AuthConfig: shared, ConfigDir: t.TempDir(), ServerName: "srv", ServerURL: testServerURL,
+		Clock: clock.NewFake(),
+	}
+	saveLoginFor(t, params, storedToken(time.Time{}))
 	want := *shared
 	want.Scopes = slices.Clone(shared.Scopes)
 	want.ExtraAuthParams = maps.Clone(shared.ExtraAuthParams)
 	var wg sync.WaitGroup
 	for range 2 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			p, err := provider.New(provider.Params{
-				AuthConfig: shared, ConfigDir: dir, ServerName: "srv", Clock: clock.NewFake(),
-			})
+		wg.Go(func() {
+			p, err := provider.New(params)
 			if err != nil {
 				t.Error(err)
 				return
@@ -109,46 +145,11 @@ func TestNewProvider_concurrentConstruction_leavesSharedConfigUnchanged(t *testi
 			if _, err := p.Authorization(context.Background()); err != nil {
 				t.Error(err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if !reflect.DeepEqual(*shared, want) {
 		t.Errorf("shared AuthConfig was mutated by concurrent construction: got %+v, want %+v", *shared, want)
-	}
-}
-
-func TestNewProvider_explicitClientID_ignoresStoredRegistration(t *testing.T) {
-	dir := t.TempDir()
-	reg := &auth.Registration{
-		ClientID:                "stale-id",
-		ClientSecret:            "stale-secret",
-		TokenEndpointAuthMethod: "client_secret_basic",
-	}
-	authtest.SaveRegistration(t, authtest.RegistrationFile{ConfigDir: dir, ServerName: "srv", Registration: reg})
-	endpoint := authtest.NewTokenServer(t)
-	ac := &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "manual-id", TokenURL: endpoint.Srv.URL + "/token"}
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: storedToken(time.Time{})})
-	p, err := provider.New(provider.Params{AuthConfig: ac, ConfigDir: dir, ServerName: "srv", Clock: clock.NewFake()})
-	if err != nil {
-		t.Fatalf("NewProvider: %v", err)
-	}
-	if _, err := p.RefreshAuthorization(context.Background(), "Bearer stored-access"); err != nil {
-		t.Fatalf("RefreshAuthorization: %v", err)
-	}
-	endpoint.Mu.Lock()
-	gotClientID := endpoint.LastClientID
-	gotBasicUser := endpoint.LastBasicAuth
-	endpoint.Mu.Unlock()
-	usedManualID := gotClientID == "manual-id" || gotBasicUser == "manual-id"
-	if !usedManualID {
-		t.Errorf("manual-id must be used; form client_id=%q, basic user=%q", gotClientID, gotBasicUser)
-	}
-	if gotClientID == "stale-id" || gotBasicUser == "stale-id" {
-		t.Errorf(
-			"stale DCR registration must not override explicit client_id; form client_id=%q, basic user=%q",
-			gotClientID,
-			gotBasicUser,
-		)
 	}
 }
 
@@ -162,13 +163,12 @@ func TestNewProvider_nilAuthConfig_returnsError(t *testing.T) {
 }
 
 func TestNewProvider_nilClock_worksWithStoredToken(t *testing.T) {
-	dir := t.TempDir()
-	tok := &oauth2.Token{AccessToken: "tok", RefreshToken: "ref", Expiry: time.Now().Add(time.Hour)}
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: tok})
-	p, err := provider.New(provider.Params{
+	params := provider.Params{
 		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2},
-		ConfigDir:  dir, ServerName: "srv",
-	})
+		ConfigDir:  t.TempDir(), ServerName: "srv", ServerURL: testServerURL,
+	}
+	saveLoginFor(t, params, &oauth2.Token{AccessToken: "tok", RefreshToken: "ref", Expiry: time.Now().Add(time.Hour)})
+	p, err := provider.New(params)
 	if err != nil {
 		t.Fatalf("NewProvider with nil Clock: %v", err)
 	}

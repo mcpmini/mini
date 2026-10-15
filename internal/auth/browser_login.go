@@ -20,31 +20,35 @@ var ErrLoginClosed = errors.New("oauth browser login closed")
 
 // BrowserLogin owns a callback listener and drives an OAuth2 PKCE exchange.
 type BrowserLogin struct {
-	server      *http.Server
-	serving     sync.WaitGroup
-	results     chan loginCallbackResult
-	closed      chan struct{}
-	closeOnce   sync.Once
-	authURL     string
-	oauth2Cfg   *oauth2.Config
-	verifier    string
-	resourceURL string
+	server    *http.Server
+	serving   sync.WaitGroup
+	results   chan loginCallbackResult
+	closed    chan struct{}
+	closeOnce sync.Once
+	authURL   string
+	oauth2Cfg *oauth2.Config
+	verifier  string
+	login     Login
 }
 
 type BeginLoginParams = ResolveEndpointsParams
 
 // BeginLogin binds the callback port before discovery, so a busy port fails before a client is
-// registered. It may fill in sc.Auth.
-func BeginLogin(ctx context.Context, sc *config.ServerConfig, p BeginLoginParams) (*BrowserLogin, error) {
+// registered.
+func BeginLogin(ctx context.Context, sc config.ServerConfig, p BeginLoginParams) (*BrowserLogin, error) {
 	listener, err := listenCallback(ctx, sc.Auth)
 	if err != nil {
 		return nil, err
 	}
-	if resolveErr := ResolveEndpoints(ctx, sc, p); resolveErr != nil {
+	// A caller's config that gained a discovered client_id would read it as configured and refuse
+	// the login it just made.
+	sc.Auth = sc.Auth.Clone()
+	client, resolveErr := ResolveEndpoints(ctx, &sc, p)
+	if resolveErr != nil {
 		listener.Close() //nolint:errcheck // listener cleanup cannot replace the endpoint-resolution error returned to the caller
 		return nil, fmt.Errorf("resolve oauth endpoints: %w", resolveErr)
 	}
-	login, err := StartBrowserLogin(sc.Auth, listener)
+	login, err := StartBrowserLogin(sc.Auth, listener, client)
 	if err != nil {
 		return nil, fmt.Errorf("start oauth login: %w", err)
 	}
@@ -64,8 +68,9 @@ func listenCallback(ctx context.Context, ac *config.AuthConfig) (net.Listener, e
 	return listener, nil
 }
 
-// StartBrowserLogin takes ownership of listener, closing it on error.
-func StartBrowserLogin(ac *config.AuthConfig, listener net.Listener) (*BrowserLogin, error) {
+// StartBrowserLogin takes ownership of listener, closing it on error. ac must be resolved, since the
+// login records its ResourceURL and TokenURL.
+func StartBrowserLogin(ac *config.AuthConfig, listener net.Listener, client LoginClient) (*BrowserLogin, error) {
 	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
 	if !ok {
 		listener.Close() //nolint:errcheck // cleanup must not replace the address-type error
@@ -74,7 +79,8 @@ func StartBrowserLogin(ac *config.AuthConfig, listener net.Listener) (*BrowserLo
 	cfg, verifier, state := buildPKCEConfig(ac, tcpAddr.Port)
 	login := &BrowserLogin{
 		results: make(chan loginCallbackResult, 1), closed: make(chan struct{}),
-		oauth2Cfg: cfg, verifier: verifier, resourceURL: ac.ResourceURL,
+		oauth2Cfg: cfg, verifier: verifier,
+		login: Login{Resource: ac.ResourceURL, TokenURL: ac.TokenURL, Client: client},
 		authURL: buildAuthURL(cfg, buildAuthURLParams{
 			state: state, verifier: verifier,
 			resourceURL: ac.ResourceURL, extraAuthParams: ac.ExtraAuthParams,
@@ -95,18 +101,23 @@ func buildPKCEConfig(ac *config.AuthConfig, callbackPort int) (*oauth2.Config, s
 func (l *BrowserLogin) AuthURL() string { return l.authURL }
 
 // Wait releases the callback port before it returns, so the next flow can bind it.
-func (l *BrowserLogin) Wait(ctx context.Context) (*oauth2.Token, error) {
+func (l *BrowserLogin) Wait(ctx context.Context) (*Login, error) {
 	code, err := l.awaitCode(ctx)
 	l.stopServing()
 	if err != nil {
 		return nil, err
 	}
-	token, err := l.oauth2Cfg.Exchange(oauthHTTPContext(ctx, l.resourceURL), code, oauth2.VerifierOption(l.verifier))
+	token, err := l.oauth2Cfg.Exchange(oauthHTTPContext(ctx, l.login.Resource), code, oauth2.VerifierOption(l.verifier))
 	// Close can land while the exchange is in flight; a closed login must not hand out a token.
 	if l.isClosed() {
 		return nil, ErrLoginClosed
 	}
-	return token, err
+	if err != nil {
+		return nil, err
+	}
+	login := l.login
+	login.Token = token
+	return &login, nil
 }
 
 func (l *BrowserLogin) awaitCode(ctx context.Context) (string, error) {

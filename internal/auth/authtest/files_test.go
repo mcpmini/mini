@@ -10,27 +10,27 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestSaveTokenWritesSuppliedValuesAndReplacesExisting(t *testing.T) {
 	dir := t.TempDir()
+	server := config.ServerConfig{URL: "https://mcp.example.com/mcp"}
 	SaveToken(t, TokenFile{
 		ConfigDir:  dir,
 		ServerName: "svc",
-		Token: &oauth2.Token{
-			AccessToken:  "old",
-			RefreshToken: "old-refresh",
-		},
+		Server:     server,
+		Token:      &oauth2.Token{AccessToken: "old", RefreshToken: "old-refresh"},
 	})
 	want := &oauth2.Token{AccessToken: "new", TokenType: "Bearer", Expiry: time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC)}
-	SaveToken(t, TokenFile{ConfigDir: dir, ServerName: "svc", Token: want})
-	var got oauth2.Token
+	SaveToken(t, TokenFile{ConfigDir: dir, ServerName: "svc", Server: server, Token: want})
+	var got auth.Login
 	if err := json.Unmarshal(testutil.ReadFile(t, filepath.Join(dir, "internal", "svc.token.json")), &got); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(&got, want) {
-		t.Fatalf("saved token = %#v, want %#v", &got, want)
+	if !reflect.DeepEqual(got.Token, want) {
+		t.Fatalf("saved token = %#v, want %#v", got.Token, want)
 	}
 }
 

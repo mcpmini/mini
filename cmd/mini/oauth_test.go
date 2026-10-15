@@ -20,14 +20,20 @@ func TestBuildAndStartConnecting_validAndDisabledOAuthServers_makeNoTokenRequest
 	configDir := t.TempDir()
 	tokenEp := newTestTokenEndpoint(t)
 	mcp := newTestMCPUpstream(t)
-	validTok := &oauth2.Token{AccessToken: "stored-access", RefreshToken: "r1", Expiry: time.Now().Add(time.Hour)}
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: configDir, ServerName: "live", Token: validTok})
-	expiredTok := &oauth2.Token{AccessToken: "dead-access", RefreshToken: "r2", Expiry: time.Now().Add(-time.Hour)}
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: configDir, ServerName: "idle", Token: expiredTok})
 	servers := []config.ServerConfig{
 		oauthServerConfig("live", mcp.srv.URL, tokenEp.srv.URL, true),
 		oauthServerConfig("idle", "http://localhost:1", tokenEp.srv.URL, false),
 	}
+	validTok := &oauth2.Token{AccessToken: "stored-access", RefreshToken: "r1", Expiry: time.Now().Add(time.Hour)}
+	authtest.SaveToken(
+		t,
+		authtest.TokenFile{ConfigDir: configDir, ServerName: "live", Server: servers[0], Token: validTok},
+	)
+	expiredTok := &oauth2.Token{AccessToken: "dead-access", RefreshToken: "r2", Expiry: time.Now().Add(-time.Hour)}
+	authtest.SaveToken(
+		t,
+		authtest.TokenFile{ConfigDir: configDir, ServerName: "idle", Server: servers[1], Token: expiredTok},
+	)
 	srv := startFromConfigDir(t,
 		BuildServerParams{
 			Cfg: &config.Config{}, ConfigDir: configDir,
@@ -77,10 +83,11 @@ func TestServe_tokenExpiresMidSession_toolCallRefreshesAndSucceeds(t *testing.T)
 		if got := s.upstream.lastAuthFor("tools/call"); got != "Bearer refreshed" {
 			t.Errorf("tools/call Authorization = %q, want Bearer refreshed", got)
 		}
-		saved, err := auth.Load(s.configDir, "live")
+		login, err := auth.LoadLogin(s.configDir, "live")
 		if err != nil {
-			t.Fatalf("Load: %v", err)
+			t.Fatalf("LoadLogin: %v", err)
 		}
+		saved := login.Token
 		if saved.AccessToken != "refreshed" {
 			t.Errorf("persisted access = %q, want refreshed", saved.AccessToken)
 		}
