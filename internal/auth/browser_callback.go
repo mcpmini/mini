@@ -23,7 +23,22 @@ type authorizationResponse struct {
 	code  string
 	// iss is nil when the response carries none, which the spec treats differently from an empty one.
 	iss         *string
-	providerErr error
+	providerErr *providerError
+}
+
+// providerError is the error form of the response, which the authorization server sends instead of a code.
+type providerError struct {
+	code        string
+	description string
+}
+
+func (e *providerError) Error() string {
+	code := printableLoginText(e.code)
+	description := printableLoginText(e.description)
+	if description == "" {
+		return fmt.Sprintf("oauth authorization failed: %s", code)
+	}
+	return fmt.Sprintf("oauth authorization failed: %s: %s", code, description)
 }
 
 func parseAuthorizationResponse(q url.Values) authorizationResponse {
@@ -33,7 +48,7 @@ func parseAuthorizationResponse(q url.Values) authorizationResponse {
 		resp.iss = &iss
 	}
 	if q.Has("error") {
-		resp.providerErr = providerLoginError(q.Get("error"), q.Get("error_description"))
+		resp.providerErr = &providerError{code: q.Get("error"), description: q.Get("error_description")}
 	}
 	return resp
 }
@@ -115,15 +130,6 @@ func loginResponseMessage(err error) string {
 		return err.Error() + ". You can close this tab."
 	}
 	return "Authorized. You can close this tab."
-}
-
-func providerLoginError(errorCode, errorDescription string) error {
-	code := printableLoginText(errorCode)
-	description := printableLoginText(errorDescription)
-	if description == "" {
-		return fmt.Errorf("oauth authorization failed: %s", code)
-	}
-	return fmt.Errorf("oauth authorization failed: %s: %s", code, description)
 }
 
 func printableLoginText(value string) string {
