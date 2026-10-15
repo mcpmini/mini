@@ -14,9 +14,8 @@ import (
 )
 
 type authFlowState struct {
-	cancel context.CancelFunc
-	login  *auth.BrowserLogin
-	// settings the login is for, copied before BeginLogin fills in their Auth.
+	cancel   context.CancelFunc
+	login    *auth.BrowserLogin
 	settings config.ServerConfig
 }
 

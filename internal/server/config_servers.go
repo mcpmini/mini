@@ -160,8 +160,8 @@ func sameSettings(a, b config.ServerConfig) bool {
 	return reflect.DeepEqual(a, b)
 }
 
-// start_auth's login fills in Auth in place as it discovers endpoints; a shared copy would make every
-// check see an edit.
+// The record outlives the config it came from, whose Auth pointer goes on to the connect and the
+// login; anything writing through it would make every check see an edit.
 func withOwnAuth(sc config.ServerConfig) config.ServerConfig {
 	sc.Auth = sc.Auth.Clone()
 	return sc

@@ -188,7 +188,7 @@ func TestSettingsChanged_OAuthMiniDetectedFromA401IsNotAnEdit(t *testing.T) {
 	}
 }
 
-func TestSettingsChanged_aLoginFillingInTheRecordedAuthIsNotAnEdit(t *testing.T) {
+func TestSettingsChanged_aWriteToTheRunningConfigsAuthIsNotAnEdit(t *testing.T) {
 	srv := newInstallTestServer(t)
 	saved := config.ServerConfig{
 		Name: "svc",
@@ -204,7 +204,7 @@ func TestSettingsChanged_aLoginFillingInTheRecordedAuthIsNotAnEdit(t *testing.T)
 	fresh := saved
 	fresh.Auth = &config.AuthConfig{Type: config.AuthTypeOAuth2}
 	if srv.settingsChanged(fresh) {
-		t.Error("endpoints a login wrote into the running config read as an edit of the file")
+		t.Error("a write to the running config's Auth read as an edit of the file")
 	}
 }
 
