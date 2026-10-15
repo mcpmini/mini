@@ -4,6 +4,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -83,14 +84,17 @@ func TestCommandLogsGoToAFileNotTheTerminal(t *testing.T) {
 	slog.SetDefault(terminalLogger)
 	t.Cleanup(func() { slog.SetDefault(previous) })
 	configDir := t.TempDir()
-	root := newRootCmd()
-	root.AddCommand(&cobra.Command{Use: "retry", Run: func(*cobra.Command, []string) {
+	failed := errors.New("server unhealthy")
+	cmd := &cobra.Command{Use: "status", RunE: func(*cobra.Command, []string) error {
 		slog.Warn("upstream http request retrying")
-	}})
-	root.SetArgs([]string{"--config", configDir, "retry"})
+		return failed
+	}}
+	logToFileWhileRunning(cmd, &rootOptions{configDir: configDir})
+	cmd.SilenceErrors, cmd.SilenceUsage = true, true
+	cmd.SetArgs(nil)
 
-	if err := root.Execute(); err != nil {
-		t.Fatal(err)
+	if err := cmd.Execute(); !errors.Is(err, failed) {
+		t.Fatalf("err = %v, want the command's own error", err)
 	}
 
 	if terminal.Len() != 0 {
@@ -101,6 +105,6 @@ func TestCommandLogsGoToAFileNotTheTerminal(t *testing.T) {
 		t.Errorf("cli.log = %q, want the warning", logged)
 	}
 	if slog.Default() != terminalLogger {
-		t.Error("logging was not handed back after the command")
+		t.Error("logging was not handed back after the failed command")
 	}
 }

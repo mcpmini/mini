@@ -21,7 +21,6 @@ func main() {
 type rootOptions struct {
 	configDir        string
 	defaultConfigErr error
-	restoreLog       func()
 }
 
 func newRootCmd() *cobra.Command {
@@ -48,27 +47,30 @@ func configureRootCmd(root *cobra.Command, opts *rootOptions) {
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return usageErrf("%v", err) })
 	root.PersistentFlags().StringVar(&opts.configDir, "config", opts.configDir, "config directory")
 	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
-		if opts.configDir == "" {
-			return requireConfigDir(cmd, opts)
+		if opts.defaultConfigErr == nil || opts.configDir != "" || configFreeCommand(cmd) {
+			return nil
 		}
-		// connect and daemon replace this with their own logger once their config is loaded.
-		opts.restoreLog = newLogFile(opts.configDir, "cli.log").redirect()
-		return nil
+		return fmt.Errorf("cannot determine default config directory; pass --config DIR: %w", opts.defaultConfigErr)
 	}
-	cobra.OnFinalize(func() {
-		if opts.restoreLog != nil {
-			opts.restoreLog()
-			opts.restoreLog = nil
-		}
-	})
 	root.AddCommand(subcommands(opts)...)
+	logToFileWhileRunning(root, opts)
 }
 
-func requireConfigDir(cmd *cobra.Command, opts *rootOptions) error {
-	if opts.defaultConfigErr == nil || configFreeCommand(cmd) {
-		return nil
+func logToFileWhileRunning(cmd *cobra.Command, opts *rootOptions) {
+	for _, sub := range cmd.Commands() {
+		logToFileWhileRunning(sub, opts)
 	}
-	return fmt.Errorf("cannot determine default config directory; pass --config DIR: %w", opts.defaultConfigErr)
+	run := cmd.RunE
+	if run == nil {
+		return
+	}
+	cmd.RunE = func(c *cobra.Command, args []string) error {
+		if opts.configDir != "" {
+			// connect and daemon replace this with their own logger once their config is loaded.
+			defer newLogFile(opts.configDir, "cli.log").redirect()()
+		}
+		return run(c, args)
+	}
 }
 
 func configFreeCommand(cmd *cobra.Command) bool {
