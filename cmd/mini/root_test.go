@@ -85,15 +85,17 @@ func TestCommandLogsGoToAFileNotTheTerminal(t *testing.T) {
 	t.Cleanup(func() { slog.SetDefault(previous) })
 	configDir := t.TempDir()
 	failed := errors.New("server unhealthy")
-	cmd := &cobra.Command{Use: "status", RunE: func(*cobra.Command, []string) error {
+	root := &cobra.Command{Use: "mini", SilenceErrors: true, SilenceUsage: true}
+	parent := &cobra.Command{Use: "daemon"}
+	parent.AddCommand(&cobra.Command{Use: "status", RunE: func(*cobra.Command, []string) error {
 		slog.Warn("upstream http request retrying")
 		return failed
-	}}
-	logToFileWhileRunning(cmd, &rootOptions{configDir: configDir})
-	cmd.SilenceErrors, cmd.SilenceUsage = true, true
-	cmd.SetArgs(nil)
+	}})
+	root.AddCommand(parent)
+	logToFileWhileRunning(root, &rootOptions{configDir: configDir})
+	root.SetArgs([]string{"daemon", "status"})
 
-	if err := cmd.Execute(); !errors.Is(err, failed) {
+	if err := root.Execute(); !errors.Is(err, failed) {
 		t.Fatalf("err = %v, want the command's own error", err)
 	}
 
