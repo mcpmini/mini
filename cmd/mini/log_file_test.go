@@ -39,4 +39,17 @@ func TestLogFile(t *testing.T) {
 			t.Error("the log still writes to the file after restore")
 		}
 	})
+	t.Run("a later run keeps what earlier runs logged", func(t *testing.T) {
+		configDir := t.TempDir()
+		for _, line := range []string{"first run", "second run"} {
+			logs := newLogFile(configDir, "test.log")
+			restore := logs.redirect()
+			log.Print(line)
+			restore()
+		}
+		data := string(testutil.ReadFile(t, filepath.Join(configDir, "internal", "test.log")))
+		if !strings.Contains(data, "first run") || !strings.Contains(data, "second run") {
+			t.Errorf("log file = %q, want both runs", data)
+		}
+	})
 }
