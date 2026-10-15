@@ -137,3 +137,34 @@ func TestResolveEndpoints_expectsTheIssuerOnlyWhenItsMetadataChoseTheAuthorizati
 		})
 	}
 }
+
+func TestBeginLogin_callbackFromAnotherIssuer_neverReachesTheTokenEndpoint(t *testing.T) {
+	auth.UseEphemeralCallbackPort()
+	auth.UseLoopbackEndpoints()
+	t.Cleanup(auth.ResetEndpointValidation)
+	tokens := authtest.NewTokenServer(t)
+	as := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+		"authorization_endpoint":                         tokens.Srv.URL + "/authorize",
+		"token_endpoint":                                 tokens.Srv.URL + "/token",
+		"code_challenge_methods_supported":               []string{"S256"},
+		"authorization_response_iss_parameter_supported": true,
+	})
+	t.Cleanup(as.Close)
+	sc := config.ServerConfig{Name: "synthetic", URL: as.URL + "/mcp", Auth: &config.AuthConfig{
+		Type: "oauth2", ClientID: "configured-client",
+	}}
+	login, err := auth.BeginLogin(context.Background(), sc, beginLoginParams(t))
+	if err != nil {
+		t.Fatalf("BeginLogin: %v", err)
+	}
+	t.Cleanup(func() { login.Close() }) //nolint:errcheck // Close always returns nil
+
+	requestLoginCallback(t, login, url.Values{"code": {"synthetic-code"}, "iss": {"https://attacker.example"}})
+
+	if err := waitForLogin(t, login); err == nil || !strings.Contains(err.Error(), "came from issuer") {
+		t.Fatalf("Wait = %v, want the response refused for its issuer", err)
+	}
+	if hits := tokens.Hits.Load(); hits != 0 {
+		t.Errorf("token endpoint hits = %d, want 0", hits)
+	}
+}
