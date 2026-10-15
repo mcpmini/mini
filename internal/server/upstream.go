@@ -58,9 +58,8 @@ func (u *upstreamServer) shutdown() {
 
 func (u *upstreamServer) shutdownAndClose() {
 	u.shutdown()
-	u.mu.Lock()
-	u.conn.Close() //nolint:errcheck // Server removal has no caller to receive connection cleanup errors.
-	u.mu.Unlock()
+	// Outside u.mu: HTTP Close waits for notification callbacks that take u.mu.
+	u.currentConn().Close() //nolint:errcheck // Server removal has no caller to receive connection cleanup errors.
 }
 
 func (u *upstreamServer) callTool(ctx context.Context, toolName string, args map[string]any) (json.RawMessage, error) {
@@ -106,15 +105,17 @@ func (u *upstreamServer) dispatchCall(ctx context.Context, params json.RawMessag
 }
 
 func (u *upstreamServer) callConn(ctx context.Context, params json.RawMessage) (json.RawMessage, error) {
-	// Read conn under the lock, then release before the network call so a
-	// concurrent reconnect can take the write lock without waiting for all
-	// in-flight calls to finish. HTTPConnection.Close is a no-op so a
-	// swap-during-call is safe; StdioConnection kills the subprocess, which
-	// unblocks the call with an error.
+	// Not under u.mu, so a reconnect needn't wait for in-flight calls. A swap
+	// during a call is safe: HTTPConnection.Close stops only the notification
+	// listener, and StdioConnection.Close kills the subprocess, which fails the
+	// call with an error.
+	return u.currentConn().Call(ctx, "tools/call", params)
+}
+
+func (u *upstreamServer) currentConn() transport.Connection {
 	u.mu.RLock()
-	conn := u.conn
-	u.mu.RUnlock()
-	return conn.Call(ctx, "tools/call", params)
+	defer u.mu.RUnlock()
+	return u.conn
 }
 
 func (u *upstreamServer) classifyCallError(err error) error {

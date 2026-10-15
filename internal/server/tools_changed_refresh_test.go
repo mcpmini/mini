@@ -3,10 +3,12 @@
 package server_test
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
 
+	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
 )
@@ -47,6 +49,38 @@ func TestToolsChangedRefreshFailureKeepsOldCatalog(t *testing.T) {
 	if !containsName(tools, "svc__old") || containsName(tools, "svc__new") {
 		t.Fatalf("failed refresh changed catalog: %v", toolNames(tools))
 	}
+}
+
+func TestRemoveServerWhoseCloseDeliversToolsChanged(t *testing.T) {
+	srv := newTestServer(t, server.Params{})
+	defer srv.Close()
+	writeTestServerConfig(t, srv, config.ServerConfig{Name: "svc"})
+	conn := notifyOnCloseConn{fakeConn("tool")}
+	if err := srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, conn); err != nil {
+		t.Fatalf("AddConnection: %v", err)
+	}
+
+	removed := make(chan struct{})
+	go func() {
+		serve(t, srv, callTool("config", map[string]any{"action": "remove_server", "server": "svc"}))
+		close(removed)
+	}()
+
+	select {
+	case <-removed:
+	case <-time.After(3 * time.Second):
+		t.Fatal("remove_server hung closing a connection that delivered tools/list_changed during Close")
+	}
+	if srv.ToolCount("svc") != 0 {
+		t.Error("svc still registered after remove_server")
+	}
+}
+
+type notifyOnCloseConn struct{ *transport.FakeConnection }
+
+func (c notifyOnCloseConn) Close() error {
+	emitToolsChanged(c.FakeConnection)
+	return c.FakeConnection.Close()
 }
 
 func emitToolsChanged(conn *transport.FakeConnection) {
