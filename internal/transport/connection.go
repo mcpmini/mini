@@ -62,5 +62,7 @@ type Connection interface {
 // NotificationSource is implemented by transports that can receive
 // server-initiated JSON-RPC notifications.
 type NotificationSource interface {
+	// SetNotificationHandler's handler may run on the connection's own goroutine, which Close waits
+	// for: it must not wait on a lock held by whoever calls Close.
 	SetNotificationHandler(func(Notification))
 }

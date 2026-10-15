@@ -58,7 +58,8 @@ func (u *upstreamServer) shutdown() {
 
 func (u *upstreamServer) shutdownAndClose() {
 	u.shutdown()
-	// Outside u.mu: HTTP Close waits for notification callbacks that take u.mu.
+	// Outside u.mu: HTTP Close waits for notification callbacks that take u.mu. Once u.ctx is done no
+	// reconnect can swap u.conn, so this is the last connection.
 	u.currentConn().Close() //nolint:errcheck // Server removal has no caller to receive connection cleanup errors.
 }
 
