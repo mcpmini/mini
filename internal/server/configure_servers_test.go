@@ -191,9 +191,8 @@ func TestConfigAddServer_aConfiguredOrRunningName_isRefusedAndLeftAlone(t *testi
 		authtest.SaveToken(t, authtest.TokenFile{
 			ConfigDir:  e.dir,
 			ServerName: "svc",
-			Token: &oauth2.Token{
-				AccessToken: "running-token",
-			},
+			Server:     config.ServerConfig{URL: "https://svc.example.com/mcp"},
+			Token:      &oauth2.Token{AccessToken: "running-token"},
 		})
 
 		text, failed := e.addServer(

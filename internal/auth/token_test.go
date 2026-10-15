@@ -1,6 +1,7 @@
 package auth_test
 
 import (
+	"cmp"
 	"path/filepath"
 	"testing"
 	"time"
@@ -39,7 +40,7 @@ func TestReadTokenState(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			if tc.token != nil {
-				server := config.ServerConfig{URL: tc.savedFor}
+				server := config.ServerConfig{URL: cmp.Or(tc.savedFor, "https://mcp.example.com/mcp")}
 				authtest.SaveToken(
 					t,
 					authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Server: server, Token: tc.token},
@@ -48,7 +49,7 @@ func TestReadTokenState(t *testing.T) {
 			if tc.file != "" {
 				testutil.WriteFile(t, filepath.Join(dir, "internal", "srv.token.json"), tc.file)
 			}
-			got, err := auth.ReadTokenState(dir, config.ServerConfig{Name: "srv", URL: authtest.DefaultServerURL})
+			got, err := auth.ReadTokenState(dir, config.ServerConfig{Name: "srv", URL: "https://mcp.example.com/mcp"})
 			if got != tc.want {
 				t.Errorf("state = %v, want %v", got, tc.want)
 			}

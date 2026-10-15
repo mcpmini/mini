@@ -51,8 +51,6 @@ func (p *tokenProvider) proactiveRefreshLocked() error {
 	return nil
 }
 
-// refreshLocked first takes up a login another process saved, and skips the exchange once
-// stillNeeded says that login will do.
 func (p *tokenProvider) refreshLocked(stillNeeded func() bool) error {
 	if err := p.syncWithSavedLoginLocked(); err != nil {
 		return err
@@ -79,9 +77,8 @@ func (p *tokenProvider) refreshLocked(stillNeeded func() bool) error {
 	return nil
 }
 
-// syncWithSavedLoginLocked takes up the saved login when another process replaced it. A replacement
-// made for other settings is left alone and stops this provider: refreshing over it would discard a
-// login the user just made, and only a restart gives this process the settings it was made for.
+// syncWithSavedLoginLocked refuses, rather than refreshes over, a login saved for other settings:
+// overwriting it would discard a login the user just made.
 func (p *tokenProvider) syncWithSavedLoginLocked() error {
 	saved, err := p.loadSavedLogin()
 	if err != nil {
@@ -93,10 +90,9 @@ func (p *tokenProvider) syncWithSavedLoginLocked() error {
 	return nil
 }
 
-// withoutAccessToken makes oauth2 refresh: its reuseTokenSource returns any token still valid by the
-// system clock as is.
 func withoutAccessToken(t *oauth2.Token) *oauth2.Token {
 	stale := *t
+	// oauth2's reuseTokenSource returns any token still valid by the system clock instead of refreshing.
 	stale.AccessToken = ""
 	return &stale
 }

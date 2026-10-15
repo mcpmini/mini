@@ -19,11 +19,11 @@ type Login struct {
 	Token    *oauth2.Token `json:"token"`
 }
 
-// LoginClient is the OAuth client a login was issued to. A configured client's secret and auth
-// method stay in the server config, so editing them there takes effect; a registered client's are
-// kept here because no config holds them.
+// LoginClient is the OAuth client a login was issued to.
 type LoginClient struct {
-	ID         string `json:"id"`
+	ID string `json:"id"`
+	// Configured clients keep their secret and auth method in the server config, so editing them
+	// there takes effect; a registered client's are kept here because no config holds them.
 	Configured bool   `json:"configured,omitempty"`
 	Secret     string `json:"secret,omitempty"`
 	AuthMethod string `json:"auth_method,omitempty"`

@@ -104,8 +104,6 @@ func (p *tokenProvider) remedyError(cause error) error {
 	return transport.ReauthorizationError(p.server.Name, cause)
 }
 
-// commitBrowserLogin takes up the settings the login was made with: a login started after editing
-// client_id or token_url is made for the edited config, which this provider would otherwise refuse.
 func (p *tokenProvider) commitBrowserLogin(server config.ServerConfig, login *auth.Login) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -115,6 +113,8 @@ func (p *tokenProvider) commitBrowserLogin(server config.ServerConfig, login *au
 	if err := auth.SaveLogin(p.configDir, p.server.Name, login); err != nil {
 		return fmt.Errorf("persist oauth login: %w", err)
 	}
+	// A login started after editing client_id or token_url is made for the edited config, which
+	// this provider would otherwise refuse.
 	p.server = server
 	p.adoptLoginLocked(login)
 	return nil

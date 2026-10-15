@@ -243,13 +243,6 @@ func TestStartAuth_e2e_withStaleToken_browserTokenUsedOnFirstRequest(t *testing.
 	const browserToken = "browser-token"
 
 	dir := t.TempDir()
-	authtest.SaveToken(t, authtest.TokenFile{
-		ConfigDir:  dir,
-		ServerName: "srv",
-		Token: &oauth2.Token{
-			AccessToken: staleToken,
-		},
-	})
 
 	var mu sync.Mutex
 	acceptedToken := ""
@@ -301,7 +294,7 @@ func TestStartAuth_e2e_withStaleToken_browserTokenUsedOnFirstRequest(t *testing.
 	}))
 	defer tokenSrv.Close()
 
-	configtest.WriteServer(t, dir, config.ServerConfig{
+	sc := config.ServerConfig{
 		Name:      "srv",
 		Transport: "http",
 		URL:       mcpSrv.URL,
@@ -311,6 +304,10 @@ func TestStartAuth_e2e_withStaleToken_browserTokenUsedOnFirstRequest(t *testing.
 			AuthURL:  tokenSrv.URL + "/authorize",
 			TokenURL: tokenSrv.URL + "/token",
 		},
+	}
+	configtest.WriteServer(t, dir, sc)
+	authtest.SaveToken(t, authtest.TokenFile{
+		ConfigDir: dir, ServerName: "srv", Server: sc, Token: &oauth2.Token{AccessToken: staleToken},
 	})
 
 	cfg := config.DefaultConfig()
@@ -318,7 +315,7 @@ func TestStartAuth_e2e_withStaleToken_browserTokenUsedOnFirstRequest(t *testing.
 	mini := newTestServer(t, server.Params{Config: cfg, ConfigDir: dir})
 	defer mini.Close()
 
-	sc := loadServerConfig(t, dir, "srv")
+	sc = loadServerConfig(t, dir, "srv")
 	if err := mini.AddUpstream(context.Background(), sc); err == nil {
 		t.Fatal("initial dial with the stale token should fail, leaving a provider registered")
 	}

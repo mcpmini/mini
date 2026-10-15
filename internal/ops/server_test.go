@@ -446,9 +446,8 @@ func saveCredentials(t *testing.T, dir, name string) {
 	authtest.SaveToken(t, authtest.TokenFile{
 		ConfigDir:  dir,
 		ServerName: name,
-		Token: &oauth2.Token{
-			AccessToken: "old-server-token",
-		},
+		Server:     config.ServerConfig{URL: "https://" + name + ".example.com/mcp"},
+		Token:      &oauth2.Token{AccessToken: "old-server-token"},
 	})
 	authtest.SaveRegistration(t, authtest.RegistrationFile{
 		ConfigDir:  dir,

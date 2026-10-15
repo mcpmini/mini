@@ -49,7 +49,7 @@ func (f *commitFixture) paramsFor(ac *config.AuthConfig) provider.Params {
 		AuthConfig: &cfg,
 		ConfigDir:  f.dir,
 		ServerName: "srv",
-		ServerURL:  authtest.DefaultServerURL,
+		ServerURL:  testServerURL,
 		Clock:      f.clock,
 	}
 }

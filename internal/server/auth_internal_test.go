@@ -117,8 +117,8 @@ func TestRunAuthFlow_loginCompletingAfterRemoveServerDoesNotReinstall(t *testing
 			srv := newInternalAuthTestServer(t)
 			t.Cleanup(srv.Close)
 			ac := authtest.NewTokenServer(t).AuthConfig()
-			ac.ResourceURL = authtest.DefaultServerURL
-			sc := config.ServerConfig{Name: "svc", Command: echomcp, URL: authtest.DefaultServerURL, Auth: ac}
+			ac.ResourceURL = "https://mcp.example.com/mcp"
+			sc := config.ServerConfig{Name: "svc", Command: echomcp, URL: "https://mcp.example.com/mcp", Auth: ac}
 			installAtStartAuth := srv.replacingInstall(sc)
 			login := authtest.StartLogin(t, ac)
 

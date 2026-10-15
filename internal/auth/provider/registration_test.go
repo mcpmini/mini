@@ -71,7 +71,7 @@ func TestRefreshAuthorization_registeredClient_refreshesAtItsEndpointWithItsSecr
 	)
 	params := provider.Params{
 		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2},
-		ConfigDir:  dir, ServerName: "srv", ServerURL: authtest.DefaultServerURL, Clock: clock.NewFake(),
+		ConfigDir:  dir, ServerName: "srv", ServerURL: testServerURL, Clock: clock.NewFake(),
 	}
 	login := registeredLogin(t, params, storedToken(time.Time{}), "login-client")
 	login.TokenURL = endpoint.Srv.URL + "/token"
@@ -127,7 +127,7 @@ func TestNewProvider_concurrentConstruction_leavesSharedConfigUnchanged(t *testi
 		Scopes: []string{"read"}, ExtraAuthParams: map[string]string{"prompt": "consent"},
 	}
 	params := provider.Params{
-		AuthConfig: shared, ConfigDir: t.TempDir(), ServerName: "srv", ServerURL: authtest.DefaultServerURL,
+		AuthConfig: shared, ConfigDir: t.TempDir(), ServerName: "srv", ServerURL: testServerURL,
 		Clock: clock.NewFake(),
 	}
 	saveLoginFor(t, params, storedToken(time.Time{}))
@@ -165,7 +165,7 @@ func TestNewProvider_nilAuthConfig_returnsError(t *testing.T) {
 func TestNewProvider_nilClock_worksWithStoredToken(t *testing.T) {
 	params := provider.Params{
 		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2},
-		ConfigDir:  t.TempDir(), ServerName: "srv", ServerURL: authtest.DefaultServerURL,
+		ConfigDir:  t.TempDir(), ServerName: "srv", ServerURL: testServerURL,
 	}
 	saveLoginFor(t, params, &oauth2.Token{AccessToken: "tok", RefreshToken: "ref", Expiry: time.Now().Add(time.Hour)})
 	p, err := provider.New(params)

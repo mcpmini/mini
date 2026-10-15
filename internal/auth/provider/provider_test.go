@@ -38,7 +38,7 @@ func TestRefreshAuthorization_rotatedRefreshToken_isPersisted(t *testing.T) {
 	if grant != "refresh_token" || refresh != "stored-refresh" {
 		t.Errorf("refresh used grant=%q token=%q", grant, refresh)
 	}
-	if resource != authtest.DefaultServerURL {
+	if resource != testServerURL {
 		t.Errorf("refresh resource = %q", resource)
 	}
 	saved, err := loadSavedToken(f.dir)
@@ -350,7 +350,7 @@ func directParams(dir string, endpoint *authtest.TokenServer) provider.Params {
 		},
 		ConfigDir:  dir,
 		ServerName: "srv",
-		ServerURL:  authtest.DefaultServerURL,
+		ServerURL:  testServerURL,
 		Clock:      clock.NewFake(),
 	}
 }

@@ -30,7 +30,11 @@ func pkceToken(t *testing.T, ac *config.AuthConfig) *oauth2.Token {
 
 func saveLogin(t *testing.T, configDir, serverName string, token *oauth2.Token) error {
 	t.Helper()
-	return auth.SaveLogin(configDir, serverName, authtest.LoginFor(t, config.ServerConfig{}, token))
+	return auth.SaveLogin(
+		configDir,
+		serverName,
+		authtest.LoginFor(t, config.ServerConfig{URL: "https://mcp.example.com/mcp"}, token),
+	)
 }
 
 func TestTokenSaveLoad(t *testing.T) {
@@ -184,10 +188,14 @@ func TestBuildAuthURL_extraParamsDoNotOverrideResource(t *testing.T) {
 func TestTokenValidAfterForcedExpiry(t *testing.T) {
 	mock := authtest.NewTokenServer(t)
 	dir := t.TempDir()
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: pkceToken(t, mock.AuthConfig())})
+	if err := saveLogin(t, dir, "srv", pkceToken(t, mock.AuthConfig())); err != nil {
+		t.Fatal(err)
+	}
 	loaded, _ := auth.LoadLogin(dir, "srv")
 	loaded.Token.Expiry = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: loaded.Token})
+	if err := saveLogin(t, dir, "srv", loaded.Token); err != nil {
+		t.Fatal(err)
+	}
 	reloaded, _ := auth.LoadLogin(dir, "srv")
 	if reloaded.Token.Valid() {
 		t.Error("token should be invalid after forced expiry")

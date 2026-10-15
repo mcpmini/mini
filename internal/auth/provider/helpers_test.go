@@ -16,6 +16,8 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
+const testServerURL = "https://mcp.example.com/mcp"
+
 type providerFixture struct {
 	dir      string
 	endpoint *authtest.TokenServer
@@ -39,7 +41,7 @@ func newProviderFixture(t *testing.T, s providerSetup) *providerFixture {
 	}
 	s.Auth.TokenURL = f.endpoint.Srv.URL + "/token"
 	params := provider.Params{
-		AuthConfig: s.Auth, ConfigDir: f.dir, ServerName: "srv", ServerURL: authtest.DefaultServerURL, Clock: f.clock,
+		AuthConfig: s.Auth, ConfigDir: f.dir, ServerName: "srv", ServerURL: testServerURL, Clock: f.clock,
 	}
 	if s.Token != nil {
 		saveLoginFor(t, params, s.Token)

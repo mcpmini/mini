@@ -72,7 +72,7 @@ func TestProviderRegistry_changedServerURL_rejectedAndOriginalKept(t *testing.T)
 func TestProviderRegistry_redialAfterBrowserLogin_reusesProvider(t *testing.T) {
 	params := provider.Params{
 		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2},
-		ConfigDir:  t.TempDir(), ServerName: "srv", ServerURL: authtest.DefaultServerURL, Clock: clock.NewFake(),
+		ConfigDir:  t.TempDir(), ServerName: "srv", ServerURL: testServerURL, Clock: clock.NewFake(),
 	}
 	reg := provider.NewRegistry()
 	first, err := reg.GetOrCreate(params)
@@ -109,7 +109,7 @@ func TestProviderRegistry_close_abortsInFlightRefresh(t *testing.T) {
 		},
 		ConfigDir:  dir,
 		ServerName: "srv",
-		ServerURL:  authtest.DefaultServerURL,
+		ServerURL:  testServerURL,
 		Clock:      clock.NewFakeAt(epoch),
 	}
 	saveLoginFor(t, params, expired)
@@ -161,11 +161,11 @@ func TestProviderRegistry_forget(t *testing.T) {
 	}
 
 	t.Run("the next provider for the name loads its token from disk, at any URL", func(t *testing.T) {
-		for _, nextURL := range []string{authtest.DefaultServerURL, "https://other.example.com/mcp"} {
+		for _, nextURL := range []string{testServerURL, "https://other.example.com/mcp"} {
 			dir := t.TempDir()
-			saveLoginFor(t, oauthParams(dir, authtest.DefaultServerURL), &oauth2.Token{AccessToken: "old"})
+			saveLoginFor(t, oauthParams(dir, testServerURL), &oauth2.Token{AccessToken: "old"})
 			registry := provider.NewRegistry()
-			old, err := registry.GetOrCreate(oauthParams(dir, authtest.DefaultServerURL))
+			old, err := registry.GetOrCreate(oauthParams(dir, testServerURL))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -190,9 +190,9 @@ func TestProviderRegistry_forget(t *testing.T) {
 
 	t.Run("the forgotten provider no longer authorizes", func(t *testing.T) {
 		dir := t.TempDir()
-		saveLoginFor(t, oauthParams(dir, authtest.DefaultServerURL), &oauth2.Token{AccessToken: "old"})
+		saveLoginFor(t, oauthParams(dir, testServerURL), &oauth2.Token{AccessToken: "old"})
 		registry := provider.NewRegistry()
-		old, err := registry.GetOrCreate(oauthParams(dir, authtest.DefaultServerURL))
+		old, err := registry.GetOrCreate(oauthParams(dir, testServerURL))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -210,7 +210,7 @@ func TestProviderRegistry_forget(t *testing.T) {
 		endpoint := authtest.NewTokenServer(t)
 		received, release := gateNextTokenRequest(endpoint)
 		t.Cleanup(func() { release() })
-		params := oauthParams(dir, authtest.DefaultServerURL)
+		params := oauthParams(dir, testServerURL)
 		params.AuthConfig.TokenURL = endpoint.Srv.URL + "/token"
 		params.Clock = clock.NewFakeAt(epoch)
 		saveLoginFor(t, params, &oauth2.Token{AccessToken: "old", RefreshToken: "r", Expiry: epoch.Add(-time.Second)})
