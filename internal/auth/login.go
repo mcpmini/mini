@@ -10,8 +10,7 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
-// Login is a token with the server, token endpoint and client it was issued for. mini sends it
-// only while the config still points at them, and refreshes it only at its own token endpoint.
+// Login is a token with the server, token endpoint and client it was issued for.
 type Login struct {
 	Resource string        `json:"resource"`
 	TokenURL string        `json:"token_url"`

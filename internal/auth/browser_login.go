@@ -68,8 +68,8 @@ func listenCallback(ctx context.Context, ac *config.AuthConfig) (net.Listener, e
 	return listener, nil
 }
 
-// StartBrowserLogin takes ownership of listener, closing it on error. ac must be resolved: the login
-// records its ResourceURL and TokenURL as the server and endpoint it belongs to.
+// StartBrowserLogin takes ownership of listener, closing it on error. ac must be resolved, since the
+// login records its ResourceURL and TokenURL.
 func StartBrowserLogin(ac *config.AuthConfig, listener net.Listener, client LoginClient) (*BrowserLogin, error) {
 	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
 	if !ok {
