@@ -14,6 +14,7 @@ import (
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 func newAuthCmd(opts *rootOptions) *cobra.Command {
@@ -100,7 +101,7 @@ type browserLogin struct {
 func startBrowserLogin(ctx context.Context, p pkceFlowParams) (browserLogin, error) {
 	ctx, cancel := context.WithTimeout(ctx, loginTimeout)
 	params := auth.BeginLoginParams{ConfigDir: p.configDir, ServerName: p.serverName, Clock: clock.System()}
-	login, err := auth.BeginLogin(ctx, p.sc, params)
+	login, err := auth.BeginLogin(ctx, *p.sc, params)
 	if err != nil {
 		cancel()
 		return browserLogin{}, err
@@ -115,14 +116,14 @@ func startBrowserLogin(ctx context.Context, p pkceFlowParams) (browserLogin, err
 
 func finishBrowserLogin(ctx context.Context, login *auth.BrowserLogin, p pkceFlowParams) (*oauth2.Token, error) {
 	defer login.Close() //nolint:errcheck // Close always returns nil
-	token, err := login.Wait(ctx)
+	saved, err := login.Wait(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("auth flow: %w", err)
 	}
-	if err := auth.Save(p.configDir, p.serverName, token); err != nil {
-		return nil, fmt.Errorf("save token: %w", err)
+	if err := auth.SaveLogin(p.configDir, p.serverName, saved); err != nil {
+		return nil, fmt.Errorf("save login: %w", err)
 	}
-	return token, nil
+	return saved.Token, nil
 }
 
 func authOpener(cfg *config.Config, sc config.ServerConfig) func(string) error {
@@ -158,54 +159,51 @@ func injectToken(ctx context.Context, configDir string, sc *config.ServerConfig)
 	if sc.UnsetEnv != nil {
 		return // dialing reports it; a refresh now would send a ${VAR} as the client secret
 	}
-	t, err := auth.Load(configDir, sc.Name)
+	login, err := auth.LoadLoginFor(configDir, *sc)
 	if auth.IsNotFound(err) {
 		return
 	}
 	if err != nil {
-		printNotice(os.Stderr, "mini: load token for %s: %v\n", sc.Name, err)
+		printNotice(os.Stderr, "mini: %v\n", transport.ReauthorizationError(sc.Name, err))
 		return
 	}
-	t, err = ensureValidToken(ctx, configDir, sc, t)
+	token, err := ensureValidToken(ctx, configDir, sc, login)
 	if err != nil {
 		return
 	}
-	auth.ApplyBearerToken(sc, t.AccessToken)
+	auth.ApplyBearerToken(sc, token.AccessToken)
 }
 
 func ensureValidToken(
 	ctx context.Context,
 	configDir string,
 	sc *config.ServerConfig,
-	t *oauth2.Token,
+	login *auth.Login,
 ) (*oauth2.Token, error) {
-	if t.Valid() {
-		return t, nil
+	if login.Token.Valid() {
+		return login.Token, nil
 	}
-	if t.RefreshToken == "" {
+	if login.Token.RefreshToken == "" {
 		printNotice(os.Stderr, "mini: token for %s is expired — run: mini auth %s\n", sc.Name, sc.Name)
 		return nil, fmt.Errorf("expired")
 	}
-	return refreshAndSaveToken(ctx, configDir, sc, t)
+	return refreshAndSaveLogin(ctx, configDir, sc, login)
 }
 
-func refreshAndSaveToken(
+func refreshAndSaveLogin(
 	ctx context.Context,
 	configDir string,
 	sc *config.ServerConfig,
-	t *oauth2.Token,
+	login *auth.Login,
 ) (*oauth2.Token, error) {
-	if err := auth.ApplyResourceURL(sc); err != nil {
-		printNotice(os.Stderr, "mini: resolve resource URL for %s: %v\n", sc.Name, err)
-		return nil, err
-	}
-	refreshed, err := auth.Refresh(ctx, sc.Auth, t)
+	refreshed, err := auth.Refresh(ctx, login.RefreshConfig(sc.Auth), login.Token)
 	if err != nil {
 		printNotice(os.Stderr, "mini: refresh token for %s failed — run: mini auth %s\n", sc.Name, sc.Name)
 		return nil, err
 	}
-	if saveErr := auth.Save(configDir, sc.Name, refreshed); saveErr != nil {
-		printNotice(os.Stderr, "mini: save refreshed token for %s: %v\n", sc.Name, saveErr)
+	login.Token = refreshed
+	if saveErr := auth.SaveLogin(configDir, sc.Name, login); saveErr != nil {
+		printNotice(os.Stderr, "mini: save refreshed login for %s: %v\n", sc.Name, saveErr)
 	}
 	return refreshed, nil
 }

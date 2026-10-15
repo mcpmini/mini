@@ -20,6 +20,8 @@ mini auth linear
 
 mini opens your browser to the provider's sign-in page and prints the URL in case the browser doesn't open. Once you approve, the browser returns to mini on `http://localhost:6464/callback` and mini saves the token in `~/.mini/internal/linear.token.json` (`DIR/internal/` with `--config DIR`). The login waits 5 minutes and prints `authorized linear` and the token's expiry when it's done. mini refreshes the token when it expires. If the refresh stops working, run `mini auth linear` again.
 
+The login is tied to the MCP's URL, `client_id` and `token_url` as they were when you logged in. If you change any of them, mini stops sending the old token and asks you to run `mini auth linear` again; restart your agents afterward, as in [Applying changes](#applying-changes).
+
 ## requires a custom OAuth app
 
 Open the MCP's file first. If its comment says to create a token, as GitHub's does, follow [requires manual configuration](#requires-manual-configuration) instead; a token is quicker than an OAuth app.

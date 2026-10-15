@@ -25,12 +25,12 @@ func TestSaveTokenWritesSuppliedValuesAndReplacesExisting(t *testing.T) {
 	})
 	want := &oauth2.Token{AccessToken: "new", TokenType: "Bearer", Expiry: time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC)}
 	SaveToken(t, TokenFile{ConfigDir: dir, ServerName: "svc", Token: want})
-	var got oauth2.Token
+	var got auth.Login
 	if err := json.Unmarshal(testutil.ReadFile(t, filepath.Join(dir, "internal", "svc.token.json")), &got); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(&got, want) {
-		t.Fatalf("saved token = %#v, want %#v", &got, want)
+	if !reflect.DeepEqual(got.Token, want) {
+		t.Fatalf("saved token = %#v, want %#v", got.Token, want)
 	}
 }
 

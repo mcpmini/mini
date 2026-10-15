@@ -25,7 +25,7 @@ func TestServerStatuses(t *testing.T) {
 		}
 	}
 	for _, sc := range []config.ServerConfig{
-		oauth("login", ""), oauth("loggedin", ""), oauth("noregistration", ""), oauth("ownapp", "my-app"),
+		oauth("login", ""), oauth("loggedin", ""), oauth("moved", ""), oauth("noregistration", ""), oauth("ownapp", "my-app"),
 		oauth("appplaceholder", clientIDPlaceholder),
 		{Name: "plain", Transport: "http", URL: "https://plain.example.com/mcp"},
 		{Name: "refused", Transport: "http", URL: "https://refused.example.com/mcp"},
@@ -40,14 +40,14 @@ func TestServerStatuses(t *testing.T) {
 	} {
 		configtest.WriteServer(t, dir, sc)
 	}
+	valid := &oauth2.Token{AccessToken: "t", Expiry: time.Now().Add(time.Hour)}
 	authtest.SaveToken(
 		t,
-		authtest.TokenFile{
-			ConfigDir:  dir,
-			ServerName: "loggedin",
-			Token:      &oauth2.Token{AccessToken: "t", Expiry: time.Now().Add(time.Hour)},
-		},
+		authtest.TokenFile{ConfigDir: dir, ServerName: "loggedin", Server: oauth("loggedin", ""), Token: valid},
 	)
+	madeForOldURL := oauth("moved", "")
+	madeForOldURL.URL = "https://old.example.com/mcp"
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "moved", Server: madeForOldURL, Token: valid})
 	t.Setenv("KEY", "synthetic")
 
 	statuses, err := ServerStatuses(dir, CheckFindings{
@@ -61,6 +61,7 @@ func TestServerStatuses(t *testing.T) {
 		{Name: "local", Readiness: ReadyState{}},
 		{Name: "loggedin", URL: "https://loggedin.example.com/mcp", Readiness: ReadyState{}},
 		{Name: "login", URL: "https://login.example.com/mcp", Readiness: NeedsLoginState{}},
+		{Name: "moved", URL: "https://moved.example.com/mcp", Readiness: NeedsLoginState{}},
 		{Name: "noregistration", URL: "https://noregistration.example.com/mcp", Readiness: NeedsOwnAppState{}},
 		{Name: "ownapp", URL: "https://ownapp.example.com/mcp", Readiness: NeedsLoginState{}},
 		{Name: "plain", URL: "https://plain.example.com/mcp", Readiness: ReadyState{}},

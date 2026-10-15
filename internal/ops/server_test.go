@@ -277,7 +277,7 @@ func TestAddServer(t *testing.T) {
 			if got := testutil.ReadFile(t, path); string(got) != existing {
 				t.Errorf("file = %q, want it untouched", got)
 			}
-			if _, err := auth.Load(dir, "taken"); err != nil {
+			if _, err := auth.LoadLogin(dir, "taken"); err != nil {
 				t.Errorf("the configured server lost its token: %v", err)
 			}
 		})
@@ -461,7 +461,7 @@ func saveCredentials(t *testing.T, dir, name string) {
 
 func assertNoCredentials(t *testing.T, dir, name string) {
 	t.Helper()
-	if _, err := auth.Load(dir, name); !auth.IsNotFound(err) {
+	if _, err := auth.LoadLogin(dir, name); !auth.IsNotFound(err) {
 		t.Errorf("token for %s still stored (err = %v); a server reusing the name would be sent it", name, err)
 	}
 	if _, err := auth.LoadRegistration(dir, name); !auth.IsNotFound(err) {

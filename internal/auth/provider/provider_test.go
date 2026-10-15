@@ -14,7 +14,6 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
@@ -25,11 +24,6 @@ import (
 func TestRefreshAuthorization_rotatedRefreshToken_isPersisted(t *testing.T) {
 	f := newProviderFixture(t, providerSetup{
 		Token: storedToken(time.Time{}),
-		Auth: &config.AuthConfig{
-			Type:        config.AuthTypeOAuth2,
-			ClientID:    "cid",
-			ResourceURL: "https://resource.example/mcp",
-		},
 	})
 	got, err := f.provider.RefreshAuthorization(context.Background(), "Bearer stored-access")
 	if err != nil {
@@ -44,10 +38,10 @@ func TestRefreshAuthorization_rotatedRefreshToken_isPersisted(t *testing.T) {
 	if grant != "refresh_token" || refresh != "stored-refresh" {
 		t.Errorf("refresh used grant=%q token=%q", grant, refresh)
 	}
-	if resource != "https://resource.example/mcp" {
+	if resource != authtest.DefaultServerURL {
 		t.Errorf("refresh resource = %q", resource)
 	}
-	saved, err := auth.Load(f.dir, "srv")
+	saved, err := loadSavedToken(f.dir)
 	if err != nil {
 		t.Fatalf("Load persisted token: %v", err)
 	}
@@ -107,7 +101,7 @@ func TestRefreshAuthorization_saveFails_keepsRotatedTokenInMemory(t *testing.T) 
 	if lastRefresh != "rotated-refresh" {
 		t.Errorf("second refresh must use the rotated refresh token, sent %q", lastRefresh)
 	}
-	saved, err := auth.Load(f.dir, "srv")
+	saved, err := loadSavedToken(f.dir)
 	if err != nil {
 		t.Fatalf("Load after persist retry: %v", err)
 	}
@@ -123,19 +117,10 @@ func TestRefreshAuthorization_saveFails_keepsRotatedTokenInMemory(t *testing.T) 
 func TestRefreshAuthorization_newerStoredToken_usedWithoutRefreshing(t *testing.T) {
 	dir := t.TempDir()
 	oldToken := storedToken(time.Time{})
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: oldToken})
 	endpoint := authtest.NewTokenServer(t)
-	prov, err := provider.New(provider.Params{
-		AuthConfig: &config.AuthConfig{
-			Type:     config.AuthTypeOAuth2,
-			ClientID: "cid",
-			TokenURL: endpoint.Srv.URL + "/token",
-		},
-		ConfigDir:  dir,
-		ServerName: "srv",
-		ServerURL:  "https://mcp.example.com/mcp",
-		Clock:      clock.NewFake(),
-	})
+	params := directParams(dir, endpoint)
+	saveLoginFor(t, params, oldToken)
+	prov, err := provider.New(params)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +128,7 @@ func TestRefreshAuthorization_newerStoredToken_usedWithoutRefreshing(t *testing.
 		t.Fatal(authorizationErr)
 	}
 	external := &oauth2.Token{AccessToken: "external-access", RefreshToken: "external-refresh"}
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: external})
+	saveLoginFor(t, params, external)
 	got, err := prov.RefreshAuthorization(context.Background(), "Bearer "+oldToken.AccessToken)
 	if err != nil {
 		t.Fatal(err)
@@ -186,29 +171,14 @@ func TestRefreshAuthorization_concurrent401s_refreshOnce(t *testing.T) {
 
 func TestRefreshAuthorization_callerCancelled_stillPersistsRotatedToken(t *testing.T) {
 	dir := t.TempDir()
-	authtest.SaveToken(t, authtest.TokenFile{
-		ConfigDir:  dir,
-		ServerName: "srv",
-		Token: &oauth2.Token{
-			AccessToken:  "old-access",
-			RefreshToken: "old-refresh",
-		},
-	})
 	endpoint := authtest.NewTokenServer(t)
+	params := directParams(dir, endpoint)
+	saveLoginFor(t, params, &oauth2.Token{AccessToken: "old-access", RefreshToken: "old-refresh"})
 	endpoint.AccessToken = "rotated-access"
 	endpoint.RefreshToken = "rotated-refresh"
 	received, release := gateNextTokenRequest(endpoint)
 
-	p, err := provider.New(provider.Params{
-		AuthConfig: &config.AuthConfig{
-			Type:     config.AuthTypeOAuth2,
-			ClientID: "cid",
-			TokenURL: endpoint.Srv.URL + "/token",
-		},
-		ConfigDir:  dir,
-		ServerName: "srv",
-		Clock:      clock.NewFake(),
-	})
+	p, err := provider.New(params)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +203,7 @@ func TestRefreshAuthorization_callerCancelled_stillPersistsRotatedToken(t *testi
 	if got != "Bearer rotated-access" {
 		t.Errorf("Authorization = %q, want rotated token", got)
 	}
-	saved, err := auth.Load(dir, "srv")
+	saved, err := loadSavedToken(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,67 +215,25 @@ func TestRefreshAuthorization_callerCancelled_stillPersistsRotatedToken(t *testi
 	}
 }
 
-func TestRefreshAuthorization_noTokenURL_returnsReauthRemedy(t *testing.T) {
-	dir := t.TempDir()
-	authtest.SaveToken(t, authtest.TokenFile{
-		ConfigDir:  dir,
-		ServerName: "srv",
-		Token: &oauth2.Token{
-			AccessToken:  "tok",
-			RefreshToken: "ref",
-		},
-	})
-	p, err := provider.New(provider.Params{
-		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid"},
-		ConfigDir:  dir, ServerName: "srv", Clock: clock.NewFake(),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = p.RefreshAuthorization(context.Background(), "Bearer tok")
-	if err == nil {
-		t.Fatal("expected error for missing token URL")
-	}
-	if !strings.Contains(err.Error(), "mini auth srv") {
-		t.Errorf("error should name remedy, got: %v", err)
-	}
-}
-
 func TestRefreshAuthorization_resourceFallback_canonicalizesServerURL(t *testing.T) {
 	cases := []struct {
 		name         string
 		serverURL    string
-		resourceURL  string
 		wantResource string
 	}{
 		{
 			name:         "ServerURL canonicalized when ResourceURL empty",
 			serverURL:    "HTTPS://Example.COM:443/mcp",
-			resourceURL:  "",
 			wantResource: "https://example.com/mcp",
-		},
-		{
-			name:         "ResourceURL wins when both set",
-			serverURL:    "HTTPS://Example.COM:443/mcp",
-			resourceURL:  "https://other.example/api",
-			wantResource: "https://other.example/api",
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			dir := t.TempDir()
-			authtest.SaveToken(
-				t,
-				authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: storedToken(time.Time{})},
-			)
 			endpoint := authtest.NewTokenServer(t)
-			p, err := provider.New(provider.Params{
-				AuthConfig: &config.AuthConfig{
-					Type: config.AuthTypeOAuth2, ClientID: "cid",
-					TokenURL: endpoint.Srv.URL + "/token", ResourceURL: tc.resourceURL,
-				},
-				ConfigDir: dir, ServerName: "srv", ServerURL: tc.serverURL, Clock: clock.NewFake(),
-			})
+			params := directParams(t.TempDir(), endpoint)
+			params.ServerURL = tc.serverURL
+			saveLoginFor(t, params, storedToken(time.Time{}))
+			p, err := provider.New(params)
 			if err != nil {
 				t.Fatalf("NewProvider: %v", err)
 			}
@@ -324,19 +252,11 @@ func TestRefreshAuthorization_resourceFallback_canonicalizesServerURL(t *testing
 
 func TestRefreshAuthorization_saveFailsAfterEarlierSave_keepsNewestTokenOnReload(t *testing.T) {
 	dir := t.TempDir()
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: storedToken(time.Time{})})
 	endpoint := authtest.NewTokenServer(t)
 	endpoint.AccessToken, endpoint.RefreshToken = "t2-access", "t2-refresh"
-	p, err := provider.New(provider.Params{
-		AuthConfig: &config.AuthConfig{
-			Type:     config.AuthTypeOAuth2,
-			ClientID: "cid",
-			TokenURL: endpoint.Srv.URL + "/token",
-		},
-		ConfigDir:  dir,
-		ServerName: "srv",
-		Clock:      clock.NewFake(),
-	})
+	params := directParams(dir, endpoint)
+	saveLoginFor(t, params, storedToken(time.Time{}))
+	p, err := provider.New(params)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -361,82 +281,12 @@ func TestRefreshAuthorization_saveFailsAfterEarlierSave_keepsNewestTokenOnReload
 	if got != "Bearer t4-access" {
 		t.Errorf("refresh 3 = %q, want Bearer t4-access (must not regress to t2 on disk)", got)
 	}
-	saved, err := auth.Load(dir, "srv")
+	saved, err := loadSavedToken(dir)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 	if saved.AccessToken != "t4-access" {
 		t.Errorf("persisted = %q, want t4-access", saved.AccessToken)
-	}
-}
-
-func TestRefreshAuthorization_externalLoginWithNewRegistration_usesNewClientCredentials(t *testing.T) {
-	dir := t.TempDir()
-	endpoint := authtest.NewTokenServer(t)
-	clk := clock.NewFake()
-
-	authtest.SaveRegistration(t, authtest.RegistrationFile{
-		ConfigDir:  dir,
-		ServerName: "srv",
-		Registration: &auth.Registration{
-			ClientID: "dcr-v1",
-		},
-	})
-	initialTok := &oauth2.Token{
-		AccessToken: "initial-access", RefreshToken: "initial-refresh",
-		Expiry: clk.Now().Add(time.Hour),
-	}
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: initialTok})
-	p, err := provider.New(provider.Params{
-		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: endpoint.Srv.URL + "/token"},
-		ConfigDir:  dir, ServerName: "srv", Clock: clk,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, authorizationErr := p.Authorization(context.Background()); authorizationErr != nil {
-		t.Fatal(authorizationErr)
-	}
-
-	authtest.SaveRegistration(t, authtest.RegistrationFile{
-		ConfigDir:  dir,
-		ServerName: "srv",
-		Registration: &auth.Registration{
-			ClientID: "dcr-v2",
-		},
-	})
-	freshTok := &oauth2.Token{
-		AccessToken: "auth-access", RefreshToken: "auth-refresh",
-		Expiry: clk.Now().Add(time.Hour),
-	}
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: freshTok})
-
-	got, err := p.RefreshAuthorization(context.Background(), "Bearer initial-access")
-	if err != nil {
-		t.Fatalf("RefreshAuthorization: %v", err)
-	}
-	if got != "Bearer auth-access" {
-		t.Fatalf("expected adopted token, got %q", got)
-	}
-	if endpoint.Hits.Load() != 0 {
-		t.Fatalf("token endpoint hit during adoption, want 0 hits")
-	}
-
-	clk.Advance(2 * time.Hour)
-	if _, err := p.Authorization(context.Background()); err != nil {
-		t.Fatalf("Authorization after expiry: %v", err)
-	}
-
-	endpoint.Mu.Lock()
-	clientIDForm, clientIDBasic := endpoint.LastClientID, endpoint.LastBasicAuth
-	endpoint.Mu.Unlock()
-
-	if clientIDForm != "dcr-v2" && clientIDBasic != "dcr-v2" {
-		t.Errorf(
-			"token endpoint client_id = form:%q basic:%q, want dcr-v2 (rehydrate must use new registration)",
-			clientIDForm,
-			clientIDBasic,
-		)
 	}
 }
 
@@ -488,5 +338,19 @@ func TestRefreshAuthorization_malformedSuccessResponse_isTransient(t *testing.T)
 	}
 	if errors.Is(err, transport.ErrReauthRequired) {
 		t.Errorf("malformed 200 must NOT be ErrReauthRequired, got: %v", err)
+	}
+}
+
+func directParams(dir string, endpoint *authtest.TokenServer) provider.Params {
+	return provider.Params{
+		AuthConfig: &config.AuthConfig{
+			Type:     config.AuthTypeOAuth2,
+			ClientID: "cid",
+			TokenURL: endpoint.Srv.URL + "/token",
+		},
+		ConfigDir:  dir,
+		ServerName: "srv",
+		ServerURL:  authtest.DefaultServerURL,
+		Clock:      clock.NewFake(),
 	}
 }

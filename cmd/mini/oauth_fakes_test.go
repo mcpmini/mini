@@ -111,8 +111,8 @@ type oauthTestSetup struct {
 func newOAuthTestSetup(t *testing.T, tok *oauth2.Token, clk clock.Clock) *oauthTestSetup {
 	t.Helper()
 	configDir, token, upstream := t.TempDir(), newTestTokenEndpoint(t), newTestMCPUpstream(t)
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: configDir, ServerName: "live", Token: tok})
 	sc := oauthServerConfig("live", upstream.srv.URL, token.srv.URL, true)
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: configDir, ServerName: "live", Server: sc, Token: tok})
 	p := BuildServerParams{
 		Cfg: &config.Config{}, ConfigDir: configDir,
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Servers: []config.ServerConfig{sc}, Clock: clk,

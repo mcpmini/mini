@@ -99,8 +99,8 @@ func TestLogIn_savesTokenAndReportsSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("logIn: %v", err)
 	}
-	saved, err := auth.Load(dir, "svc")
-	if err != nil || saved.AccessToken != token.AccessToken {
+	saved, err := auth.LoadLogin(dir, "svc")
+	if err != nil || saved.Token.AccessToken != token.AccessToken {
 		t.Errorf("saved token = %+v (err %v), want the returned token %q", saved, err, token.AccessToken)
 	}
 	if !strings.HasPrefix(out.String(), "authorized svc (") {

@@ -117,7 +117,9 @@ func TestRunAuthFlow_loginCompletingAfterRemoveServerDoesNotReinstall(t *testing
 			srv := newInternalAuthTestServer(t)
 			t.Cleanup(srv.Close)
 			ac := authtest.NewTokenServer(t).AuthConfig()
-			installAtStartAuth := srv.replacingInstall(config.ServerConfig{Name: "svc", Command: echomcp, Auth: ac})
+			ac.ResourceURL = authtest.DefaultServerURL
+			sc := config.ServerConfig{Name: "svc", Command: echomcp, URL: authtest.DefaultServerURL, Auth: ac}
+			installAtStartAuth := srv.replacingInstall(sc)
 			login := authtest.StartLogin(t, ac)
 
 			if tc.remove {
@@ -183,6 +185,11 @@ func stalledAuthInitialize(t *testing.T) (string, <-chan struct{}) {
 func startCompletedAuthFlow(t *testing.T, srv *Server, sc config.ServerConfig) context.Context {
 	t.Helper()
 	sc.Auth = authtest.NewTokenServer(t).AuthConfig()
+	resource, err := auth.CanonicalResourceURI(sc.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sc.Auth.ResourceURL = resource
 	login := authtest.StartLogin(t, sc.Auth)
 	auth.BufferCallbackCode(login, "test-auth-code")
 	ctx, cancel := context.WithCancel(t.Context())

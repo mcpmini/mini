@@ -207,8 +207,8 @@ func TestConfigAddServer_aConfiguredOrRunningName_isRefusedAndLeftAlone(t *testi
 			t.Error("refused add_server disconnected the running svc")
 		}
 		e.assertNotSaved("svc")
-		if tok, err := auth.Load(e.dir, "svc"); err != nil || tok == nil {
-			t.Errorf("the running server's token is gone (%v, %v)", tok, err)
+		if login, err := auth.LoadLogin(e.dir, "svc"); err != nil || login == nil {
+			t.Errorf("the running server's token is gone (%v, %v)", login, err)
 		}
 	})
 }
@@ -478,9 +478,8 @@ func TestConfigRemoveServer(t *testing.T) {
 			authtest.SaveToken(t, authtest.TokenFile{
 				ConfigDir:  e.dir,
 				ServerName: "svc",
-				Token: &oauth2.Token{
-					AccessToken: "old-token",
-				},
+				Server:     userOAuthServer("svc", removed.URL),
+				Token:      &oauth2.Token{AccessToken: "old-token"},
 			})
 			if err := e.connectUserOAuthServer("svc", removed.URL); err != nil || oldTokenSent.Load() == 0 {
 				t.Fatalf("precondition: the removed server never used its login: %v", err)
@@ -522,9 +521,8 @@ func TestConfigRemoveServer(t *testing.T) {
 	})
 }
 
-func (e configToolEnv) connectUserOAuthServer(name, url string) error {
-	e.t.Helper()
-	configtest.WriteServer(e.t, e.dir, config.ServerConfig{
+func userOAuthServer(name, url string) config.ServerConfig {
+	return config.ServerConfig{
 		Name:      name,
 		Transport: "http",
 		URL:       url,
@@ -534,7 +532,12 @@ func (e configToolEnv) connectUserOAuthServer(name, url string) error {
 			AuthURL:  "http://auth.example/authorize",
 			TokenURL: "http://auth.example/token",
 		},
-	})
+	}
+}
+
+func (e configToolEnv) connectUserOAuthServer(name, url string) error {
+	e.t.Helper()
+	configtest.WriteServer(e.t, e.dir, userOAuthServer(name, url))
 	sc, err := config.LoadServer(e.dir, name)
 	if err != nil {
 		e.t.Fatal(err)

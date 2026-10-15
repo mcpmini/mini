@@ -96,6 +96,7 @@ cat <<'EOF'
   Auth
   [ ] mini auth <server> starts PKCE flow and prints a URL
   [ ] Token file created at ~/.mini/internal/<server>.token.json with 0600 permissions
+  [ ] After changing the server's url in its YAML, mini refuses the old login and asks for mini auth <server>
 
   Response store
   [ ] ~/.mini/responses/ created with 0700 permissions

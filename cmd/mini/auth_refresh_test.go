@@ -31,7 +31,7 @@ func TestInjectToken_expiredToken_refreshSendsCanonicalResource(t *testing.T) {
 		RefreshToken: "old-refresh",
 		Expiry:       time.Now().Add(-time.Hour),
 	}
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: expired})
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Server: *sc, Token: expired})
 
 	injectToken(context.Background(), dir, sc)
 
@@ -41,5 +41,30 @@ func TestInjectToken_expiredToken_refreshSendsCanonicalResource(t *testing.T) {
 	}
 	if sc.Headers["Authorization"] == "" {
 		t.Error("expected Authorization header to be set after refresh")
+	}
+}
+
+func TestInjectToken_loginForAnotherServerURL_isNotSentOrRefreshed(t *testing.T) {
+	tokenEp := newTestTokenEndpoint(t)
+	dir := t.TempDir()
+	sc := &config.ServerConfig{
+		Name: "srv",
+		Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "client", TokenURL: tokenEp.srv.URL},
+		URL:  "https://moved.example.com/mcp",
+	}
+	madeFor := *sc
+	madeFor.URL = "https://example.com/mcp"
+	authtest.SaveToken(t, authtest.TokenFile{
+		ConfigDir: dir, ServerName: "srv", Server: madeFor,
+		Token: &oauth2.Token{AccessToken: "old", RefreshToken: "r", Expiry: time.Now().Add(-time.Hour)},
+	})
+
+	injectToken(context.Background(), dir, sc)
+
+	if got := sc.Headers["Authorization"]; got != "" {
+		t.Errorf("Authorization = %q, want none for a login made for another URL", got)
+	}
+	if hits := tokenEp.hits.Load(); hits != 0 {
+		t.Errorf("token endpoint hits = %d, want 0", hits)
 	}
 }

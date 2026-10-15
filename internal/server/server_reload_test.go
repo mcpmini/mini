@@ -161,14 +161,15 @@ func TestServerReload_anOAuthServerSavedWhileRunningConnectsOnceItsLoginIsSaved(
 	tokens := fakeTokenServer(t, accessToken)
 	e := newServerReloadEnv(t)
 	e.startPoller()
-	e.writeServer(config.ServerConfig{Name: "svc", Transport: "http", URL: upstream.URL, Auth: &config.AuthConfig{
+	sc := config.ServerConfig{Name: "svc", Transport: "http", URL: upstream.URL, Auth: &config.AuthConfig{
 		Type: "oauth2", ClientID: "test-client", AuthURL: tokens.URL + "/authorize", TokenURL: tokens.URL + "/token",
-	}})
+	}}
+	e.writeServer(sc)
 	e.advanceTick()
 	e.srv.WaitForStartupConnects()
 	e.assertRemoved("svc")
 
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: e.dir, ServerName: "svc", Token: &oauth2.Token{
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: e.dir, ServerName: "svc", Server: sc, Token: &oauth2.Token{
 		AccessToken: accessToken, TokenType: "Bearer", Expiry: e.clock.Now().Add(time.Hour),
 	}})
 	e.advanceTick()
@@ -190,12 +191,13 @@ func TestServerReload_aTokenMiniRefreshesWhileFailingIsNotANewLogin(t *testing.T
 	}))
 	t.Cleanup(tokens.Close)
 	e := newServerReloadEnv(t)
-	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: e.dir, ServerName: "svc", Token: &oauth2.Token{
+	sc := config.ServerConfig{Name: "svc", Transport: "http", URL: upstream.URL, Auth: &config.AuthConfig{
+		Type: "oauth2", ClientID: "test-client", AuthURL: tokens.URL + "/authorize", TokenURL: tokens.URL + "/token",
+	}}
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: e.dir, ServerName: "svc", Server: sc, Token: &oauth2.Token{
 		AccessToken: "revoked", RefreshToken: "refresh", TokenType: "Bearer", Expiry: e.clock.Now().Add(time.Hour),
 	}})
-	e.writeServer(config.ServerConfig{Name: "svc", Transport: "http", URL: upstream.URL, Auth: &config.AuthConfig{
-		Type: "oauth2", ClientID: "test-client", AuthURL: tokens.URL + "/authorize", TokenURL: tokens.URL + "/token",
-	}})
+	e.writeServer(sc)
 	e.startPoller()
 	e.srv.WaitForStartupConnects()
 	afterFirstAttempt := refreshes.Load()

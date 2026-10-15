@@ -177,9 +177,20 @@ func TestServerClose_inFlightOAuthRefresh_isAborted(t *testing.T) {
 	t.Cleanup(func() { release(); tokenSrv.Close() })
 
 	dir := t.TempDir()
+	sc := config.ServerConfig{
+		Name:      "oauth-svc",
+		Transport: "http",
+		URL:       tokenSrv.URL,
+		Auth: &config.AuthConfig{
+			Type:     config.AuthTypeOAuth2,
+			ClientID: "test-client",
+			TokenURL: tokenSrv.URL,
+		},
+	}
 	authtest.SaveToken(t, authtest.TokenFile{
 		ConfigDir:  dir,
 		ServerName: "oauth-svc",
+		Server:     sc,
 		Token: &oauth2.Token{
 			AccessToken:  "expired-access",
 			RefreshToken: "old-refresh",
@@ -191,16 +202,7 @@ func TestServerClose_inFlightOAuthRefresh_isAborted(t *testing.T) {
 	cfg.DangerousAllowPrivateURLs = true
 	srv := newTestServer(t, server.Params{Config: cfg, ConfigDir: dir})
 
-	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{{
-		Name:      "oauth-svc",
-		Transport: "http",
-		URL:       tokenSrv.URL,
-		Auth: &config.AuthConfig{
-			Type:     config.AuthTypeOAuth2,
-			ClientID: "test-client",
-			TokenURL: tokenSrv.URL,
-		},
-	}})
+	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{sc})
 
 	select {
 	case <-reached:
