@@ -48,6 +48,7 @@ func TestDiscover_pathInsertedASMeta(t *testing.T) {
 		case "/.well-known/oauth-authorization-server/tenant":
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+				"issuer":                           "http://" + r.Host + "/tenant",
 				"authorization_endpoint":           "https://as.example.com/authorize",
 				"token_endpoint":                   "https://as.example.com/token",
 				"registration_endpoint":            "https://as.example.com/register",
@@ -411,6 +412,7 @@ func TestDiscover_scopeFromWWWAuthenticateWithoutResourceMetadata(t *testing.T) 
 		case "/.well-known/oauth-authorization-server":
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+				"issuer":                           "http://" + r.Host,
 				"authorization_endpoint":           "https://as.example.com/authorize",
 				"token_endpoint":                   "https://as.example.com/token",
 				"code_challenge_methods_supported": []string{"S256"},

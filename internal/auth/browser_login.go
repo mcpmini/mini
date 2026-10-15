@@ -43,12 +43,12 @@ func BeginLogin(ctx context.Context, sc config.ServerConfig, p BeginLoginParams)
 	// A caller's config that gained a discovered client_id would read it as configured and refuse
 	// the login it just made.
 	sc.Auth = sc.Auth.Clone()
-	client, resolveErr := ResolveEndpoints(ctx, &sc, p)
+	resolved, resolveErr := ResolveEndpoints(ctx, &sc, p)
 	if resolveErr != nil {
 		listener.Close() //nolint:errcheck // listener cleanup cannot replace the endpoint-resolution error returned to the caller
 		return nil, fmt.Errorf("resolve oauth endpoints: %w", resolveErr)
 	}
-	login, err := StartBrowserLogin(sc.Auth, listener, client)
+	login, err := StartBrowserLogin(sc.Auth, listener, resolved)
 	if err != nil {
 		return nil, fmt.Errorf("start oauth login: %w", err)
 	}
@@ -70,7 +70,7 @@ func listenCallback(ctx context.Context, ac *config.AuthConfig) (net.Listener, e
 
 // StartBrowserLogin takes ownership of listener, closing it on error. ac must be resolved, since the
 // login records its ResourceURL and TokenURL.
-func StartBrowserLogin(ac *config.AuthConfig, listener net.Listener, client LoginClient) (*BrowserLogin, error) {
+func StartBrowserLogin(ac *config.AuthConfig, listener net.Listener, resolved ResolvedLogin) (*BrowserLogin, error) {
 	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
 	if !ok {
 		listener.Close() //nolint:errcheck // cleanup must not replace the address-type error
@@ -80,13 +80,13 @@ func StartBrowserLogin(ac *config.AuthConfig, listener net.Listener, client Logi
 	login := &BrowserLogin{
 		results: make(chan loginCallbackResult, 1), closed: make(chan struct{}),
 		oauth2Cfg: cfg, verifier: verifier,
-		login: Login{Resource: ac.ResourceURL, TokenURL: ac.TokenURL, Client: client},
+		login: Login{Resource: ac.ResourceURL, TokenURL: ac.TokenURL, Client: resolved.Client},
 		authURL: buildAuthURL(cfg, buildAuthURLParams{
 			state: state, verifier: verifier,
 			resourceURL: ac.ResourceURL, extraAuthParams: ac.ExtraAuthParams,
 		}),
 	}
-	login.serve(listener, callbackHandler(state, login.results))
+	login.serve(listener, callbackHandler(callbackExpectation{state: state, issuer: resolved.Issuer}, login.results))
 	return login, nil
 }
 

@@ -24,11 +24,13 @@ var noRedirectClient = transport.NewNoRedirectClient(transport.NoRedirectClientO
 
 // ServerMeta contains OAuth endpoints discovered for an MCP server.
 type ServerMeta struct {
-	AuthURL         string
-	TokenURL        string
-	RegistrationURL string
-	CIMDSupported   bool
-	Scopes          []string // from WWW-Authenticate scope param or PRM scopes_supported (spec priority)
+	Issuer                string
+	IssParameterSupported bool
+	AuthURL               string
+	TokenURL              string
+	RegistrationURL       string
+	CIMDSupported         bool
+	Scopes                []string // from WWW-Authenticate scope param or PRM scopes_supported (spec priority)
 }
 
 // asRef is the result of authorization-server discovery: which AS to use and what scopes it suggests.
@@ -215,7 +217,7 @@ func discoverASMeta(ctx context.Context, asURL string) (*ServerMeta, error) {
 			return nil, err
 		}
 		if meta != nil {
-			return meta, nil
+			return meta, requireIssuer(meta, asURL, candidate)
 		}
 	}
 	return fallbackMeta(u.Scheme + "://" + u.Host), nil
@@ -242,11 +244,13 @@ func asMetaCandidates(u *url.URL) []string {
 }
 
 type rawASMeta struct {
-	AuthURL         string   `json:"authorization_endpoint"`
-	TokenURL        string   `json:"token_endpoint"`
-	RegistrationURL string   `json:"registration_endpoint"`
-	CIMDSupported   bool     `json:"client_id_metadata_document_supported"`
-	PKCEMethods     []string `json:"code_challenge_methods_supported"`
+	Issuer                string   `json:"issuer"`
+	IssParameterSupported bool     `json:"authorization_response_iss_parameter_supported"`
+	AuthURL               string   `json:"authorization_endpoint"`
+	TokenURL              string   `json:"token_endpoint"`
+	RegistrationURL       string   `json:"registration_endpoint"`
+	CIMDSupported         bool     `json:"client_id_metadata_document_supported"`
+	PKCEMethods           []string `json:"code_challenge_methods_supported"`
 }
 
 func fetchASMeta(ctx context.Context, metaURL string) (*ServerMeta, error) {
@@ -284,11 +288,23 @@ func decodeASMeta(body io.Reader, metaURL string) (*ServerMeta, error) {
 		)
 	}
 	return &ServerMeta{
-		AuthURL:         raw.AuthURL,
-		TokenURL:        raw.TokenURL,
-		RegistrationURL: raw.RegistrationURL,
-		CIMDSupported:   raw.CIMDSupported,
+		Issuer:                raw.Issuer,
+		IssParameterSupported: raw.IssParameterSupported,
+		AuthURL:               raw.AuthURL,
+		TokenURL:              raw.TokenURL,
+		RegistrationURL:       raw.RegistrationURL,
+		CIMDSupported:         raw.CIMDSupported,
 	}, nil
+}
+
+// requireIssuer refuses metadata naming another issuer, which could steer a login's code and
+// tokens to a server other than the one the MCP server named. The spec forbids normalizing either.
+// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/8e12bf3c/docs/specification/2026-07-28/basic/authorization/authorization-server-discovery.mdx?plain=1#L94
+func requireIssuer(meta *ServerMeta, issuer, metaURL string) error {
+	if meta.Issuer != issuer {
+		return fmt.Errorf("oauth discovery: metadata at %s names issuer %q, not %q", metaURL, meta.Issuer, issuer)
+	}
+	return nil
 }
 
 func pkceS256Supported(methods []string) bool {

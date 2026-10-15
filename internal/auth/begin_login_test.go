@@ -87,7 +87,7 @@ func TestBrowserLogin_callbackServerFailureEndsWait(t *testing.T) {
 
 	var waitErr error
 	output := captureTerminalOutput(t, func() {
-		login, err := auth.StartBrowserLogin(&config.AuthConfig{}, listener, auth.LoginClient{})
+		login, err := auth.StartBrowserLogin(&config.AuthConfig{}, listener, auth.ResolvedLogin{})
 		if err != nil {
 			t.Fatalf("StartBrowserLogin: %v", err)
 		}
@@ -106,7 +106,7 @@ func TestBrowserLogin_callbackServerFailureEndsWait(t *testing.T) {
 func TestBrowserLogin_callbackThatArrivedBeforeServerFailureStillCompletes(t *testing.T) {
 	mock := authtest.NewTokenServer(t)
 	listener := newFailingListener(t)
-	login, err := auth.StartBrowserLogin(mock.AuthConfig(), listener, auth.LoginClient{})
+	login, err := auth.StartBrowserLogin(mock.AuthConfig(), listener, auth.ResolvedLogin{})
 	if err != nil {
 		t.Fatalf("StartBrowserLogin: %v", err)
 	}
