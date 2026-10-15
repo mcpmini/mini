@@ -109,6 +109,12 @@ func (s *Server) storeAuthFlow(serverName string, state *authFlowState) {
 	s.authMu.Unlock()
 }
 
+func (s *Server) hasAuthFlow(serverName string) bool {
+	s.authMu.Lock()
+	defer s.authMu.Unlock()
+	return s.authFlows[serverName] != nil
+}
+
 func (s *Server) cancelExistingAuthFlow(serverName string) {
 	s.authMu.Lock()
 	old := s.authFlows[serverName]

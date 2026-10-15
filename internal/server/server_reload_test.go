@@ -5,13 +5,18 @@ package server_test
 import (
 	"bufio"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"golang.org/x/oauth2"
+
+	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/server"
@@ -145,6 +150,63 @@ func TestServerReload_savedServer_connectsAndNotifiesAgents(t *testing.T) {
 			e.assertConnected("svc", "kept")
 			agent.waitForLine("notifications/tools/list_changed")
 		})
+	}
+}
+
+func TestServerReload_anOAuthServerSavedWhileRunningConnectsOnceItsLoginIsSaved(t *testing.T) {
+	const accessToken = "saved-login"
+	upstream := fakeOAuthMCPServer(t, accessToken, []map[string]any{
+		{"name": "getData", "inputSchema": map[string]any{"type": "object"}},
+	})
+	tokens := fakeTokenServer(t, accessToken)
+	e := newServerReloadEnv(t)
+	e.startPoller()
+	e.writeServer(config.ServerConfig{Name: "svc", Transport: "http", URL: upstream.URL, Auth: &config.AuthConfig{
+		Type: "oauth2", ClientID: "test-client", AuthURL: tokens.URL + "/authorize", TokenURL: tokens.URL + "/token",
+	}})
+	e.advanceTick()
+	e.srv.WaitForStartupConnects()
+	e.assertRemoved("svc")
+
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: e.dir, ServerName: "svc", Token: &oauth2.Token{
+		AccessToken: accessToken, TokenType: "Bearer", Expiry: e.clock.Now().Add(time.Hour),
+	}})
+	e.advanceTick()
+	e.srv.WaitForStartupConnects()
+
+	e.assertConnected("svc")
+}
+
+const refreshedToken = `{"access_token":"rejected","token_type":"Bearer","expires_in":3600,"refresh_token":"next"}`
+
+func TestServerReload_aTokenMiniRefreshesWhileFailingIsNotANewLogin(t *testing.T) {
+	upstream := fakeOAuthMCPServer(t, "a token the auth server never issues", nil)
+	var refreshes atomic.Int32
+	tokens := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		refreshes.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		//nolint:errcheck // A failed write fails the refresh, which the test counts all the same.
+		w.Write([]byte(refreshedToken))
+	}))
+	t.Cleanup(tokens.Close)
+	e := newServerReloadEnv(t)
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: e.dir, ServerName: "svc", Token: &oauth2.Token{
+		AccessToken: "revoked", RefreshToken: "refresh", TokenType: "Bearer", Expiry: e.clock.Now().Add(time.Hour),
+	}})
+	e.writeServer(config.ServerConfig{Name: "svc", Transport: "http", URL: upstream.URL, Auth: &config.AuthConfig{
+		Type: "oauth2", ClientID: "test-client", AuthURL: tokens.URL + "/authorize", TokenURL: tokens.URL + "/token",
+	}})
+	e.startPoller()
+	e.srv.WaitForStartupConnects()
+	afterFirstAttempt := refreshes.Load()
+
+	for range 3 {
+		e.advanceTick()
+		e.srv.WaitForStartupConnects()
+	}
+
+	if got := refreshes.Load(); got != afterFirstAttempt {
+		t.Errorf("token refreshed %d more times after svc stopped at needs auth, want none", got-afterFirstAttempt)
 	}
 }
 

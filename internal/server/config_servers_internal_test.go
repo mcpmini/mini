@@ -7,8 +7,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -33,6 +36,108 @@ func TestApplyServerFile_skipsANameAnotherOperationHolds(t *testing.T) {
 	if !srv.applyServerFile(t.Context(), "svc") {
 		t.Error("applyServerFile kept svc once its name was free, want the next pass to remove it")
 	}
+}
+
+func TestApplyServerFile_reconnectsAServerStoppedAtNeedsAuthOnceItsLoginIsSaved(t *testing.T) {
+	srv, sc := newNeedsAuthServer(t)
+	if srv.applyServerFile(t.Context(), "svc"); srv.ToolCount("svc") != 0 || !srv.isConfigServer("svc") {
+		t.Fatal("svc was touched before any login was saved")
+	}
+
+	writeLogin(t, srv)
+	srv.applyServerFile(t.Context(), "svc")
+	srv.connector.wait()
+
+	if srv.ToolCount("svc") == 0 {
+		t.Error("svc still has no tools after its login was saved, want it reconnected")
+	}
+	if srv.liveProjections("svc") == nil {
+		t.Errorf("svc lost its projections %v when it reconnected", sc.Projections)
+	}
+}
+
+func TestApplyServerFile_aLoginSavedWhileTheFileIsHalfWrittenAppliesOnceItIsComplete(t *testing.T) {
+	srv, sc := newNeedsAuthServer(t)
+	writeLogin(t, srv)
+	testutil.WriteFile(t, config.ServerPath(srv.configDir, "svc"), "")
+
+	srv.applyServerFile(t.Context(), "svc")
+	configtest.WriteServer(t, srv.configDir, sc)
+	srv.applyServerFile(t.Context(), "svc")
+
+	if !connectsWithin(srv, 3*time.Second) || srv.ToolCount("svc") == 0 {
+		t.Error("svc never connected: the half-written file took the place of its complete settings")
+	}
+}
+
+func TestApplyServerFile_leavesAServerAtNeedsAuthWithoutANewLogin(t *testing.T) {
+	cases := map[string]func(t *testing.T) *Server{
+		"login saved before the attempt": func(t *testing.T) *Server {
+			srv := newInstallTestServer(t)
+			writeLogin(t, srv)
+			recordNeedsAuth(t, srv)
+			return srv
+		},
+		"login in flight": func(t *testing.T) *Server {
+			srv, _ := newNeedsAuthServer(t)
+			srv.storeAuthFlow("svc", &authFlowState{cancel: func() {}})
+			writeLogin(t, srv)
+			return srv
+		},
+	}
+	for name, setUp := range cases {
+		t.Run(name, func(t *testing.T) {
+			srv := setUp(t)
+
+			srv.applyServerFile(t.Context(), "svc")
+			srv.connector.wait()
+
+			if srv.ToolCount("svc") != 0 {
+				t.Error("svc reconnected without a login saved since its attempt")
+			}
+		})
+	}
+}
+
+// connectsWithin reports whether every connect attempt finished in time; one retrying settings that
+// can't connect never does.
+func connectsWithin(srv *Server, d time.Duration) bool {
+	done := make(chan struct{})
+	go func() {
+		srv.connector.wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return true
+	case <-time.After(d):
+		return false
+	}
+}
+
+func newNeedsAuthServer(t *testing.T) (*Server, config.ServerConfig) {
+	t.Helper()
+	srv := newInstallTestServer(t)
+	return srv, recordNeedsAuth(t, srv)
+}
+
+func recordNeedsAuth(t *testing.T, srv *Server) config.ServerConfig {
+	t.Helper()
+	sc := config.ServerConfig{
+		Name:        "svc",
+		Command:     testutil.Binary(t, "ECHOMCP_BIN"),
+		Projections: map[string]*config.ProjectionConfig{"*": {IncludeOnly: []string{"a"}}},
+	}
+	configtest.WriteServer(t, srv.configDir, sc)
+	srv.replaceProjections(map[string]map[string]*config.ProjectionConfig{"svc": sc.Projections}, config.Servers{})
+	srv.recordConfigServers([]config.ServerConfig{sc})
+	srv.recordStartupFailure(srv.startupInstall(sc), needsAuthStatus{})
+	return sc
+}
+
+func writeLogin(t *testing.T, srv *Server) {
+	t.Helper()
+	testutil.WriteFile(t, auth.TokenPath(srv.configDir, "svc"), "{}")
 }
 
 func TestClose_stopsTheConfigReloadLoop(t *testing.T) {
