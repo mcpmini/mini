@@ -69,8 +69,8 @@ func TestIntegrationProxyMode_ArgsReachUpstream(t *testing.T) {
 	c := proxySetup(t, map[string]string{"echo": `{"echo":"default","other":"unchanged"}`})
 	pr := c.execProxyTool("svc__echo", map[string]any{"echo": "from-agent"}, nil)
 	m, ok := pr.textJSON(t, 0).(map[string]any)
-	if !ok || m["echo"] != "from-agent" || m["other"] != "unchanged" {
-		t.Errorf("expected args.echo to overlay the fixture value, got %v", pr.Content)
+	if !ok || m["echo"] != "from-agent" || m["other"] != "unchanged" || m["args"] != nil {
+		t.Errorf("expected the flat echo argument to overlay the fixture value, got %v", pr.Content)
 	}
 }
 
@@ -100,14 +100,13 @@ func TestIntegrationProxyMode_RawProjectionBypassesExclusion(t *testing.T) {
 	}
 }
 
-func TestIntegrationProxyMode_LegacyFlatCall_Rejected(t *testing.T) {
+func TestIntegrationProxyMode_ArgsKeyIsUpstreamArgument(t *testing.T) {
 	t.Parallel()
-	c := proxySetup(t, map[string]string{"get_item": `{"id":1}`})
-	text, isErr := c.execProxyToolRaw("svc__get_item", map[string]any{"id": 1})
-	if !isErr {
-		t.Fatalf("expected legacy flat call to be rejected, got success: %s", text)
-	}
-	if !strings.Contains(text, `"args"`) {
-		t.Errorf("expected actionable error mentioning \"args\", got: %s", text)
+	c := proxySetup(t, map[string]string{"echo": `{"args":"default"}`})
+	pr := c.execProxyTool("svc__echo", map[string]any{"args": map[string]any{"nested": "value"}}, nil)
+	m, ok := pr.textJSON(t, 0).(map[string]any)
+	nested, isObject := m["args"].(map[string]any)
+	if !ok || !isObject || nested["nested"] != "value" {
+		t.Errorf("expected args key forwarded to the upstream and echoed back, got %v", pr.Content)
 	}
 }

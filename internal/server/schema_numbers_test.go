@@ -19,9 +19,6 @@ func TestToolSchemas_PreserveNumbers(t *testing.T) {
 			tool := schemaToolResult(t, schemaResponse(t, srv, compact), compact)
 			for _, key := range []string{"inputSchema", "outputSchema"} {
 				schema := tool[key].(map[string]any)
-				if !compact && key == "inputSchema" {
-					schema = schema["properties"].(map[string]any)["args"].(map[string]any)
-				}
 				if schema["const"] != json.Number("9007199254740993") || schema["maximum"] != json.Number("1e400") {
 					t.Fatalf("%s numbers changed: %v", key, schema)
 				}

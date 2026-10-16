@@ -155,7 +155,7 @@ func serveSingleProxyCall(t *testing.T, srv *server.Server, toolName string) map
 	})
 	callReq, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-		"params": map[string]any{"name": toolName, "arguments": map[string]any{"args": map[string]any{}}},
+		"params": map[string]any{"name": toolName, "arguments": map[string]any{}},
 	})
 	var input bytes.Buffer
 	input.Write(append(initReq, '\n'))

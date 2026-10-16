@@ -4,7 +4,6 @@ package server
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 	"testing"
 )
@@ -51,7 +50,7 @@ func TestParseProxyToolName(t *testing.T) {
 }
 
 func TestParseProxyRequest_MissingOrNullArguments(t *testing.T) {
-	for _, raw := range []json.RawMessage{nil, {}, json.RawMessage("null")} {
+	for _, raw := range []json.RawMessage{nil, {}, json.RawMessage("null"), json.RawMessage("{}")} {
 		req, err := parseProxyRequest(raw)
 		if err != nil {
 			t.Fatalf("parseProxyRequest(%q): unexpected error: %v", raw, err)
@@ -65,26 +64,38 @@ func TestParseProxyRequest_MissingOrNullArguments(t *testing.T) {
 	}
 }
 
-func TestParseProxyRequest_ArgsForwarded(t *testing.T) {
-	req, err := parseProxyRequest(json.RawMessage(`{"args":{"state":"open","limit":5}}`))
+func TestParseProxyRequest_FlatArgumentsForwardedWithoutControlKey(t *testing.T) {
+	req, err := parseProxyRequest(json.RawMessage(`{"state":"open","limit":5,"__mini":{"projection":"raw"}}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if req.Args["state"] != "open" || fmt.Sprint(req.Args["limit"]) != "5" {
-		t.Errorf("args not forwarded correctly: %v", req.Args)
+	want := map[string]any{"state": "open", "limit": json.Number("5")}
+	if len(req.Args) != len(want) || req.Args["state"] != "open" || req.Args["limit"] != json.Number("5") {
+		t.Errorf("args = %v, want %v (__mini must not be forwarded)", req.Args, want)
+	}
+	if req.Controls.Projection != projectionRaw {
+		t.Errorf("projection = %q, want raw", req.Controls.Projection)
 	}
 }
 
-func TestParseProxyRequest_MissingArgsKeyDefaultsToEmpty(t *testing.T) {
-	req, err := parseProxyRequest(json.RawMessage(`{"__mini":{"projection":"raw"}}`))
+func TestParseProxyRequest_ArgsKeyIsUpstreamArgument(t *testing.T) {
+	req, err := parseProxyRequest(json.RawMessage(`{"args":{"state":"open"}}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(req.Args) != 0 {
-		t.Errorf("expected empty args when \"args\" key absent, got %v", req.Args)
+	nested, ok := req.Args["args"].(map[string]any)
+	if !ok || nested["state"] != "open" {
+		t.Errorf("expected args key forwarded as upstream argument named args, got %v", req.Args)
 	}
-	if req.Controls.Projection != "raw" {
-		t.Errorf("expected projection=raw, got %q", req.Controls.Projection)
+}
+
+func TestParseProxyRequest_MissingMiniKeyLeavesProjectionDefault(t *testing.T) {
+	req, err := parseProxyRequest(json.RawMessage(`{"id":"x"}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if req.Args["id"] != "x" || req.Controls.Projection != "" {
+		t.Errorf("got args=%v projection=%q, want id=x and default projection", req.Args, req.Controls.Projection)
 	}
 }
 
@@ -93,8 +104,9 @@ func TestParseProxyRequest_NestedMiniKeyInArgsPreserved(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if req.Args["__mini"] != "upstream-owned-field" {
-		t.Errorf("expected nested args.__mini to be preserved as ordinary data, got %v", req.Args)
+	nested, ok := req.Args["args"].(map[string]any)
+	if !ok || nested["__mini"] != "upstream-owned-field" {
+		t.Errorf("expected nested __mini inside args to be preserved as ordinary data, got %v", req.Args)
 	}
 }
 
@@ -108,7 +120,11 @@ func TestParseProxyRequest_ProjectionControlValues(t *testing.T) {
 		{name: "default", mini: `{"projection":"default"}`, want: projectionDefault},
 		{name: "raw", mini: `{"projection":"raw"}`, want: projectionRaw},
 		{name: "empty object", mini: `{}`, want: ""},
+		{name: "null", mini: `null`, want: ""},
 		{name: "invalid value", mini: `{"projection":"summary"}`, wantError: true},
+		{name: "non-object", mini: `"raw"`, wantError: true},
+		{name: "misspelled key (adversarial)", mini: `{"projectoin":"raw"}`, wantError: true},
+		{name: "extra key", mini: `{"projection":"raw","extra":true}`, wantError: true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -129,24 +145,14 @@ func TestParseProxyRequest_ProjectionControlValues(t *testing.T) {
 	}
 }
 
-func TestParseProxyRequest_RejectsLegacyFlatFields(t *testing.T) {
-	_, err := parseProxyRequest(json.RawMessage(`{"state":"open","limit":5}`))
-	if err == nil {
-		t.Fatal("expected error for legacy flat call")
-	}
-	if !containsAll(err.Error(), "args", "state", "limit") {
-		t.Errorf("legacy rejection error should be actionable, got: %v", err)
-	}
-}
-
-func TestParseProxyRequest_ArgsMustBeObject(t *testing.T) {
+func TestParseProxyRequest_ArgumentsMustBeObject(t *testing.T) {
 	for _, raw := range []json.RawMessage{
-		json.RawMessage(`{"args":"not an object"}`),
-		json.RawMessage(`{"args":[1,2,3]}`),
-		json.RawMessage(`{"args":5}`),
+		json.RawMessage(`"not an object"`),
+		json.RawMessage(`[1,2,3]`),
+		json.RawMessage(`5`),
 	} {
 		if _, err := parseProxyRequest(raw); err == nil {
-			t.Errorf("parseProxyRequest(%s): expected error for non-object args", raw)
+			t.Errorf("parseProxyRequest(%s): expected error for non-object arguments", raw)
 		}
 	}
 }
@@ -157,25 +163,13 @@ func TestParseProxyRequest_MiniMustBeObject(t *testing.T) {
 	}
 }
 
-func TestExtractProxyArgs_PreservesLargeIntegers(t *testing.T) {
-	envelope := map[string]json.RawMessage{
-		"args": json.RawMessage(`{"id":9007199254740993}`),
-	}
-	args, err := extractProxyArgs(envelope)
+func TestParseProxyRequest_PreservesLargeIntegers(t *testing.T) {
+	req, err := parseProxyRequest(json.RawMessage(`{"id":9007199254740993}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, _ := json.Marshal(args)
+	b, _ := json.Marshal(req.Args)
 	if !strings.Contains(string(b), "9007199254740993") {
 		t.Errorf("large integer corrupted: got %s", b)
 	}
-}
-
-func containsAll(s string, substrs ...string) bool {
-	for _, sub := range substrs {
-		if !strings.Contains(s, sub) {
-			return false
-		}
-	}
-	return true
 }

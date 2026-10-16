@@ -112,10 +112,12 @@ func TestProxy_Initialize_Instructions(t *testing.T) {
 	if initResult == nil {
 		t.Fatal("no initialize result")
 	}
-	const want = "When code reads or computes over a tool result, set `__mini.projection` to `raw` so the result is complete. " +
-		"Results are otherwise the upstream server's own, trimmed where large: a trimmed result carries `__mini` " +
-		"(a key in the result object, or a final text block); call `read` with its `file` and a listed path as " +
-		"`filter` to recover what was cut. Upstream tool arguments go under `args`."
+	const want = "Results are the upstream server's own, trimmed where large: a trimmed result carries `__mini` " +
+		"(a key in the result object, or a final text block) with a `file` and the paths that were cut. " +
+		"To get cut data, call `read` with that `file` and a listed path as `filter`, or a jq filter " +
+		"built on it. Pass `__mini: {\"projection\": \"raw\"}` only from a script that must process the " +
+		"whole result without a second call. Tool arguments are the upstream server's own; `__mini` is " +
+		"reserved."
 	if got := initResult["instructions"].(string); got != want {
 		t.Errorf("proxy instructions = %q, want %q", got, want)
 	}
