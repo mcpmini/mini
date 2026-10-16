@@ -29,7 +29,7 @@ func proxyUpstreamToolSchema(e *registry.ToolEntry) (map[string]any, error) {
 	}
 	m["name"] = e.Server + "__" + e.ToolName.Name()
 	m["inputSchema"] = proxyInputSchema(e)
-	m["outputSchema"] = proxyOutputSchema(e)
+	setProxyOutputSchema(m)
 	return m, nil
 }
 
@@ -70,24 +70,34 @@ func miniInputControlSchema() map[string]any {
 	}
 }
 
-func proxyOutputSchema(e *registry.ToolEntry) map[string]any {
-	data := scopedSchema(
-		schemaScope{
-			Raw:      e.Def.OutputSchema,
-			Server:   e.Server,
-			Tool:     e.ToolName.Name(),
-			Kind:     "output",
-			Fallback: defaultEmptySchema,
-		},
-	)
-	return map[string]any{
-		"type":     "object",
-		"required": []string{"data"},
-		"properties": map[string]any{
-			"data":   data,
-			"__mini": miniOutputMetaSchema(),
-		},
+func setProxyOutputSchema(tool map[string]any) {
+	schema, ok := tool["outputSchema"].(map[string]any)
+	if !ok {
+		if tool["outputSchema"] == nil {
+			delete(tool, "outputSchema")
+		}
+		return
 	}
+	if !isObjectSchema(schema) {
+		return
+	}
+	properties, ok := schema["properties"].(map[string]any)
+	if !ok {
+		properties = map[string]any{}
+		schema["properties"] = properties
+	}
+	if _, upstreamOwnsKey := properties["__mini"]; upstreamOwnsKey {
+		return
+	}
+	properties["__mini"] = miniOutputMetaSchema()
+}
+
+func isObjectSchema(schema map[string]any) bool {
+	if schema["type"] == "object" {
+		return true
+	}
+	_, hasProperties := schema["properties"].(map[string]any)
+	return hasProperties
 }
 
 func miniOutputMetaSchema() map[string]any {
@@ -151,10 +161,6 @@ func parseSchema(raw json.RawMessage, fallback func() map[string]any) map[string
 
 func defaultObjectSchema() map[string]any {
 	return map[string]any{"type": "object", "properties": map[string]any{}}
-}
-
-func defaultEmptySchema() map[string]any {
-	return map[string]any{}
 }
 
 func canOmitArgs(schema map[string]any) bool {

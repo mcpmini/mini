@@ -112,12 +112,12 @@ func TestProxy_Initialize_Instructions(t *testing.T) {
 	if initResult == nil {
 		t.Fatal("no initialize result")
 	}
-	instructions := initResult["instructions"].(string)
-	if !strings.Contains(instructions, "read") {
-		t.Errorf("proxy instructions should mention read: %q", instructions)
-	}
-	if strings.Contains(instructions, "perm_call") {
-		t.Errorf("proxy instructions should not mention perm_call: %q", instructions)
+	const want = "When code reads or computes over a tool result, set `__mini.projection` to `raw` so the result is complete. " +
+		"Results are otherwise the upstream server's own, trimmed where large: a trimmed result carries `__mini` " +
+		"(a key in the result object, or a final text block); call `read` with its `file` and a listed path as " +
+		"`filter` to recover what was cut. Upstream tool arguments go under `args`."
+	if got := initResult["instructions"].(string); got != want {
+		t.Errorf("proxy instructions = %q, want %q", got, want)
 	}
 }
 
@@ -197,15 +197,11 @@ func TestProxy_Call_WithProjection_ElisionInlinesPlusFile(t *testing.T) {
 	if msg, _ := mini["msg"].(string); msg == "" {
 		t.Errorf("expected __mini.msg to be set: %s", text)
 	}
-	if env["data"] == nil {
-		t.Errorf("expected data key in envelope: %s", text)
+	if _, hasID := env["id"]; !hasID {
+		t.Errorf("expected id in the upstream object, got: %v", env)
 	}
-	data, _ := env["data"].(map[string]any)
-	if _, hasID := data["id"]; !hasID {
-		t.Errorf("expected id in data, got: %v", data)
-	}
-	if _, hasSecret := data["secret"]; hasSecret {
-		t.Errorf("expected secret to be excluded from data, got: %v", data)
+	if _, hasSecret := env["secret"]; hasSecret {
+		t.Errorf("expected secret to be excluded from the upstream object, got: %v", env)
 	}
 }
 
@@ -308,8 +304,8 @@ func TestProxy_Call_WithTruncation_ProjectionNote(t *testing.T) {
 		t.Fatalf("expected __mini.truncated to be non-empty: %s", text)
 	}
 	entry, _ := truncated[0].(map[string]any)
-	if path, _ := entry["path"].(string); path != ".body" {
-		t.Errorf("expected truncated[0].path = .body, got %q", path)
+	if path, _ := entry["path"].(string); path != ".content[0].text | fromjson | .body" {
+		t.Errorf("expected truncated[0].path = .content[0].text | fromjson | .body, got %q", path)
 	}
 	if chars, _ := entry["chars"].(float64); chars == 0 {
 		t.Errorf("expected truncated[0].chars > 0: %s", text)
@@ -616,7 +612,7 @@ func TestProxy_ToolsList_AbsentAnnotationsOmitted(t *testing.T) {
 	}
 }
 
-func TestProxy_ToolsList_OutputSchemaAlwaysSynthesized(t *testing.T) {
+func TestProxy_ToolsList_OutputSchemaOmittedWhenUpstreamHasNone(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := fakeConn("write_file")
@@ -627,7 +623,7 @@ func TestProxy_ToolsList_OutputSchemaAlwaysSynthesized(t *testing.T) {
 	if tool == nil {
 		t.Fatal("fs__write_file not found in tools/list")
 	}
-	if _, ok := tool["outputSchema"]; !ok {
-		t.Error("proxy mode must always advertise outputSchema, even for tools without one upstream")
+	if _, ok := tool["outputSchema"]; ok {
+		t.Errorf("tool without an upstream outputSchema must not advertise one, got: %v", tool["outputSchema"])
 	}
 }

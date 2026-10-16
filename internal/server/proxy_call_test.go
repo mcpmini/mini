@@ -11,18 +11,17 @@ import (
 	"github.com/mcpmini/mini/internal/server"
 )
 
-func TestProxy_StableOutput_AllRootShapesWrapInData(t *testing.T) {
+func TestProxy_StableOutput_AllRootShapesMirrorUpstreamText(t *testing.T) {
 	cases := []struct {
 		name     string
 		upstream string
-		wantData any
 	}{
-		{"object root", `{"id":1,"name":"foo"}`, map[string]any{"id": float64(1), "name": "foo"}},
-		{"array root", `[1,2,3]`, []any{float64(1), float64(2), float64(3)}},
-		{"string root", `"hello"`, "hello"},
-		{"number root", `42`, float64(42)},
-		{"boolean root", `true`, true},
-		{"null root", `null`, nil},
+		{"object root", `{"id":1,"name":"foo"}`},
+		{"array root", `[1,2,3]`},
+		{"string root", `"hello"`},
+		{"number root", `42`},
+		{"boolean root", `true`},
+		{"null root", `null`},
 	}
 
 	for _, tc := range cases {
@@ -36,27 +35,18 @@ func TestProxy_StableOutput_AllRootShapesWrapInData(t *testing.T) {
 			addProxyConn(t, srv, "svc", conn)
 
 			resp := serveProxy(t, srv, callTool("svc__get_value", map[string]any{}))
-			text := toolResultText(t, resp)
+			result := resp["result"].(map[string]any)
 
-			var wrapper struct {
-				Data any `json:"data"`
-			}
-			var raw map[string]json.RawMessage
-			if err := json.Unmarshal([]byte(text), &raw); err != nil {
-				t.Fatalf("expected JSON object envelope, got: %s", text)
-			}
-			if _, ok := raw["data"]; !ok {
-				t.Fatalf("expected top-level \"data\" key even for %s, got: %s", tc.name, text)
-			}
-			if err := json.Unmarshal([]byte(text), &wrapper); err != nil {
-				t.Fatalf("unmarshal envelope: %v", err)
-			}
-			assertDeepEqual(t, wrapper.Data, tc.wantData)
+			assertDeepEqual(
+				t,
+				result,
+				map[string]any{"content": []any{map[string]any{"type": "text", "text": tc.upstream}}},
+			)
 		})
 	}
 }
 
-func TestProxy_StableOutput_TextAndStructuredContentMatch(t *testing.T) {
+func TestProxy_StableOutput_StructuredContentIsNotAddedOrDuplicated(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := fakeConn("get_value")
@@ -67,16 +57,9 @@ func TestProxy_StableOutput_TextAndStructuredContentMatch(t *testing.T) {
 
 	resp := serveProxy(t, srv, callTool("svc__get_value", map[string]any{}))
 	result := resp["result"].(map[string]any)
-	text := result["content"].([]any)[0].(map[string]any)["text"].(string)
-	structured, ok := result["structuredContent"]
-	if !ok {
-		t.Fatal("expected structuredContent in proxy result")
+	if _, ok := result["structuredContent"]; ok {
+		t.Errorf("proxy mode must not add structuredContent the upstream did not send: %v", result)
 	}
-	structuredBytes, _ := json.Marshal(structured)
-	var fromText, fromStructured any
-	json.Unmarshal([]byte(text), &fromText)
-	json.Unmarshal(structuredBytes, &fromStructured)
-	assertDeepEqual(t, fromText, fromStructured)
 }
 
 func TestProxy_StableOutput_MiniOmittedWhenUnaltered(t *testing.T) {

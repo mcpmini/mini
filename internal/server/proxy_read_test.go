@@ -84,10 +84,14 @@ func TestProxy_MiniRead_WithFilter(t *testing.T) {
 		t.Fatalf("expected file key in __mini, got: %s", text1)
 	}
 
-	resp2 := serveProxy(t, srv, callTool("read", map[string]any{"file": key, "filter": ".name"}))
+	resp2 := serveProxy(
+		t,
+		srv,
+		callTool("read", map[string]any{"file": key, "filter": ".content[0].text | fromjson | .name"}),
+	)
 	text2 := toolResultText(t, resp2)
 	if text2 != `"widget"` {
-		t.Errorf("filter .name: expected %q, got %q", `"widget"`, text2)
+		t.Errorf("filter .content[0].text | fromjson | .name: expected %q, got %q", `"widget"`, text2)
 	}
 }
 
