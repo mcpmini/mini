@@ -186,10 +186,13 @@ func (s *Server) proxyCallUpstream(ctx context.Context, p proxyCallParams) (any,
 
 func (s *Server) proxyRespond(reply proxyReply) (any, error) {
 	reply.ProjCfg = s.proxyProjectionConfig(reply.Call)
-	if config.EffectiveFormat("", config.ProjectionFormat(reply.ProjCfg), s.cfg.ResponseFormat) == config.FormatToon {
-		return s.proxyToonResult(reply)
+	out, err := s.proxyResultBytes(reply)
+	if err != nil {
+		return nil, err
 	}
-	return s.proxyMirrorResult(reply)
+	saved := int64(response.EstimateTokensRaw(reply.Raw) - response.EstimateTokensRaw(out))
+	reply.Upstream.recordSaved(reply.Call.Session, reply.LatencyMs, saved)
+	return upstreamResult(out), nil
 }
 
 type proxyReply struct {
@@ -214,52 +217,22 @@ func (s *Server) proxyProjectionConfig(p proxyCallParams) *config.ProjectionConf
 	return s.resolveProjection(p.Entry.Server, p.Tool, p.Session)
 }
 
-func (s *Server) proxyMirrorResult(r proxyReply) (any, error) {
-	out := r.Raw
-	if r.Call.Controls.Projection != projectionRaw {
-		var err error
-		if out, err = s.buildProxyResult(proxyResultParams{Raw: r.Raw, ProjCfg: r.ProjCfg}); err != nil {
-			return nil, err
-		}
+func (s *Server) proxyResultBytes(r proxyReply) (json.RawMessage, error) {
+	if r.Call.Controls.Projection == projectionRaw {
+		return r.Raw, nil
 	}
-	saved := int64(response.EstimateTokensRaw(r.Raw) - response.EstimateTokensRaw(out))
-	r.Upstream.recordSaved(r.Call.Session, r.LatencyMs, saved)
-	return upstreamResult(out), nil
-}
-
-func (s *Server) proxyToonResult(r proxyReply) (any, error) {
-	value, err := invoke.ExtractContent(r.Raw)
+	built, err := s.buildProxyResult(proxyResultParams{Raw: r.Raw, ProjCfg: r.ProjCfg})
 	if err != nil {
 		return nil, err
 	}
-	return s.proxyProject(envelopeParams{
-		Entry:     r.Call.Entry,
-		Tool:      r.Call.Tool,
-		Raw:       value,
-		Session:   r.Call.Session,
-		Upstream:  r.Upstream,
-		LatencyMs: r.LatencyMs,
-		Bypass:    r.Call.Controls.Projection == projectionRaw,
-	})
+	if !s.usesToon(r.ProjCfg) {
+		return built.Raw, nil
+	}
+	return s.toonifyProxyResult(toonParams{Server: r.Call.Server, Tool: r.Call.Tool, Built: built})
 }
 
-func (s *Server) proxyProject(p envelopeParams) (any, error) {
-	var projCfg *config.ProjectionConfig
-	if !p.Bypass {
-		projCfg = s.resolveProjection(p.Entry.Server, p.Tool, p.Session)
-	}
-	env, stats, err := s.buildProjectedEnvelope(projectedEnvelopeParams{
-		Server:  p.Entry.Server,
-		Tool:    p.Tool,
-		Raw:     p.Raw,
-		ProjCfg: projCfg,
-		Bypass:  p.Bypass,
-	})
-	if err != nil {
-		return nil, err
-	}
-	p.Upstream.recordSaved(p.Session, p.LatencyMs, int64(stats.RawTokens-stats.SummaryTokens))
-	return s.formatEnvelope(p.Entry.Server, p.Tool, env, projCfg)
+func (s *Server) usesToon(projCfg *config.ProjectionConfig) bool {
+	return config.EffectiveFormat("", config.ProjectionFormat(projCfg), s.cfg.ResponseFormat) == config.FormatToon
 }
 
 func (s *Server) handleRead(ctx context.Context, raw json.RawMessage) (any, error) {

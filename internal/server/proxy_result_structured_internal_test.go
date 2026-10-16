@@ -97,7 +97,7 @@ func TestBuildProxyResult_largeIntegersSurviveARewrittenBlock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(out, []byte(`\"id\":9007199254740993`)) {
-		t.Errorf("large integer changed in the rewritten block: %s", out)
+	if !bytes.Contains(out.Raw, []byte(`\"id\":9007199254740993`)) {
+		t.Errorf("large integer changed in the rewritten block: %s", out.Raw)
 	}
 }

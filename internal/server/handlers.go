@@ -242,7 +242,6 @@ type envelopeParams struct {
 	Session   *Session
 	Upstream  *upstreamServer
 	LatencyMs int64
-	Bypass    bool
 }
 
 func (s *Server) buildEnvelope(p envelopeParams) (any, error) {
@@ -265,18 +264,16 @@ type projectedEnvelopeParams struct {
 	Tool    string
 	Raw     json.RawMessage
 	ProjCfg *config.ProjectionConfig
-	Bypass  bool
 }
 
 func (s *Server) buildProjectedEnvelope(p projectedEnvelopeParams) (*response.Envelope, response.CallStats, error) {
 	return invoke.BuildEnvelope(invoke.BuildEnvelopeParams{
-		Server:           p.Server,
-		Tool:             p.Tool,
-		Raw:              p.Raw,
-		ProjCfg:          p.ProjCfg,
-		ProjDefs:         s.projDefaults,
-		Builder:          s.envelope,
-		BypassProjection: p.Bypass,
+		Server:   p.Server,
+		Tool:     p.Tool,
+		Raw:      p.Raw,
+		ProjCfg:  p.ProjCfg,
+		ProjDefs: s.projDefaults,
+		Builder:  s.envelope,
 	})
 }
 

@@ -136,7 +136,7 @@ func runProxyResultCase(t *testing.T, tc proxyResultCase) {
 		t.Fatal(err)
 	}
 	var result map[string]any
-	if err := json.Unmarshal(out, &result); err != nil {
+	if err := json.Unmarshal(out.Raw, &result); err != nil {
 		t.Fatal(err)
 	}
 	masked, file := maskRecoveryFile(t, result)

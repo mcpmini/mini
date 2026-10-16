@@ -4,6 +4,7 @@ package server_test
 
 import (
 	"encoding/json"
+	"log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -175,7 +176,7 @@ func TestProxy_ToonFormat_RendersToonOutput(t *testing.T) {
 	if strings.HasPrefix(text, "{") {
 		t.Fatalf("expected TOON format in proxy mode, got JSON: %s", text)
 	}
-	if !strings.Contains(text, "data[2]{id,name}:") {
+	if !strings.Contains(text, "[2]{id,name}:") {
 		t.Errorf("expected tabular TOON block, got: %s", text)
 	}
 }
@@ -198,5 +199,237 @@ func TestProxy_DefaultProjection_PreservesLargeIntegers(t *testing.T) {
 	text := toolResultText(t, resp)
 	if !strings.Contains(text, "9007199254740993") {
 		t.Errorf("default projection corrupted large integer: %s", text)
+	}
+}
+
+func newProxyToonServer(t *testing.T, logs *syncBuffer) *server.Server {
+	t.Helper()
+	cfg := config.DefaultConfig()
+	cfg.ResponseFormat = "toon"
+	params := server.Params{Config: cfg}
+	if logs != nil {
+		params.Logger = slog.New(slog.NewTextHandler(logs, nil))
+	}
+	return newTestServer(t, params)
+}
+
+func setProxyExclude(t *testing.T, srv *server.Server, tool string, projection map[string]any) {
+	t.Helper()
+	serveProxy(t, srv, callTool("config", map[string]any{
+		"action": "set_projection", "server": "svc", "tool": tool, "projection": projection,
+	}))
+}
+
+func proxyResultOf(t *testing.T, resp map[string]any) map[string]any {
+	t.Helper()
+	result, ok := resp["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing result in response: %v", resp)
+	}
+	return result
+}
+
+func contentTexts(result map[string]any) []string {
+	blocks, _ := result["content"].([]any)
+	texts := make([]string, 0, len(blocks))
+	for _, b := range blocks {
+		text, _ := b.(map[string]any)["text"].(string)
+		texts = append(texts, text)
+	}
+	return texts
+}
+
+func TestProxy_ToonFormat_UntrimmedObjectTextBecomesOneToonBlock(t *testing.T) {
+	srv := newProxyToonServer(t, nil)
+	defer srv.Close()
+	conn := fakeConn("get_user")
+	conn.Responses["tools/call"] = json.RawMessage(
+		`{"content":[{"type":"text","text":"{\"id\":1,\"name\":\"alice\"}"}]}`,
+	)
+	addProxyConn(t, srv, "svc", conn)
+
+	result := proxyResultOf(t, serveProxy(t, srv, callTool("svc__get_user", map[string]any{})))
+	if _, ok := result["structuredContent"]; ok {
+		t.Errorf("TOON must not add structuredContent: %v", result)
+	}
+	texts := contentTexts(result)
+	if len(texts) != 1 || !strings.Contains(texts[0], "name: alice") {
+		t.Errorf("want one TOON text block, got %q", texts)
+	}
+}
+
+func TestProxy_ToonFormat_TrimmedArrayKeepsJSONNoticeBlock(t *testing.T) {
+	srv := newProxyToonServer(t, nil)
+	defer srv.Close()
+	conn := fakeConn("list_users")
+	conn.Responses["tools/call"] = json.RawMessage(
+		`{"content":[{"type":"text","text":"[{\"id\":1,\"secret\":\"x\"},{\"id\":2,\"secret\":\"y\"}]"}]}`,
+	)
+	addProxyConn(t, srv, "svc", conn)
+	setProxyExclude(t, srv, "list_users", map[string]any{"exclude": []string{"secret"}})
+
+	texts := contentTexts(proxyResultOf(t, serveProxy(t, srv, callTool("svc__list_users", map[string]any{}))))
+	if len(texts) != 2 {
+		t.Fatalf("want TOON block plus notice block, got %q", texts)
+	}
+	if strings.Contains(texts[0], "secret") || strings.HasPrefix(texts[0], "[{") {
+		t.Errorf("want TOON array without secret, got %q", texts[0])
+	}
+	if !strings.HasPrefix(texts[1], "\n{\"__mini\":") {
+		t.Errorf("want JSON notice block last, got %q", texts[1])
+	}
+}
+
+func TestProxy_ToonFormat_KeepsUpstreamKeyOrder(t *testing.T) {
+	srv := newProxyToonServer(t, nil)
+	defer srv.Close()
+	conn := fakeConn("get_user")
+	conn.Responses["tools/call"] = json.RawMessage(
+		`{"content":[{"type":"text","text":"{\"name\":\"alice\",\"id\":1}"}]}`,
+	)
+	addProxyConn(t, srv, "svc", conn)
+
+	texts := contentTexts(proxyResultOf(t, serveProxy(t, srv, callTool("svc__get_user", map[string]any{}))))
+	if len(texts) != 1 || texts[0] != "name: alice\nid: 1" {
+		t.Errorf("want TOON in upstream key order, got %q", texts)
+	}
+}
+
+func TestProxy_ToonFormat_EmptyObjectKeepsJSONText(t *testing.T) {
+	srv := newProxyToonServer(t, nil)
+	defer srv.Close()
+	conn := fakeConn("delete_user")
+	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{}"}]}`)
+	addProxyConn(t, srv, "svc", conn)
+
+	texts := contentTexts(proxyResultOf(t, serveProxy(t, srv, callTool("svc__delete_user", map[string]any{}))))
+	if len(texts) != 1 || texts[0] != "{}" {
+		t.Errorf("want the upstream {} text kept, got %q", texts)
+	}
+}
+
+func TestProxy_ToonFormat_TrimmedObjectCarriesNoticeInToon(t *testing.T) {
+	srv := newProxyToonServer(t, nil)
+	defer srv.Close()
+	conn := fakeConn("get_user")
+	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"x\"}"}]}`)
+	addProxyConn(t, srv, "svc", conn)
+	setProxyExclude(t, srv, "get_user", map[string]any{"exclude": []string{"secret"}})
+
+	texts := contentTexts(proxyResultOf(t, serveProxy(t, srv, callTool("svc__get_user", map[string]any{}))))
+	if len(texts) != 1 {
+		t.Fatalf("want one TOON block carrying the notice, got %q", texts)
+	}
+	if !strings.Contains(texts[0], "__mini:") || strings.Contains(texts[0], `"secret"`) ||
+		strings.HasPrefix(texts[0], "{") {
+		t.Errorf("want TOON object with __mini and no secret, got %q", texts[0])
+	}
+}
+
+func TestProxy_ToonFormat_MirrorTextIsToonAndStructuredKeepsNotice(t *testing.T) {
+	srv := newProxyToonServer(t, nil)
+	defer srv.Close()
+	conn := fakeConn("get_user")
+	conn.Responses["tools/call"] = json.RawMessage(
+		`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"x\"}"}],"structuredContent":{"id":1,"secret":"x"}}`,
+	)
+	addProxyConn(t, srv, "svc", conn)
+	setProxyExclude(t, srv, "get_user", map[string]any{"exclude": []string{"secret"}})
+
+	result := proxyResultOf(t, serveProxy(t, srv, callTool("svc__get_user", map[string]any{})))
+	structured, _ := result["structuredContent"].(map[string]any)
+	if _, ok := structured["__mini"]; !ok {
+		t.Errorf("structuredContent must carry __mini: %v", structured)
+	}
+	texts := contentTexts(result)
+	if len(texts) != 1 || strings.HasPrefix(texts[0], "{") || strings.Contains(texts[0], "secret: ") {
+		t.Errorf("want one TOON mirror block without secret, got %q", texts)
+	}
+}
+
+func TestProxy_ToonFormat_ProseTextIsUnchanged(t *testing.T) {
+	srv := newProxyToonServer(t, nil)
+	defer srv.Close()
+	conn := fakeConn("describe")
+	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"hello, world"}]}`)
+	addProxyConn(t, srv, "svc", conn)
+
+	texts := contentTexts(proxyResultOf(t, serveProxy(t, srv, callTool("svc__describe", map[string]any{}))))
+	if len(texts) != 1 || texts[0] != "hello, world" {
+		t.Errorf("prose text must pass through unchanged, got %q", texts)
+	}
+}
+
+func TestProxy_ToonFormat_UnencodableJSONKeepsJSONAndLogsWarning(t *testing.T) {
+	var logs syncBuffer
+	srv := newProxyToonServer(t, &logs)
+	defer srv.Close()
+	conn := fakeConn("get_blob")
+	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":` + deepPayload(t) + `}]}`)
+	addProxyConn(t, srv, "svc", conn)
+
+	texts := contentTexts(proxyResultOf(t, serveProxy(t, srv, callTool("svc__get_blob", map[string]any{}))))
+	if len(texts) != 1 || !strings.Contains(texts[0], "depth-sentinel") {
+		t.Errorf("unencodable JSON must stay as JSON text, got %.80q", texts)
+	}
+	if !strings.Contains(logs.String(), "toon encode failed") {
+		t.Errorf("want a toon encode warning, got logs: %s", logs.String())
+	}
+}
+
+func TestProxy_ToonFormat_RawAndErrorResultsStayJSON(t *testing.T) {
+	t.Run("raw projection", func(t *testing.T) {
+		srv := newProxyToonServer(t, nil)
+		defer srv.Close()
+		conn := fakeConn("get_user")
+		conn.Responses["tools/call"] = json.RawMessage(
+			`{"content":[{"type":"text","text":"{\"id\":1,\"name\":\"alice\"}"}]}`,
+		)
+		addProxyConn(t, srv, "svc", conn)
+
+		resp := serveProxy(t, srv, callTool(
+			"svc__get_user",
+			map[string]any{"__mini": map[string]any{"projection": "raw"}},
+		))
+		if text := toolResultText(t, resp); text != `{"id":1,"name":"alice"}` {
+			t.Errorf("raw result must stay JSON, got %q", text)
+		}
+	})
+	t.Run("isError", func(t *testing.T) {
+		srv := newProxyToonServer(t, nil)
+		defer srv.Close()
+		conn := fakeConn("fail")
+		conn.Responses["tools/call"] = json.RawMessage(
+			`{"content":[{"type":"text","text":"{\"code\":7}"}],"isError":true}`,
+		)
+		addProxyConn(t, srv, "svc", conn)
+
+		text := toolResultText(t, serveProxy(t, srv, callTool("svc__fail", map[string]any{})))
+		if text != `{"code":7}` {
+			t.Errorf("isError result must stay JSON, got %q", text)
+		}
+	})
+}
+
+func TestProxy_ToonFormat_PerToolOverrideOnlyAffectsThatTool(t *testing.T) {
+	srv := newTestServer(t, server.Params{})
+	defer srv.Close()
+	conn := fakeConn("toon_tool", "json_tool")
+	conn.Responses["tools/call"] = json.RawMessage(
+		`{"content":[{"type":"text","text":"{\"id\":1,\"name\":\"alice\"}"}]}`,
+	)
+	addProxyConn(t, srv, "svc", conn)
+	serveProxy(t, srv, callTool("config", map[string]any{
+		"action": "set_projection", "server": "svc", "tool": "toon_tool",
+		"projection": map[string]any{"format": "toon"},
+	}))
+
+	toonText := contentTexts(proxyResultOf(t, serveProxy(t, srv, callTool("svc__toon_tool", map[string]any{}))))
+	jsonText := contentTexts(proxyResultOf(t, serveProxy(t, srv, callTool("svc__json_tool", map[string]any{}))))
+	if len(toonText) != 1 || strings.HasPrefix(toonText[0], "{") {
+		t.Errorf("configured tool must be TOON, got %q", toonText)
+	}
+	if len(jsonText) != 1 || !strings.HasPrefix(jsonText[0], "{") {
+		t.Errorf("other tool must stay JSON, got %q", jsonText)
 	}
 }
