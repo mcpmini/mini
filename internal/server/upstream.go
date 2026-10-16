@@ -98,11 +98,11 @@ func (u *upstreamServer) dispatchCall(ctx context.Context, params json.RawMessag
 	if err != nil {
 		return nil, u.classifyCallError(err)
 	}
-	result, toolErr := invoke.ExtractContent(raw)
+	toolErr := invoke.CheckResult(raw)
 	if toolErr != nil {
 		u.recordError(toolErr.Error())
 	}
-	return result, toolErr
+	return raw, toolErr
 }
 
 func (u *upstreamServer) callConn(ctx context.Context, params json.RawMessage) (json.RawMessage, error) {

@@ -279,6 +279,53 @@ func TestHealthStatsAfterCalls(t *testing.T) {
 	assertHealthStats(t, srv, "svc", nCalls)
 }
 
+func TestHealthStats_upstreamToolErrorRecordedInProxyAndCompactMode(t *testing.T) {
+	failing := func() *transport.FakeConnection {
+		conn := fakeConn("ping")
+		conn.Responses["tools/call"] = json.RawMessage(`{"isError":true,"content":[{"type":"text","text":"boom"}]}`)
+		return conn
+	}
+
+	t.Run("proxy mode", func(t *testing.T) {
+		srv := newTestServer(t, server.Params{})
+		t.Cleanup(srv.Close)
+		addProxyConn(t, srv, "svc", failing())
+		resp := serveProxy(t, srv, callTool("svc__ping", map[string]any{}))
+		assertIsErrorResult(t, resp)
+		assertFailedCallRecorded(t, srv, "svc", "tool returned error: boom")
+	})
+
+	t.Run("compact mode", func(t *testing.T) {
+		srv := newTestServer(t, server.Params{})
+		t.Cleanup(srv.Close)
+		addEdgeConn(t, srv, config.ServerConfig{Name: "svc"}, failing())
+		resp := serve(t, srv, callTool("call", map[string]any{
+			"server": "svc", "tool": "ping", "params": map[string]any{},
+		}))
+		assertIsErrorResult(t, resp)
+		assertFailedCallRecorded(t, srv, "svc", "tool returned error: boom")
+	})
+}
+
+func assertFailedCallRecorded(t *testing.T, srv *server.Server, svcName, wantLastError string) {
+	t.Helper()
+	var status map[string]any
+	if err := json.Unmarshal(
+		[]byte(toolResultText(t, serve(t, srv, callTool("config", map[string]any{"action": "status"})))),
+		&status,
+	); err != nil {
+		t.Fatalf("status is not JSON: %v", err)
+	}
+	servers, _ := status["servers"].(map[string]any)
+	svc, _ := servers[svcName].(map[string]any)
+	if errs, _ := svc["errors"].(float64); errs != 1 {
+		t.Errorf("errors = %v, want 1", svc["errors"])
+	}
+	if svc["last_error"] != wantLastError {
+		t.Errorf("last_error = %v, want %q", svc["last_error"], wantLastError)
+	}
+}
+
 func newSessionServer(t *testing.T) *server.Server {
 	t.Helper()
 	return newTestServer(t, server.Params{})
