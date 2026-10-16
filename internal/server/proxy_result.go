@@ -22,10 +22,17 @@ type proxyResultParams struct {
 	ProjCfg *config.ProjectionConfig
 }
 
-func (s *Server) buildProxyResult(p proxyResultParams) (json.RawMessage, error) {
+type builtProxyResult struct {
+	Raw json.RawMessage
+	// NoticeBlock is the index of the appended notice block in Raw's content; -1 when absent.
+	NoticeBlock int
+}
+
+func (s *Server) buildProxyResult(p proxyResultParams) (builtProxyResult, error) {
+	unchanged := builtProxyResult{Raw: p.Raw, NoticeBlock: -1}
 	doc, ok := parseResultDoc(p.Raw)
 	if !ok {
-		return p.Raw, nil
+		return unchanged, nil
 	}
 	units := doc.collectUnits()
 	for i := range units {
@@ -34,10 +41,10 @@ func (s *Server) buildProxyResult(p proxyResultParams) (json.RawMessage, error) 
 	carrier := pickCarrier(units, doc.hasStructured)
 	notice, err := s.proxyNotice(p.Raw, units, carrier)
 	if err != nil {
-		return nil, err
+		return builtProxyResult{}, err
 	}
 	if notice == nil && !anyChanged(units) {
-		return p.Raw, nil
+		return unchanged, nil
 	}
 	return doc.assemble(units, carrier, notice)
 }
@@ -88,21 +95,25 @@ func (d *resultDoc) assemble(
 	units []projectUnit,
 	carrier *projectUnit,
 	notice *response.ProjectionMeta,
-) (json.RawMessage, error) {
+) (builtProxyResult, error) {
 	if carrier != nil && notice != nil {
 		carrier.carry(notice)
 	}
 	for i := range units {
 		if err := d.applyUnit(&units[i]); err != nil {
-			return nil, err
+			return builtProxyResult{}, err
 		}
 	}
+	built := builtProxyResult{NoticeBlock: -1}
 	if notice != nil && !d.noticeCarried(carrier) {
 		if err := d.appendNoticeBlock(notice); err != nil {
-			return nil, err
+			return builtProxyResult{}, err
 		}
+		built.NoticeBlock = len(d.result.Content) - 1
 	}
-	return d.encode()
+	raw, err := d.encode()
+	built.Raw = raw
+	return built, err
 }
 
 func (d *resultDoc) noticeCarried(carrier *projectUnit) bool {
