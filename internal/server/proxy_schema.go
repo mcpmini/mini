@@ -3,9 +3,7 @@ package server
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"strconv"
 
 	"github.com/mcpmini/mini/internal/registry"
 )
@@ -34,27 +32,35 @@ func proxyUpstreamToolSchema(e *registry.ToolEntry) (map[string]any, error) {
 }
 
 func proxyInputSchema(e *registry.ToolEntry) map[string]any {
-	args := scopedSchema(
-		schemaScope{
-			Raw:      e.Def.InputSchema,
-			Server:   e.Server,
-			Tool:     e.ToolName.Name(),
-			Kind:     "input",
-			Fallback: defaultObjectSchema,
-		},
-	)
-	wrapped := map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"args":   args,
-			"__mini": miniInputControlSchema(),
-		},
-		"additionalProperties": false,
+	schema := parseSchema(e.Def.InputSchema, defaultObjectSchema)
+	if !acceptsMiniControl(schema) {
+		return schema
 	}
-	if !canOmitArgs(args) {
-		wrapped["required"] = []string{"args"}
+	if _, hasType := schema["type"]; !hasType {
+		schema["type"] = "object"
 	}
-	return wrapped
+	schemaProperties(schema)["__mini"] = miniInputControlSchema()
+	return schema
+}
+
+func schemaProperties(schema map[string]any) map[string]any {
+	properties, ok := schema["properties"].(map[string]any)
+	if !ok {
+		properties = map[string]any{}
+		schema["properties"] = properties
+	}
+	return properties
+}
+
+func acceptsMiniControl(schema map[string]any) bool {
+	// Closed referenced or composed objects can reject a root-level __mini.
+	for _, key := range []string{"$ref", "allOf", "anyOf", "oneOf"} {
+		if _, ok := schema[key]; ok {
+			return false
+		}
+	}
+	objectType, hasType := schema["type"]
+	return !hasType || objectType == "object"
 }
 
 func miniInputControlSchema() map[string]any {
@@ -81,11 +87,7 @@ func setProxyOutputSchema(tool map[string]any) {
 	if !isObjectSchema(schema) {
 		return
 	}
-	properties, ok := schema["properties"].(map[string]any)
-	if !ok {
-		properties = map[string]any{}
-		schema["properties"] = properties
-	}
+	properties := schemaProperties(schema)
 	if _, upstreamOwnsKey := properties["__mini"]; upstreamOwnsKey {
 		return
 	}
@@ -128,24 +130,6 @@ func truncatedItemsSchema() map[string]any {
 	}
 }
 
-type schemaScope struct {
-	Raw      json.RawMessage
-	Server   string
-	Tool     string
-	Kind     string
-	Fallback func() map[string]any
-}
-
-// Nesting under args/data would break a client's $ref/$defs resolution unless
-// anchored by a fresh $id.
-func scopedSchema(s schemaScope) map[string]any {
-	schema := parseSchema(s.Raw, s.Fallback)
-	if _, hasID := schema["$id"]; !hasID {
-		schema["$id"] = fmt.Sprintf("mini:schema:%s/%s/%s", s.Server, s.Tool, s.Kind)
-	}
-	return schema
-}
-
 func parseSchema(raw json.RawMessage, fallback func() map[string]any) map[string]any {
 	if !json.Valid(raw) {
 		return fallback()
@@ -161,40 +145,4 @@ func parseSchema(raw json.RawMessage, fallback func() map[string]any) map[string
 
 func defaultObjectSchema() map[string]any {
 	return map[string]any{"type": "object", "properties": map[string]any{}}
-}
-
-func canOmitArgs(schema map[string]any) bool {
-	if t, ok := schema["type"].(string); ok && t != "object" {
-		return false
-	}
-	if hasNonEmptyRequired(schema) || hasPositiveMinProperties(schema) {
-		return false
-	}
-	return !hasComposingKeyword(schema)
-}
-
-func hasNonEmptyRequired(schema map[string]any) bool {
-	req, ok := schema["required"].([]any)
-	return ok && len(req) > 0
-}
-
-func hasPositiveMinProperties(schema map[string]any) bool {
-	switch n := schema["minProperties"].(type) {
-	case json.Number:
-		value, err := n.Float64()
-		return value > 0 && (err == nil || errors.Is(err, strconv.ErrRange))
-	case float64:
-		return n > 0
-	default:
-		return false
-	}
-}
-
-func hasComposingKeyword(schema map[string]any) bool {
-	for _, key := range []string{"$ref", "allOf", "anyOf", "oneOf", "not", "if", "const", "enum"} {
-		if _, ok := schema[key]; ok {
-			return true
-		}
-	}
-	return false
 }

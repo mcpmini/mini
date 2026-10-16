@@ -242,7 +242,7 @@ func handleCancelled(params json.RawMessage, session *Session) {
 
 const compactInitInstructions = "mini is an MCP proxy. Use `list` to discover tools across connected servers, `call` to invoke them, `perm_call` for tools requiring elevated permissions, and `configure` to manage servers and settings."
 
-const proxyInitInstructions = "When code reads or computes over a tool result, set `__mini.projection` to `raw` so the result is complete. Results are otherwise the upstream server's own, trimmed where large: a trimmed result carries `__mini` (a key in the result object, or a final text block); call `read` with its `file` and a listed path as `filter` to recover what was cut. Upstream tool arguments go under `args`."
+const proxyInitInstructions = "Results are the upstream server's own, trimmed where large: a trimmed result carries `__mini` (a key in the result object, or a final text block) with a `file` and the paths that were cut. To get cut data, call `read` with that `file` and a listed path as `filter`, or a jq filter built on it. Pass `__mini: {\"projection\": \"raw\"}` only from a script that must process the whole result without a second call. Tool arguments are the upstream server's own; `__mini` is reserved."
 
 type initializeClientParams struct {
 	ToolMode string `json:"_mini_tool_mode"`

@@ -64,7 +64,7 @@ func decodeJSON(t *testing.T, text string) any {
 
 func TestProxyResult_aTrimmedResultIsRecoverableWithRead(t *testing.T) {
 	srv, _ := newProxyServer(t, `{"content":[{"type":"text","text":"[1,2,3,4]"}]}`, arrayLimit)
-	content := callProxyTool(t, srv, map[string]any{"args": map[string]any{}})["content"].([]any)
+	content := callProxyTool(t, srv, map[string]any{})["content"].([]any)
 	if got := content[0].(map[string]any)["text"]; got != "[1,2]" {
 		t.Errorf("trimmed text = %v, want [1,2]", got)
 	}
@@ -81,14 +81,14 @@ func TestProxyResult_isReturnedAsSentWhenNothingIsTrimmed(t *testing.T) {
 		args     map[string]any
 	}{
 		{
-			name:     "raw projection beside args skips the server's projection",
+			name:     "raw projection skips the server's projection",
 			upstream: `{"content":[{"type":"text","text":"[1,2,3,4]"}]}`,
-			args:     map[string]any{"args": map[string]any{}, "__mini": map[string]any{"projection": "raw"}},
+			args:     map[string]any{"__mini": map[string]any{"projection": "raw"}},
 		},
 		{
 			name:     "an isError result is not trimmed",
 			upstream: `{"isError":true,"content":[{"type":"text","text":"[1,2,3,4]"}]}`,
-			args:     map[string]any{"args": map[string]any{}},
+			args:     map[string]any{},
 		},
 	}
 	for _, tc := range cases {

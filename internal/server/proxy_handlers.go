@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -84,52 +83,24 @@ func parseProxyRequest(raw json.RawMessage) (proxyRequest, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return proxyRequest{Args: map[string]any{}}, nil
 	}
-	var envelope map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &envelope); err != nil {
-		return proxyRequest{}, fmt.Errorf("%w: unmarshal call arguments: %w", errInvalidParams, err)
-	}
-	if err := rejectLegacyFields(envelope); err != nil {
-		return proxyRequest{}, err
-	}
-	args, err := extractProxyArgs(envelope)
+	args, err := decodeProxyArgs(raw)
 	if err != nil {
 		return proxyRequest{}, err
 	}
-	controls, err := extractProxyControls(envelope)
+	controls, err := extractProxyControls(args["__mini"])
 	if err != nil {
 		return proxyRequest{}, err
 	}
+	delete(args, "__mini")
 	return proxyRequest{Args: args, Controls: controls}, nil
 }
 
-func rejectLegacyFields(envelope map[string]json.RawMessage) error {
-	var extra []string
-	for key := range envelope {
-		if key != "args" && key != "__mini" {
-			extra = append(extra, key)
-		}
-	}
-	if len(extra) == 0 {
-		return nil
-	}
-	sort.Strings(extra)
-	return fmt.Errorf(
-		"%w: legacy flat tool call — upstream arguments must be nested under \"args\" (unexpected field(s): %s), e.g. {\"args\": {...}}",
-		errInvalidParams,
-		strings.Join(extra, ", "),
-	)
-}
-
-func extractProxyArgs(envelope map[string]json.RawMessage) (map[string]any, error) {
-	raw, ok := envelope["args"]
-	if !ok || string(raw) == "null" {
-		return map[string]any{}, nil
-	}
+func decodeProxyArgs(raw json.RawMessage) (map[string]any, error) {
 	var args map[string]any
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
 	if err := dec.Decode(&args); err != nil {
-		return nil, fmt.Errorf("%w: args must be an object: %w", errInvalidParams, err)
+		return nil, fmt.Errorf("%w: arguments must be an object: %w", errInvalidParams, err)
 	}
 	if args == nil {
 		args = map[string]any{}
@@ -137,13 +108,19 @@ func extractProxyArgs(envelope map[string]json.RawMessage) (map[string]any, erro
 	return args, nil
 }
 
-func extractProxyControls(envelope map[string]json.RawMessage) (proxyControls, error) {
-	raw, ok := envelope["__mini"]
-	if !ok || string(raw) == "null" {
+func extractProxyControls(value any) (proxyControls, error) {
+	if value == nil {
 		return proxyControls{}, nil
+	}
+	if err := rejectUnknownControls(value); err != nil {
+		return proxyControls{}, err
 	}
 	var c struct {
 		Projection projectionMode `json:"projection"`
+	}
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return proxyControls{}, fmt.Errorf("%w: __mini must be an object: %w", errInvalidParams, err)
 	}
 	if err := json.Unmarshal(raw, &c); err != nil {
 		return proxyControls{}, fmt.Errorf("%w: __mini must be an object: %w", errInvalidParams, err)
@@ -156,6 +133,20 @@ func extractProxyControls(envelope map[string]json.RawMessage) (proxyControls, e
 		)
 	}
 	return proxyControls{Projection: c.Projection}, nil
+}
+
+// A misspelled control would otherwise be ignored and the agent would get trimmed data it asked not to get.
+func rejectUnknownControls(value any) error {
+	controls, ok := value.(map[string]any)
+	if !ok {
+		return nil
+	}
+	for key := range controls {
+		if key != "projection" {
+			return fmt.Errorf("%w: unknown __mini key %q; the only key is \"projection\"", errInvalidParams, key)
+		}
+	}
+	return nil
 }
 
 type proxyCallParams struct {

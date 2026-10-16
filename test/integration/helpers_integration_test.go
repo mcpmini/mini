@@ -527,7 +527,10 @@ func (r proxyResult) textJSON(t *testing.T, i int) any {
 }
 
 func proxyToolArguments(args, controls map[string]any) map[string]any {
-	arguments := map[string]any{"args": args}
+	arguments := make(map[string]any, len(args)+1)
+	for k, v := range args {
+		arguments[k] = v
+	}
 	if controls != nil {
 		arguments["__mini"] = controls
 	}
@@ -545,22 +548,6 @@ func (c *mcpClient) execProxyTool(serverDotTool string, args, controls map[strin
 		c.t.Fatalf("parse proxy result: %v\nraw: %s", err, raw)
 	}
 	return pr
-}
-
-// execProxyToolRaw sends arguments verbatim, bypassing the {"args": ...} wrapper —
-// for testing rejection of legacy/malformed argument shapes. A rejected legacy
-// call surfaces as a JSON-RPC protocol error (invalid params), not a tool-level
-// isError result, so this uses call (not mustCall) and reports either shape.
-func (c *mcpClient) execProxyToolRaw(serverDotTool string, rawArguments map[string]any) (string, bool) {
-	c.t.Helper()
-	raw, err := c.call("tools/call", map[string]any{
-		"name":      serverDotTool,
-		"arguments": rawArguments,
-	})
-	if err != nil {
-		return err.Error(), true
-	}
-	return parseToolCallResult(raw)
 }
 
 func (c *mcpClient) listTools(server string) string {

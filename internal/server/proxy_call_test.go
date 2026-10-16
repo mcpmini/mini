@@ -9,6 +9,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 func TestProxy_StableOutput_AllRootShapesMirrorUpstreamText(t *testing.T) {
@@ -114,14 +115,80 @@ func TestProxy_ErrorBehavior_UnknownServerReturnsToolError(t *testing.T) {
 	}
 }
 
-func TestProxy_LegacyFlatCall_RejectedWithActionableError(t *testing.T) {
+func TestProxy_FlatArguments_ReachUpstreamAsSent(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := fakeConn("list_repos")
 	addProxyConn(t, srv, "gh", conn)
 
 	resp := serveProxy(t, srv, callTool("gh__list_repos", map[string]any{"state": "open"}))
-	requireRPCError(t, resp, -32602, "args")
+	if resp["error"] != nil {
+		t.Fatalf("flat call should succeed, got: %v", resp["error"])
+	}
+	if !strings.Contains(string(conn.LastParams), `"state":"open"`) {
+		t.Errorf("flat argument not forwarded to upstream: %s", conn.LastParams)
+	}
+}
+
+func TestProxy_ControlKey_NotForwardedToUpstream(t *testing.T) {
+	srv := newTestServer(t, server.Params{})
+	defer srv.Close()
+	conn := fakeConn("get_item")
+	addProxyConn(t, srv, "svc", conn)
+
+	resp := serveProxy(t, srv, callTool("svc__get_item", map[string]any{
+		"id":     "x",
+		"__mini": map[string]any{"projection": "raw"},
+	}))
+	if resp["error"] != nil || !strings.Contains(string(conn.LastParams), `"id":"x"`) {
+		t.Fatalf("call didn't reach the upstream: resp %v, params %s", resp, conn.LastParams)
+	}
+	if strings.Contains(string(conn.LastParams), "__mini") {
+		t.Errorf("__mini must not reach the upstream: %s", conn.LastParams)
+	}
+}
+
+func TestProxy_ArgsKey_ForwardedAsUpstreamArgument(t *testing.T) {
+	srv := newTestServer(t, server.Params{})
+	defer srv.Close()
+	conn := fakeConn("get_item")
+	addProxyConn(t, srv, "svc", conn)
+
+	serveProxy(t, srv, callTool("svc__get_item", map[string]any{"args": map[string]any{"id": "x"}}))
+	if !strings.Contains(string(conn.LastParams), `"args":{"id":"x"}`) {
+		t.Errorf("args key should be forwarded as an upstream argument: %s", conn.LastParams)
+	}
+}
+
+func TestProxy_ClosedRefRoot_FlatCallWithControlReachesUpstream(t *testing.T) {
+	srv := newTestServer(t, server.Params{})
+	defer srv.Close()
+	conn := &transport.FakeConnection{
+		Tools: []transport.ToolDefinition{
+			{
+				Name:        "get_item",
+				Description: "desc",
+				InputSchema: json.RawMessage(
+					`{"$ref":"#/$defs/Input","$defs":{"Input":{"type":"object","properties":{"id":{"type":"string"}},"additionalProperties":false}}}`,
+				),
+			},
+		},
+		Responses: map[string]json.RawMessage{
+			"tools/call": json.RawMessage(`{"content":[{"type":"text","text":"{}"}]}`),
+		},
+	}
+	addProxyConn(t, srv, "svc", conn)
+
+	resp := serveProxy(t, srv, callTool("svc__get_item", map[string]any{
+		"id":     "x",
+		"__mini": map[string]any{"projection": "raw"},
+	}))
+	if resp["error"] != nil {
+		t.Fatalf("flat call to closed $ref root should succeed, got: %v", resp["error"])
+	}
+	if !strings.Contains(string(conn.LastParams), `"id":"x"`) || strings.Contains(string(conn.LastParams), "__mini") {
+		t.Errorf("expected only id forwarded, got: %s", conn.LastParams)
+	}
 }
 
 func TestProxy_Alias_DispatchesToRealUpstreamName(t *testing.T) {
@@ -181,7 +248,7 @@ func TestProxy_ForwardsLargeIntegerArgs(t *testing.T) {
 	serveProxy(
 		t,
 		srv,
-		callTool("svc__get_item", map[string]any{"args": map[string]any{"id": json.Number("9007199254740993")}}),
+		callTool("svc__get_item", map[string]any{"id": json.Number("9007199254740993")}),
 	)
 	lastParams := string(conn.LastParams)
 	if !strings.Contains(lastParams, "9007199254740993") {
