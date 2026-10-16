@@ -10,7 +10,7 @@ When `mini init` finishes, it lists each MCP that still needs a step:
 
 Each MCP's file is `~/.mini/servers/<name>.yaml`. If you ran init with `--config DIR`, it's `DIR/servers/<name>.yaml`, and every `mini` command below needs the same `--config DIR`.
 
-After any of these steps, restart your agents as in [Applying changes](#applying-changes).
+A running mini picks up each of these steps within a few seconds; see [Applying changes](#applying-changes).
 
 ## requires a login
 
@@ -20,7 +20,7 @@ mini auth linear
 
 mini opens your browser to the provider's sign-in page and prints the URL in case the browser doesn't open. Once you approve, the browser returns to mini on `http://localhost:6464/callback` and mini saves the token in `~/.mini/internal/linear.token.json` (`DIR/internal/` with `--config DIR`). The login waits 5 minutes and prints `authorized linear` and the token's expiry when it's done. mini refreshes the token when it expires. If the refresh stops working, run `mini auth linear` again.
 
-The login is tied to the MCP's URL, `client_id` and `token_url` as they were when you logged in. If you change any of them, mini stops sending the old token and asks you to run `mini auth linear` again; restart your agents afterward, as in [Applying changes](#applying-changes).
+The login is tied to the MCP's URL, `client_id` and `token_url` as they were when you logged in. If you change any of them, mini stops sending the old token and asks you to run `mini auth linear` again.
 
 ## requires a custom OAuth app
 
@@ -115,7 +115,7 @@ If a variable isn't set, mini doesn't connect to that MCP; it doesn't send the l
 mini takes its environment from the agent that starts it, and every agent shares that one mini. To add a variable:
 
 1. Export it in your shell profile and open a new terminal.
-2. Restart as in [Applying changes](#applying-changes), starting your first agent from that terminal.
+2. Restart mini as in [Applying changes](#applying-changes), starting your first agent from that terminal.
 
 An agent started from the Dock or a desktop launcher usually doesn't see variables from your shell profile. Start it from a terminal, or write the value into the file.
 
@@ -123,7 +123,9 @@ A literal value in the file works too. init writes server files readable only by
 
 ## Applying changes
 
-mini reads an MCP's file and saved login when it connects. A running mini doesn't reconnect after you edit a file or run `mini auth`, and it doesn't connect MCPs added while it's running. For a change to take effect:
+A running mini checks the files in `servers/` every 5 seconds. When you add, edit or remove an MCP's file, or `mini auth` or `mini add` saves a login, it connects, reconnects or drops that MCP and tells your agents their tool list changed. If an agent doesn't show the change, restart that agent.
+
+mini keeps the environment it started with, and it reads `config.yaml` at startup. After changing an environment variable or `config.yaml`, restart mini:
 
 1. Quit every agent that uses mini.
 2. Stop mini's background process, if one is running:
@@ -133,7 +135,7 @@ mini reads an MCP's file and saved login when it connects. A running mini doesn'
    ```
 
    `mini daemon status` shows whether it's still running.
-3. Start your agents again. The first one starts mini with the new files.
+3. Start your agents again. The first one starts mini with the new settings.
 
 You don't need to run `mini init` again.
 
