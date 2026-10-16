@@ -94,16 +94,20 @@ mini is a context-optimizing MCP proxy. Agents talk to it via stdio; it routes c
 **Request flow:**
 
 ```
-agent → Serve() → session handler → handleList / handleExecute / handleExecuteProtected / handleConfigure
+proxy:   agent → Serve() → routeProxyTool → handleProxyCall / handleRead / handleConfigure
+compact: agent → Serve() → handleList / handleExecute / handleExecuteProtected / handleConfigure
                                          ↓
-                                   registry.Lookup()   — resolves server+tool, checks permission
+                                   lookupTool()        — resolves server+tool, checks permission
                                          ↓
-                                   upstream.callTool()  — dispatches to upstream connection
+                                   dispatchRaw()       — calls the upstream connection
                                          ↓
-                                   projection.Apply()   — trim/strip/limit the response
+                                   projection.Apply()  — trim/strip/limit the response
                                          ↓
-                                   response.Builder.Build() — inline or write to file
+                    proxy: buildProxyResult()  — the upstream result, trimmed in place
+                    compact, mini call: response.Builder.Build() — the {data, …} envelope
 ```
+
+Either path writes the raw upstream response to the store when projection cut something.
 
 ### Key packages
 
@@ -119,25 +123,34 @@ agent → Serve() → session handler → handleList / handleExecute / handleExe
 | `internal/daemon` | Background daemon rendezvous; Unix socket, bearer token, spawn lock, and health checks |
 | `internal/proxy` | stdio→HTTP bridge; connects agent stdio to daemon HTTP |
 
-### Response envelope
+### Response shapes
 
-When projection removes or truncates data, `call`/`perm_call` wraps the response:
+**Proxy mode** returns the upstream's own `CallToolResult`. `structuredContent`, JSON and prose text blocks, and embedded text resources are projected in place; images, other blocks and `_meta` pass through. Tools take the upstream's arguments flat; `__mini` is the only reserved argument (`{"projection": "raw"}`). When projection cuts something, the result carries a notice, as a `__mini` key on the result object or as a final text block:
 ```json
-{
-  "__mini": {
-    "msg": "Response filtered, some fields were excluded or truncated, use read(<file>, <jq filter>) to fetch full values.",
-    "file": "1750830563123",
-    "excluded": [".secret", ".internal"],
-    "truncated": [{"path": ".body", "chars": 420}, {"path": ".items", "items": 73}]
-  },
-  "data": { ... }
+"__mini": {
+  "msg": "Response filtered, some fields were excluded or truncated, use read(<file>, <jq filter>) to fetch full values.",
+  "file": "1750830563123",
+  "truncated": [{"path": ".content[0].text | fromjson | .body", "chars": 420}]
 }
 ```
+Its paths are `read` filters against the stored upstream result. An unchanged result, an `isError` result and a raw call are returned exactly as the upstream sent them. With `response_format: toon`, JSON text blocks are re-encoded as TOON.
+
+**Compact `call`/`perm_call` and `mini call`** return an envelope with the recovery fields alongside `data`:
+```json
+{
+  "data": { ... },
+  "excluded": [".secret", ".internal"],
+  "truncated": [{"path": ".body", "chars": 420}, {"path": ".items", "items": 73}],
+  "file": "1750830563123"
+}
+```
+Errors replace it with `{error, message, retryable, action}` and no `data`.
+
+In both shapes:
 - `excluded`: jq-style paths of fields removed entirely by projection
 - `truncated[].chars`: characters (runes) removed from a string field
 - `truncated[].items`: items removed from an array field by array limit
-- When no data is removed, the response is plain JSON with no `__mini` wrapper
-- Raw recovery files written to `~/.mini/internal/responses/<unix_ms>.json`; agents receive only the bare key (e.g. `1750830563123`) in `__mini.file`
+- The raw upstream response is written to `~/.mini/internal/responses/<unix_ms>.json` only when something was cut; agents get only the bare key (e.g. `1750830563123`) as `file`
 
 ### Config directory layout
 
