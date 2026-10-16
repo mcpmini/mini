@@ -45,6 +45,9 @@ func parseServerConfig(path string, data []byte) (*ServerConfig, error) {
 	if _, err := ParseTimeoutSpec(s.HandshakeTimeout, 0); err != nil {
 		return nil, fmt.Errorf("invalid handshake_timeout in %s: %w", path, err)
 	}
+	if _, err := ParseTimeoutSpec(s.ToolTimeout, 0); err != nil {
+		return nil, fmt.Errorf("invalid tool_timeout in %s: %w", path, err)
+	}
 	if err := checkUnexpandedFields(*s); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}

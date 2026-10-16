@@ -167,6 +167,12 @@ func TestValidateServerFile_allowsUndefinedSecretsAndRejectsInvalidConfig(t *tes
 			want: "handshake_timeout",
 		},
 		{
+			name: "bad tool timeout",
+			path: "servers/svc.yaml",
+			data: "tool_timeout: \"30\"\n",
+			want: "tool_timeout",
+		},
+		{
 			name: "invalid name from the path",
 			path: "servers/a.b.yaml",
 			data: "transport: stdio\n",
