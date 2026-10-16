@@ -264,8 +264,9 @@ func TestRunUnattended_aServerNeedingTheUsersCredentialsGetsThemCommentedOut(t *
 	if !strings.Contains(github, "# Create a token at https://github.example/tokens, then uncomment:") {
 		t.Errorf("github.yaml:\n%s\nwant the token step as a comment", github)
 	}
-	if status := statusNamed(t, report.Servers, "github"); !status.NeedsOwnApp() {
-		t.Errorf("github = %+v, want its own app: its authorization server lets no client register itself", status)
+	if status := statusNamed(t, report.Servers, "github"); status.Step("github.yaml", "mini auth github") !=
+		"requires manual configuration, edit github.yaml" {
+		t.Errorf("github = %+v, want manual configuration for its catalog token", status)
 	}
 	if strings.Contains(string(testutil.ReadFile(t, config.ServerPath(setup.ConfigDir, "linear"))), "#") {
 		t.Error("linear.yaml has a comment, want none: its login needs nothing written by hand")
@@ -354,7 +355,7 @@ func editServerFile(t *testing.T, configDir, name, old, replacement string) {
 
 func currentStatus(t *testing.T, setup Setup, name string) ServerStatus {
 	t.Helper()
-	statuses, err := ServerStatuses(setup.ConfigDir, CheckFindings{})
+	statuses, err := ServerStatuses(ServerStatusParams{ConfigDir: setup.ConfigDir})
 	if err != nil {
 		t.Fatal(err)
 	}

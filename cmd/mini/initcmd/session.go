@@ -11,6 +11,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/fileio"
@@ -43,18 +44,23 @@ type session struct {
 
 type writtenServer struct {
 	// Bytes, not the config: the caller still shares its maps and pointers.
-	encoded      []byte
-	setupComment string
+	encoded []byte
+	setup   serverSetup
 }
 
-func newWrittenServer(sc config.ServerConfig, setupComment string) writtenServer {
+type serverSetup struct {
+	comment  string
+	authKind catalog.AuthKind
+}
+
+func newWrittenServer(sc config.ServerConfig, setup serverSetup) writtenServer {
 	encoded, _ := yaml.Marshal(sc) //nolint:errcheck // AddServer just encoded the same config without error
-	return writtenServer{encoded: encoded, setupComment: setupComment}
+	return writtenServer{encoded: encoded, setup: setup}
 }
 
-func (w writtenServer) sameAs(sc config.ServerConfig, setupComment string) bool {
+func (w writtenServer) sameAs(sc config.ServerConfig, setup serverSetup) bool {
 	encoded, err := yaml.Marshal(sc)
-	return err == nil && bytes.Equal(encoded, w.encoded) && setupComment == w.setupComment
+	return err == nil && bytes.Equal(encoded, w.encoded) && setup == w.setup
 }
 
 type checkRun struct {
@@ -85,19 +91,19 @@ func newSession(p sessionParams) *session {
 
 // Sync makes this run's servers match want. A changed config that mini would reject leaves the
 // previous one in place, reported as failed.
-func (s *session) Sync(want []config.ServerConfig, setupComments map[string]string) syncResult {
+func (s *session) Sync(want []config.ServerConfig, setup map[string]serverSetup) syncResult {
 	s.stopChecks()
 	var result syncResult
-	s.removeUnwanted(want, setupComments, &result)
-	s.addMissing(want, setupComments, &result)
+	s.removeUnwanted(want, setup, &result)
+	s.addMissing(want, setup, &result)
 	s.startChecks()
 	return result
 }
 
-func (s *session) removeUnwanted(want []config.ServerConfig, setupComments map[string]string, result *syncResult) {
+func (s *session) removeUnwanted(want []config.ServerConfig, setup map[string]serverSetup, result *syncResult) {
 	for _, name := range slices.Sorted(maps.Keys(s.written)) {
 		i := slices.IndexFunc(want, func(sc config.ServerConfig) bool { return sc.Name == name })
-		if i >= 0 && s.written[name].sameAs(want[i], setupComments[name]) {
+		if i >= 0 && s.written[name].sameAs(want[i], setup[name]) {
 			continue
 		}
 		if i >= 0 {
@@ -118,16 +124,16 @@ func (s *session) removeUnwanted(want []config.ServerConfig, setupComments map[s
 	}
 }
 
-func (s *session) addMissing(want []config.ServerConfig, setupComments map[string]string, result *syncResult) {
+func (s *session) addMissing(want []config.ServerConfig, setup map[string]serverSetup, result *syncResult) {
 	for _, sc := range want {
 		if _, ok := s.written[sc.Name]; ok {
 			continue
 		}
-		if err := s.add(sc, setupComments[sc.Name]); err != nil {
+		if err := s.add(sc, setup[sc.Name].comment); err != nil {
 			result.Failed = append(result.Failed, ServerError{Name: sc.Name, Err: err})
 			continue
 		}
-		s.written[sc.Name] = newWrittenServer(sc, setupComments[sc.Name])
+		s.written[sc.Name] = newWrittenServer(sc, setup[sc.Name])
 		result.Added = append(result.Added, sc.Name)
 	}
 }
@@ -160,6 +166,14 @@ func prependSetupComment(path, comment string) error {
 
 func (s *session) Written() []string {
 	return slices.Sorted(maps.Keys(s.written))
+}
+
+func (s *session) CatalogAuth(names []string) map[string]catalog.AuthKind {
+	kinds := make(map[string]catalog.AuthKind, len(names))
+	for _, name := range names {
+		kinds[name] = s.written[name].setup.authKind
+	}
+	return kinds
 }
 
 func (s *session) Changed() <-chan struct{} {

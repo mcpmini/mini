@@ -132,7 +132,7 @@ func TestSessionSync_aServerWhoseSetupCommentChangedIsWrittenAgain(t *testing.T)
 	github := httpServer("github", "https://github.example/mcp")
 	s.Sync([]config.ServerConfig{github}, nil)
 
-	s.Sync([]config.ServerConfig{github}, map[string]string{"github": "add your token"})
+	s.Sync([]config.ServerConfig{github}, map[string]serverSetup{"github": {comment: "add your token"}})
 
 	if got := string(
 		testutil.ReadFile(t, config.ServerPath(dir, "github")),
