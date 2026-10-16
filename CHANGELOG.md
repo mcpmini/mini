@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.3.0 — unreleased
+
+- **`mini init` is a full-screen setup** — it imports the MCPs you already use in Claude Code, Claude Desktop, Codex, Cursor and Windsurf (or any config file, OpenClaw's included, with `--from`), offers more from a curated MCP catalog, runs browser logins, and connects mini to your agents, backing up each config it changes. Servers that need a token or your own OAuth app get the steps as a comment in their file. `--import`, `--from` and `--add` do the same without asking. See [docs/auth.md](docs/auth.md) for the steps init can't do for you.
+- **Proxy mode returns the upstream's own results** — trimmed in place instead of wrapped in `{"data": …}`, so `structuredContent`, prose, images, resources, `_meta` and MCP Apps cards come through. Tools take the upstream's own arguments, not an `args` wrapper. A trimmed result carries a `__mini` notice whose paths are `read` filters against the stored result. Compact mode and `mini call` are unchanged.
+- **TOON replaces the mini response format** — `response_format: toon` and `mini call -t` encode responses as [TOON](https://github.com/toon-format/toon): lossless, and much smaller than JSON for lists of records.
+- **Changes apply without a restart** — a running mini connects servers added to `servers/`, reconnects a server whose file changes, drops a removed one, applies projection edits, and connects a server once `mini auth` or `mini add` saves its login. Agents get a tool-list change notice.
+- **Faster, sturdier startup** — servers connect concurrently with a deadline (`handshake_timeout` in the server's file, default 30s), mini serves agents at once, and the first tool list waits briefly for servers still starting. A broken or misconfigured server file only skips that server, and `config status` says which servers are starting or unavailable, and why.
+- **OAuth logins keep working** — tokens refresh before they expire and after a 401, and an expired upstream session is re-initialized. mini identifies itself with a client ID metadata document before falling back to dynamic registration, honors registered client secrets, sends the RFC 8707 `resource`, and validates the authorization server's issuer. A saved login is bound to the server URL, token endpoint and client it was issued for, so editing any of them asks for a new login instead of sending the token elsewhere.
+- **Projections live in the server's file** — under `projections:` in `servers/<name>.yaml`. The `config` tool gains `get_projection`.
+- **`mini call` runs the MCP handshake** before calling, so servers that require it work from the CLI.
+- **Quieter CLI** — log lines go to `internal/cli.log` (and `internal/init.log` for `mini init`) instead of the terminal.
+
+### Upgrading from v0.2
+
+- Log in again to every OAuth server with `mini auth <name>`: v0.2 token files lack the server binding and are refused.
+- Move the rules in each `servers/<name>.proj.yaml` under `projections:` in `servers/<name>.yaml`, then delete the `.proj.yaml` file. mini no longer reads them.
+- Move any `servers:` entries in `config.yaml` into their own `servers/<name>.yaml` files. mini ignores them without a warning.
+- `mini init --yes` is gone; use `--import`, `--from` or `--add` for unattended setup.
+- `response_format: mini` is now `response_format: toon`, and `mini call -m` is now `-t`.
+- `${VAR}` is expanded only in `headers`, `env`, `auth.token` and `auth.client_secret`. A server with `${VAR}` in `url`, `command` or `args` is skipped with a warning.
+- In proxy mode, call tools with their own arguments; the v0.2 `args` wrapper is now passed through to the upstream as an ordinary argument.
+- `mini add --from-gemini` is gone; use `mini init --from` with an agent name or config file.
+
 ## v0.2.0 — 2026-07-08
 
 - **One command replaces `serve` and `proxy`** — use `mini connect`. The default exposes upstream tools directly as `server__tool`; pass `--tool-mode compact` for the four-meta-tool interface (`list`/`call`/`perm_call`/`config`). Both old commands are removed.
