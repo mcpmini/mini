@@ -37,7 +37,7 @@ func (r *Run) Save() (removed []string) {
 		return nil
 	}
 	r.stage.touch()
-	r.last = r.session.Sync(adds.write, adds.setupComments)
+	r.last = r.session.Sync(adds.write, adds.setup)
 	return r.last.Removed
 }
 
@@ -70,11 +70,13 @@ func (r *Run) ConfigDirFor(server string) string {
 // ServerStatuses are mini's servers with the ones this run adds.
 func (r *Run) ServerStatuses() ([]ServerStatus, error) {
 	findings := r.session.Findings()
-	inMini, err := ServerStatuses(r.setup.ConfigDir, findings)
+	inMini, err := ServerStatuses(ServerStatusParams{ConfigDir: r.setup.ConfigDir, Findings: findings})
 	if err != nil || !r.stage.created {
 		return inMini, err
 	}
-	added, err := ServerStatuses(r.stage.dir, findings)
+	added, err := ServerStatuses(ServerStatusParams{
+		ConfigDir: r.stage.dir, Findings: findings, CatalogAuth: r.session.CatalogAuth(r.session.Written()),
+	})
 	all := slices.Concat(inMini, added)
 	slices.SortFunc(all, func(a, b ServerStatus) int { return strings.Compare(a.Name, b.Name) })
 	return all, err
@@ -122,6 +124,8 @@ func (r *Run) report(c commitResult) Report {
 	adds := p.adds()
 	report.AlreadyConfigured, report.AddCoveredByImport = adds.alreadyConfigured, adds.coveredByImport
 	report.WriteErrors = slices.Concat(r.last.Failed, c.failed)
-	report.Servers, report.ReadServersErr = ServerStatuses(r.setup.ConfigDir, r.session.Findings())
+	report.Servers, report.ReadServersErr = ServerStatuses(ServerStatusParams{
+		ConfigDir: r.setup.ConfigDir, Findings: r.session.Findings(), CatalogAuth: r.session.CatalogAuth(c.committed),
+	})
 	return report
 }
