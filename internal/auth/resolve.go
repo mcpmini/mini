@@ -31,35 +31,58 @@ type ResolveEndpointsParams struct {
 	Clock clock.Clock
 }
 
+// ResolvedLogin is the client a login uses and the authorization server it expects to answer.
+type ResolvedLogin struct {
+	Client LoginClient
+	Issuer ExpectedIssuer
+}
+
 // ResolveEndpoints fills in missing OAuth endpoints on sc.Auth via RFC 9728
-// discovery and client registration, and returns the client the login uses. It
-// always canonicalizes sc.URL into sc.Auth.ResourceURL. Endpoint discovery is
-// skipped when AuthURL, TokenURL, and ClientID are all already set.
-func ResolveEndpoints(ctx context.Context, sc *config.ServerConfig, p ResolveEndpointsParams) (LoginClient, error) {
+// discovery and client registration. It always canonicalizes sc.URL into
+// sc.Auth.ResourceURL. Endpoint discovery is skipped when AuthURL, TokenURL,
+// and ClientID are all already set.
+func ResolveEndpoints(ctx context.Context, sc *config.ServerConfig, p ResolveEndpointsParams) (ResolvedLogin, error) {
 	if sc.UnsetEnv != nil {
-		return LoginClient{}, sc.UnsetEnv
+		return ResolvedLogin{}, sc.UnsetEnv
 	}
 	if err := ApplyResourceURL(sc); err != nil {
-		return LoginClient{}, err
+		return ResolvedLogin{}, err
 	}
 	a := sc.Auth
-	if a.ClientID != "" {
-		_, err := DiscoverAndApply(ctx, sc.URL, a)
-		return LoginClient{ID: a.ClientID, Configured: true}, err
+	if a.ClientID == "" {
+		// A configured secret belongs to a configured client; never send it with a registered or CIMD id.
+		a.ClientSecret, a.TokenEndpointAuthMethod = "", ""
 	}
-	// A configured secret belongs to a configured client; never send it with a registered or CIMD id.
-	a.ClientSecret, a.TokenEndpointAuthMethod = "", ""
-	meta, err := DiscoverAndApply(ctx, sc.URL, a)
+	meta, issuer, err := discoverForLogin(ctx, sc.URL, a)
 	if err != nil {
-		return LoginClient{}, err
+		return ResolvedLogin{}, err
 	}
-	return resolveClient(ctx, ClientRegParams{
+	if a.ClientID != "" {
+		return ResolvedLogin{Client: LoginClient{ID: a.ClientID, Configured: true}, Issuer: issuer}, nil
+	}
+	client, err := resolveClient(ctx, ClientRegParams{
 		ConfigDir:  p.ConfigDir,
 		ServerName: p.ServerName,
 		AuthConfig: a,
 		Meta:       meta,
 		Now:        p.Clock.Now(),
 	})
+	return ResolvedLogin{Client: client, Issuer: issuer}, err
+}
+
+// discoverForLogin expects an issuer only when the login goes to the authorization endpoint its
+// metadata named; a configured endpoint may belong to another server.
+func discoverForLogin(
+	ctx context.Context,
+	serverURL string,
+	a *config.AuthConfig,
+) (*ServerMeta, ExpectedIssuer, error) {
+	authFromMetadata := a.AuthURL == ""
+	meta, err := DiscoverAndApply(ctx, serverURL, a)
+	if err != nil || meta == nil || !authFromMetadata {
+		return meta, ExpectedIssuer{}, err
+	}
+	return meta, ExpectedIssuer{Issuer: meta.Issuer, AlwaysSent: meta.IssParameterSupported}, nil
 }
 
 // DiscoverAndApply fills in a's missing OAuth endpoints from the server's discovery metadata.
