@@ -166,11 +166,11 @@ type addPlan struct {
 	write             []config.ServerConfig
 	alreadyConfigured []string
 	coveredByImport   []string
-	setup             map[string]serverSetup
+	setupComments     map[string]string
 }
 
 func planAdds(imports []config.ServerConfig, add []catalog.Entry, written WrittenServers) addPlan {
-	p := addPlan{write: slices.Clone(imports), setup: map[string]serverSetup{}}
+	p := addPlan{write: slices.Clone(imports), setupComments: map[string]string{}}
 	configuredKeys := NewConfiguredKeys(written)
 	imported := NewConfiguredKeys(p.write)
 	for _, entry := range add {
@@ -181,7 +181,9 @@ func planAdds(imports []config.ServerConfig, add []catalog.Entry, written Writte
 			p.coveredByImport = append(p.coveredByImport, entry.Name)
 		default:
 			p.write = append(p.write, catalogServer(entry))
-			p.setup[entry.Name] = serverSetup{comment: credentialComment(entry), authKind: entry.Auth}
+			if comment := credentialComment(entry); comment != "" {
+				p.setupComments[entry.Name] = comment
+			}
 		}
 	}
 	return p

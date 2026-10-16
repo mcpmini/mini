@@ -4,7 +4,6 @@ import (
 	"errors"
 
 	"github.com/mcpmini/mini/internal/auth"
-	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
 )
 
@@ -64,50 +63,37 @@ type CheckFindings struct {
 	NeedsCredential map[string]bool
 }
 
-type ServerStatusParams struct {
-	ConfigDir   string
-	Findings    CheckFindings
-	CatalogAuth map[string]catalog.AuthKind
-}
-
 // ServerStatuses judges every enabled server as mini would load it, with what the run's checks found.
-func ServerStatuses(p ServerStatusParams) ([]ServerStatus, error) {
-	servers, err := config.LoadServers(p.ConfigDir)
+func ServerStatuses(configDir string, findings CheckFindings) ([]ServerStatus, error) {
+	servers, err := config.LoadServers(configDir)
 	if err != nil {
 		return nil, err
 	}
 	var statuses []ServerStatus
 	for _, sc := range servers.Loaded {
 		if sc.IsEnabled() {
-			statuses = append(statuses, serverStatus(sc, p))
+			statuses = append(statuses, serverStatus(configDir, sc, findings))
 		}
 	}
 	return statuses, nil
 }
 
-func serverStatus(sc config.ServerConfig, p ServerStatusParams) ServerStatus {
+func serverStatus(configDir string, sc config.ServerConfig, findings CheckFindings) ServerStatus {
 	status := ServerStatus{Name: sc.Name, URL: sc.URL, Readiness: ReadyState{}}
 	switch {
 	case sc.UnsetEnv != nil:
 		status.Readiness = envReadiness(sc.UnsetEnv)
-	case holdsTokenPlaceholder(sc), p.Findings.NeedsCredential[sc.Name]:
+	case holdsTokenPlaceholder(sc), findings.NeedsCredential[sc.Name]:
 		status.Readiness = NeedsTokenState{}
 	case holdsAppPlaceholder(sc):
 		status.Readiness = NeedsOwnAppState{}
-	case sc.UsesOAuthLogin() && needsLogin(p.ConfigDir, sc):
-		status.Readiness = p.loginReadiness(sc)
+	case sc.UsesOAuthLogin() && needsLogin(configDir, sc):
+		status.Readiness = NeedsLoginState{}
+		if sc.Auth.ClientID == "" && findings.NoSelfRegistration[sc.Name] {
+			status.Readiness = NeedsTokenState{}
+		}
 	}
 	return status
-}
-
-func (p ServerStatusParams) loginReadiness(sc config.ServerConfig) Readiness {
-	if sc.Auth.ClientID != "" || !p.Findings.NoSelfRegistration[sc.Name] {
-		return NeedsLoginState{}
-	}
-	if p.CatalogAuth[sc.Name] == catalog.AuthToken {
-		return NeedsTokenState{}
-	}
-	return NeedsOwnAppState{}
 }
 
 // A refreshable token needs no login; ReadTokenState already counts it as usable.

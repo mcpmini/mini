@@ -8,14 +8,12 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/agents"
-	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
@@ -245,75 +243,9 @@ func TestRunPlanConnect_checksEachServerWhereItsLoginIsSaved(t *testing.T) {
 	}
 }
 
-func TestRun_catalogAuthGuidesStagedAndCommittedServers(t *testing.T) {
-	for _, tt := range []struct {
-		name string
-		kind catalog.AuthKind
-		meta auth.ServerMeta
-		step string
-	}{
-		{name: "token", kind: catalog.AuthToken, step: "requires manual configuration, edit service.yaml"},
-		{name: "app", kind: catalog.AuthOAuth2App, step: "requires a custom OAuth app, edit service.yaml"},
-		{
-			name: "token with DCR", kind: catalog.AuthToken, meta: auth.ServerMeta{RegistrationURL: "https://auth.example/register"},
-			step: "requires a login, run: mini auth service",
-		},
-		{
-			name: "token with CIMD", kind: catalog.AuthToken, meta: auth.ServerMeta{CIMDSupported: true},
-			step: "requires a login, run: mini auth service",
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			setup := Setup{
-				ConfigDir: t.TempDir(),
-				Probe:     answersWithOAuth,
-				Add: []catalog.Entry{
-					{
-						Name:     "service",
-						URL:      "https://service.example/mcp",
-						Auth:     tt.kind,
-						SetupURL: "https://service.example/setup",
-					},
-				},
-				Discover: func(context.Context, string) (*auth.ServerMeta, error) { return &tt.meta, nil },
-			}
-			run := mustStart(t, setup, Plan{Add: setup.Add})
-			run.Save()
-			run.session.WaitChecks()
-			statuses, err := run.ServerStatuses()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := statusNamed(t, statuses, "service").Step("service.yaml", "mini auth service"); got != tt.step {
-				t.Errorf("staged step = %q, want %q", got, tt.step)
-			}
-			report := run.Finish(context.Background(), ConnectParams{Choice: DontConnect})
-			if report.Failed() {
-				t.Fatalf("report failed: %+v", report)
-			}
-			if got := statusNamed(
-				t,
-				report.Servers,
-				"service",
-			).Step("service.yaml", "mini auth service"); got != tt.step {
-				t.Errorf("committed step = %q, want %q", got, tt.step)
-			}
-			wantSummary := strings.ReplaceAll(
-				strings.TrimSuffix(tt.step, "mini auth service"),
-				"service.yaml",
-				config.ServerPath(setup.ConfigDir, "service"),
-			)
-			requireLines(t, plainSummary(report), wantSummary)
-		})
-	}
-}
-
-func newCatalogTokenRun(t *testing.T) *Run {
-	t.Helper()
+func TestRun_initKeepsManualGuidanceAcrossRuns(t *testing.T) {
 	setup := Setup{
-		ConfigDir: t.TempDir(),
-		Probe:     answersWithOAuth,
-		Discover:  registersOnlyAt(),
+		ConfigDir: t.TempDir(), Probe: answersWithOAuth, Discover: registersOnlyAt("https://linear.example/mcp"),
 		Add: []catalog.Entry{
 			{
 				Name:     "github",
@@ -321,73 +253,52 @@ func newCatalogTokenRun(t *testing.T) *Run {
 				Auth:     catalog.AuthToken,
 				SetupURL: "https://github.example/tokens",
 			},
+			{
+				Name:     "asana",
+				URL:      "https://asana.example/mcp",
+				Auth:     catalog.AuthOAuth2App,
+				SetupURL: "https://asana.example/apps",
+			},
+			{Name: "linear", URL: "https://linear.example/mcp", Auth: catalog.AuthOAuth2},
 		},
 	}
-	run := mustStart(t, setup, Plan{Add: setup.Add})
-	run.Save()
-	run.session.WaitChecks()
-	return run
-}
-
-func TestRun_replacingACatalogPickWithAnImportDropsItsTokenAdvice(t *testing.T) {
-	run := newCatalogTokenRun(t)
-	if got := statusNamed(t, stagedStatuses(t, run), "github").Readiness; !reflect.DeepEqual(got, NeedsTokenState{}) {
-		t.Fatalf("catalog readiness = %T, want manual configuration", got)
-	}
-	run.Plan.Import.Candidates = []Candidate{{Server: httpServer("github", "https://github.example/mcp"), Picked: true}}
-	run.Save()
-	run.session.WaitChecks()
-	if got := statusNamed(t, stagedStatuses(t, run), "github").Readiness; !reflect.DeepEqual(got, NeedsOwnAppState{}) {
-		t.Errorf(
-			"imported readiness = %T, want custom app even though catalog selection has the same name and URL",
-			got,
-		)
-	}
-	report := run.Finish(context.Background(), ConnectParams{Choice: DontConnect})
-	if report.Failed() {
-		t.Fatalf("report failed: %+v", report)
-	}
-	if got := statusNamed(t, report.Servers, "github").Readiness; !reflect.DeepEqual(got, NeedsOwnAppState{}) {
-		t.Errorf("committed import readiness = %T, want custom app", got)
-	}
-}
-
-func stagedStatuses(t *testing.T, run *Run) []ServerStatus {
-	t.Helper()
-	statuses, err := run.ServerStatuses()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return statuses
-}
-
-func TestRun_aFailedReplacementKeepsTheSavedCatalogAdvice(t *testing.T) {
-	run := newCatalogTokenRun(t)
-	invalid := httpServer("github", "https://replacement.example/mcp")
-	invalid.HandshakeTimeout = "nonsense"
-	run.Plan.Import.Candidates = []Candidate{{Server: invalid, Picked: true}}
-	run.Save()
-	run.session.WaitChecks()
-	if failures := run.SaveFailures(); len(failures) != 1 {
-		t.Fatalf("save failures = %v, want rejected replacement", failures)
-	}
-	if got := statusNamed(t, stagedStatuses(t, run), "github").Readiness; !reflect.DeepEqual(got, NeedsTokenState{}) {
-		t.Errorf("readiness after rejected replacement = %T, want the saved catalog's token advice", got)
-	}
-	report := run.Finish(context.Background(), ConnectParams{Choice: DontConnect})
-	if got := statusNamed(t, report.Servers, "github").Readiness; !reflect.DeepEqual(got, NeedsTokenState{}) {
-		t.Errorf("committed readiness = %T, want the saved catalog's token advice", got)
-	}
-}
-
-func TestRun_aCommitConflictDoesNotGiveAnUnrelatedServerCatalogAdvice(t *testing.T) {
-	run := newCatalogTokenRun(t)
-	configtest.WriteServer(t, run.setup.ConfigDir, oauthServer("github", ""))
-	report := run.Finish(context.Background(), ConnectParams{Choice: DontConnect})
-	if len(report.WriteErrors) != 1 || !errors.Is(report.WriteErrors[0].Err, errAddedOutsideInit) {
-		t.Fatalf("write errors = %v, want commit conflict", report.WriteErrors)
-	}
-	if got := statusNamed(t, report.Servers, "github").Readiness; !reflect.DeepEqual(got, NeedsOwnAppState{}) {
-		t.Errorf("unrelated server readiness = %T, want custom app without catalog advice", got)
+	for _, round := range []string{"first init", "second init"} {
+		t.Run(round, func(t *testing.T) {
+			plan, err := setup.Plan()
+			if err != nil {
+				t.Fatal(err)
+			}
+			run := mustStart(t, setup, plan)
+			run.Save()
+			run.session.WaitChecks()
+			statuses, err := run.ServerStatuses()
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, name := range []string{"github", "asana"} {
+				want := "requires manual configuration, edit " + name + ".yaml"
+				if got := statusNamed(t, statuses, name).Step(name+".yaml", "mini auth "+name); got != want {
+					t.Errorf("%s step = %q, want %q", name, got, want)
+				}
+			}
+			if !statusNamed(t, statuses, "linear").NeedsLogin() {
+				t.Error("linear should offer browser login")
+			}
+			report := run.Finish(context.Background(), ConnectParams{Choice: DontConnect})
+			if report.Failed() {
+				t.Fatalf("report failed: %+v", report)
+			}
+			summary := plainSummary(report)
+			if strings.Contains(summary, "requires a custom OAuth app") {
+				t.Errorf("summary makes unsupported custom-app claim:\n%s", summary)
+			}
+			for _, name := range []string{"github", "asana"} {
+				requireLines(
+					t,
+					summary,
+					"requires manual configuration, edit "+config.ServerPath(setup.ConfigDir, name),
+				)
+			}
+		})
 	}
 }
