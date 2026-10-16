@@ -18,9 +18,6 @@ type Envelope struct {
 	// projection was applied.
 	File *string
 
-	// Passthrough contains fields explicitly preserved from projection rules.
-	Passthrough map[string]any
-
 	// Error fields (set on failure only).
 	Error     string
 	Message   string
@@ -61,9 +58,6 @@ func (e Envelope) WireMap() map[string]any {
 	if e.File != nil {
 		out["file"] = *e.File
 	}
-	if len(e.Passthrough) > 0 {
-		out["passthrough"] = e.Passthrough
-	}
 	return out
 }
 
@@ -83,9 +77,8 @@ func (s CallStats) ReductionPct() float64 {
 const ProxyMsg = "Response filtered, some fields were excluded or truncated, use read(<file>, <jq filter>) to fetch full values."
 
 type ProjectionMeta struct {
-	Msg         string                  `json:"msg,omitempty"`
-	File        string                  `json:"file,omitempty"`
-	Excluded    []string                `json:"excluded,omitempty"`
-	Truncated   []projection.Truncation `json:"truncated,omitempty"`
-	Passthrough map[string]any          `json:"passthrough,omitempty"`
+	Msg       string                  `json:"msg,omitempty"`
+	File      string                  `json:"file,omitempty"`
+	Excluded  []string                `json:"excluded,omitempty"`
+	Truncated []projection.Truncation `json:"truncated,omitempty"`
 }

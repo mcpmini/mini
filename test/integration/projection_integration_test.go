@@ -282,24 +282,6 @@ func TestIntegrationProjection_depthLimit(t *testing.T) {
 	}
 }
 
-func TestIntegrationProjection_passthrough(t *testing.T) {
-	t.Parallel()
-	client := quickServerWith(t, quickServerParams{
-		Fixtures: map[string]string{"get_item": `{"id":1,"title":"hello","internal_ref":"xyz"}`},
-		Projections: map[string]*config.ProjectionConfig{
-			"get_item": {
-				IncludeOnly: []string{"id", "title"},
-				Passthrough: []string{"internal_ref"},
-			},
-		},
-	})
-
-	e := client.execEnvelope("svc", "get_item", nil)
-	if _, ok := e.Passthrough["internal_ref"]; !ok {
-		t.Errorf("passthrough field should be in Passthrough map, got: %+v", e.Passthrough)
-	}
-}
-
 func TestIntegrationProjection_includeAndExclude(t *testing.T) {
 	t.Parallel()
 	client := quickServerWith(t, quickServerParams{

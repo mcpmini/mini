@@ -23,7 +23,6 @@ func DefaultsFrom(cfg *config.Config) *Defaults {
 type effectiveConfig struct {
 	includeOnly        []string
 	exclude            []string
-	passthrough        []string
 	arrayLimits        map[string]int
 	stringLimits       map[string]int
 	defaultArrayLimit  int
@@ -77,7 +76,6 @@ func effectiveFromDefaults(d *Defaults) *effectiveConfig {
 func applyProjectionConfig(e *effectiveConfig, cfg *config.ProjectionConfig) {
 	e.includeOnly = cfg.IncludeOnly
 	e.exclude = cfg.Exclude
-	e.passthrough = cfg.Passthrough
 	e.arrayLimits = cfg.ArrayLimits
 	if v, ok := cfg.ArrayLimits["default"]; ok {
 		e.defaultArrayLimit = v

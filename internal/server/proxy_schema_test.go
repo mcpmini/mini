@@ -224,7 +224,7 @@ func maskMiniMetaSchema(t *testing.T, schema any) {
 	if !ok {
 		return
 	}
-	for _, key := range []string{"msg", "file", "excluded", "truncated", "passthrough"} {
+	for _, key := range []string{"msg", "file", "excluded", "truncated"} {
 		if metaProps[key] == nil {
 			t.Errorf("__mini output schema missing %q", key)
 		}

@@ -117,7 +117,7 @@ Either path writes the raw upstream response to the store when projection cut so
 | `internal/config` | `Config`, `ServerConfig`, `ProjectionConfig` types + YAML loader; `ValidServerName` regex |
 | `internal/registry` | Tool index keyed by `"server.tool"`; permission resolution |
 | `internal/server` | `Server` struct + `Serve()` loop + handlers; `Session` (per-connection projection overrides) |
-| `internal/projection` | `Apply(value, cfg, defaults)` → `Result{Summary, ExcludedKeys, Passthrough}`; HTML/MD stripping |
+| `internal/projection` | `Apply(value, cfg, defaults)` → `Result{Summary, ExcludedKeys, Truncated}`; HTML/MD stripping |
 | `internal/response` | `Builder`/`Store`; always-inline projected data; TTL-based raw file lifecycle |
 | `internal/auth` | API key + OAuth2 PKCE token storage |
 | `internal/daemon` | Background daemon rendezvous; Unix socket, bearer token, spawn lock, and health checks |
