@@ -179,22 +179,68 @@ func (s *Server) proxyCallUpstream(ctx context.Context, p proxyCallParams) (any,
 	upstream.totalLatencyMs.Add(latencyMs)
 	if toolErr != nil {
 		p.Session.recordCall(latencyMs, 0, true)
-		return response.BuildError("tool_error", toolErr.Error(), false, ""), nil
+		return proxyToolFailure(raw, toolErr), nil
 	}
-	value, err := invoke.ExtractContent(raw)
+	return s.proxyRespond(proxyReply{Call: p, Upstream: upstream, Raw: raw, LatencyMs: latencyMs})
+}
+
+func (s *Server) proxyRespond(reply proxyReply) (any, error) {
+	reply.ProjCfg = s.proxyProjectionConfig(reply.Call)
+	if config.EffectiveFormat("", config.ProjectionFormat(reply.ProjCfg), s.cfg.ResponseFormat) == config.FormatToon {
+		return s.proxyToonResult(reply)
+	}
+	return s.proxyMirrorResult(reply)
+}
+
+type proxyReply struct {
+	Call      proxyCallParams
+	Upstream  *upstreamServer
+	Raw       json.RawMessage
+	LatencyMs int64
+	ProjCfg   *config.ProjectionConfig
+}
+
+func proxyToolFailure(raw json.RawMessage, toolErr error) any {
+	if errors.Is(toolErr, invoke.ErrToolReturnedError) {
+		return upstreamResult(raw)
+	}
+	return response.BuildError("tool_error", toolErr.Error(), false, "")
+}
+
+func (s *Server) proxyProjectionConfig(p proxyCallParams) *config.ProjectionConfig {
+	if p.Controls.Projection == projectionRaw {
+		return nil
+	}
+	return s.resolveProjection(p.Entry.Server, p.Tool, p.Session)
+}
+
+func (s *Server) proxyMirrorResult(r proxyReply) (any, error) {
+	out := r.Raw
+	if r.Call.Controls.Projection != projectionRaw {
+		var err error
+		if out, err = s.buildProxyResult(proxyResultParams{Raw: r.Raw, ProjCfg: r.ProjCfg}); err != nil {
+			return nil, err
+		}
+	}
+	saved := int64(response.EstimateTokensRaw(r.Raw) - response.EstimateTokensRaw(out))
+	r.Upstream.recordSaved(r.Call.Session, r.LatencyMs, saved)
+	return upstreamResult(out), nil
+}
+
+func (s *Server) proxyToonResult(r proxyReply) (any, error) {
+	value, err := invoke.ExtractContent(r.Raw)
 	if err != nil {
 		return nil, err
 	}
-	ep := envelopeParams{
-		Entry:     p.Entry,
-		Tool:      p.Tool,
+	return s.proxyProject(envelopeParams{
+		Entry:     r.Call.Entry,
+		Tool:      r.Call.Tool,
 		Raw:       value,
-		Session:   p.Session,
-		Upstream:  upstream,
-		LatencyMs: latencyMs,
-	}
-	ep.Bypass = p.Controls.Projection == projectionRaw
-	return s.proxyProject(ep)
+		Session:   r.Call.Session,
+		Upstream:  r.Upstream,
+		LatencyMs: r.LatencyMs,
+		Bypass:    r.Call.Controls.Projection == projectionRaw,
+	})
 }
 
 func (s *Server) proxyProject(p envelopeParams) (any, error) {
@@ -213,10 +259,7 @@ func (s *Server) proxyProject(p envelopeParams) (any, error) {
 		return nil, err
 	}
 	p.Upstream.recordSaved(p.Session, p.LatencyMs, int64(stats.RawTokens-stats.SummaryTokens))
-	if config.EffectiveFormat("", config.ProjectionFormat(projCfg), s.cfg.ResponseFormat) == config.FormatToon {
-		return s.formatEnvelope(p.Entry.Server, p.Tool, env, projCfg)
-	}
-	return response.NewProxyResult(env), nil
+	return s.formatEnvelope(p.Entry.Server, p.Tool, env, projCfg)
 }
 
 func (s *Server) handleRead(ctx context.Context, raw json.RawMessage) (any, error) {

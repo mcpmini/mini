@@ -242,7 +242,7 @@ func handleCancelled(params json.RawMessage, session *Session) {
 
 const compactInitInstructions = "mini is an MCP proxy. Use `list` to discover tools across connected servers, `call` to invoke them, `perm_call` for tools requiring elevated permissions, and `configure` to manage servers and settings."
 
-const proxyInitInstructions = "mini wraps upstream tool arguments under `args` and returns successful values under `data`. Always check optional `__mini` before assuming projected fields are present. Use `read` with `__mini.file` to recover omitted values. Set `__mini.projection` to `raw` when the complete value is required."
+const proxyInitInstructions = "When code reads or computes over a tool result, set `__mini.projection` to `raw` so the result is complete. Results are otherwise the upstream server's own, trimmed where large: a trimmed result carries `__mini` (a key in the result object, or a final text block); call `read` with its `file` and a listed path as `filter` to recover what was cut. Upstream tool arguments go under `args`."
 
 type initializeClientParams struct {
 	ToolMode string `json:"_mini_tool_mode"`
@@ -333,6 +333,9 @@ func normalizeToolCallResult(result any) any {
 	if env, ok := result.(*response.Envelope); ok && env.Error != "" {
 		return toolErrorResult(mustJSON(env))
 	}
+	if ur, ok := result.(upstreamResult); ok {
+		return ur
+	}
 	if fe, ok := result.(formattedEnvelope); ok {
 		if fe.isError {
 			return toolErrorResult(fe.text)
@@ -386,9 +389,6 @@ func errorResponse(id any, code int, msg string) transport.Response {
 }
 
 func toolOKResult(content any) map[string]any {
-	if pr, ok := content.(response.ProxyResult); ok {
-		return proxyToolResult(pr)
-	}
 	var text string
 	if s, ok := content.(string); ok {
 		text = s
@@ -397,17 +397,6 @@ func toolOKResult(content any) map[string]any {
 	}
 	return map[string]any{
 		"content": []map[string]any{{"type": "text", "text": text}},
-	}
-}
-
-func proxyToolResult(pr response.ProxyResult) map[string]any {
-	b, err := json.Marshal(pr)
-	if err != nil {
-		return toolErrorResult(fmt.Sprintf("marshal proxy result: %v", err))
-	}
-	return map[string]any{
-		"content":           []map[string]any{{"type": "text", "text": string(b)}},
-		"structuredContent": json.RawMessage(b),
 	}
 }
 

@@ -4,6 +4,7 @@ package server_test
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/server"
@@ -116,45 +117,74 @@ func TestProxySchema_InputControlEnumOffersDefaultAndRaw(t *testing.T) {
 	}
 }
 
-func TestProxySchema_OutputSchemaSynthesizedWhenAbsent(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	defer srv.Close()
-	addProxyConn(t, srv, "svc", fakeConn("no_output_schema"))
+func TestProxySchema_OutputSchema(t *testing.T) {
+	cases := []struct {
+		name     string
+		upstream json.RawMessage
+		want     string
+	}{
+		{"absent", nil, ``},
+		{"null", json.RawMessage(`null`), ``},
+		{
+			"closed object gains __mini",
+			json.RawMessage(`{"type":"object","properties":{"temp":{"type":"number"}},"additionalProperties":false}`),
+			`{"type":"object","properties":{"temp":{"type":"number"},"__mini":MINI},"additionalProperties":false}`,
+		},
+		{
+			"properties without type gains __mini",
+			json.RawMessage(`{"properties":{"temp":{"type":"number"}}}`),
+			`{"properties":{"temp":{"type":"number"},"__mini":MINI}}`,
+		},
+		{
+			"object without properties gets them",
+			json.RawMessage(`{"type":"object"}`),
+			`{"type":"object","properties":{"__mini":MINI}}`,
+		},
+		{
+			"array root unchanged",
+			json.RawMessage(`{"type":"array","items":{"type":"string"}}`),
+			`{"type":"array","items":{"type":"string"}}`,
+		},
+		{
+			"upstream __mini property kept",
+			json.RawMessage(`{"type":"object","properties":{"__mini":{"type":"string"}},"required":["__mini"]}`),
+			`{"type":"object","properties":{"__mini":{"type":"string"}},"required":["__mini"]}`,
+		},
+		{"non-object root unchanged", json.RawMessage(`true`), `true`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := newTestServer(t, server.Params{})
+			defer srv.Close()
+			conn := &transport.FakeConnection{
+				Tools: []transport.ToolDefinition{
+					{Name: "tool", InputSchema: json.RawMessage(`{"type":"object"}`), OutputSchema: tc.upstream},
+				},
+				Responses: make(map[string]json.RawMessage),
+			}
+			addProxyConn(t, srv, "svc", conn)
 
-	tool := findTool(toolsList(t, srv), "svc__no_output_schema")
-	outSchema := tool["outputSchema"].(map[string]any)
-	assertStableOutputShape(t, outSchema)
-	data := outSchema["properties"].(map[string]any)["data"].(map[string]any)
-	if _, hasType := data["type"]; hasType {
-		t.Errorf("synthesized data schema should be empty besides $id, got: %v", data)
+			tool := findTool(toolsList(t, srv), "svc__tool")
+			assertOutputSchema(t, tool, tc.want)
+		})
 	}
 }
 
-func TestProxySchema_OutputSchemaWrapsUpstreamSchema(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	defer srv.Close()
-	conn := &transport.FakeConnection{
-		Tools: []transport.ToolDefinition{{
-			Name:         "get_weather",
-			Description:  "desc",
-			InputSchema:  json.RawMessage(`{"type":"object"}`),
-			OutputSchema: json.RawMessage(`{"type":"object","properties":{"temp":{"type":"number"}}}`),
-		}},
-		Responses: make(map[string]json.RawMessage),
+func assertOutputSchema(t *testing.T, tool map[string]any, want string) {
+	t.Helper()
+	got, present := tool["outputSchema"]
+	if want == "" {
+		if present {
+			t.Fatalf("expected no outputSchema, got: %v", got)
+		}
+		return
 	}
-	addProxyConn(t, srv, "svc", conn)
-
-	tool := findTool(toolsList(t, srv), "svc__get_weather")
-	outSchema := tool["outputSchema"].(map[string]any)
-	assertStableOutputShape(t, outSchema)
-	data := outSchema["properties"].(map[string]any)["data"].(map[string]any)
-	if data["type"] != "object" {
-		t.Errorf("expected upstream outputSchema type preserved, got: %v", data)
+	maskMiniMetaSchema(t, got)
+	var wantValue any
+	if err := json.Unmarshal([]byte(strings.ReplaceAll(want, "MINI", `"MINI"`)), &wantValue); err != nil {
+		t.Fatal(err)
 	}
-	props, _ := data["properties"].(map[string]any)
-	if props == nil || props["temp"] == nil {
-		t.Errorf("expected upstream outputSchema properties preserved, got: %v", data)
-	}
+	assertDeepEqual(t, got, wantValue)
 }
 
 func TestProxySchema_SyntheticSchemaIDScopedToServerAndTool(t *testing.T) {
@@ -270,29 +300,24 @@ func assertArgsSchema(t *testing.T, inSchema map[string]any, wantArgs map[string
 	}
 }
 
-func assertStableOutputShape(t *testing.T, outSchema map[string]any) {
+func maskMiniMetaSchema(t *testing.T, schema any) {
 	t.Helper()
-	if outSchema["type"] != "object" {
-		t.Errorf("outputSchema.type = %v, want object", outSchema["type"])
+	object, _ := schema.(map[string]any)
+	props, _ := object["properties"].(map[string]any)
+	meta, ok := props["__mini"].(map[string]any)
+	if !ok {
+		return
 	}
-	required := toStringSlice(outSchema["required"])
-	if len(required) != 1 || required[0] != "data" {
-		t.Errorf("outputSchema.required = %v, want [data]", outSchema["required"])
+	metaProps, ok := meta["properties"].(map[string]any)
+	if !ok {
+		return
 	}
-	props, _ := outSchema["properties"].(map[string]any)
-	if props == nil || props["data"] == nil {
-		t.Fatalf("outputSchema.properties.data missing: %v", outSchema)
-	}
-	mini, _ := props["__mini"].(map[string]any)
-	if mini == nil {
-		t.Fatalf("outputSchema.properties.__mini missing: %v", outSchema)
-	}
-	miniProps, _ := mini["properties"].(map[string]any)
 	for _, key := range []string{"msg", "file", "excluded", "truncated", "passthrough"} {
-		if miniProps[key] == nil {
-			t.Errorf("outputSchema __mini.properties missing %q", key)
+		if metaProps[key] == nil {
+			t.Errorf("__mini output schema missing %q", key)
 		}
 	}
+	props["__mini"] = "MINI"
 }
 
 func toStringSlice(v any) []string {

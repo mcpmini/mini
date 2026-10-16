@@ -23,7 +23,7 @@ func TestIntegrationProjection_readRecoversProjectedData(t *testing.T) {
 			fixture:    `{"id":1,"secret":"hidden"}`,
 			projection: map[string]*config.ProjectionConfig{"get_item": {Exclude: []string{"secret"}}},
 			wantByPath: map[string]string{
-				".secret": `"hidden"`,
+				".content[0].text | fromjson | .secret": `"hidden"`,
 			},
 		},
 		{
@@ -31,7 +31,7 @@ func TestIntegrationProjection_readRecoversProjectedData(t *testing.T) {
 			fixture:    `{"id":1,"body":"` + strings.Repeat("x", 100) + `"}`,
 			projection: map[string]*config.ProjectionConfig{"get_item": {StringLimits: map[string]int{"body": 20}}},
 			wantByPath: map[string]string{
-				".body": `"` + strings.Repeat("x", 100) + `"`,
+				".content[0].text | fromjson | .body": `"` + strings.Repeat("x", 100) + `"`,
 			},
 		},
 		{
@@ -39,7 +39,7 @@ func TestIntegrationProjection_readRecoversProjectedData(t *testing.T) {
 			fixture:    `{"id":1,"items":[{"n":1},{"n":2},{"n":3}]}`,
 			projection: map[string]*config.ProjectionConfig{"get_item": {ArrayLimits: map[string]int{"items": 1}}},
 			wantByPath: map[string]string{
-				".items": `[{"n":1},{"n":2},{"n":3}]`,
+				".content[0].text | fromjson | .items": `[{"n":1},{"n":2},{"n":3}]`,
 			},
 		},
 	}

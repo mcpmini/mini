@@ -507,16 +507,23 @@ func (c *mcpClient) execTool(server, tool string, args map[string]any) string {
 }
 
 type proxyResult struct {
-	Data any              `json:"data"`
-	Mini *proxyResultMini `json:"__mini"`
+	Content           []proxyBlock   `json:"content"`
+	StructuredContent map[string]any `json:"structuredContent"`
+	IsError           bool           `json:"isError"`
 }
 
-type proxyResultMini struct {
-	Msg         string           `json:"msg"`
-	File        string           `json:"file"`
-	Excluded    []string         `json:"excluded"`
-	Truncated   []miniTruncation `json:"truncated"`
-	Passthrough map[string]any   `json:"passthrough"`
+type proxyBlock struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+func (r proxyResult) textJSON(t *testing.T, i int) any {
+	t.Helper()
+	var v any
+	if err := json.Unmarshal([]byte(r.Content[i].Text), &v); err != nil {
+		t.Fatalf("content[%d] is not JSON: %v\ntext: %s", i, err, r.Content[i].Text)
+	}
+	return v
 }
 
 func proxyToolArguments(args, controls map[string]any) map[string]any {
@@ -533,10 +540,9 @@ func (c *mcpClient) execProxyTool(serverDotTool string, args, controls map[strin
 		"name":      serverDotTool,
 		"arguments": proxyToolArguments(args, controls),
 	})
-	text := toolCallText(c.t, raw)
 	var pr proxyResult
-	if err := json.Unmarshal([]byte(text), &pr); err != nil {
-		c.t.Fatalf("parse proxy result: %v\ntext: %s", err, text)
+	if err := json.Unmarshal(raw, &pr); err != nil {
+		c.t.Fatalf("parse proxy result: %v\nraw: %s", err, raw)
 	}
 	return pr
 }
@@ -554,15 +560,6 @@ func (c *mcpClient) execProxyToolRaw(serverDotTool string, rawArguments map[stri
 	if err != nil {
 		return err.Error(), true
 	}
-	return parseToolCallResult(raw)
-}
-
-func (c *mcpClient) execProxyToolAllowError(serverDotTool string, args, controls map[string]any) (string, bool) {
-	c.t.Helper()
-	raw := c.mustCall("tools/call", map[string]any{
-		"name":      serverDotTool,
-		"arguments": proxyToolArguments(args, controls),
-	})
 	return parseToolCallResult(raw)
 }
 
