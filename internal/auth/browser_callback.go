@@ -16,6 +16,43 @@ type loginCallbackResult struct {
 	err  error
 }
 
+// authorizationResponse is the authorization server's redirect to mini's callback: RFC 6749
+// section 4.1.2 and its error form, plus RFC 9207's iss.
+type authorizationResponse struct {
+	state string
+	code  string
+	// iss is nil when the response carries none, which the spec treats differently from an empty one.
+	iss         *string
+	providerErr *providerError
+}
+
+// providerError is the error form of the response, which the authorization server sends instead of a code.
+type providerError struct {
+	code        string
+	description string
+}
+
+func (e *providerError) Error() string {
+	code := printableLoginText(e.code)
+	description := printableLoginText(e.description)
+	if description == "" {
+		return fmt.Sprintf("oauth authorization failed: %s", code)
+	}
+	return fmt.Sprintf("oauth authorization failed: %s: %s", code, description)
+}
+
+func parseAuthorizationResponse(q url.Values) authorizationResponse {
+	resp := authorizationResponse{state: q.Get("state"), code: q.Get("code")}
+	if q.Has("iss") {
+		iss := q.Get("iss")
+		resp.iss = &iss
+	}
+	if q.Has("error") {
+		resp.providerErr = &providerError{code: q.Get("error"), description: q.Get("error_description")}
+	}
+	return resp
+}
+
 // ExpectedIssuer is the authorization server a login was sent to, from its validated metadata. It is
 // zero when the login used no metadata, leaving nothing to check the response against.
 type ExpectedIssuer struct {
@@ -27,17 +64,17 @@ type ExpectedIssuer struct {
 // check guards against a mix-up attack: a response from another authorization server must not
 // have its code exchanged at this server's token endpoint.
 // https://github.com/modelcontextprotocol/modelcontextprotocol/blob/8e12bf3c/docs/specification/2026-07-28/basic/authorization/index.mdx?plain=1#L192-L211
-func (e ExpectedIssuer) check(q url.Values) error {
-	if !q.Has("iss") {
+func (e ExpectedIssuer) check(resp authorizationResponse) error {
+	if resp.iss == nil {
 		if e.AlwaysSent {
 			return errors.New("oauth authorization response is missing iss, which its server always sends")
 		}
 		return nil
 	}
-	if e.Issuer != "" && q.Get("iss") != e.Issuer {
+	if e.Issuer != "" && *resp.iss != e.Issuer {
 		return fmt.Errorf(
 			"oauth authorization response came from issuer %q, not %q",
-			printableLoginText(q.Get("iss")),
+			printableLoginText(*resp.iss),
 			e.Issuer,
 		)
 	}
@@ -51,22 +88,22 @@ type callbackExpectation struct {
 
 func callbackHandler(want callbackExpectation, results chan<- loginCallbackResult) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		q := r.URL.Query()
-		if q.Get("state") != want.state {
+		resp := parseAuthorizationResponse(r.URL.Query())
+		if resp.state != want.state {
 			http.Error(w, "state mismatch", http.StatusBadRequest)
 			return
 		}
-		completeLoginCallback(w, q, want.issuer, results)
+		completeLoginCallback(w, resp, want.issuer, results)
 	})
 }
 
 func completeLoginCallback(
 	w http.ResponseWriter,
-	q url.Values,
+	resp authorizationResponse,
 	issuer ExpectedIssuer,
 	results chan<- loginCallbackResult,
 ) {
-	result, complete := callbackResult(q, issuer)
+	result, complete := callbackResult(resp, issuer)
 	if !complete {
 		http.Error(w, "missing code", http.StatusBadRequest)
 		return
@@ -78,15 +115,14 @@ func completeLoginCallback(
 	}
 }
 
-func callbackResult(q url.Values, issuer ExpectedIssuer) (result loginCallbackResult, complete bool) {
-	if err := issuer.check(q); err != nil {
+func callbackResult(resp authorizationResponse, issuer ExpectedIssuer) (result loginCallbackResult, complete bool) {
+	if err := issuer.check(resp); err != nil {
 		return loginCallbackResult{err: err}, true
 	}
-	if q.Has("error") {
-		return loginCallbackResult{err: providerLoginError(q)}, true
+	if resp.providerErr != nil {
+		return loginCallbackResult{err: resp.providerErr}, true
 	}
-	code := q.Get("code")
-	return loginCallbackResult{code: code}, code != ""
+	return loginCallbackResult{code: resp.code}, resp.code != ""
 }
 
 func loginResponseMessage(err error) string {
@@ -94,15 +130,6 @@ func loginResponseMessage(err error) string {
 		return err.Error() + ". You can close this tab."
 	}
 	return "Authorized. You can close this tab."
-}
-
-func providerLoginError(q url.Values) error {
-	code := printableLoginText(q.Get("error"))
-	description := printableLoginText(q.Get("error_description"))
-	if description == "" {
-		return fmt.Errorf("oauth authorization failed: %s", code)
-	}
-	return fmt.Errorf("oauth authorization failed: %s: %s", code, description)
 }
 
 func printableLoginText(value string) string {

@@ -31,6 +31,7 @@ func TestBrowserLogin_issInTheResponse_isCheckedBeforeTheCodeIsExchanged(t *test
 		{name: "not advertised but present and matching", expect: auth.ExpectedIssuer{Issuer: honestIssuer}, iss: []string{honestIssuer}},
 		{name: "not advertised and missing", expect: auth.ExpectedIssuer{Issuer: honestIssuer}},
 		{name: "another issuer", expect: auth.ExpectedIssuer{Issuer: honestIssuer}, iss: []string{"https://attacker.example"}, wantErr: `"https://attacker.example"`},
+		{name: "present but empty", expect: auth.ExpectedIssuer{Issuer: honestIssuer}, iss: []string{""}, wantErr: "came from issuer"},
 		{name: "not normalized", expect: auth.ExpectedIssuer{Issuer: honestIssuer}, iss: []string{honestIssuer + "/"}, wantErr: "came from issuer"},
 		{name: "no validated metadata", iss: []string{"https://anything.example"}},
 	} {
