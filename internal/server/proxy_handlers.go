@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/invoke"
 	"github.com/mcpmini/mini/internal/jq"
 	"github.com/mcpmini/mini/internal/registry"
 	"github.com/mcpmini/mini/internal/response"
@@ -180,10 +181,14 @@ func (s *Server) proxyCallUpstream(ctx context.Context, p proxyCallParams) (any,
 		p.Session.recordCall(latencyMs, 0, true)
 		return response.BuildError("tool_error", toolErr.Error(), false, ""), nil
 	}
+	value, err := invoke.ExtractContent(raw)
+	if err != nil {
+		return nil, err
+	}
 	ep := envelopeParams{
 		Entry:     p.Entry,
 		Tool:      p.Tool,
-		Raw:       raw,
+		Raw:       value,
 		Session:   p.Session,
 		Upstream:  upstream,
 		LatencyMs: latencyMs,

@@ -203,11 +203,20 @@ func (s *Server) callUpstream(
 			toolErrParams{Server: p.Server, Tool: p.Tool, LatencyMs: latencyMs, Err: toolErr, Session: session},
 		)
 	}
-	return s.buildEnvelope(
+	return s.buildUpstreamEnvelope(
 		envelopeParams{
 			Entry: entry, Tool: p.Tool, Raw: raw, Session: session, Upstream: upstream, LatencyMs: latencyMs,
 		},
 	)
+}
+
+func (s *Server) buildUpstreamEnvelope(p envelopeParams) (any, error) {
+	value, err := invoke.ExtractContent(p.Raw)
+	if err != nil {
+		return nil, err
+	}
+	p.Raw = value
+	return s.buildEnvelope(p)
 }
 
 type toolErrParams struct {

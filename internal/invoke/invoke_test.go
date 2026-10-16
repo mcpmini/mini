@@ -166,6 +166,41 @@ func TestExtractContent_Malformed(t *testing.T) {
 	}
 }
 
+func TestCheckResult(t *testing.T) {
+	t.Run("plain text result passes", func(t *testing.T) {
+		if err := invoke.CheckResult(json.RawMessage(toolResponse("ok", false))); err != nil {
+			t.Fatalf("CheckResult = %v, want nil", err)
+		}
+	})
+
+	t.Run("structuredContent result passes", func(t *testing.T) {
+		raw := json.RawMessage(`{"structuredContent":{"id":1}}`)
+		if err := invoke.CheckResult(raw); err != nil {
+			t.Fatalf("CheckResult = %v, want nil", err)
+		}
+	})
+
+	t.Run("isError wraps ErrToolReturnedError and keeps joined text", func(t *testing.T) {
+		err := invoke.CheckResult(json.RawMessage(toolResponse("boom", true)))
+		if !errors.Is(err, invoke.ErrToolReturnedError) {
+			t.Fatalf("CheckResult = %v, want ErrToolReturnedError", err)
+		}
+		if err.Error() != "tool returned error: boom" {
+			t.Errorf("error text = %q, want %q", err.Error(), "tool returned error: boom")
+		}
+	})
+
+	t.Run("invalid JSON is a non-standard response, not a tool error", func(t *testing.T) {
+		err := invoke.CheckResult(json.RawMessage(`not json`))
+		if err == nil || !strings.HasPrefix(err.Error(), "upstream returned non-standard response: ") {
+			t.Fatalf("CheckResult = %v, want non-standard response error", err)
+		}
+		if errors.Is(err, invoke.ErrToolReturnedError) {
+			t.Error("malformed result must not match ErrToolReturnedError")
+		}
+	})
+}
+
 // TestExtractContent_StructuredContent verifies that structuredContent (added in
 // MCP spec 2025-06-18) is used when a server omits the text content fallback.
 // Spec: servers SHOULD include a text representation for backwards compatibility,

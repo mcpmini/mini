@@ -49,8 +49,7 @@ func (s *Server) callPerSession(ctx context.Context, p dispatchParams) (json.Raw
 	if err != nil {
 		return nil, s.handleSessionConnErr(p.Upstream, p.Session, conn, err)
 	}
-	result, toolErr := invoke.ExtractContent(raw)
-	return result, toolErr
+	return raw, invoke.CheckResult(raw)
 }
 
 func (s *Server) handleSessionConnErr(

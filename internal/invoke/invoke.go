@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -113,13 +114,40 @@ func buildResponseParams(p BuildEnvelopeParams, result projection.Result) respon
 	}
 }
 
-func ExtractContent(raw json.RawMessage) (json.RawMessage, error) {
+// ErrToolReturnedError marks a result with isError set, so callers can tell an upstream tool failure from a malformed result.
+var ErrToolReturnedError = errors.New("tool returned error")
+
+// CheckResult reports decoding failures and upstream tool errors.
+func CheckResult(raw json.RawMessage) error {
+	result, err := parseToolResult(raw)
+	if err != nil {
+		return err
+	}
+	return checkToolResult(result)
+}
+
+func parseToolResult(raw json.RawMessage) (transport.ToolCallResult, error) {
 	var result transport.ToolCallResult
 	if err := json.Unmarshal(raw, &result); err != nil {
-		return nil, fmt.Errorf("upstream returned non-standard response: %w", err)
+		return result, fmt.Errorf("upstream returned non-standard response: %w", err)
 	}
+	return result, nil
+}
+
+func checkToolResult(result transport.ToolCallResult) error {
 	if result.IsError {
-		return nil, fmt.Errorf("tool returned error: %s", joinText(result.Content))
+		return fmt.Errorf("%w: %s", ErrToolReturnedError, joinText(result.Content))
+	}
+	return nil
+}
+
+func ExtractContent(raw json.RawMessage) (json.RawMessage, error) {
+	result, err := parseToolResult(raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkToolResult(result); err != nil {
+		return nil, err
 	}
 	// structuredContent is the canonical form; text in content is a backward-compat duplicate.
 	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/357adac4b75939ef8ea37d3c40681be0b1db7d26/schema/2025-11-25/schema.ts#L1115
