@@ -94,7 +94,7 @@ Any other client: point its MCP config at `mini connect`:
 }
 ```
 
-`mini connect` re-exposes each upstream tool under a namespaced name (`github__list_pull_requests`, `sentry__list_issues`, etc.) and trims its response. mini isn't hidden — the tools are served by the `mini` MCP server, so your client lists them under `mini`, and the agent calls them through it.
+`mini connect` re-exposes each upstream tool under a namespaced name (`github__list_pull_requests`, `linear__list_issues`, etc.) and trims its response. mini isn't hidden — the tools are served by the `mini` MCP server, so your client lists them under `mini`, and the agent calls them through it.
 
 ## Adding servers
 
@@ -116,7 +116,7 @@ mini status
 mini call github list_pull_requests '{"owner":"golang","repo":"go","perPage":5}'
 ```
 
-mini detects that GitHub is a known server and installs the bundled projection and tool-visibility defaults automatically.
+mini recognizes GitHub's URL and installs its bundled projections automatically. Every tool is visible by default; use your MCP client's approval settings to control writes.
 
 ### Other servers
 
@@ -124,25 +124,24 @@ mini detects that GitHub is a known server and installs the bundled projection a
 mini add linear --url https://mcp.linear.app/mcp   # OAuth: mini add opens the login
 mini add sentry --url https://mcp.sentry.dev/mcp
 mini add slack  --url https://mcp.slack.com/mcp
+mini add atlassian --url https://mcp.atlassian.com/v2/mcp
 ```
 
 To import every server from an existing agent config at once, use `mini init --from claude-code` (or `claude-desktop`, `codex`, `cursor`, `windsurf`, or a path to a config file).
 
-Bundled projection and tool-visibility defaults for known servers install automatically.
+Bundled projections install when you first add a matching server without your own projection rules. Existing server files keep their rules and URLs when mini is upgraded.
 
 ### Bundled server configs
 
-These servers have projection and tool-visibility defaults built in — they're installed automatically when `mini add` or `mini init` detects a matching server name.
+These servers have bundled projections. `mini add` and `mini init` match the upstream's URL or command, rather than the name you give it.
 
 | Server | Projection config | Tools covered |
 |---|---|---|
-| GitHub | [github.yaml](internal/defaults/projections/github.yaml) | list_pull_requests, list_issues, get_issue, get_pull_request, list_commits, get_commit, search_code, search_repositories, search_issues, get_file_contents, list_repository_contents, list_pull_request_files |
-| Slack | [slack.yaml](internal/defaults/projections/slack.yaml) | conversations_history, conversations_replies, conversations_list, search_messages, users_list |
-| Linear | [linear.yaml](internal/defaults/projections/linear.yaml) | list_issues, search_issues, get_issue, create_issue, update_issue, list_projects, list_teams, list_cycles, list_comments |
-| Sentry | [sentry.yaml](internal/defaults/projections/sentry.yaml) | list_issues, get_issue_details, list_events, list_projects, list_organizations |
-| Atlassian | [atlassian.yaml](internal/defaults/projections/atlassian.yaml) | Jira: search, get_issue, get_project_issues, get_all_projects, get_project, get_agile_boards, get_sprint_issues — Confluence: search, get_page, get_page_children, get_comments |
+| GitHub | [github.yaml](internal/defaults/projections/github.yaml) | list_pull_requests, list_issues, issue_read, pull_request_read, list_commits, get_commit, search_code, search_repositories, search_issues |
+| Linear | [linear.yaml](internal/defaults/projections/linear.yaml) | list_issues, get_issue |
+| Atlassian | [atlassian.yaml](internal/defaults/projections/atlassian.yaml) | searchJiraIssuesUsingJql, getJiraIssue, editJiraIssue |
 
-For servers not in this list, mini is a transparent proxy — responses pass through unchanged until you add a projection config.
+Other servers, including Slack and Sentry, use the global string limit without bundled field rules. Add projections to tune individual tools, or set `default_string_limit: 0` to disable the global string limit.
 
 ## How it works
 
@@ -205,12 +204,12 @@ projections:
     exclude: [avatar_url]   # strip provably-useless fields
     string_limits:
       body: 1500            # cap at 1500 chars in list view
-  get_pull_request:
+  pull_request_read:
     string_limits:
       body: 8000            # generous limit for detail view
 ```
 
-The bar for exclusion is high — only strip fields that are **never** useful in any realistic agent workflow (URL template strings, image URLs, deprecated empty fields). When in doubt, keep the field. See [docs/default-config-philosophy.md](docs/default-config-philosophy.md) for full guidance.
+The bar for exclusion is high — only strip fields that are almost never useful in normal agent workflows, such as avatars and redundant API navigation links. Keep useful content, identifiers, state and links people open. When in doubt, keep the field. See [docs/default-config-philosophy.md](docs/default-config-philosophy.md) for full guidance.
 
 Config directory layout:
 
@@ -237,6 +236,8 @@ By default, mini caps strings at 2000 chars to keep responses manageable. You ca
 ### Recovering filtered data
 
 In the default proxy mode, the agent gets the upstream server's own result, trimmed in place: `structuredContent`, JSON and text blocks are projected, while images, other blocks and `_meta` pass through unchanged. With `response_format: toon`, JSON text blocks are re-encoded as TOON. Tools take the upstream's own arguments.
+
+Embedded resource text is limited as text; JSON field rules do not parse objects inside that text.
 
 When projection cuts something, the result carries a `__mini` notice, as a key in the result object or as a final text block:
 
