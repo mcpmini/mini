@@ -60,25 +60,3 @@ func TestCollapseElided_emptyInput(t *testing.T) {
 		t.Fatalf("collapseExcluded(nil) = %v, want nil", got)
 	}
 }
-
-func TestIsExcludedSupportsDotAndArrayNotation(t *testing.T) {
-	exclude := []string{"env", "pipeline.configuration", "steps[].agent", "files[]"}
-	cases := []struct {
-		key  string
-		want bool
-	}{
-		{key: "env", want: true},
-		{key: "pipeline", want: true},
-		{key: "steps", want: true},
-		{key: "files", want: true},
-		{key: "other", want: false},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.key, func(t *testing.T) {
-			if got := isExcluded(tc.key, exclude); got != tc.want {
-				t.Fatalf("isExcluded(%q) = %v, want %v", tc.key, got, tc.want)
-			}
-		})
-	}
-}

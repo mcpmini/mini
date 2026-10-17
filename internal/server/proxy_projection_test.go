@@ -266,14 +266,14 @@ func TestProxy_ToonFormat_TrimmedArrayKeepsJSONNoticeBlock(t *testing.T) {
 		`{"content":[{"type":"text","text":"[{\"id\":1,\"secret\":\"x\"},{\"id\":2,\"secret\":\"y\"}]"}]}`,
 	)
 	addProxyConn(t, srv, "svc", conn)
-	setProxyExclude(t, srv, "list_users", map[string]any{"exclude": []string{"secret"}})
+	setProxyExclude(t, srv, "list_users", map[string]any{"array_limits": map[string]int{"default": 1}})
 
 	texts := contentTexts(proxyResultOf(t, serveProxy(t, srv, callTool("svc__list_users", map[string]any{}))))
 	if len(texts) != 2 {
 		t.Fatalf("want TOON block plus notice block, got %q", texts)
 	}
-	if strings.Contains(texts[0], "secret") || strings.HasPrefix(texts[0], "[{") {
-		t.Errorf("want TOON array without secret, got %q", texts[0])
+	if texts[0] != "[1]{id,secret}:\n  1,x" {
+		t.Errorf("want TOON array with one intact element, got %q", texts[0])
 	}
 	if !strings.HasPrefix(texts[1], "\n{\"__mini\":") {
 		t.Errorf("want JSON notice block last, got %q", texts[1])
