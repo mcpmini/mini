@@ -18,14 +18,9 @@ Projection configs reduce the token cost of tool responses. The goal is to trim 
 
 Every excluded field is a potential loss. Agents use responses for context, and context that seems irrelevant often isn't. Even things like emoji reactions on a comment can carry signal. Exclude a field only when there is a strong, tool-specific reason it is **almost never useful in normal development workflows**. A field name or URL shape alone is not enough; consider the values the tool returns and how an agent could use them.
 
-The categories of fields that clear this bar:
+Keep a field if it could reasonably help during a typical month of development. Repetition is not enough to justify exclusion: a pull request's head repository may be a fork, and its description can explain the source of a change. Preserve descriptions, identities, profile links, revision references, and navigation information unless a specific workflow establishes otherwise.
 
-1. **Per-tool API navigation fields** — Exclude a URL or identifier only when its role in that tool's response is redundant for realistic workflows and it does not carry useful state or navigation information. Endpoint templates and API URLs may be unnecessary when the same operation is available through a tool using the retained resource identity; a URL may also carry a revision or other reference needed to retrieve an exact result. For example, a code-search result URL can carry the indexed commit ref: path-based retrieval covers the current file, while excluding that URL loses exact indexed-revision retrieval. Node IDs can be useful to follow-up tools even when a readable key is present. Keep human-facing links such as `html_url` when they help an agent or person open the resource.
-2. **Deprecated or empty fields** — Fields that are always empty or were removed by the upstream API (e.g. `gravatar_id` on GitHub, which has been empty for years).
-3. **Images and links that repeat another field** — `avatar_url`, or a `profile_url` that is just `https://github.com/<login>`. Agents almost never use them.
-4. **Metadata repeated on every item** that the item itself doesn't need, e.g. the head and base repo descriptions on every pull request.
-
-Everything else needs a genuine justification.
+A targeted profile avatar URL on an individual issue or pull request is a reasonable omission: the account identity and profile link remain available. This does not justify excluding screenshots, attachments, or other images that carry task context. A null or empty sample does not establish that a field is useless.
 
 ### List vs get vs write operations have different needs
 
@@ -52,7 +47,9 @@ These are starting points, not rules. If a field is important and the limit is c
 
 **`include_only`** keeps only the listed top-level fields. Use it on a list operation only when you can name everything an agent needs; a missed field is silently gone.
 
-**`exclude`** drops named fields per tool, for the categories above. Excludes match a field name at any depth within the tool, so don't exclude a name like `id` or `type` that also means something important elsewhere in the same response. Never exclude content fields (`body`, `description`, `message`); cap them with `string_limits`.
+**`exclude`** uses exact dotted object paths relative to the response document root. `user.avatar_url` removes that field while retaining the user object and its other fields; `description` removes only a root-level description. It does not match repository descriptions nested under a pull request. Never exclude content fields (`body`, `description`, `message`); cap them with `string_limits`.
+
+Exclusions do not traverse arrays. To exclude an array, name its whole property, such as `items` or `data.items`. Wildcards, array indexes, and jq expressions are unsupported. Keep an array when its items contain useful context; do not remove it just to discard metadata on each item.
 
 ### `depth_limit`
 
@@ -83,7 +80,7 @@ When an agent creates a PR, posts a comment, or pushes files, the response typic
 ### Building a config for a new server
 
 1. Fetch live raw responses for each tool: `mini call -r <server> <tool>`
-2. For each proposed exclusion, identify the tool-specific workflow reason it is almost never useful; do not infer that from a field name or a null sample.
+2. For each proposed exclusion, identify the tool-specific workflow reason it is almost never useful during a typical month of development; do not infer that from a field name or a null sample.
 3. Use `include_only` only for list operations, and only when you can name everything an agent needs
 4. Set string limits generously — 1–5K depending on context
 5. For each tool, justify API URL, URL template or node ID exclusions against the workflow and the information retained

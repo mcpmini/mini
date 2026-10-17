@@ -1,9 +1,5 @@
 # Philosophy: docs/default-config-philosophy.md
-# Excludes drop only fields an agent almost never uses: avatars, profile links that repeat the login,
-# repo descriptions repeated on every PR, and REST API URLs and node IDs.
-
 list_pull_requests:
-  exclude: [avatar_url, profile_url, description]
   string_limits:
     body: 1500
 
@@ -12,17 +8,16 @@ list_issues:
     body: 1500
 
 issue_read:
-  exclude: [avatar_url, profile_url]
+  exclude: [user.avatar_url]
   string_limits:
     body: 8000
 
 pull_request_read:
-  exclude: [avatar_url, profile_url, description]
+  exclude: [user.avatar_url]
   string_limits:
     body: 8000
 
 get_commit:
-  exclude: [avatar_url, profile_url]
   string_limits:
     message: 2000
     patch: 3000
@@ -30,7 +25,6 @@ get_commit:
     files: 50
 
 list_commits:
-  exclude: [avatar_url, profile_url]
   array_limits:
     default: 30
   string_limits:
@@ -42,7 +36,6 @@ search_code:
     text_matches: 3
   string_limits:
     fragment: 500
-  exclude: [object_url]
 
 search_repositories:
   array_limits:
@@ -51,15 +44,9 @@ search_repositories:
   string_limits:
     description: 400
 
-# search_issues returns GitHub's raw REST shape: API URLs, node IDs and account metadata for
-# every issue, user and label. html_url, titles, bodies, labels and reactions stay.
 search_issues:
   array_limits:
     items: 20
     labels: 5
   string_limits:
     body: 500
-  exclude: [url, node_id, gravatar_id, avatar_url, profile_url, user_view_type, site_admin, color, default,
-    creator, repository_url, labels_url, comments_url, events_url,
-    followers_url, following_url, gists_url, starred_url, subscriptions_url, organizations_url,
-    repos_url, received_events_url]
