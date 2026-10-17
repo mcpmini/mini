@@ -25,7 +25,11 @@ func TestRunList(t *testing.T) {
 
 	t.Run("stdio server appears with correct transport and command", func(t *testing.T) {
 		dir := t.TempDir()
-		configtest.WriteServer(t, dir, config.ServerConfig{Name: "gh", Command: "npx", Args: []string{"server-github"}})
+		configtest.WriteServer(
+			t,
+			dir,
+			config.ServerConfig{Name: "gh", Command: "npx", Args: []string{"server-github"}, Enabled: new(false)},
+		)
 
 		var out bytes.Buffer
 		if err := runList(dir, nil, &out); err != nil {
@@ -41,15 +45,17 @@ func TestRunList(t *testing.T) {
 		if !strings.Contains(got, "npx") {
 			t.Errorf("output missing command 'npx': %q", got)
 		}
+		for _, hint := range []string{"Tools: mini ls <server>", "Health details: mini status"} {
+			if !strings.Contains(got, hint) {
+				t.Errorf("missing next-step hint %q: %q", hint, got)
+			}
+		}
 	})
 
 	t.Run("http server shows url and transport", func(t *testing.T) {
 		dir := t.TempDir()
-		configtest.WriteServer(
-			t,
-			dir,
-			config.ServerConfig{Name: "remote", Transport: "http", URL: "https://example.com/mcp"},
-		)
+		srv := fakeUnauthenticatedMCPServer(t)
+		configtest.WriteServer(t, dir, config.ServerConfig{Name: "remote", Transport: "http", URL: srv.URL})
 
 		var out bytes.Buffer
 		if err := runList(dir, nil, &out); err != nil {
@@ -59,22 +65,34 @@ func TestRunList(t *testing.T) {
 		if !strings.Contains(got, "http") {
 			t.Errorf("output missing transport 'http': %q", got)
 		}
-		if !strings.Contains(got, "https://example.com/mcp") {
+		if !strings.Contains(got, srv.URL) {
 			t.Errorf("output missing url: %q", got)
 		}
 	})
 
 	t.Run("header row is always present", func(t *testing.T) {
 		dir := t.TempDir()
-		configtest.WriteServer(t, dir, config.ServerConfig{Name: "s", Command: "run"})
+		configtest.WriteServer(t, dir, config.ServerConfig{Name: "s", Command: "run", Enabled: new(false)})
 
 		var out bytes.Buffer
 		runList(dir, nil, &out) //nolint:errcheck
 		got := out.String()
-		for _, col := range []string{"NAME", "TRANSPORT", "COMMAND / URL", "ENABLED"} {
-			if !strings.Contains(got, col) {
-				t.Errorf("output missing header column %q: %q", col, got)
-			}
+		header := strings.SplitN(got, "\n", 2)[0]
+		if fields := strings.Join(strings.Fields(header), " "); fields != "NAME TYPE AUTH STATE URL / COMMAND" {
+			t.Errorf("unexpected server columns: %q", header)
+		}
+	})
+
+	t.Run("server with no tools has a clear empty state", func(t *testing.T) {
+		srv := fakeUnauthenticatedMCPServer(t)
+		dir := t.TempDir()
+		configtest.WriteServer(t, dir, config.ServerConfig{Name: "empty", Transport: "http", URL: srv.URL})
+		var out bytes.Buffer
+		if err := runList(dir, []string{"empty"}, &out); err != nil {
+			t.Fatalf("runList: %v", err)
+		}
+		if got := out.String(); got != "No tools available.\n" {
+			t.Errorf("empty tool list = %q", got)
 		}
 	})
 
@@ -132,60 +150,28 @@ func TestParseArgDefs(t *testing.T) {
 	})
 }
 
-func TestFormatSignature(t *testing.T) {
-	t.Run("no args omits parens", func(t *testing.T) {
-		got := formatSignature("my_tool", nil)
-		if got != "my_tool" {
-			t.Errorf("got %q, want %q", got, "my_tool")
-		}
-	})
-
-	t.Run("required and optional args", func(t *testing.T) {
-		args := []argDef{
-			{Name: "channel", Required: true},
-			{Name: "text", Required: true},
-			{Name: "thread_ts", Required: false},
-		}
-		got := formatSignature("send", args)
-		want := "send(channel, text, [thread_ts])"
-		if got != want {
-			t.Errorf("got %q, want %q", got, want)
-		}
-	})
-}
-
 func TestPrintToolTable(t *testing.T) {
 	tools := []transport.ToolDefinition{
 		{
-			Name:        "send_message",
-			Description: "Send a message to a channel",
-			InputSchema: mustMarshal(t, map[string]any{
-				"type":       "object",
-				"properties": map[string]any{"channel": map[string]any{"type": "string"}},
-				"required":   []string{"channel"},
-			}),
+			Name: "notion-search", Title: json.RawMessage(`"Search Notion"`),
+			Annotations: json.RawMessage(`{"readOnlyHint":true,"openWorldHint":true}`),
+			Description: strings.Repeat("Long description. ", 100),
+			InputSchema: json.RawMessage(`{"properties":{"query":{"type":"string"}}}`),
 		},
-		{
-			Name:        "list_channels",
-			Description: "List all channels",
-		},
+		{Name: "notion-fetch", Description: "Full description stays in the detail view"},
 	}
 	var out bytes.Buffer
 	if err := printToolTable(&out, tools); err != nil {
 		t.Fatalf("printToolTable: %v", err)
 	}
-	got := out.String()
-	if !strings.Contains(got, "TOOL") {
-		t.Errorf("missing TOOL header: %q", got)
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("want header and one row per tool, got %q", out.String())
 	}
-	if !strings.Contains(got, "send_message(channel)") {
-		t.Errorf("missing compact signature: %q", got)
-	}
-	if !strings.Contains(got, "list_channels") {
-		t.Errorf("missing tool with no args: %q", got)
-	}
-	if !strings.Contains(got, "Send a message") {
-		t.Errorf("missing description: %q", got)
+	for i, want := range []string{"TOOL HINTS", "notion-search read-only, open-world", "notion-fetch"} {
+		if got := strings.Join(strings.Fields(lines[i]), " "); got != want {
+			t.Errorf("row %d = %q, want %q", i, got, want)
+		}
 	}
 }
 

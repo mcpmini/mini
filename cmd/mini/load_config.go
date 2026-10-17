@@ -39,15 +39,6 @@ func loadOneServer(configDir, name string, warnings io.Writer) (*config.Config, 
 	return cfg, &sc, nil
 }
 
-func warnServerProblems(out io.Writer, servers config.Servers) {
-	for _, se := range servers.Broken {
-		printNotice(out, "warning: skipping server %s: %v\n", se.ServerName, se.Err)
-	}
-	for _, se := range servers.BrokenProjections() {
-		warnUnprojected(out, se)
-	}
-}
-
 func warnUnprojected(out io.Writer, se config.SourceError) {
 	printNotice(out, "warning: skipping the projections of server %s: %v\n", se.ServerName, se.Err)
 }
