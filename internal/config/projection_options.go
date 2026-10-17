@@ -30,11 +30,11 @@ func projectionOptionNames() []string {
 // UnmarshalYAML rejects unknown options, so a typo such as "exlude" fails instead of silently doing nothing.
 func (p *ProjectionConfig) UnmarshalYAML(node *yaml.Node) error {
 	if node.Kind == yaml.MappingNode {
-		keys := make([]string, 0, len(node.Content)/2)
-		for i := 0; i < len(node.Content); i += 2 {
-			keys = append(keys, node.Content[i].Value)
+		var options map[string]yaml.Node
+		if err := node.Decode(&options); err != nil {
+			return err
 		}
-		if err := rejectUnknownProjectionOptions(keys); err != nil {
+		if err := rejectUnknownProjectionOptions(slices.Collect(maps.Keys(options))); err != nil {
 			return err
 		}
 	}

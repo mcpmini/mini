@@ -98,12 +98,43 @@ func TestLoadServers(t *testing.T) {
 			},
 		},
 		{
+			name: "projection options merge with explicit fields taking precedence",
+			files: map[string]string{
+				"servers/svc.yaml": "command: echo\nbase: &base\n  include_only: [inherited]\n  exclude: [removed]\nprojections:\n  t:\n    <<: *base\n    include_only: [explicit]\n",
+			},
+			wantLoaded: []string{"svc"},
+			check: func(t *testing.T, servers config.Servers) {
+				sc, _ := servers.Find("svc")
+				if sc.ProjectionsErr != nil {
+					t.Fatalf("ProjectionsErr = %v, want merged projection options to load", sc.ProjectionsErr)
+				}
+				p := sc.Projections["t"]
+				if !reflect.DeepEqual(p.IncludeOnly, []string{"explicit"}) ||
+					!reflect.DeepEqual(p.Exclude, []string{"removed"}) {
+					t.Errorf("projection t = %+v, want explicit include_only and inherited exclude", p)
+				}
+			},
+		},
+		{
 			name: "malformed inherited projection block remains a projection error",
 			files: map[string]string{
 				"servers/svc.yaml": "base: &base\n  projections: {t: {include_only: 5}}\n<<: *base\ncommand: echo\n",
 			},
 			wantLoaded: []string{"svc"},
 			check:      wantUnprojected("svc", "svc.yaml"),
+		},
+		{
+			name: "nil projection entries remain nil",
+			files: map[string]string{
+				"servers/svc.yaml": "command: echo\nprojections: {t: null}\n",
+			},
+			wantLoaded: []string{"svc"},
+			check: func(t *testing.T, servers config.Servers) {
+				sc, _ := servers.Find("svc")
+				if p, ok := sc.Projections["t"]; !ok || p != nil {
+					t.Errorf("projection t = %v, present %t; want a present nil rule", p, ok)
+				}
+			},
 		},
 		{
 			name: "direct projections replace inherited projections during load",
@@ -152,6 +183,28 @@ func TestLoadServers(t *testing.T) {
 			}
 			checkLoadServers(t, mustLoadServers(t, dir), tc)
 		})
+	}
+}
+
+func TestLoadServers_projectionOptionErrorNamesToolAndDiscardsSiblingRules(t *testing.T) {
+	dir := t.TempDir()
+	testutil.WriteFile(
+		t,
+		filepath.Join(dir, "servers/svc.yaml"),
+		"command: echo\nbase: &base\n  passthrough: [cursor]\nprojections:\n  good: {include_only: [id]}\n  bad:\n    <<: *base\n",
+	)
+
+	servers := mustLoadServers(t, dir)
+	sc, ok := servers.Find("svc")
+	if !ok || sc.ProjectionsErr == nil || sc.Projections != nil {
+		t.Fatalf("server = %+v, found %t; want loaded server with failed, discarded projections", sc, ok)
+	}
+	if !strings.Contains(sc.ProjectionsErr.Err.Error(), `projection bad`) ||
+		!strings.Contains(sc.ProjectionsErr.Err.Error(), `"passthrough"`) {
+		t.Errorf("ProjectionsErr = %v, want offending tool and inherited option", sc.ProjectionsErr.Err)
+	}
+	if !servers.IsEnabled("svc") || len(servers.BrokenProjections()) != 1 {
+		t.Errorf("server state = %+v, want enabled server and one projection failure", servers)
 	}
 }
 
