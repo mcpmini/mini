@@ -5,8 +5,8 @@ When `mini init` finishes, it lists each MCP that still needs a step:
 | Line | Meaning | What to do |
 |---|---|---|
 | requires a login | The MCP supports browser login | Run `mini auth <name>` |
-| requires a custom OAuth app | The MCP uses OAuth but won't let mini register itself | Register an OAuth app, or use a token if the provider offers one |
-| requires manual configuration | The MCP needs a token, API key, or setting only you can supply | Edit the MCP's file |
+| requires a custom OAuth app | OAuth app credentials in the file are still placeholders | Register an OAuth app and fill in its credentials |
+| requires manual configuration | mini cannot complete setup automatically | Follow the provider's instructions and edit the MCP's file |
 
 Each MCP's file is `~/.mini/servers/<name>.yaml`. If you ran init with `--config DIR`, it's `DIR/servers/<name>.yaml`, and every `mini` command below needs the same `--config DIR`.
 
@@ -24,7 +24,7 @@ The login is tied to the MCP's URL, `client_id` and `token_url` as they were whe
 
 ## requires a custom OAuth app
 
-Open the MCP's file first. If its comment says to create a token, as GitHub's does, follow [requires manual configuration](#requires-manual-configuration) instead; a token is quicker than an OAuth app.
+This line means the MCP's file still contains placeholder OAuth app credentials. Open the file and follow its setup comment.
 
 If the comment holds OAuth app steps, they look like Asana's:
 
@@ -163,17 +163,19 @@ Common errors:
 - **`<field>: NAME isn't set where mini runs`** (or `aren't set` for several): see [Environment variables](#environment-variables).
 - **`<field>: ${NAME} isn't expanded`**: `${...}` was used in a field that doesn't expand it. See [Environment variables](#environment-variables).
 
-If `mini auth <name>` fails with **no client_id configured and server provides no registration endpoint**, the MCP needs a custom OAuth app. See [requires a custom OAuth app](#requires-a-custom-oauth-app). If it fails with **the server only accepts mini's client metadata document, which lists callback port 6464**, remove `auth.callback_port` or set up your own app.
+If `mini auth <name>` fails with **no client_id configured and server provides no registration endpoint**, mini cannot register a client automatically. Check the provider's MCP setup instructions: configure a token if supported, or register your own OAuth app. See [requires manual configuration](#requires-manual-configuration). If it fails with **the server only accepts mini's client metadata document, which lists callback port 6464**, remove `auth.callback_port` or set up your own app.
 
 ## How mini decides
 
 If the MCP asks for OAuth, mini reads its authorization server's metadata:
 
 - If the server lets clients register themselves (client ID metadata documents or dynamic client registration), mini can log in by itself: **requires a login**. Client ID metadata documents only work on the default callback port, 6464, so with `auth.callback_port` set to another port, mini needs dynamic client registration.
-- If it doesn't, the provider only accepts apps registered by hand: **requires a custom OAuth app**. The same line shows while the file still holds `<your app's client ID>` or `<your app's client secret>`.
+- If mini cannot register a client and the file has no client ID, init reports **requires manual configuration**. Discovery cannot tell whether the provider accepts a token or requires your own app; follow its setup instructions.
+- If the file still holds `<your app's client ID>` or `<your app's client secret>`, init reports **requires a custom OAuth app**.
 
 **requires manual configuration** means one of:
 
 - The file references an environment variable that isn't set, such as `${GITHUB_TOKEN}`.
 - A header still holds the placeholder init wrote, `<your token>`.
 - The MCP refused the connection without asking for OAuth, so it wants a credential mini can't get for you.
+- Browser registration is unavailable and the file has no OAuth client ID; the provider's setup guide determines whether to use a token or register an app.
