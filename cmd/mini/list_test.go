@@ -25,7 +25,11 @@ func TestRunList(t *testing.T) {
 
 	t.Run("stdio server appears with correct transport and command", func(t *testing.T) {
 		dir := t.TempDir()
-		configtest.WriteServer(t, dir, config.ServerConfig{Name: "gh", Command: "npx", Args: []string{"server-github"}})
+		configtest.WriteServer(
+			t,
+			dir,
+			config.ServerConfig{Name: "gh", Command: "npx", Args: []string{"server-github"}, Enabled: new(false)},
+		)
 
 		var out bytes.Buffer
 		if err := runList(dir, nil, &out); err != nil {
@@ -41,7 +45,7 @@ func TestRunList(t *testing.T) {
 		if !strings.Contains(got, "npx") {
 			t.Errorf("output missing command 'npx': %q", got)
 		}
-		for _, hint := range []string{"Tools: mini ls <server>", "Health: mini status"} {
+		for _, hint := range []string{"Tools: mini ls <server>", "Health details: mini status"} {
 			if !strings.Contains(got, hint) {
 				t.Errorf("missing next-step hint %q: %q", hint, got)
 			}
@@ -50,11 +54,8 @@ func TestRunList(t *testing.T) {
 
 	t.Run("http server shows url and transport", func(t *testing.T) {
 		dir := t.TempDir()
-		configtest.WriteServer(
-			t,
-			dir,
-			config.ServerConfig{Name: "remote", Transport: "http", URL: "https://example.com/mcp"},
-		)
+		srv := fakeUnauthenticatedMCPServer(t)
+		configtest.WriteServer(t, dir, config.ServerConfig{Name: "remote", Transport: "http", URL: srv.URL})
 
 		var out bytes.Buffer
 		if err := runList(dir, nil, &out); err != nil {
@@ -64,20 +65,20 @@ func TestRunList(t *testing.T) {
 		if !strings.Contains(got, "http") {
 			t.Errorf("output missing transport 'http': %q", got)
 		}
-		if !strings.Contains(got, "https://example.com/mcp") {
+		if !strings.Contains(got, srv.URL) {
 			t.Errorf("output missing url: %q", got)
 		}
 	})
 
 	t.Run("header row is always present", func(t *testing.T) {
 		dir := t.TempDir()
-		configtest.WriteServer(t, dir, config.ServerConfig{Name: "s", Command: "run"})
+		configtest.WriteServer(t, dir, config.ServerConfig{Name: "s", Command: "run", Enabled: new(false)})
 
 		var out bytes.Buffer
 		runList(dir, nil, &out) //nolint:errcheck
 		got := out.String()
 		header := strings.SplitN(got, "\n", 2)[0]
-		if fields := strings.Join(strings.Fields(header), " "); fields != "NAME TRANSPORT ENABLED COMMAND / URL" {
+		if fields := strings.Join(strings.Fields(header), " "); fields != "NAME TYPE AUTH STATE URL / COMMAND" {
 			t.Errorf("unexpected server columns: %q", header)
 		}
 	})
