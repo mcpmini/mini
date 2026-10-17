@@ -1,6 +1,4 @@
 list_issues:
-  array_limits:
-    labels: 5
   string_limits:
     description: 2000
 

@@ -1,488 +1,152 @@
 {
+  "total_count": 512,
   "incomplete_results": false,
   "items": [
     {
-      "name": "marshal.go",
-      "path": "src/encoding/xml/marshal.go",
-      "repository": "golang/go",
-      "sha": "f737d3bad82ac7acbce91ae6142fcc415036c851",
-      "text_matches": [
-        {
-          "fragment": "// See [MarshalIndent] for an example.\n//\n// Marshal will return an error if asked to marshal a channel, function, or map.\nfunc Marshal(v any) ([]byte, error) {\n\tvar b bytes.Buffer\n\tenc := NewEncoder(&b)\n\tif err := enc.Encode(v); err != nil {",
-          "matches": [
-            {
-              "indices": [
-                8,
-                15
-              ],
-              "text": "Marshal"
-            },
-            {
-              "indices": [
-                45,
-                52
-              ],
-              "text": "Marshal"
-            },
-            {
-              "indices": [
-                86,
-                93
-              ],
-              "text": "marshal"
-            },
-            {
-              "indices": [
-                105,
-                109
-              ],
-              "text": "func"
-            },
-            {
-              "indices": [
-                123,
-                127
-              ],
-              "text": "func"
-            },
-            {
-              "indices": [
-                128,
-                135
-              ],
-              "text": "Marshal"
-            }
-          ],
-          "object_type": "FileContent",
-          "object_url": "https://api.github.com/repositories/23096959/contents/src/encoding/xml/marshal.go?ref=c3a068eec992b5ae783abce1a9d03f617b671ea2",
-          "property": "content"
-        }
-      ]
+      "name": "README.md",
+      "path": "packages/ui-library/README.md",
+      "sha": "20a855efd3c067a74dff4799c1ff470e3189d231",
+      "html_url": "https://github.com/ex-opensource/ui-library/blob/561ed529b3a6a16e5b2b76fa5ee86c09f959686c/packages/ui-library/README.md",
+      "repository": {
+        "id": 500002,
+        "node_id": "MDEwOlJlcG9zaXRvcnkxMDI3MDI1MA==",
+        "owner": {
+          "login": "ex-opensource",
+          "id": 500001,
+          "node_id": "MDEyOk9yZ2FuaXphdGlvbjY5NjMx",
+          "avatar_url": "https://avatars.githubusercontent.com/u/500001?v=4",
+          "html_url": "https://github.com/ex-opensource",
+          "gravatar_id": "",
+          "type": "Organization",
+          "site_admin": false,
+          "url": "https://api.github.com/users/ex-opensource",
+          "events_url": "https://api.github.com/users/ex-opensource/events{/privacy}",
+          "following_url": "https://api.github.com/users/ex-opensource/following{/other_user}",
+          "followers_url": "https://api.github.com/users/ex-opensource/followers",
+          "gists_url": "https://api.github.com/users/ex-opensource/gists{/gist_id}",
+          "organizations_url": "https://api.github.com/users/ex-opensource/orgs",
+          "received_events_url": "https://api.github.com/users/ex-opensource/received_events",
+          "repos_url": "https://api.github.com/users/ex-opensource/repos",
+          "starred_url": "https://api.github.com/users/ex-opensource/starred{/owner}{/repo}",
+          "subscriptions_url": "https://api.github.com/users/ex-opensource/subscriptions"
+        },
+        "name": "ui-library",
+        "full_name": "ex-opensource/ui-library",
+        "description": "The library for web and native user interfaces.",
+        "html_url": "https://github.com/ex-opensource/ui-library",
+        "fork": false,
+        "private": false,
+        "url": "https://api.github.com/repos/ex-opensource/ui-library",
+        "archive_url": "https://api.github.com/repos/ex-opensource/ui-library/{archive_format}{/ref}",
+        "assignees_url": "https://api.github.com/repos/ex-opensource/ui-library/assignees{/user}",
+        "blobs_url": "https://api.github.com/repos/ex-opensource/ui-library/git/blobs{/sha}",
+        "branches_url": "https://api.github.com/repos/ex-opensource/ui-library/branches{/branch}",
+        "collaborators_url": "https://api.github.com/repos/ex-opensource/ui-library/collaborators{/collaborator}",
+        "comments_url": "https://api.github.com/repos/ex-opensource/ui-library/comments{/number}",
+        "commits_url": "https://api.github.com/repos/ex-opensource/ui-library/commits{/sha}",
+        "compare_url": "https://api.github.com/repos/ex-opensource/ui-library/compare/{base}...{head}",
+        "contents_url": "https://api.github.com/repos/ex-opensource/ui-library/contents/{+path}",
+        "contributors_url": "https://api.github.com/repos/ex-opensource/ui-library/contributors",
+        "deployments_url": "https://api.github.com/repos/ex-opensource/ui-library/deployments",
+        "downloads_url": "https://api.github.com/repos/ex-opensource/ui-library/downloads",
+        "events_url": "https://api.github.com/repos/ex-opensource/ui-library/events",
+        "forks_url": "https://api.github.com/repos/ex-opensource/ui-library/forks",
+        "git_commits_url": "https://api.github.com/repos/ex-opensource/ui-library/git/commits{/sha}",
+        "git_refs_url": "https://api.github.com/repos/ex-opensource/ui-library/git/refs{/sha}",
+        "git_tags_url": "https://api.github.com/repos/ex-opensource/ui-library/git/tags{/sha}",
+        "hooks_url": "https://api.github.com/repos/ex-opensource/ui-library/hooks",
+        "issue_comment_url": "https://api.github.com/repos/ex-opensource/ui-library/issues/comments{/number}",
+        "issue_events_url": "https://api.github.com/repos/ex-opensource/ui-library/issues/events{/number}",
+        "issues_url": "https://api.github.com/repos/ex-opensource/ui-library/issues{/number}",
+        "keys_url": "https://api.github.com/repos/ex-opensource/ui-library/keys{/key_id}",
+        "labels_url": "https://api.github.com/repos/ex-opensource/ui-library/labels{/name}",
+        "languages_url": "https://api.github.com/repos/ex-opensource/ui-library/languages",
+        "merges_url": "https://api.github.com/repos/ex-opensource/ui-library/merges",
+        "milestones_url": "https://api.github.com/repos/ex-opensource/ui-library/milestones{/number}",
+        "notifications_url": "https://api.github.com/repos/ex-opensource/ui-library/notifications{?since,all,participating}",
+        "pulls_url": "https://api.github.com/repos/ex-opensource/ui-library/pulls{/number}",
+        "releases_url": "https://api.github.com/repos/ex-opensource/ui-library/releases{/id}",
+        "stargazers_url": "https://api.github.com/repos/ex-opensource/ui-library/stargazers",
+        "statuses_url": "https://api.github.com/repos/ex-opensource/ui-library/statuses/{sha}",
+        "subscribers_url": "https://api.github.com/repos/ex-opensource/ui-library/subscribers",
+        "subscription_url": "https://api.github.com/repos/ex-opensource/ui-library/subscription",
+        "tags_url": "https://api.github.com/repos/ex-opensource/ui-library/tags",
+        "trees_url": "https://api.github.com/repos/ex-opensource/ui-library/git/trees{/sha}",
+        "teams_url": "https://api.github.com/repos/ex-opensource/ui-library/teams"
+      }
     },
     {
-      "name": "proto.go",
-      "path": "src/internal/profile/proto.go",
-      "repository": "golang/go",
-      "sha": "ad6f621f883c7d6b75ff652786cbd3fd60f66158",
-      "text_matches": [
-        {
-          "fragment": "\tencode(*buffer)\n}\n\nfunc marshal(m message) []byte {\n\tvar b buffer\n\tm.encode(&b)\n\treturn b.data",
-          "matches": [
-            {
-              "indices": [
-                20,
-                24
-              ],
-              "text": "func"
-            },
-            {
-              "indices": [
-                25,
-                32
-              ],
-              "text": "marshal"
-            }
-          ],
-          "object_type": "FileContent",
-          "object_url": "https://api.github.com/repositories/23096959/contents/src/internal/profile/proto.go?ref=c3a068eec992b5ae783abce1a9d03f617b671ea2",
-          "property": "content"
-        }
-      ]
-    },
-    {
-      "name": "v2_encode.go",
-      "path": "src/encoding/json/v2_encode.go",
-      "repository": "golang/go",
-      "sha": "49179c91dcf1b73acbd03df014be41cd3838e7af",
-      "text_matches": [
-        {
-          "fragment": "// JSON cannot represent cyclic data structures and Marshal does not\n// handle them. Passing cyclic structures to Marshal will result in\n// an error.\nfunc Marshal(v any) ([]byte, error) {\n\treturn jsonv2.Marshal(v, DefaultOptionsV1())\n}\n",
-          "matches": [
-            {
-              "indices": [
-                52,
-                59
-              ],
-              "text": "Marshal"
-            },
-            {
-              "indices": [
-                114,
-                121
-              ],
-              "text": "Marshal"
-            },
-            {
-              "indices": [
-                150,
-                154
-              ],
-              "text": "func"
-            },
-            {
-              "indices": [
-                155,
-                162
-              ],
-              "text": "Marshal"
-            },
-            {
-              "indices": [
-                203,
-                210
-              ],
-              "text": "Marshal"
-            }
-          ],
-          "object_type": "FileContent",
-          "object_url": "https://api.github.com/repositories/23096959/contents/src/encoding/json/v2_encode.go?ref=c3a068eec992b5ae783abce1a9d03f617b671ea2",
-          "property": "content"
-        }
-      ]
-    },
-    {
-      "name": "elliptic.go",
-      "path": "src/crypto/elliptic/elliptic.go",
-      "repository": "golang/go",
-      "sha": "290a8e53908da3ee94cf5abea166796936e7f775",
-      "text_matches": [
-        {
-          "fragment": "//\n// Deprecated: for ECDH, use the crypto/ecdh package. This function returns an\n// encoding equivalent to that of PublicKey.Bytes in crypto/ecdh.\nfunc Marshal(curve Curve, x, y *big.Int) []byte {\n\tpanicIfNotOnCurve(curve, x, y)\n\n\tbyteLen := (curve.Params().BitSize + 7) / 8",
-          "matches": [
-            {
-              "indices": [
-                62,
-                66
-              ],
-              "text": "func"
-            },
-            {
-              "indices": [
-                148,
-                152
-              ],
-              "text": "func"
-            },
-            {
-              "indices": [
-                153,
-                160
-              ],
-              "text": "Marshal"
-            }
-          ],
-          "object_type": "FileContent",
-          "object_url": "https://api.github.com/repositories/23096959/contents/src/crypto/elliptic/elliptic.go?ref=c3a068eec992b5ae783abce1a9d03f617b671ea2",
-          "property": "content"
-        }
-      ]
-    },
-    {
-      "name": "chacha8.go",
-      "path": "src/internal/chacha8rand/chacha8.go",
-      "repository": "golang/go",
-      "sha": "720fc5701a8615632c04f211a0ceb03416747e0a",
-      "text_matches": [
-        {
-          "fragment": "// so that they will not be linked into the runtime\n// when it uses the State struct, since the runtime\n// does not need these.\nfunc Marshal(s *State) []byte {\n\tdata := make([]byte, 6*8)\n\tcopy(data, \"chacha8:\")\n\tused := (s.c/ctrInc)*chunk + s.i",
-          "matches": [
-            {
-              "indices": [
-                128,
-                132
-              ],
-              "text": "func"
-            },
-            {
-              "indices": [
-                133,
-                140
-              ],
-              "text": "Marshal"
-            }
-          ],
-          "object_type": "FileContent",
-          "object_url": "https://api.github.com/repositories/23096959/contents/src/internal/chacha8rand/chacha8.go?ref=c3a068eec992b5ae783abce1a9d03f617b671ea2",
-          "property": "content"
-        }
-      ]
-    },
-    {
-      "name": "marshal.go",
-      "path": "src/encoding/asn1/marshal.go",
-      "repository": "golang/go",
-      "sha": "ddb3bd85dd618d023fb87802097c95effcda53b6",
-      "text_matches": [
-        {
-          "fragment": "//\tnumeric:     causes strings to be marshaled as ASN.1, NumericString values\n//\tutc:         causes time.Time to be marshaled as ASN.1, UTCTime values\n//\tgeneralized: causes time.Time to be marshaled as ASN.1, GeneralizedTime values\nfunc Marshal(val any) ([]byte, error) {\n\treturn MarshalWithParams(val, \"\")\n}\n",
-          "matches": [
-            {
-              "indices": [
-                37,
-                44
-              ],
-              "text": "marshal"
-            },
-            {
-              "indices": [
-                117,
-                124
-              ],
-              "text": "marshal"
-            },
-            {
-              "indices": [
-                191,
-                198
-              ],
-              "text": "marshal"
-            },
-            {
-              "indices": [
-                234,
-                238
-              ],
-              "text": "func"
-            },
-            {
-              "indices": [
-                239,
-                246
-              ],
-              "text": "Marshal"
-            },
-            {
-              "indices": [
-                282,
-                289
-              ],
-              "text": "Marshal"
-            }
-          ],
-          "object_type": "FileContent",
-          "object_url": "https://api.github.com/repositories/23096959/contents/src/encoding/asn1/marshal.go?ref=c3a068eec992b5ae783abce1a9d03f617b671ea2",
-          "property": "content"
-        }
-      ]
-    },
-    {
-      "name": "dir_plan9.go",
-      "path": "src/syscall/dir_plan9.go",
-      "repository": "golang/go",
-      "sha": "835c43e4b1034653b43a3cd865c65d6488d4fe60",
-      "text_matches": [
-        {
-          "fragment": "// Marshal encodes a 9P stat message corresponding to d into b\n//\n// If there isn't enough space in b for a stat message, [ErrShortStat] is returned.\nfunc (d *Dir) Marshal(b []byte) (n int, err error) {\n\tn = STATFIXLEN + len(d.Name) + len(d.Uid) + len(d.Gid) + len(d.Muid)\n\tif n > len(b) {\n\t\treturn n, ErrShortStat",
-          "matches": [
-            {
-              "indices": [
-                3,
-                10
-              ],
-              "text": "Marshal"
-            },
-            {
-              "indices": [
-                150,
-                154
-              ],
-              "text": "func"
-            },
-            {
-              "indices": [
-                164,
-                171
-              ],
-              "text": "Marshal"
-            }
-          ],
-          "object_type": "FileContent",
-          "object_url": "https://api.github.com/repositories/23096959/contents/src/syscall/dir_plan9.go?ref=c3a068eec992b5ae783abce1a9d03f617b671ea2",
-          "property": "content"
-        }
-      ]
-    },
-    {
-      "name": "ratconv.go",
-      "path": "src/math/big/ratconv.go",
-      "repository": "golang/go",
-      "sha": "229f31b8f0eef40414a74c7739cdf7947cba2442",
-      "text_matches": [
-        {
-          "fragment": "// marshal implements [Rat.String] returning a slice of bytes.\n// It appends the string representation of x in the form \"a/b\" (even if b == 1) to buf,\n// and returns the extended buffer.\nfunc (x *Rat) marshal(buf []byte) []byte {\n\tbuf = x.a.Append(buf, 10)\n\tbuf = append(buf, '/')\n\tif len(x.b.abs) != 0 {",
-          "matches": [
-            {
-              "indices": [
-                3,
-                10
-              ],
-              "text": "marshal"
-            },
-            {
-              "indices": [
-                187,
-                191
-              ],
-              "text": "func"
-            },
-            {
-              "indices": [
-                201,
-                208
-              ],
-              "text": "marshal"
-            }
-          ],
-          "object_type": "FileContent",
-          "object_url": "https://api.github.com/repositories/23096959/contents/src/math/big/ratconv.go?ref=c3a068eec992b5ae783abce1a9d03f617b671ea2",
-          "property": "content"
-        }
-      ]
-    },
-    {
-      "name": "arshal_funcs.go",
-      "path": "src/encoding/json/v2/arshal_funcs.go",
-      "repository": "golang/go",
-      "sha": "4b20bcc5cfe2e073482a9e174a8940dbe3baa6a5",
-      "text_matches": [
-        {
-          "fragment": "// Implementations must follow the requirements of [Marshaler].\n//\n// Implementations must not retain the value of T.\nfunc MarshalFunc[T any](fn func(T) ([]byte, error)) *Marshalers {\n\tt := reflect.TypeFor[T]()\n\tassertCastableTo(t, true)\n\ttypFnc := typedMarshaler{",
-          "matches": [
-            {
-              "indices": [
-                52,
-                59
-              ],
-              "text": "Marshal"
-            },
-            {
-              "indices": [
-                118,
-                122
-              ],
-              "text": "func"
-            },
-            {
-              "indices": [
-                123,
-                130
-              ],
-              "text": "Marshal"
-            },
-            {
-              "indices": [
-                130,
-                134
-              ],
-              "text": "Func"
-            },
-            {
-              "indices": [
-                145,
-                149
-              ],
-              "text": "func"
-            },
-            {
-              "indices": [
-                171,
-                178
-              ],
-              "text": "Marshal"
-            },
-            {
-              "indices": [
-                254,
-                261
-              ],
-              "text": "Marshal"
-            }
-          ],
-          "object_type": "FileContent",
-          "object_url": "https://api.github.com/repositories/23096959/contents/src/encoding/json/v2/arshal_funcs.go?ref=c3a068eec992b5ae783abce1a9d03f617b671ea2",
-          "property": "content"
-        }
-      ]
-    },
-    {
-      "name": "handshake_messages.go",
-      "path": "src/crypto/tls/handshake_messages.go",
-      "repository": "golang/go",
-      "sha": "93f070a64e309feb82895f7825359b804b548b1a",
-      "text_matches": [
-        {
-          "fragment": "// functions as cryptobyte.MarshalingValue.\ntype marshalingFunction func(b *cryptobyte.Builder) error\n\nfunc (f marshalingFunction) Marshal(b *cryptobyte.Builder) error {\n\treturn f(b)\n}\n",
-          "matches": [
-            {
-              "indices": [
-                3,
-                7
-              ],
-              "text": "func"
-            },
-            {
-              "indices": [
-                27,
-                34
-              ],
-              "text": "Marshal"
-            },
-            {
-              "indices": [
-                49,
-                56
-              ],
-              "text": "marshal"
-            },
-            {
-              "indices": [
-                59,
-                63
-              ],
-              "text": "Func"
-            },
-            {
-              "indices": [
-                68,
-                72
-              ],
-              "text": "func"
-            },
-            {
-              "indices": [
-                103,
-                107
-              ],
-              "text": "func"
-            },
-            {
-              "indices": [
-                111,
-                118
-              ],
-              "text": "marshal"
-            },
-            {
-              "indices": [
-                121,
-                125
-              ],
-              "text": "Func"
-            },
-            {
-              "indices": [
-                131,
-                138
-              ],
-              "text": "Marshal"
-            }
-          ],
-          "object_type": "FileContent",
-          "object_url": "https://api.github.com/repositories/23096959/contents/src/crypto/tls/handshake_messages.go?ref=c3a068eec992b5ae783abce1a9d03f617b671ea2",
-          "property": "content"
-        }
-      ]
+      "name": "index.js",
+      "path": "packages/ui-library/index.js",
+      "sha": "78b11b809e7520e342a1fa05d10d264629d610c3",
+      "html_url": "https://github.com/ex-opensource/ui-library/blob/561ed529b3a6a16e5b2b76fa5ee86c09f959686c/packages/ui-library/index.js",
+      "repository": {
+        "id": 500002,
+        "node_id": "MDEwOlJlcG9zaXRvcnkxMDI3MDI1MA==",
+        "owner": {
+          "login": "ex-opensource",
+          "id": 500001,
+          "node_id": "MDEyOk9yZ2FuaXphdGlvbjY5NjMx",
+          "avatar_url": "https://avatars.githubusercontent.com/u/500001?v=4",
+          "html_url": "https://github.com/ex-opensource",
+          "gravatar_id": "",
+          "type": "Organization",
+          "site_admin": false,
+          "url": "https://api.github.com/users/ex-opensource",
+          "events_url": "https://api.github.com/users/ex-opensource/events{/privacy}",
+          "following_url": "https://api.github.com/users/ex-opensource/following{/other_user}",
+          "followers_url": "https://api.github.com/users/ex-opensource/followers",
+          "gists_url": "https://api.github.com/users/ex-opensource/gists{/gist_id}",
+          "organizations_url": "https://api.github.com/users/ex-opensource/orgs",
+          "received_events_url": "https://api.github.com/users/ex-opensource/received_events",
+          "repos_url": "https://api.github.com/users/ex-opensource/repos",
+          "starred_url": "https://api.github.com/users/ex-opensource/starred{/owner}{/repo}",
+          "subscriptions_url": "https://api.github.com/users/ex-opensource/subscriptions"
+        },
+        "name": "ui-library",
+        "full_name": "ex-opensource/ui-library",
+        "description": "The library for web and native user interfaces.",
+        "html_url": "https://github.com/ex-opensource/ui-library",
+        "fork": false,
+        "private": false,
+        "url": "https://api.github.com/repos/ex-opensource/ui-library",
+        "archive_url": "https://api.github.com/repos/ex-opensource/ui-library/{archive_format}{/ref}",
+        "assignees_url": "https://api.github.com/repos/ex-opensource/ui-library/assignees{/user}",
+        "blobs_url": "https://api.github.com/repos/ex-opensource/ui-library/git/blobs{/sha}",
+        "branches_url": "https://api.github.com/repos/ex-opensource/ui-library/branches{/branch}",
+        "collaborators_url": "https://api.github.com/repos/ex-opensource/ui-library/collaborators{/collaborator}",
+        "comments_url": "https://api.github.com/repos/ex-opensource/ui-library/comments{/number}",
+        "commits_url": "https://api.github.com/repos/ex-opensource/ui-library/commits{/sha}",
+        "compare_url": "https://api.github.com/repos/ex-opensource/ui-library/compare/{base}...{head}",
+        "contents_url": "https://api.github.com/repos/ex-opensource/ui-library/contents/{+path}",
+        "contributors_url": "https://api.github.com/repos/ex-opensource/ui-library/contributors",
+        "deployments_url": "https://api.github.com/repos/ex-opensource/ui-library/deployments",
+        "downloads_url": "https://api.github.com/repos/ex-opensource/ui-library/downloads",
+        "events_url": "https://api.github.com/repos/ex-opensource/ui-library/events",
+        "forks_url": "https://api.github.com/repos/ex-opensource/ui-library/forks",
+        "git_commits_url": "https://api.github.com/repos/ex-opensource/ui-library/git/commits{/sha}",
+        "git_refs_url": "https://api.github.com/repos/ex-opensource/ui-library/git/refs{/sha}",
+        "git_tags_url": "https://api.github.com/repos/ex-opensource/ui-library/git/tags{/sha}",
+        "hooks_url": "https://api.github.com/repos/ex-opensource/ui-library/hooks",
+        "issue_comment_url": "https://api.github.com/repos/ex-opensource/ui-library/issues/comments{/number}",
+        "issue_events_url": "https://api.github.com/repos/ex-opensource/ui-library/issues/events{/number}",
+        "issues_url": "https://api.github.com/repos/ex-opensource/ui-library/issues{/number}",
+        "keys_url": "https://api.github.com/repos/ex-opensource/ui-library/keys{/key_id}",
+        "labels_url": "https://api.github.com/repos/ex-opensource/ui-library/labels{/name}",
+        "languages_url": "https://api.github.com/repos/ex-opensource/ui-library/languages",
+        "merges_url": "https://api.github.com/repos/ex-opensource/ui-library/merges",
+        "milestones_url": "https://api.github.com/repos/ex-opensource/ui-library/milestones{/number}",
+        "notifications_url": "https://api.github.com/repos/ex-opensource/ui-library/notifications{?since,all,participating}",
+        "pulls_url": "https://api.github.com/repos/ex-opensource/ui-library/pulls{/number}",
+        "releases_url": "https://api.github.com/repos/ex-opensource/ui-library/releases{/id}",
+        "stargazers_url": "https://api.github.com/repos/ex-opensource/ui-library/stargazers",
+        "statuses_url": "https://api.github.com/repos/ex-opensource/ui-library/statuses/{sha}",
+        "subscribers_url": "https://api.github.com/repos/ex-opensource/ui-library/subscribers",
+        "subscription_url": "https://api.github.com/repos/ex-opensource/ui-library/subscription",
+        "tags_url": "https://api.github.com/repos/ex-opensource/ui-library/tags",
+        "trees_url": "https://api.github.com/repos/ex-opensource/ui-library/git/trees{/sha}",
+        "teams_url": "https://api.github.com/repos/ex-opensource/ui-library/teams"
+      }
     }
-  ],
-  "total_count": 381
+  ]
 }

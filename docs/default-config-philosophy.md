@@ -30,6 +30,10 @@ A targeted profile avatar URL on an individual issue or pull request is a reason
 
 **Write/mutate operations** (create, update, delete): the response typically confirms what was done, including the created resource. Projection needs are minimal — the response is usually already compact, and the agent needs the identifier (id, number, sha, html_url) to reference what it just created. Apply the same rules as get operations.
 
+### Array limits
+
+Bundled defaults preserve returned collections, including labels, code matches, changed files and search results. These items can be relevant even when there are many. Let the caller choose the upstream page size and follow pagination. Do not silently shrink a requested page or discard labels to reduce response size.
+
 ### String limits
 
 String limits should be **liberal**. The purpose is to prevent runaway responses (multi-megabyte issue bodies, enormous diffs), not to aggressively compress content. Cutting a body at 300 chars is too short — the agent may not have enough context and will make a second API call anyway, costing more tokens overall.
