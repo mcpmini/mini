@@ -201,15 +201,17 @@ For most users the bundled projections are enough. If you want to tune them:
 # ~/.mini/servers/github.yaml
 projections:
   list_pull_requests:
-    exclude: [avatar_url]   # strip provably-useless fields
     string_limits:
       body: 1500            # cap at 1500 chars in list view
   pull_request_read:
+    exclude: [user.avatar_url]
     string_limits:
       body: 8000            # generous limit for detail view
 ```
 
-The bar for exclusion is high — only strip fields that are almost never useful in normal agent workflows, such as avatars and redundant API navigation links. Keep useful content, identifiers, state and links people open. When in doubt, keep the field. See [docs/default-config-philosophy.md](docs/default-config-philosophy.md) for full guidance.
+The bar for exclusion is high: keep fields that could reasonably help during a typical month of development, including fork descriptions, identities, revision references and useful links. When in doubt, keep the field. See [docs/default-config-philosophy.md](docs/default-config-philosophy.md) for full guidance.
+
+`exclude` matches exact dotted object paths relative to the response document root. `user.avatar_url` removes only that user's avatar; `description` removes only a root-level field. In proxy mode, each parsed JSON text block or structured-content value is its own document root. Exclusions do not traverse arrays: exclude the whole array by its property path if needed. Array indexes, wildcards and jq expressions are unsupported.
 
 Config directory layout:
 

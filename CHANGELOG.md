@@ -10,6 +10,7 @@
 - **OAuth logins keep working** — tokens refresh before they expire and after a 401, and an expired upstream session is re-initialized. mini identifies itself with a client ID metadata document before falling back to dynamic registration, honors registered client secrets, sends the RFC 8707 `resource`, and validates the authorization server's issuer. A saved login is bound to the server URL, token endpoint and client it was issued for, so editing any of them asks for a new login instead of sending the token elsewhere.
 - **Projections live in the server's file** — under `projections:` in `servers/<name>.yaml`. The `config` tool gains `get_projection`.
 - **Updated bundled defaults** — no tools are hidden or protected by default. GitHub, Linear and Atlassian projections use current tool names; stale Slack and Sentry rules are removed. New Atlassian catalog additions use the v2 endpoint.
+- **Exclusions match root-relative object paths** — `user.avatar_url` targets one nested field; bare names match only the root. Exclusions no longer recurse through objects or arrays.
 - **Projection option errors are reported** — misspelled or removed options are rejected in server files and `set_projection`, with the offending key and valid options in the error.
 - **`mini call` runs the MCP handshake** before calling, so servers that require it work from the CLI.
 - **Quieter CLI** — log lines go to `internal/cli.log` (and `internal/init.log` for `mini init`) instead of the terminal.
@@ -21,6 +22,7 @@
 - Move any `servers:` entries in `config.yaml` into their own `servers/<name>.yaml` files. mini ignores them without a warning.
 - `mini init --yes` is gone; use `--import`, `--from` or `--add` for unattended setup.
 - `response_format: mini` is now `response_format: toon`, and `mini call -m` is now `-t`.
+- Review existing `exclude` rules: bare names now affect only root fields. Use dotted object paths for nested fields. Array traversal is unsupported; exclude the whole array property if needed. Wildcards, indexes and jq syntax are rejected.
 - `passthrough` is removed. List fields you want to retain in `include_only` instead. Unknown projection options now produce an error; in a server file, invalid projections are skipped while the server remains available.
 - Bundled defaults apply to newly added servers. Existing files retain their projections, permissions and URLs; edit them if you want the new defaults. Changing an OAuth server's URL requires a fresh login.
 - `${VAR}` is expanded only in `headers`, `env`, `auth.token` and `auth.client_secret`. A server with `${VAR}` in `url`, `command` or `args` is skipped with a warning.
