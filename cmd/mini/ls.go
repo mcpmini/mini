@@ -12,8 +12,6 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/charmbracelet/x/ansi"
-
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/invoke"
@@ -92,11 +90,11 @@ func dialServer(configDir, serverName string) (transport.Connection, error) {
 
 func printToolTable(out io.Writer, tools []transport.ToolDefinition) error {
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintln(w, "TOOL\tTITLE"); err != nil {
+	if _, err := fmt.Fprintln(w, "TOOL\tHINTS"); err != nil {
 		return fmt.Errorf("write tool table header: %w", err)
 	}
 	for _, t := range tools {
-		if _, err := fmt.Fprintf(w, "%s\t%s\n", t.Name, toolListTitle(t)); err != nil {
+		if _, err := fmt.Fprintf(w, "%s\t%s\n", t.Name, toolHints(t.Annotations)); err != nil {
 			return fmt.Errorf("write tool table row: %w", err)
 		}
 	}
@@ -189,20 +187,4 @@ func requiredSet(names []string) map[string]bool {
 		m[n] = true
 	}
 	return m
-}
-
-func toolListTitle(t transport.ToolDefinition) string {
-	var title string
-	if err := json.Unmarshal(t.Title, &title); err != nil {
-		title = ""
-	}
-	if title == "" {
-		var annotations struct {
-			Title string `json:"title"`
-		}
-		if err := json.Unmarshal(t.Annotations, &annotations); err == nil {
-			title = annotations.Title
-		}
-	}
-	return ansi.Truncate(strings.Join(strings.Fields(title), " "), 60, "…")
 }

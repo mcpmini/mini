@@ -136,6 +136,7 @@ func TestPrintToolTable(t *testing.T) {
 	tools := []transport.ToolDefinition{
 		{
 			Name: "notion-search", Title: json.RawMessage(`"Search Notion"`),
+			Annotations: json.RawMessage(`{"readOnlyHint":true,"openWorldHint":true}`),
 			Description: strings.Repeat("Long description. ", 100),
 			InputSchema: json.RawMessage(`{"properties":{"query":{"type":"string"}}}`),
 		},
@@ -149,37 +150,10 @@ func TestPrintToolTable(t *testing.T) {
 	if len(lines) != 3 {
 		t.Fatalf("want header and one row per tool, got %q", out.String())
 	}
-	for i, want := range []string{"TOOL TITLE", "notion-search Search Notion", "notion-fetch"} {
+	for i, want := range []string{"TOOL HINTS", "notion-search read-only, open-world", "notion-fetch"} {
 		if got := strings.Join(strings.Fields(lines[i]), " "); got != want {
 			t.Errorf("row %d = %q, want %q", i, got, want)
 		}
-	}
-}
-
-func TestToolListTitle(t *testing.T) {
-	for _, tc := range []struct {
-		name        string
-		raw         string
-		annotations string
-		want        string
-	}{
-		{name: "missing"},
-		{name: "null", raw: "null"},
-		{name: "invalid type", raw: `{}`},
-		{name: "annotation title", annotations: `{"title":"Search pages"}`, want: "Search pages"},
-		{name: "title takes precedence", raw: `"Search Notion"`, annotations: `{"title":"Search pages"}`, want: "Search Notion"},
-		{name: "invalid annotations", annotations: `{"title":{}}`},
-		{name: "whitespace", raw: `" Search\tNotion\n pages\r "`, want: "Search Notion pages"},
-		{name: "long unicode", raw: `"` + strings.Repeat("é", 80) + `"`, want: strings.Repeat("é", 59) + "…"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			got := toolListTitle(
-				transport.ToolDefinition{Title: json.RawMessage(tc.raw), Annotations: json.RawMessage(tc.annotations)},
-			)
-			if got != tc.want {
-				t.Errorf("title = %q, want %q", got, tc.want)
-			}
-		})
 	}
 }
 
