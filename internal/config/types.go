@@ -350,7 +350,6 @@ type ProjectionConfig struct {
 	Alias       string         `yaml:"alias,omitempty"          json:"alias,omitempty"`
 	IncludeOnly []string       `yaml:"include_only,omitempty"   json:"include_only,omitempty"`
 	Exclude     []string       `yaml:"exclude,omitempty"        json:"exclude,omitempty"`
-	Passthrough []string       `yaml:"passthrough,omitempty"    json:"passthrough,omitempty"`
 	ArrayLimits map[string]int `yaml:"array_limits,omitempty"  json:"array_limits,omitempty"`
 	// StringLimits overrides the global DefaultStringLimit per field name.
 	// 0 disables truncation for that field (ignoring the global default).

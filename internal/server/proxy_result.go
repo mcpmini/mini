@@ -39,7 +39,7 @@ func (s *Server) buildProxyResult(p proxyResultParams) (builtProxyResult, error)
 		units[i].project(p.ProjCfg, s.projDefaults)
 	}
 	carrier := pickCarrier(units, doc.hasStructured)
-	notice, err := s.proxyNotice(p.Raw, units, carrier)
+	notice, err := s.proxyNotice(p.Raw, units)
 	if err != nil {
 		return builtProxyResult{}, err
 	}
@@ -49,11 +49,7 @@ func (s *Server) buildProxyResult(p proxyResultParams) (builtProxyResult, error)
 	return doc.assemble(units, carrier, notice)
 }
 
-func (s *Server) proxyNotice(
-	raw json.RawMessage,
-	units []projectUnit,
-	carrier *projectUnit,
-) (*response.ProjectionMeta, error) {
+func (s *Server) proxyNotice(raw json.RawMessage, units []projectUnit) (*response.ProjectionMeta, error) {
 	excluded, truncated := reportedPaths(units)
 	if len(excluded) == 0 && len(truncated) == 0 {
 		return nil, nil //nolint:nilnil // No notice is a normal outcome, not an error.
@@ -62,11 +58,7 @@ func (s *Server) proxyNotice(
 	if err != nil {
 		return nil, fmt.Errorf("store response: %w", err)
 	}
-	meta := &response.ProjectionMeta{Msg: response.ProxyMsg, File: key, Excluded: excluded, Truncated: truncated}
-	if carrier != nil {
-		meta.Passthrough = carrier.result.Passthrough
-	}
-	return meta, nil
+	return &response.ProjectionMeta{Msg: response.ProxyMsg, File: key, Excluded: excluded, Truncated: truncated}, nil
 }
 
 func reportedPaths(units []projectUnit) (excluded []string, truncated []projection.Truncation) {

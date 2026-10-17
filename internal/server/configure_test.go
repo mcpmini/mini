@@ -500,6 +500,18 @@ func TestConfigureSetProjection_rejectsMiniFormat(t *testing.T) {
 	})
 }
 
+func TestConfigureSetProjection_rejectsUnknownOption(t *testing.T) {
+	srv := newTestServer(t, server.Params{})
+	resp := serve(t, srv, callTool("config", map[string]any{
+		"action": "set_projection", "server": "svc", "tool": "tool1",
+		"projection": map[string]any{"exlude": []string{"secret"}},
+	}))
+	assertIsErrorResult(t, resp)
+	if text := toolResultText(t, resp); !strings.Contains(text, `"exlude"`) || !strings.Contains(text, "exclude") {
+		t.Errorf("expected an error naming the unknown option and the valid ones, got: %s", text)
+	}
+}
+
 func TestConfigureRemoveServerRequiresName(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	resp := serve(t, srv, callTool("config", map[string]any{

@@ -19,7 +19,6 @@ type Truncation struct {
 type Result struct {
 	Summary      any
 	ExcludedKeys []string
-	Passthrough  map[string]any
 	Truncated    []Truncation
 }
 
@@ -43,13 +42,11 @@ func Apply(value any, cfg *config.ProjectionConfig, defaults *Defaults) Result {
 	var truncated []Truncation
 	ctx := projCtx{cfg: effective, excluded: &excluded, truncated: &truncated}
 	summary := project(value, ctx)
-	passthrough := extractPassthrough(value, effective.passthrough)
 	slices.Sort(excluded)
 	sortTruncated(truncated)
 	return Result{
 		Summary:      summary,
 		ExcludedKeys: collapseExcluded(excluded),
-		Passthrough:  passthrough,
 		Truncated:    truncated,
 	}
 }
@@ -91,8 +88,7 @@ func shouldSkipField(key string, cfg *effectiveConfig, depth int) bool {
 	if isExcluded(key, cfg.exclude) {
 		return true
 	}
-	return depth == 0 && len(cfg.includeOnly) > 0 && !isIncluded(key, cfg.includeOnly) &&
-		!isPassthrough(key, cfg.passthrough)
+	return depth == 0 && len(cfg.includeOnly) > 0 && !isIncluded(key, cfg.includeOnly)
 }
 
 func projectMapValue(value any, ctx projCtx, fieldName string) any {
@@ -155,7 +151,6 @@ func projectString(s string, ctx projCtx, fieldName string) string {
 }
 
 func isIncluded(key string, includeOnly []string) bool { return slices.Contains(includeOnly, key) }
-func isPassthrough(key string, pt []string) bool       { return slices.Contains(pt, key) }
 
 func isExcluded(key string, exclude []string) bool {
 	for _, k := range exclude {
@@ -166,18 +161,6 @@ func isExcluded(key string, exclude []string) bool {
 		}
 	}
 	return false
-}
-
-func extractPassthrough(value any, keys []string) map[string]any {
-	out := make(map[string]any)
-	m, ok := value.(map[string]any)
-	if !ok {
-		return out
-	}
-	for _, k := range keys {
-		out[k] = m[k]
-	}
-	return out
 }
 
 // Boundary searches use ASCII bytes ('.', '\n', ' ') which never appear as

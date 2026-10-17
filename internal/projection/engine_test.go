@@ -187,24 +187,6 @@ func TestExcludedKeys(t *testing.T) {
 	}
 }
 
-func TestPassthroughFields(t *testing.T) {
-	cfg := &config.ProjectionConfig{
-		IncludeOnly: []string{"status"},
-		Passthrough: []string{"cursor", "next_page"},
-	}
-	value := map[string]any{
-		"status":    "ok",
-		"env":       "secret",
-		"cursor":    "page2-token",
-		"next_page": "https://example.com/next",
-	}
-
-	result := projection.Apply(value, cfg, defaultLimits)
-	if result.Passthrough["cursor"] != "page2-token" {
-		t.Errorf("cursor should be in passthrough: %v", result.Passthrough)
-	}
-}
-
 func TestIncludeFilterOnlyTopLevel_excludesNonListed(t *testing.T) {
 	cfg := &config.ProjectionConfig{IncludeOnly: []string{"issues", "totalCount"}}
 	value := map[string]any{

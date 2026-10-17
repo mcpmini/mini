@@ -80,17 +80,27 @@ func (sc *ServerConfig) UnmarshalYAML(value *yaml.Node) error {
 }
 
 func decodeProjections(node *yaml.Node) (map[string]*ProjectionConfig, error) {
-	var projections map[string]*ProjectionConfig
-	if err := node.Decode(&projections); err != nil {
+	var rules map[string]yaml.Node
+	if err := node.Decode(&rules); err != nil {
 		return nil, err
 	}
-	for tool, p := range projections {
+	if rules == nil {
+		return nil, nil
+	}
+	projections := make(map[string]*ProjectionConfig, len(rules))
+	for tool, rule := range rules {
+		var p *ProjectionConfig
+		if err := rule.Decode(&p); err != nil {
+			return nil, fmt.Errorf("projection %s: %w", tool, err)
+		}
 		if p == nil {
+			projections[tool] = nil
 			continue
 		}
 		if err := ValidResponseFormat(p.Format); err != nil {
 			return nil, fmt.Errorf("projection %s: format: %w", tool, err)
 		}
+		projections[tool] = p
 	}
 	return projections, nil
 }

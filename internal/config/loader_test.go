@@ -337,6 +337,16 @@ func TestLoadProjectionFormat_rejectsMini(t *testing.T) {
 	}
 }
 
+func TestLoadProjection_rejectsUnknownOption(t *testing.T) {
+	dir := t.TempDir()
+	configtest.WriteServer(t, dir, config.ServerConfig{Name: "gh", Command: "gh-mcp"})
+	configtest.WriteRawProjections(t, dir, "gh", "list_issues:\n  include_only: [id]\n  passthrough: [cursor]\n")
+	sc, err := config.LoadServer(dir, "gh")
+	if err != nil || sc.ProjectionsErr == nil || !strings.Contains(sc.ProjectionsErr.Err.Error(), `"passthrough"`) {
+		t.Fatalf("LoadServer = %+v, %v; want a projection error naming the passthrough option", sc.ProjectionsErr, err)
+	}
+}
+
 func TestValidResponseFormat(t *testing.T) {
 	for _, format := range []config.ResponseFormat{"", "json", "toon"} {
 		if err := config.ValidResponseFormat(format); err != nil {

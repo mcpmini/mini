@@ -106,11 +106,10 @@ func miniOutputMetaSchema() map[string]any {
 	return map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"msg":         map[string]any{"type": "string"},
-			"file":        map[string]any{"type": "string"},
-			"excluded":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-			"truncated":   truncatedItemsSchema(),
-			"passthrough": map[string]any{"type": "object"},
+			"msg":       map[string]any{"type": "string"},
+			"file":      map[string]any{"type": "string"},
+			"excluded":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+			"truncated": truncatedItemsSchema(),
 		},
 	}
 }

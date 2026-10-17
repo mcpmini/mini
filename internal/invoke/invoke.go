@@ -99,13 +99,12 @@ func BuildEnvelope(p BuildEnvelopeParams) (*response.Envelope, response.CallStat
 
 func buildResponseParams(p BuildEnvelopeParams, result projection.Result) response.BuildParams {
 	return response.BuildParams{
-		Server:      p.Server,
-		Tool:        p.Tool,
-		Raw:         p.Raw,
-		Summary:     result.Summary,
-		Excluded:    result.ExcludedKeys,
-		Truncated:   result.Truncated,
-		Passthrough: result.Passthrough,
+		Server:    p.Server,
+		Tool:      p.Tool,
+		Raw:       p.Raw,
+		Summary:   result.Summary,
+		Excluded:  result.ExcludedKeys,
+		Truncated: result.Truncated,
 	}
 }
 

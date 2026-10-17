@@ -581,14 +581,13 @@ func toolCallText(t *testing.T, raw json.RawMessage) string {
 }
 
 type envelope struct {
-	Data        any            `json:"data"`
-	Excluded    []string       `json:"excluded"`
-	Truncated   []truncation   `json:"truncated"`
-	File        *string        `json:"file"`
-	Passthrough map[string]any `json:"passthrough"`
-	Error       string         `json:"error"`
-	Message     string         `json:"message"`
-	Retryable   bool           `json:"retryable"`
+	Data      any          `json:"data"`
+	Excluded  []string     `json:"excluded"`
+	Truncated []truncation `json:"truncated"`
+	File      *string      `json:"file"`
+	Error     string       `json:"error"`
+	Message   string       `json:"message"`
+	Retryable bool         `json:"retryable"`
 }
 
 type truncation struct {

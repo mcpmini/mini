@@ -17,13 +17,12 @@ func NewBuilder(store *Store) *Builder {
 
 // BuildParams holds inputs for Builder.Build.
 type BuildParams struct {
-	Server      string
-	Tool        string
-	Raw         json.RawMessage
-	Summary     any
-	Excluded    []string
-	Truncated   []projection.Truncation
-	Passthrough map[string]any
+	Server    string
+	Tool      string
+	Raw       json.RawMessage
+	Summary   any
+	Excluded  []string
+	Truncated []projection.Truncation
 }
 
 func (b *Builder) Build(p BuildParams) (*Envelope, CallStats, error) {
@@ -41,10 +40,9 @@ func (b *Builder) Build(p BuildParams) (*Envelope, CallStats, error) {
 
 func newEnvelope(p BuildParams) *Envelope {
 	return &Envelope{
-		Data:        p.Summary,
-		Excluded:    nilIfEmpty(p.Excluded),
-		Truncated:   nilIfEmptyTruncated(p.Truncated),
-		Passthrough: nilIfEmptyMap(p.Passthrough),
+		Data:      p.Summary,
+		Excluded:  nilIfEmpty(p.Excluded),
+		Truncated: nilIfEmptyTruncated(p.Truncated),
 	}
 }
 
@@ -71,13 +69,6 @@ func nilIfEmpty(s []string) []string {
 		return nil
 	}
 	return s
-}
-
-func nilIfEmptyMap(m map[string]any) map[string]any {
-	if len(m) == 0 {
-		return nil
-	}
-	return m
 }
 
 func nilIfEmptyTruncated(t []projection.Truncation) []projection.Truncation {
