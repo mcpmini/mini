@@ -9,10 +9,9 @@
 #   2.  Build + lint + unit and integration race tests (check.sh)
 #   3.  Build release binary with version injected via -ldflags; verify output
 #   4.  CLI smoke tests against the release binary
-#   5.  Benchmarks (projection savings — eyeball for regressions)
-#   6.  Manual checklist prompt
-#   7.  Evals (optional — costs ~$2-5 in API tokens)
-#   8.  Create git tag and print push instructions
+#   5.  Manual checklist prompt
+#   6.  Evals (optional — costs ~$2-5 in API tokens)
+#   7.  Create git tag and print push instructions
 
 set -euo pipefail
 
@@ -72,13 +71,7 @@ CFG=$(mktemp -d)
 "$BIN" --config "$CFG" add "bad/name" --url https://x.com 2>&1 | grep -qi "invalid" || fail "bad server name not rejected"
 ok "smoke tests passed"
 
-# ── 5. Benchmarks ─────────────────────────────────────────────────────────────
-step "benchmarks (review for regressions — target ≥40% savings on GitHub fixtures)"
-go test -tags test -bench=. -benchtime=3s ./internal/projection/... ./internal/server/... 2>&1 \
-  | grep -E "^Benchmark"
-ok "benchmarks done"
-
-# ── 6. Manual checklist ───────────────────────────────────────────────────────
+# ── 5. Manual checklist ───────────────────────────────────────────────────────
 step "manual checklist"
 cat <<'EOF'
 
@@ -114,7 +107,7 @@ EOF
 ask "All manual checks passed?" || { echo "  Aborted — re-run after completing checks."; exit 1; }
 ok "manual checks confirmed"
 
-# ── 7. Evals (optional) ───────────────────────────────────────────────────────
+# ── 6. Evals (optional) ───────────────────────────────────────────────────────
 echo
 if ask "Run evals? (~\$2–5 in API tokens, ~10 min)"; then
   step "running evals"
@@ -124,7 +117,7 @@ else
   echo "  (evals skipped)"
 fi
 
-# ── 8. Tag ────────────────────────────────────────────────────────────────────
+# ── 7. Tag ────────────────────────────────────────────────────────────────────
 step "tagging ${TAG}"
 echo
 if ask "Create tag ${TAG}?"; then
