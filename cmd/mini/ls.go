@@ -24,6 +24,10 @@ func listServerTools(configDir, serverName string, out io.Writer) error {
 		return err
 	}
 	defer cleanup()
+	if len(tools) == 0 {
+		_, err = fmt.Fprintln(out, "No tools available.")
+		return err
+	}
 	if err = printToolTable(out, tools); err != nil {
 		return err
 	}

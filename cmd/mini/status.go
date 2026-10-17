@@ -23,7 +23,7 @@ func newLsCmd(opts *rootOptions) *cobra.Command {
 		Use:     "ls [SERVER] [TOOL]",
 		Aliases: []string{"list"},
 		Short:   "List servers, server tools, or tool detail",
-		Long:    "List configured servers, tool names and server-provided MCP annotation hints for a server, or full description and arguments for a tool.",
+		Long:    "List configured servers. With SERVER, list tools and MCP annotation hints. With SERVER and TOOL, show the description and arguments.",
 		Example: "  mini ls\n  mini ls notion\n  mini ls notion notion-search",
 		Args:    usageArgs(cobra.MaximumNArgs(2)),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -62,10 +62,14 @@ func listAllServers(configDir string, out io.Writer) error {
 	}
 	warnServerProblems(os.Stderr, servers)
 	if noServers(servers) {
-		_, err := fmt.Fprintln(out, noServersConfigured)
+		_, err = fmt.Fprintln(out, noServersConfigured)
 		return err
 	}
-	return printServerTable(out, servers.Loaded)
+	if err = printServerTable(out, servers.Loaded); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(out, "\nTools: mini ls <server>\nHealth: mini status")
+	return err
 }
 
 func noServers(servers config.Servers) bool {
@@ -74,7 +78,7 @@ func noServers(servers config.Servers) bool {
 
 func printServerTable(out io.Writer, servers []config.ServerConfig) error {
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintln(w, "NAME\tTRANSPORT\tCOMMAND / URL\tENABLED"); err != nil {
+	if _, err := fmt.Fprintln(w, "NAME\tTRANSPORT\tENABLED\tCOMMAND / URL"); err != nil {
 		return fmt.Errorf("write server table header: %w", err)
 	}
 	for _, sc := range servers {
@@ -83,8 +87,8 @@ func printServerTable(out io.Writer, servers []config.ServerConfig) error {
 			"%s\t%s\t%s\t%s\n",
 			sc.Name,
 			serverTransport(sc),
-			serverTarget(sc),
 			enabledStr(sc),
+			serverTarget(sc),
 		); err != nil {
 			return fmt.Errorf("write server table row: %w", err)
 		}

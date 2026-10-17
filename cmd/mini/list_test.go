@@ -41,6 +41,11 @@ func TestRunList(t *testing.T) {
 		if !strings.Contains(got, "npx") {
 			t.Errorf("output missing command 'npx': %q", got)
 		}
+		for _, hint := range []string{"Tools: mini ls <server>", "Health: mini status"} {
+			if !strings.Contains(got, hint) {
+				t.Errorf("missing next-step hint %q: %q", hint, got)
+			}
+		}
 	})
 
 	t.Run("http server shows url and transport", func(t *testing.T) {
@@ -71,10 +76,22 @@ func TestRunList(t *testing.T) {
 		var out bytes.Buffer
 		runList(dir, nil, &out) //nolint:errcheck
 		got := out.String()
-		for _, col := range []string{"NAME", "TRANSPORT", "COMMAND / URL", "ENABLED"} {
-			if !strings.Contains(got, col) {
-				t.Errorf("output missing header column %q: %q", col, got)
-			}
+		header := strings.SplitN(got, "\n", 2)[0]
+		if fields := strings.Join(strings.Fields(header), " "); fields != "NAME TRANSPORT ENABLED COMMAND / URL" {
+			t.Errorf("unexpected server columns: %q", header)
+		}
+	})
+
+	t.Run("server with no tools has a clear empty state", func(t *testing.T) {
+		srv := fakeUnauthenticatedMCPServer(t)
+		dir := t.TempDir()
+		configtest.WriteServer(t, dir, config.ServerConfig{Name: "empty", Transport: "http", URL: srv.URL})
+		var out bytes.Buffer
+		if err := runList(dir, []string{"empty"}, &out); err != nil {
+			t.Fatalf("runList: %v", err)
+		}
+		if got := out.String(); got != "No tools available.\n" {
+			t.Errorf("empty tool list = %q", got)
 		}
 	})
 
