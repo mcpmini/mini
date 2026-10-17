@@ -16,7 +16,6 @@ type AddedServer struct {
 	Config             config.ServerConfig
 	Path               string
 	DefaultProjections bool
-	DefaultPermissions bool
 }
 
 // AddServer never replaces a server file: a configured name returns ErrAlreadyConfigured, unless
@@ -106,11 +105,9 @@ func writeServer(configDir string, sc config.ServerConfig) (AddedServer, error) 
 }
 
 func withBundledDefaults(sc config.ServerConfig) (AddedServer, error) {
-	written, defaultPermissions := withBundledPermissions(sc)
-	written, defaultProjections, err := withBundledProjections(written)
+	written, defaultProjections, err := withBundledProjections(sc)
 	return AddedServer{
 		Config:             written,
-		DefaultPermissions: defaultPermissions,
 		DefaultProjections: defaultProjections,
 	}, err
 }

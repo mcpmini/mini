@@ -1,9 +1,5 @@
 # Philosophy: docs/default-config-philosophy.md
-# String limits follow the doc: 1500 for list bodies, 500 for commit messages,
-# 8000 for detail views. The bar for exclusion is high — keep the field if unsure.
-
 list_pull_requests:
-  exclude: [avatar_url]
   string_limits:
     body: 1500
 
@@ -11,75 +7,33 @@ list_issues:
   string_limits:
     body: 1500
 
-# Detail tools: generous limits. Agent may need to read and reference the full body.
 issue_read:
-  exclude: [avatar_url]
+  exclude: [user.avatar_url]
   string_limits:
     body: 8000
 
 pull_request_read:
-  exclude: [avatar_url]
+  exclude: [user.avatar_url]
   string_limits:
     body: 8000
-
-get_issue:
-  exclude: [avatar_url]
-  string_limits:
-    body: 8000
-
-get_pull_request:
-  exclude: [avatar_url]
-  string_limits:
-    body: 8000
-
-list_pull_request_files:
-  array_limits:
-    default: 100
-  string_limits:
-    patch: 5000
 
 get_commit:
-  exclude: [avatar_url]
   string_limits:
     message: 2000
     patch: 3000
-  array_limits:
-    files: 50
 
 list_commits:
-  exclude: [avatar_url]
-  array_limits:
-    default: 30
   string_limits:
     message: 500
 
 search_code:
-  array_limits:
-    items: 20
-    text_matches: 3
   string_limits:
     fragment: 500
-  exclude: [score, gravatar_id, archive_url, assignees_url, blobs_url, branches_url, collaborators_url, comments_url, commits_url, compare_url, contents_url, contributors_url, deployments_url, downloads_url, events_url, forks_url, git_commits_url, git_refs_url, git_tags_url, hooks_url, issue_comment_url, issue_events_url, issues_url, keys_url, labels_url, languages_url, merges_url, milestones_url, notifications_url, pulls_url, releases_url, stargazers_url, statuses_url, subscribers_url, subscription_url, tags_url, teams_url, trees_url]
 
 search_repositories:
-  array_limits:
-    items: 15
-    topics: 10
   string_limits:
     description: 400
-  exclude: [score, gravatar_id, archive_url, assignees_url, blobs_url, branches_url, collaborators_url, comments_url, commits_url, compare_url, contents_url, contributors_url, deployments_url, downloads_url, events_url, forks_url, git_commits_url, git_refs_url, git_tags_url, hooks_url, issue_comment_url, issue_events_url, issues_url, keys_url, labels_url, languages_url, merges_url, milestones_url, notifications_url, pulls_url, releases_url, stargazers_url, statuses_url, subscribers_url, subscription_url, tags_url, teams_url, trees_url]
 
 search_issues:
-  array_limits:
-    items: 20
-    labels: 5
   string_limits:
     body: 500
-  exclude: [score]
-
-get_file_contents:
-  exclude: [url, git_url, download_url, html_url, _links]
-
-list_repository_contents:
-  array_limits:
-    default: 200

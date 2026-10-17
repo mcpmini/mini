@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"testing"
 
@@ -118,4 +119,60 @@ func firstObject(t *testing.T, value any) map[string]any {
 		t.Fatalf("unexpected projected output type %T", value)
 	}
 	return nil
+}
+
+func TestPullRequestProjectionPreservesForkContext(t *testing.T) {
+	var value any
+	err := json.Unmarshal([]byte(`{
+		"number": 42, "body": "Review the fork's implementation",
+		"user": {"login": "contributor", "id": 7, "profile_url": "https://github.com/contributor", "avatar_url": "https://example.test/avatar"},
+		"head": {"ref": "feature", "sha": "abc123", "repo": {"full_name": "contributor/project", "description": "Experimental fork"}},
+		"base": {"ref": "main", "sha": "def456", "repo": {"full_name": "upstream/project", "description": "Upstream project"}}
+	}`), &value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule := loadBundledProjection(t, projectionFixtureCase{server: "github", tool: "pull_request_read"})
+	result := projection.Apply(value, rule, defaultProjectionDefaults())
+	want := firstObject(t, value)
+	delete(want["user"].(map[string]any), "avatar_url")
+	if !reflect.DeepEqual(result.Summary, want) {
+		t.Fatalf("fork context changed: got %#v, want %#v", result.Summary, want)
+	}
+	if !reflect.DeepEqual(result.ExcludedKeys, []string{".user.avatar_url"}) {
+		t.Fatalf("excluded paths = %v", result.ExcludedKeys)
+	}
+}
+
+func TestBundledProjectionsPreserveRequestedCollections(t *testing.T) {
+	for _, tc := range projectionFixtureCases {
+		t.Run(tc.server+"/"+tc.tool, func(t *testing.T) {
+			value := populatedProjectionCollections()
+			rule := loadBundledProjection(t, tc)
+			result := projection.Apply(value, rule, defaultProjectionDefaults())
+			if !reflect.DeepEqual(result.Summary, value) {
+				t.Fatalf(
+					"requested collection was trimmed: truncated=%v excluded=%v",
+					result.Truncated,
+					result.ExcludedKeys,
+				)
+			}
+		})
+	}
+	value := populatedProjectionCollections()
+	rule := loadBundledProjection(t, projectionFixtureCase{server: "linear", tool: "list_issues"})
+	if result := projection.Apply(value, rule, defaultProjectionDefaults()); !reflect.DeepEqual(result.Summary, value) {
+		t.Fatalf("Linear collection was trimmed: truncated=%v excluded=%v", result.Truncated, result.ExcludedKeys)
+	}
+}
+
+func populatedProjectionCollections() map[string]any {
+	values := make([]any, 60)
+	for i := range values {
+		values[i] = map[string]any{"id": i, "name": "useful context"}
+	}
+	return map[string]any{
+		"items": values, "files": values, "labels": values,
+		"topics": values, "text_matches": values,
+	}
 }
