@@ -23,6 +23,8 @@ func newLsCmd(opts *rootOptions) *cobra.Command {
 		Use:     "ls [SERVER] [TOOL]",
 		Aliases: []string{"list"},
 		Short:   "List servers, server tools, or tool detail",
+		Long:    "List configured servers, tool names and titles for a server, or full description and arguments for a tool.",
+		Example: "  mini ls\n  mini ls notion\n  mini ls notion notion-search",
 		Args:    usageArgs(cobra.MaximumNArgs(2)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runList(opts.configDir, args, cmd.OutOrStdout())

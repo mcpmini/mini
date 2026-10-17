@@ -12,6 +12,8 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/invoke"
@@ -24,7 +26,11 @@ func listServerTools(configDir, serverName string, out io.Writer) error {
 		return err
 	}
 	defer cleanup()
-	return printToolTable(out, tools)
+	if err = printToolTable(out, tools); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(out, "\nDetails: mini ls %s <tool>\n", serverName)
+	return err
 }
 
 type toolDetailParams struct {
@@ -86,14 +92,11 @@ func dialServer(configDir, serverName string) (transport.Connection, error) {
 
 func printToolTable(out io.Writer, tools []transport.ToolDefinition) error {
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintln(w, "TOOL\tDESCRIPTION"); err != nil {
+	if _, err := fmt.Fprintln(w, "TOOL\tTITLE"); err != nil {
 		return fmt.Errorf("write tool table header: %w", err)
 	}
 	for _, t := range tools {
-		args := parseArgDefs(t.InputSchema)
-		sig := formatSignature(t.Name, args)
-		desc := firstLine(t.Description)
-		if _, err := fmt.Fprintf(w, "%s\t%s\n", sig, desc); err != nil {
+		if _, err := fmt.Fprintf(w, "%s\t%s\n", t.Name, toolListTitle(t)); err != nil {
 			return fmt.Errorf("write tool table row: %w", err)
 		}
 	}
@@ -188,24 +191,18 @@ func requiredSet(names []string) map[string]bool {
 	return m
 }
 
-func formatSignature(toolName string, args []argDef) string {
-	if len(args) == 0 {
-		return toolName
+func toolListTitle(t transport.ToolDefinition) string {
+	var title string
+	if err := json.Unmarshal(t.Title, &title); err != nil {
+		title = ""
 	}
-	parts := make([]string, 0, len(args))
-	for _, a := range args {
-		if a.Required {
-			parts = append(parts, a.Name)
-		} else {
-			parts = append(parts, "["+a.Name+"]")
+	if title == "" {
+		var annotations struct {
+			Title string `json:"title"`
+		}
+		if err := json.Unmarshal(t.Annotations, &annotations); err == nil {
+			title = annotations.Title
 		}
 	}
-	return toolName + "(" + strings.Join(parts, ", ") + ")"
-}
-
-func firstLine(s string) string {
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		return s[:i]
-	}
-	return s
+	return ansi.Truncate(strings.Join(strings.Fields(title), " "), 60, "…")
 }

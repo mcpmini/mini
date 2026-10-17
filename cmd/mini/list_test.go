@@ -132,60 +132,54 @@ func TestParseArgDefs(t *testing.T) {
 	})
 }
 
-func TestFormatSignature(t *testing.T) {
-	t.Run("no args omits parens", func(t *testing.T) {
-		got := formatSignature("my_tool", nil)
-		if got != "my_tool" {
-			t.Errorf("got %q, want %q", got, "my_tool")
-		}
-	})
-
-	t.Run("required and optional args", func(t *testing.T) {
-		args := []argDef{
-			{Name: "channel", Required: true},
-			{Name: "text", Required: true},
-			{Name: "thread_ts", Required: false},
-		}
-		got := formatSignature("send", args)
-		want := "send(channel, text, [thread_ts])"
-		if got != want {
-			t.Errorf("got %q, want %q", got, want)
-		}
-	})
-}
-
 func TestPrintToolTable(t *testing.T) {
 	tools := []transport.ToolDefinition{
 		{
-			Name:        "send_message",
-			Description: "Send a message to a channel",
-			InputSchema: mustMarshal(t, map[string]any{
-				"type":       "object",
-				"properties": map[string]any{"channel": map[string]any{"type": "string"}},
-				"required":   []string{"channel"},
-			}),
+			Name: "notion-search", Title: json.RawMessage(`"Search Notion"`),
+			Description: strings.Repeat("Long description. ", 100),
+			InputSchema: json.RawMessage(`{"properties":{"query":{"type":"string"}}}`),
 		},
-		{
-			Name:        "list_channels",
-			Description: "List all channels",
-		},
+		{Name: "notion-fetch", Description: "Full description stays in the detail view"},
 	}
 	var out bytes.Buffer
 	if err := printToolTable(&out, tools); err != nil {
 		t.Fatalf("printToolTable: %v", err)
 	}
-	got := out.String()
-	if !strings.Contains(got, "TOOL") {
-		t.Errorf("missing TOOL header: %q", got)
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("want header and one row per tool, got %q", out.String())
 	}
-	if !strings.Contains(got, "send_message(channel)") {
-		t.Errorf("missing compact signature: %q", got)
+	for i, want := range []string{"TOOL TITLE", "notion-search Search Notion", "notion-fetch"} {
+		if got := strings.Join(strings.Fields(lines[i]), " "); got != want {
+			t.Errorf("row %d = %q, want %q", i, got, want)
+		}
 	}
-	if !strings.Contains(got, "list_channels") {
-		t.Errorf("missing tool with no args: %q", got)
-	}
-	if !strings.Contains(got, "Send a message") {
-		t.Errorf("missing description: %q", got)
+}
+
+func TestToolListTitle(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		raw         string
+		annotations string
+		want        string
+	}{
+		{name: "missing"},
+		{name: "null", raw: "null"},
+		{name: "invalid type", raw: `{}`},
+		{name: "annotation title", annotations: `{"title":"Search pages"}`, want: "Search pages"},
+		{name: "title takes precedence", raw: `"Search Notion"`, annotations: `{"title":"Search pages"}`, want: "Search Notion"},
+		{name: "invalid annotations", annotations: `{"title":{}}`},
+		{name: "whitespace", raw: `" Search\tNotion\n pages\r "`, want: "Search Notion pages"},
+		{name: "long unicode", raw: `"` + strings.Repeat("é", 80) + `"`, want: strings.Repeat("é", 59) + "…"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := toolListTitle(
+				transport.ToolDefinition{Title: json.RawMessage(tc.raw), Annotations: json.RawMessage(tc.annotations)},
+			)
+			if got != tc.want {
+				t.Errorf("title = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
