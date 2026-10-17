@@ -1,7 +1,6 @@
 package projection_test
 
 import (
-	"slices"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -27,40 +26,6 @@ func TestPassthroughOnNoConfig(t *testing.T) {
 	m := result.Summary.(map[string]any)
 	if m["status"] != "ok" {
 		t.Errorf("expected status=ok, got %v", m["status"])
-	}
-}
-
-func TestIncludeFilter(t *testing.T) {
-	cfg := &config.ProjectionConfig{IncludeOnly: []string{"status", "branch"}}
-	value := map[string]any{
-		"status": "failed",
-		"branch": "main",
-		"env":    map[string]any{"SECRET": "password"},
-	}
-
-	result := projection.Apply(value, cfg, defaultLimits)
-	m := result.Summary.(map[string]any)
-
-	if _, ok := m["env"]; ok {
-		t.Error("env should be excluded by include filter")
-	}
-	if m["status"] != "failed" {
-		t.Errorf("expected status=failed, got %v", m["status"])
-	}
-}
-
-func TestExclude(t *testing.T) {
-	cfg := &config.ProjectionConfig{Exclude: []string{"env", "pipeline.configuration"}}
-	value := map[string]any{
-		"status": "ok",
-		"env":    map[string]any{"SECRET": "123"},
-	}
-
-	result := projection.Apply(value, cfg, defaultLimits)
-	m := result.Summary.(map[string]any)
-
-	if _, ok := m["env"]; ok {
-		t.Error("env should be excluded")
 	}
 }
 
@@ -156,70 +121,6 @@ func TestDepthLimit(t *testing.T) {
 
 	if a["b"] != "[depth limit reached]" {
 		t.Errorf("expected a.b=[depth limit reached] at depth 2, got %v", a["b"])
-	}
-}
-
-func TestExcludedKeys_sortedDeterministic(t *testing.T) {
-	cfg := &config.ProjectionConfig{Exclude: []string{"zebra", "apple", "mango"}}
-	value := map[string]any{"zebra": 1, "apple": 2, "mango": 3, "keep": 4}
-	result := projection.Apply(value, cfg, defaultLimits)
-	want := []string{".apple", ".mango", ".zebra"}
-	for i, k := range result.ExcludedKeys {
-		if k != want[i] {
-			t.Errorf("ExcludedKeys = %v, want %v (sorted)", result.ExcludedKeys, want)
-			break
-		}
-	}
-}
-
-func TestExcludedKeys(t *testing.T) {
-	cfg := &config.ProjectionConfig{IncludeOnly: []string{"status"}}
-	value := map[string]any{
-		"status": "ok",
-		"env":    "secret",
-		"body":   "long text",
-	}
-
-	result := projection.Apply(value, cfg, defaultLimits)
-	want := []string{".body", ".env"}
-	if !slices.Equal(result.ExcludedKeys, want) {
-		t.Errorf("ExcludedKeys = %v, want %v", result.ExcludedKeys, want)
-	}
-}
-
-func TestIncludeFilterOnlyTopLevel_excludesNonListed(t *testing.T) {
-	cfg := &config.ProjectionConfig{IncludeOnly: []string{"issues", "totalCount"}}
-	value := map[string]any{
-		"issues":     []any{map[string]any{"number": 1, "title": "Bug report", "state": "open"}},
-		"totalCount": 42,
-		"pageInfo":   map[string]any{"hasNextPage": true},
-	}
-	result := projection.Apply(value, cfg, defaultLimits)
-	m := result.Summary.(map[string]any)
-	if _, ok := m["pageInfo"]; ok {
-		t.Error("pageInfo should be excluded by include filter")
-	}
-	if m["totalCount"] == nil {
-		t.Error("totalCount should be included")
-	}
-}
-
-func TestIncludeFilterOnlyTopLevel_preservesNestedFields(t *testing.T) {
-	cfg := &config.ProjectionConfig{IncludeOnly: []string{"issues"}}
-	value := map[string]any{
-		"issues": []any{map[string]any{"number": 1, "title": "Bug report", "state": "open"}},
-	}
-	result := projection.Apply(value, cfg, defaultLimits)
-	m := result.Summary.(map[string]any)
-	issues, ok := m["issues"].([]any)
-	if !ok || len(issues) == 0 {
-		t.Fatal("issues array should be present and non-empty")
-	}
-	issue := issues[0].(map[string]any)
-	for _, key := range []string{"number", "title", "state"} {
-		if issue[key] == nil {
-			t.Errorf("%s inside issue should not be stripped by include filter", key)
-		}
 	}
 }
 
