@@ -207,12 +207,12 @@ func TestProxy_Call_WithProjection_ElisionInlinesPlusFile(t *testing.T) {
 	}
 }
 
-func TestProxy_NestedExclusion_ReportsElidedPath(t *testing.T) {
+func TestProxy_NestedExclusion_ReportsExactLeafPath(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := fakeConn("list_prs")
 	conn.Responses["tools/call"] = json.RawMessage(
-		`{"content":[{"type":"text","text":"{\"items\":[{\"id\":1,\"body\":\"long body text here\"}]}"}]}`,
+		`{"content":[{"type":"text","text":"{\"item\":{\"id\":1,\"body\":\"long body text here\"}}"}]}`,
 	)
 	addProxyConn(t, srv, "gh", conn)
 
@@ -220,7 +220,7 @@ func TestProxy_NestedExclusion_ReportsElidedPath(t *testing.T) {
 		"action":     "set_projection",
 		"server":     "gh",
 		"tool":       "list_prs",
-		"projection": map[string]any{"exclude": []string{"body"}},
+		"projection": map[string]any{"exclude": []string{"item.body"}},
 	}))
 
 	resp := serveProxy(t, srv, callTool("gh__list_prs", map[string]any{}))
@@ -231,8 +231,11 @@ func TestProxy_NestedExclusion_ReportsElidedPath(t *testing.T) {
 	if !env.HasMini {
 		t.Fatal("expected __mini envelope for nested exclusion")
 	}
-	if !strings.Contains(text, ".items[].body") {
-		t.Errorf("expected excluded path .items[].body in __mini envelope, got: %s", text)
+	if !strings.Contains(text, ".item.body") {
+		t.Errorf("expected excluded path .item.body in __mini envelope, got: %s", text)
+	}
+	if item, ok := env.Data["item"].(map[string]any); !ok || item["id"] != float64(1) || item["body"] != nil {
+		t.Errorf("expected item identity without body, got: %v", env.Data)
 	}
 	if env.File == "" {
 		t.Errorf("expected __mini.file for nested exclusion (raw file must be written), got: %s", text)

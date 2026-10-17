@@ -75,7 +75,7 @@ func project(value any, ctx projCtx) any {
 func projectMap(m map[string]any, ctx projCtx) map[string]any {
 	out := make(map[string]any)
 	for k, v := range m {
-		if shouldSkipField(k, ctx.cfg, ctx.depth) {
+		if shouldSkipField(k, ctx) {
 			*ctx.excluded = append(*ctx.excluded, jq.FormatPath(append(slices.Clone(ctx.path), k)))
 			continue
 		}
@@ -84,11 +84,12 @@ func projectMap(m map[string]any, ctx projCtx) map[string]any {
 	return out
 }
 
-func shouldSkipField(key string, cfg *effectiveConfig, depth int) bool {
-	if isExcluded(key, cfg.exclude) {
+func shouldSkipField(key string, ctx projCtx) bool {
+	cfg := ctx.cfg
+	if isExcluded(append(slices.Clone(ctx.path), key), cfg.exclude) {
 		return true
 	}
-	return depth == 0 && len(cfg.includeOnly) > 0 && !isIncluded(key, cfg.includeOnly)
+	return ctx.depth == 0 && len(cfg.includeOnly) > 0 && !isIncluded(key, cfg.includeOnly)
 }
 
 func projectMapValue(value any, ctx projCtx, fieldName string) any {
@@ -152,11 +153,9 @@ func projectString(s string, ctx projCtx, fieldName string) string {
 
 func isIncluded(key string, includeOnly []string) bool { return slices.Contains(includeOnly, key) }
 
-func isExcluded(key string, exclude []string) bool {
-	for _, k := range exclude {
-		top, _, _ := strings.Cut(k, ".")
-		top = strings.TrimSuffix(top, "[]")
-		if top == key {
+func isExcluded(path []string, exclude []string) bool {
+	for _, rule := range exclude {
+		if config.ValidExcludePath(rule) && slices.Equal(path, strings.Split(rule, ".")) {
 			return true
 		}
 	}

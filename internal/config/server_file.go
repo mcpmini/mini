@@ -97,8 +97,8 @@ func decodeProjections(node *yaml.Node) (map[string]*ProjectionConfig, error) {
 			projections[tool] = nil
 			continue
 		}
-		if err := ValidResponseFormat(p.Format); err != nil {
-			return nil, fmt.Errorf("projection %s: format: %w", tool, err)
+		if err := ValidateProjection(p); err != nil {
+			return nil, fmt.Errorf("projection %s: %w", tool, err)
 		}
 		projections[tool] = p
 	}
