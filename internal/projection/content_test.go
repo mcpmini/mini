@@ -377,21 +377,54 @@ func TestStripMarkupDispatch(t *testing.T) {
 	}
 }
 
-func TestProjectionStripsHTMLInSummary(t *testing.T) {
+func TestStripMarkup(t *testing.T) {
+	cfg := &config.ProjectionConfig{StripMarkup: true}
 	value := map[string]any{
-		"title": "My Page",
-		"body":  "<p>Hello <b>world</b></p>",
+		"body": "<p>Hello <strong>world</strong></p>",
 	}
 
-	cfg := &config.ProjectionConfig{StripMarkup: true}
 	result := projection.Apply(value, cfg, defaultLimits)
 	m := result.Summary.(map[string]any)
 
 	body := m["body"].(string)
-	if strings.Contains(body, "<p>") || strings.Contains(body, "<b>") {
-		t.Errorf("HTML should be stripped from summary, got: %s", body)
+	if body == "<p>Hello <strong>world</strong></p>" {
+		t.Error("strip_markup should remove HTML tags")
 	}
-	if !strings.Contains(body, "Hello") || !strings.Contains(body, "world") {
-		t.Errorf("text content should be preserved, got: %s", body)
+	if body != "Hello world" {
+		t.Errorf("unexpected stripped body: %q", body)
+	}
+}
+
+func autoStripResult(t *testing.T) (m map[string]any, longHTML, shortHTML string) {
+	t.Helper()
+	longHTML = "<p>" + strings.Repeat("word ", 120) + "</p>"
+	shortHTML = "<p>Hello <strong>world</strong></p>"
+	value := map[string]any{
+		"body":        longHTML,
+		"description": longHTML,
+		"other":       longHTML,
+		"body_short":  shortHTML,
+	}
+	m = projection.Apply(value, nil, defaultLimits).Summary.(map[string]any)
+	return
+}
+
+func TestAutoStripContentFields_longContentFieldsStripped(t *testing.T) {
+	m, longHTML, _ := autoStripResult(t)
+	if m["body"] == longHTML {
+		t.Error("body (long HTML) should be auto-stripped")
+	}
+	if m["description"] == longHTML {
+		t.Error("description (long HTML) should be auto-stripped")
+	}
+}
+
+func TestAutoStripContentFields_shortOrNonContentFieldsUnchanged(t *testing.T) {
+	m, longHTML, shortHTML := autoStripResult(t)
+	if m["other"] != longHTML {
+		t.Errorf("other should not be auto-stripped, got %q", m["other"])
+	}
+	if m["body_short"] != shortHTML {
+		t.Errorf("body_short (< threshold) should not be stripped, got %q", m["body_short"])
 	}
 }

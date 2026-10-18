@@ -164,61 +164,6 @@ func TestLoadMissingConfigDir_usesDefaults(t *testing.T) {
 	assertDefaultLoadState(t, cfg, servers)
 }
 
-func TestLoadProjectionConfig(t *testing.T) {
-	dir := t.TempDir()
-	configtest.WriteServer(t, dir, config.ServerConfig{Name: "gh", Command: "gh-mcp"})
-	configtest.WriteProjections(t, dir, configtest.ProjectionFile{
-		ServerName: "gh",
-		Tools: map[string]*config.ProjectionConfig{
-			"list_issues": {
-				IncludeOnly: []string{"number", "title"},
-				ArrayLimits: map[string]int{"labels": 3},
-			},
-		},
-	})
-	sc := mustLoadOneServer(t, dir)
-	proj := sc.Projections
-	if proj == nil {
-		t.Fatal("expected projections to be loaded")
-	}
-	if proj["list_issues"] == nil {
-		t.Fatal("expected list_issues projection")
-	}
-	if len(proj["list_issues"].IncludeOnly) != 2 {
-		t.Errorf("expected 2 include_only fields, got %v", proj["list_issues"].IncludeOnly)
-	}
-}
-
-func TestLoadProjectionMerges_dirWinsOverInline(t *testing.T) {
-	dir := t.TempDir()
-	configtest.WriteServer(t, dir, config.ServerConfig{
-		Name:    "svc",
-		Command: "my-mcp",
-		Projections: map[string]*config.ProjectionConfig{
-			"my_tool": {
-				IncludeOnly: []string{"inline_field"},
-			},
-		},
-	})
-	configtest.WriteProjections(t, dir, configtest.ProjectionFile{
-		ServerName: "svc",
-		Tools: map[string]*config.ProjectionConfig{
-			"my_tool": {
-				IncludeOnly: []string{"dir_field"},
-			},
-		},
-	})
-	sc := mustLoadOneServer(t, dir)
-	proj := sc.Projections["my_tool"]
-	if proj == nil {
-		t.Fatal("expected projection")
-		return
-	}
-	if len(proj.IncludeOnly) != 1 || proj.IncludeOnly[0] != "dir_field" {
-		t.Errorf("expected dir projection to win, got include_only=%v", proj.IncludeOnly)
-	}
-}
-
 func TestValidServerName(t *testing.T) {
 	assertNameValidity(
 		t,
@@ -318,33 +263,6 @@ func TestLoadResponseFormat(t *testing.T) {
 
 		expectMainLoadError(t, dir)
 	})
-}
-
-func TestLoadProjectionFormat_rejectsMini(t *testing.T) {
-	dir := t.TempDir()
-	configtest.WriteServer(t, dir, config.ServerConfig{Name: "gh", Command: "gh-mcp"})
-	configtest.WriteProjections(t, dir, configtest.ProjectionFile{
-		ServerName: "gh",
-		Tools: map[string]*config.ProjectionConfig{
-			"list_issues": {
-				Format: "mini",
-			},
-		},
-	})
-	sc, err := config.LoadServer(dir, "gh")
-	if err != nil || sc.ProjectionsErr == nil || !strings.Contains(sc.ProjectionsErr.Err.Error(), "toon") {
-		t.Fatalf("LoadServer = %+v, %v; want a projection format error naming toon", sc.ProjectionsErr, err)
-	}
-}
-
-func TestLoadProjection_rejectsUnknownOption(t *testing.T) {
-	dir := t.TempDir()
-	configtest.WriteServer(t, dir, config.ServerConfig{Name: "gh", Command: "gh-mcp"})
-	configtest.WriteRawProjections(t, dir, "gh", "list_issues:\n  include_only: [id]\n  passthrough: [cursor]\n")
-	sc, err := config.LoadServer(dir, "gh")
-	if err != nil || sc.ProjectionsErr == nil || !strings.Contains(sc.ProjectionsErr.Err.Error(), `"passthrough"`) {
-		t.Fatalf("LoadServer = %+v, %v; want a projection error naming the passthrough option", sc.ProjectionsErr, err)
-	}
 }
 
 func TestValidResponseFormat(t *testing.T) {

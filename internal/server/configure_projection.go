@@ -71,10 +71,8 @@ func (s *Server) setProjection(session *Session, p configureParams) (any, error)
 	if err := validateProjectionTarget(p); err != nil {
 		return nil, err
 	}
-	if p.Projection != nil {
-		if err := config.ValidResponseFormat(p.Projection.Format); err != nil {
-			return nil, err
-		}
+	if err := config.ValidateProjection(p.Projection); err != nil {
+		return nil, err
 	}
 	visibleTool := p.Tool
 	p.Tool, _ = s.upstreamToolName(p.ServerName, p.Tool)
