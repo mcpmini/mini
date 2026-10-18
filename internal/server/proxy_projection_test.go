@@ -433,3 +433,37 @@ func TestProxy_ToonFormat_PerToolOverrideOnlyAffectsThatTool(t *testing.T) {
 		t.Errorf("other tool must stay JSON, got %q", jsonText)
 	}
 }
+
+func TestProxy_ArrayItemExclusion_TrimsEachEntryAndKeepsRecovery(t *testing.T) {
+	srv := newTestServer(t, server.Params{Config: config.DefaultConfig()})
+	defer srv.Close()
+	conn := fakeConn("list_commits")
+	conn.Responses["tools/call"] = json.RawMessage(
+		`{"content":[{"type":"text","text":"[{\"sha\":\"a\",\"author\":{\"login\":\"x\",\"avatar_url\":\"u1\"}},{\"sha\":\"b\",\"author\":{\"login\":\"y\",\"avatar_url\":\"u2\"}}]"}]}`,
+	)
+	addProxyConn(t, srv, "svc", conn)
+	setProxyExclude(t, srv, "list_commits", map[string]any{"exclude": []string{"[].author.avatar_url"}})
+
+	texts := contentTexts(proxyResultOf(t, serveProxy(t, srv, callTool("svc__list_commits", map[string]any{}))))
+	if len(texts) != 2 || texts[0] != `[{"author":{"login":"x"},"sha":"a"},{"author":{"login":"y"},"sha":"b"}]` {
+		t.Fatalf("want trimmed entries plus a notice block, got %q", texts)
+	}
+	var notice struct {
+		Mini struct {
+			File     string   `json:"file"`
+			Excluded []string `json:"excluded"`
+		} `json:"__mini"`
+	}
+	if err := json.Unmarshal([]byte(texts[1]), &notice); err != nil {
+		t.Fatalf("notice block is not JSON: %q", texts[1])
+	}
+	const path = ".content[0].text | fromjson | .[].author.avatar_url"
+	if len(notice.Mini.Excluded) != 1 || notice.Mini.Excluded[0] != path {
+		t.Fatalf("excluded = %q, want [%q]", notice.Mini.Excluded, path)
+	}
+	read := callTool("read", map[string]any{"file": notice.Mini.File, "filter": path})
+	if recovered := toolResultText(t, serveProxy(t, srv, read)); !strings.Contains(recovered, "u1") ||
+		!strings.Contains(recovered, "u2") {
+		t.Errorf("read(%q) = %q, want both original avatar URLs", path, recovered)
+	}
+}

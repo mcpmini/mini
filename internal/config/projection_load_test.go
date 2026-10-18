@@ -1,18 +1,20 @@
 package config_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestLoadServerRejectsUnsupportedExcludePaths(t *testing.T) {
 	paths := []string{
 		"",
 		"items[*].desc",
-		"items[].desc",
+		"items[]",
 		"items[0].desc",
 		".description",
 		"head.",
@@ -49,25 +51,49 @@ func TestLoadServerRejectsUnsupportedExcludePaths(t *testing.T) {
 
 func TestLoadServerAcceptsRootRelativeExcludePaths(t *testing.T) {
 	dir := t.TempDir()
+	exclude := []string{
+		"description",
+		"head.repo.description",
+		"items",
+		"data.items",
+		"0.name",
+		"_meta.field-1",
+		"[].author.avatar_url",
+		"items[].author.avatar_url",
+		"groups[].members[].avatar_url",
+	}
 	configtest.WriteServer(t, dir, config.ServerConfig{
 		Name: "svc", Command: "echo", Projections: map[string]*config.ProjectionConfig{
 			"nil":   nil,
 			"empty": {},
-			"paths": {
-				Exclude: []string{
-					"description",
-					"head.repo.description",
-					"items",
-					"data.items",
-					"0.name",
-					"_meta.field-1",
-				},
-			},
+			"paths": {Exclude: exclude},
 		},
 	})
 	sc, err := config.LoadServer(dir, "svc")
 	if err != nil || sc.ProjectionsErr != nil || len(sc.Projections) != 3 {
 		t.Fatalf("LoadServer = %+v, %v; want all supported projections", sc, err)
+	}
+	if got := sc.Projections["paths"].Exclude; !slices.Equal(got, exclude) {
+		t.Errorf("exclude = %q, want %q after a write and reload", got, exclude)
+	}
+}
+
+func TestLoadServerAcceptsQuotedArrayExcludePathsAsDocumented(t *testing.T) {
+	dir := t.TempDir()
+	testutil.WriteFileBytes(t, config.ServerPath(dir, "gh"), []byte(`command: gh-mcp
+projections:
+  list_commits:
+    exclude:
+      - "[].author.avatar_url"
+      - "[].committer.avatar_url"
+`))
+	sc, err := config.LoadServer(dir, "gh")
+	if err != nil || sc.ProjectionsErr != nil {
+		t.Fatalf("LoadServer = %+v, %v; want the documented quoted form to load", sc, err)
+	}
+	want := []string{"[].author.avatar_url", "[].committer.avatar_url"}
+	if got := sc.Projections["list_commits"].Exclude; !slices.Equal(got, want) {
+		t.Errorf("exclude = %q, want %q", got, want)
 	}
 }
 
