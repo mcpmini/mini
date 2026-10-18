@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"strconv"
 	"text/tabwriter"
 	"time"
@@ -23,6 +22,8 @@ func newLsCmd(opts *rootOptions) *cobra.Command {
 		Use:     "ls [SERVER] [TOOL]",
 		Aliases: []string{"list"},
 		Short:   "List servers, server tools, or tool detail",
+		Long:    "List configured servers and check their connections. With SERVER, list tools and MCP annotation hints. With SERVER and TOOL, show the description and arguments.",
+		Example: "  mini ls\n  mini ls notion\n  mini ls notion notion-search",
 		Args:    usageArgs(cobra.MaximumNArgs(2)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runList(opts.configDir, args, cmd.OutOrStdout())
@@ -53,44 +54,8 @@ func runList(configDir string, args []string, out io.Writer) error {
 	}
 }
 
-func listAllServers(configDir string, out io.Writer) error {
-	_, servers, err := loadConfig(configDir)
-	if err != nil {
-		return err
-	}
-	warnServerProblems(os.Stderr, servers)
-	if noServers(servers) {
-		_, err := fmt.Fprintln(out, noServersConfigured)
-		return err
-	}
-	return printServerTable(out, servers.Loaded)
-}
-
 func noServers(servers config.Servers) bool {
 	return len(servers.Loaded) == 0 && len(servers.Broken) == 0
-}
-
-func printServerTable(out io.Writer, servers []config.ServerConfig) error {
-	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintln(w, "NAME\tTRANSPORT\tCOMMAND / URL\tENABLED"); err != nil {
-		return fmt.Errorf("write server table header: %w", err)
-	}
-	for _, sc := range servers {
-		if _, err := fmt.Fprintf(
-			w,
-			"%s\t%s\t%s\t%s\n",
-			sc.Name,
-			serverTransport(sc),
-			serverTarget(sc),
-			enabledStr(sc),
-		); err != nil {
-			return fmt.Errorf("write server table row: %w", err)
-		}
-	}
-	if err := w.Flush(); err != nil {
-		return fmt.Errorf("flush server table: %w", err)
-	}
-	return nil
 }
 
 func serverTransport(sc config.ServerConfig) string {
@@ -105,13 +70,6 @@ func serverTarget(sc config.ServerConfig) string {
 		return sc.URL
 	}
 	return sc.Command
-}
-
-func enabledStr(sc config.ServerConfig) string {
-	if sc.IsEnabled() {
-		return "yes"
-	}
-	return "no"
 }
 
 func runStatus(configDir string, out io.Writer) error {

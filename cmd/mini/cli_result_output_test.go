@@ -56,7 +56,7 @@ func TestRunListReturnsNoServersWriteError(t *testing.T) {
 
 func TestRunListReturnsServerTableFlushError(t *testing.T) {
 	dir := t.TempDir()
-	configtest.WriteServer(t, dir, config.ServerConfig{Name: "server", Command: "cmd"})
+	configtest.WriteServer(t, dir, config.ServerConfig{Name: "server", Command: "cmd", Enabled: new(false)})
 	err := runList(dir, nil, &resultOutputWriter{err: errResultOutput})
 	if !errors.Is(err, errResultOutput) {
 		t.Fatalf("runList error = %v, want server table writer error", err)

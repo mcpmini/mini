@@ -304,7 +304,7 @@ mini connect [--http ADDR] [--standalone] [--tool-mode proxy|compact]   Connect 
 mini daemon                               Run as a shared background daemon
 mini daemon status                        Check whether the daemon is running
 
-mini ls                                   List configured servers
+mini ls                                   List servers and check connections
 mini add NAME (--url URL | -- CMD [ARGS...])  Add a server
 mini rm NAME                              Remove a server
 mini status                               Server health and tool counts
