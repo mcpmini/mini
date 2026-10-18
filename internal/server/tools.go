@@ -64,7 +64,7 @@ func configureSchema() map[string]any {
 			"tool": prop("string", "Tool name (for get_projection, set_projection)"),
 			"projection": map[string]any{
 				"type":        "object",
-				"description": "ProjectionConfig: {include_only, exclude, string_limits, array_limits, depth_limit, strip_markup, format (json|toon), alias}. Exclude paths are root-relative, dot-separated object fields (ASCII letters, digits, underscores, hyphens); arrays can be removed whole but not traversed.",
+				"description": "ProjectionConfig: {include_only, exclude, string_limits, array_limits, depth_limit, strip_markup, format (json|toon), alias}",
 			},
 			"session_only": prop(
 				"boolean",
@@ -104,7 +104,7 @@ func miniConfigSchema() map[string]any {
 			"tool": prop("string", "Tool name (for get_projection, set_projection)"),
 			"projection": map[string]any{
 				"type":        "object",
-				"description": "ProjectionConfig: {include_only, exclude, string_limits, array_limits, depth_limit, strip_markup, format (json|toon), alias}. Exclude paths are root-relative, dot-separated object fields (ASCII letters, digits, underscores, hyphens); arrays can be removed whole but not traversed.",
+				"description": "ProjectionConfig: {include_only, exclude, string_limits, array_limits, depth_limit, strip_markup, format (json|toon), alias}",
 			},
 			"session_only": prop(
 				"boolean",
