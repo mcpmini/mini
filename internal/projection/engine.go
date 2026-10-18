@@ -85,11 +85,10 @@ func projectMap(m map[string]any, ctx projCtx) map[string]any {
 }
 
 func shouldSkipField(key string, ctx projCtx) bool {
-	cfg := ctx.cfg
-	if isExcluded(key, ctx.path, cfg.exclude) {
+	if isExcluded(key, ctx.path, ctx.cfg.exclude) {
 		return true
 	}
-	return ctx.depth == 0 && len(cfg.includeOnly) > 0 && !isIncluded(key, cfg.includeOnly)
+	return ctx.depth == 0 && len(ctx.cfg.includeOnly) > 0 && !isIncluded(key, ctx.cfg.includeOnly)
 }
 
 func projectMapValue(value any, ctx projCtx, fieldName string) any {

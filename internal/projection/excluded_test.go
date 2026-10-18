@@ -118,10 +118,10 @@ func TestExcludeRootRelativeObjectPaths(t *testing.T) {
 			removed: []string{`.["0"].description`},
 		},
 		{
-			name:    "invalid typed rules cannot delete ancestors",
+			name:    "invalid typed rules cannot traverse arrays",
 			input:   `{"items":[{"description":"keep"}],"head":{"description":"keep"}}`,
 			want:    `{"items":[{"description":"keep"}],"head":{"description":"keep"}}`,
-			exclude: []string{"items[].description", "items[*].description", "head.", "head..description"},
+			exclude: []string{"items.[0].description", "items[].description", "head.", "head..description"},
 		},
 		{name: "nil exclusions", input: `{"description":"keep"}`, want: `{"description":"keep"}`},
 		{
@@ -179,60 +179,5 @@ func TestExcludedKeys(t *testing.T) {
 	want := []string{".body", ".env"}
 	if !slices.Equal(result.ExcludedKeys, want) {
 		t.Errorf("ExcludedKeys = %v, want %v", result.ExcludedKeys, want)
-	}
-}
-
-func TestIncludeFilter(t *testing.T) {
-	cfg := &config.ProjectionConfig{IncludeOnly: []string{"status", "branch"}}
-	value := map[string]any{
-		"status": "failed",
-		"branch": "main",
-		"env":    map[string]any{"SECRET": "password"},
-	}
-
-	result := Apply(value, cfg, &Defaults{})
-	m := result.Summary.(map[string]any)
-
-	if _, ok := m["env"]; ok {
-		t.Error("env should be excluded by include filter")
-	}
-	if m["status"] != "failed" {
-		t.Errorf("expected status=failed, got %v", m["status"])
-	}
-}
-
-func TestIncludeFilterOnlyTopLevel_excludesNonListed(t *testing.T) {
-	cfg := &config.ProjectionConfig{IncludeOnly: []string{"issues", "totalCount"}}
-	value := map[string]any{
-		"issues":     []any{map[string]any{"number": 1, "title": "Bug report", "state": "open"}},
-		"totalCount": 42,
-		"pageInfo":   map[string]any{"hasNextPage": true},
-	}
-	result := Apply(value, cfg, &Defaults{})
-	m := result.Summary.(map[string]any)
-	if _, ok := m["pageInfo"]; ok {
-		t.Error("pageInfo should be excluded by include filter")
-	}
-	if m["totalCount"] == nil {
-		t.Error("totalCount should be included")
-	}
-}
-
-func TestIncludeFilterOnlyTopLevel_preservesNestedFields(t *testing.T) {
-	cfg := &config.ProjectionConfig{IncludeOnly: []string{"issues"}}
-	value := map[string]any{
-		"issues": []any{map[string]any{"number": 1, "title": "Bug report", "state": "open"}},
-	}
-	result := Apply(value, cfg, &Defaults{})
-	m := result.Summary.(map[string]any)
-	issues, ok := m["issues"].([]any)
-	if !ok || len(issues) == 0 {
-		t.Fatal("issues array should be present and non-empty")
-	}
-	issue := issues[0].(map[string]any)
-	for _, key := range []string{"number", "title", "state"} {
-		if issue[key] == nil {
-			t.Errorf("%s inside issue should not be stripped by include filter", key)
-		}
 	}
 }

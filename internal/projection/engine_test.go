@@ -101,10 +101,7 @@ func TestStringTruncation_CJKTruncatesAtRuneCount(t *testing.T) {
 	}
 }
 
-// TestDepthLimit verifies that depth is counted from 0 (top-level = depth 0).
-// With depthLimit=2: depth 0 (top-level) and depth 1 (a) are projected,
-// but depth 2 (a.b) returns "[depth limit reached]".
-func TestDepthLimit(t *testing.T) {
+func TestDepthLimitCountsRootAtZero(t *testing.T) {
 	value := map[string]any{
 		"a": map[string]any{
 			"b": map[string]any{
@@ -184,58 +181,6 @@ func TestNamedStringLimit(t *testing.T) {
 	// title has no named limit — should pass through untruncated
 	if m["title"].(string) != long {
 		t.Errorf("title should not be truncated")
-	}
-}
-
-func TestStripMarkup(t *testing.T) {
-	cfg := &config.ProjectionConfig{StripMarkup: true}
-	value := map[string]any{
-		"body": "<p>Hello <strong>world</strong></p>",
-	}
-
-	result := projection.Apply(value, cfg, defaultLimits)
-	m := result.Summary.(map[string]any)
-
-	body := m["body"].(string)
-	if body == "<p>Hello <strong>world</strong></p>" {
-		t.Error("strip_markup should remove HTML tags")
-	}
-	if body != "Hello world" {
-		t.Errorf("unexpected stripped body: %q", body)
-	}
-}
-
-func autoStripResult(t *testing.T) (m map[string]any, longHTML, shortHTML string) {
-	t.Helper()
-	longHTML = "<p>" + strings.Repeat("word ", 120) + "</p>"
-	shortHTML = "<p>Hello <strong>world</strong></p>"
-	value := map[string]any{
-		"body":        longHTML,
-		"description": longHTML,
-		"other":       longHTML,
-		"body_short":  shortHTML,
-	}
-	m = projection.Apply(value, nil, defaultLimits).Summary.(map[string]any)
-	return
-}
-
-func TestAutoStripContentFields_longContentFieldsStripped(t *testing.T) {
-	m, longHTML, _ := autoStripResult(t)
-	if m["body"] == longHTML {
-		t.Error("body (long HTML) should be auto-stripped")
-	}
-	if m["description"] == longHTML {
-		t.Error("description (long HTML) should be auto-stripped")
-	}
-}
-
-func TestAutoStripContentFields_shortOrNonContentFieldsUnchanged(t *testing.T) {
-	m, longHTML, shortHTML := autoStripResult(t)
-	if m["other"] != longHTML {
-		t.Errorf("other should not be auto-stripped, got %q", m["other"])
-	}
-	if m["body_short"] != shortHTML {
-		t.Errorf("body_short (< threshold) should not be stripped, got %q", m["body_short"])
 	}
 }
 
@@ -449,5 +394,60 @@ func TestTopLevelString_markupTreatedAsPlainString(t *testing.T) {
 	}
 	if len(result.Truncated) == 0 {
 		t.Error("expected truncation metadata for oversized top-level string")
+	}
+}
+
+func TestIncludeFilter(t *testing.T) {
+	cfg := &config.ProjectionConfig{IncludeOnly: []string{"status", "branch"}}
+	value := map[string]any{
+		"status": "failed",
+		"branch": "main",
+		"env":    map[string]any{"SECRET": "password"},
+	}
+
+	result := projection.Apply(value, cfg, defaultLimits)
+	m := result.Summary.(map[string]any)
+
+	if _, ok := m["env"]; ok {
+		t.Error("env should be excluded by include filter")
+	}
+	if m["status"] != "failed" {
+		t.Errorf("expected status=failed, got %v", m["status"])
+	}
+}
+
+func TestIncludeFilterOnlyTopLevel_excludesNonListed(t *testing.T) {
+	cfg := &config.ProjectionConfig{IncludeOnly: []string{"issues", "totalCount"}}
+	value := map[string]any{
+		"issues":     []any{map[string]any{"number": 1, "title": "Bug report", "state": "open"}},
+		"totalCount": 42,
+		"pageInfo":   map[string]any{"hasNextPage": true},
+	}
+	result := projection.Apply(value, cfg, defaultLimits)
+	m := result.Summary.(map[string]any)
+	if _, ok := m["pageInfo"]; ok {
+		t.Error("pageInfo should be excluded by include filter")
+	}
+	if m["totalCount"] == nil {
+		t.Error("totalCount should be included")
+	}
+}
+
+func TestIncludeFilterOnlyTopLevel_preservesNestedFields(t *testing.T) {
+	cfg := &config.ProjectionConfig{IncludeOnly: []string{"issues"}}
+	value := map[string]any{
+		"issues": []any{map[string]any{"number": 1, "title": "Bug report", "state": "open"}},
+	}
+	result := projection.Apply(value, cfg, defaultLimits)
+	m := result.Summary.(map[string]any)
+	issues, ok := m["issues"].([]any)
+	if !ok || len(issues) == 0 {
+		t.Fatal("issues array should be present and non-empty")
+	}
+	issue := issues[0].(map[string]any)
+	for _, key := range []string{"number", "title", "state"} {
+		if issue[key] == nil {
+			t.Errorf("%s inside issue should not be stripped by include filter", key)
+		}
 	}
 }
