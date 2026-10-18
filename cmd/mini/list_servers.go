@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 	"sync"
 	"text/tabwriter"
@@ -18,10 +19,11 @@ import (
 )
 
 type serverListRow struct {
-	Config config.ServerConfig
-	Auth   string
-	State  string
-	Err    error
+	Config    config.ServerConfig
+	Auth      string
+	State     string
+	Err       error
+	ErrorPath string
 }
 
 func listAllServers(configDir string, out io.Writer) error {
@@ -53,7 +55,13 @@ func probeServerList(ctx context.Context, srv *server.Server, servers config.Ser
 	rows := make([]serverListRow, len(servers.Broken)+len(servers.Loaded))
 	for i, broken := range servers.Broken {
 		rows[i] = serverListRow{
-			Config: config.ServerConfig{Name: broken.ServerName}, Auth: "-", State: "invalid", Err: broken.Err,
+			Config: config.ServerConfig{
+				Name: broken.ServerName,
+			},
+			Auth:      "-",
+			State:     "invalid",
+			Err:       broken.Err,
+			ErrorPath: broken.Path,
 		}
 	}
 	var probes sync.WaitGroup
@@ -69,14 +77,14 @@ func probeServerList(ctx context.Context, srv *server.Server, servers config.Ser
 func probeListedServer(ctx context.Context, srv *server.Server, sc config.ServerConfig) serverListRow {
 	row := serverListRow{Config: sc, Auth: serverAuth(sc), State: "disabled"}
 	if sc.ProjectionsErr != nil {
-		row.Err = projectionsError(sc)
+		row.Err, row.ErrorPath = projectionsError(sc), sc.ProjectionsErr.Path
 	}
 	if !sc.IsEnabled() {
 		return row
 	}
 	row.State = "ready"
 	if err := srv.AddUpstream(ctx, sc); err != nil {
-		row.State, row.Err = connectionState(err), err
+		row.State, row.Err, row.ErrorPath = connectionState(err), err, ""
 		if row.Auth == "-" && errors.Is(err, transport.ErrReauthRequired) {
 			row.Auth = "oauth"
 		}
@@ -171,9 +179,9 @@ func serverListError(row serverListRow) string {
 	if errors.Is(row.Err, context.DeadlineExceeded) {
 		return "connection timed out"
 	}
-	err := row.Err
-	for errors.Unwrap(err) != nil {
-		err = errors.Unwrap(err)
+	detail := singleLine(row.Err)
+	if row.ErrorPath != "" {
+		detail = strings.ReplaceAll(detail, row.ErrorPath, filepath.Base(row.ErrorPath))
 	}
-	return ansi.Truncate(singleLine(err), 100, "…")
+	return ansi.Truncate(detail, 100, "…")
 }

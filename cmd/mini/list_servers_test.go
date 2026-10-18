@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -51,7 +52,7 @@ func TestRunListShowsConnectionStates(t *testing.T) {
 			t.Errorf("list missing %q: %s", want, out.String())
 		}
 	}
-	if !strings.Contains(got, "broken: yaml:") {
+	if !strings.Contains(got, "broken: parse broken.yaml: yaml:") {
 		t.Errorf("broken configuration diagnostic lost its reason: %s", out.String())
 	}
 	if strings.Contains(got, "secret-token") {
@@ -71,14 +72,17 @@ func TestProbeServerListDoesNotSerializeConnections(t *testing.T) {
 		ready.Config.Handler.ServeHTTP(w, r)
 	}))
 	t.Cleanup(healthy.Close)
+	releaseSlow := make(chan struct{})
 	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-readyStarted:
+		case <-releaseSlow:
 		case <-r.Context().Done():
 		}
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	t.Cleanup(slow.Close)
+	t.Cleanup(func() { close(releaseSlow) })
 	srv := buildStatusServer(config.DefaultConfig(), t.TempDir())
 	defer srv.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -89,5 +93,41 @@ func TestProbeServerListDoesNotSerializeConnections(t *testing.T) {
 	}})
 	if rows[0].State != "failed" || rows[1].State != "ready" {
 		t.Fatalf("states = %q, %q; want failed, ready", rows[0].State, rows[1].State)
+	}
+}
+
+func TestRunListPreservesProjectionErrorContext(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("enabled=%t", enabled), func(t *testing.T) {
+			dir := t.TempDir()
+			upstream := fakeUnauthenticatedMCPServer(t)
+			configtest.WriteServer(t, dir, config.ServerConfig{
+				Name: "badproj", Transport: "http", URL: upstream.URL, Enabled: &enabled,
+			})
+			configtest.WriteRawProjections(t, dir, "badproj", `"*": [bad]`)
+			var out bytes.Buffer
+			if err := runList(dir, nil, &out); err != nil {
+				t.Fatal(err)
+			}
+			for _, want := range []string{"projections:", "badproj.yaml", "projection *:", "cannot unmarshal"} {
+				if !strings.Contains(out.String(), want) {
+					t.Errorf("missing error context %q: %s", want, out.String())
+				}
+			}
+		})
+	}
+}
+
+func TestServerListReportsTimeout(t *testing.T) {
+	var out bytes.Buffer
+	err := printServerErrors(
+		&out,
+		[]serverListRow{{Config: config.ServerConfig{Name: "slow"}, State: "failed", Err: context.DeadlineExceeded}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); got != "  slow: connection timed out\n" {
+		t.Errorf("timeout diagnostic = %q", got)
 	}
 }
