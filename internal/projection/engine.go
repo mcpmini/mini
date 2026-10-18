@@ -32,14 +32,17 @@ type projCtx struct {
 }
 
 func (c projCtx) child(segment string, step config.ExcludeStep, depthDelta int) projCtx {
-	return projCtx{
+	child := projCtx{
 		cfg:       c.cfg,
 		depth:     c.depth + depthDelta,
 		path:      append(slices.Clone(c.path), segment),
-		steps:     append(slices.Clone(c.steps), step),
 		excluded:  c.excluded,
 		truncated: c.truncated,
 	}
+	if len(c.cfg.exclude) > 0 {
+		child.steps = append(slices.Clone(c.steps), step)
+	}
+	return child
 }
 
 // Apply projects a parsed JSON value using the given config.
