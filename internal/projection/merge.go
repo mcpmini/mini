@@ -1,6 +1,10 @@
 package projection
 
-import "github.com/mcpmini/mini/internal/config"
+import (
+	"strings"
+
+	"github.com/mcpmini/mini/internal/config"
+)
 
 // Defaults are the global fallback limits when no projection config exists.
 type Defaults struct {
@@ -22,7 +26,7 @@ func DefaultsFrom(cfg *config.Config) *Defaults {
 // effectiveConfig is the merged, runtime-ready config derived from ProjectionConfig + Defaults.
 type effectiveConfig struct {
 	includeOnly        []string
-	exclude            []string
+	exclude            [][]string
 	arrayLimits        map[string]int
 	stringLimits       map[string]int
 	defaultArrayLimit  int
@@ -75,7 +79,7 @@ func effectiveFromDefaults(d *Defaults) *effectiveConfig {
 
 func applyProjectionConfig(e *effectiveConfig, cfg *config.ProjectionConfig) {
 	e.includeOnly = cfg.IncludeOnly
-	e.exclude = cfg.Exclude
+	e.exclude = prepareExclusions(cfg.Exclude)
 	e.arrayLimits = cfg.ArrayLimits
 	if v, ok := cfg.ArrayLimits["default"]; ok {
 		e.defaultArrayLimit = v
@@ -87,4 +91,14 @@ func applyProjectionConfig(e *effectiveConfig, cfg *config.ProjectionConfig) {
 	if cfg.StripMarkup {
 		e.stripContent = true
 	}
+}
+
+func prepareExclusions(rules []string) [][]string {
+	var paths [][]string
+	for _, rule := range rules {
+		if config.ValidExcludePath(rule) {
+			paths = append(paths, strings.Split(rule, "."))
+		}
+	}
+	return paths
 }

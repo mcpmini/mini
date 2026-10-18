@@ -23,7 +23,7 @@ func ValidateProjection(p *ProjectionConfig) error {
 	for _, path := range p.Exclude {
 		if !ValidExcludePath(path) {
 			return fmt.Errorf(
-				"invalid exclude path %q: use dot-separated object fields containing only ASCII letters, digits, underscores or hyphens; array traversal is unsupported",
+				"invalid exclude path %q: use dot-separated object fields containing only ASCII letters, digits, underscores or hyphens, without a leading dot; array traversal is unsupported",
 				path,
 			)
 		}

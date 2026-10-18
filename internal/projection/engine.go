@@ -86,7 +86,7 @@ func projectMap(m map[string]any, ctx projCtx) map[string]any {
 
 func shouldSkipField(key string, ctx projCtx) bool {
 	cfg := ctx.cfg
-	if isExcluded(append(slices.Clone(ctx.path), key), cfg.exclude) {
+	if isExcluded(key, ctx.path, cfg.exclude) {
 		return true
 	}
 	return ctx.depth == 0 && len(cfg.includeOnly) > 0 && !isIncluded(key, cfg.includeOnly)
@@ -153,9 +153,9 @@ func projectString(s string, ctx projCtx, fieldName string) string {
 
 func isIncluded(key string, includeOnly []string) bool { return slices.Contains(includeOnly, key) }
 
-func isExcluded(path []string, exclude []string) bool {
+func isExcluded(key string, parent []string, exclude [][]string) bool {
 	for _, rule := range exclude {
-		if config.ValidExcludePath(rule) && slices.Equal(path, strings.Split(rule, ".")) {
+		if len(rule) == len(parent)+1 && rule[len(parent)] == key && slices.Equal(parent, rule[:len(parent)]) {
 			return true
 		}
 	}
