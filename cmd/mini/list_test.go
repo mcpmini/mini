@@ -78,7 +78,7 @@ func TestRunList(t *testing.T) {
 		runList(dir, nil, &out) //nolint:errcheck
 		got := out.String()
 		header := strings.SplitN(got, "\n", 2)[0]
-		if fields := strings.Join(strings.Fields(header), " "); fields != "NAME TYPE AUTH STATE URL / COMMAND" {
+		if fields := strings.Join(strings.Fields(header), " "); fields != "NAME TYPE STATE URL / COMMAND" {
 			t.Errorf("unexpected server columns: %q", header)
 		}
 	})

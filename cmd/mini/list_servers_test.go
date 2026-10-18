@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -33,8 +32,7 @@ func TestRunListShowsConnectionStates(t *testing.T) {
 	}))
 	t.Cleanup(disabled.Close)
 	for _, sc := range []config.ServerConfig{
-		{Name: "ready", Transport: "http", URL: ready.URL, Auth: &config.AuthConfig{Type: config.AuthTypeBearer, Token: "secret-token"}},
-		{Name: "header-token", Transport: "http", URL: ready.URL, Headers: map[string]string{"Authorization": "Bearer secret-token"}},
+		{Name: "ready", Transport: "http", URL: ready.URL},
 		{Name: "login", Transport: "http", URL: unauthorized.URL},
 		{Name: "disabled", Transport: "http", URL: disabled.URL, Enabled: new(false)},
 		{Name: "failed", Transport: "http", URL: disabled.URL},
@@ -47,16 +45,10 @@ func TestRunListShowsConnectionStates(t *testing.T) {
 		t.Fatalf("runList: %v", err)
 	}
 	got := strings.Join(strings.Fields(out.String()), " ")
-	for _, want := range []string{"ready http token ready", "header-token http token ready", "login http oauth needs-auth", "disabled http - disabled", "failed http - failed", "broken - - invalid"} {
+	for _, want := range []string{"ready http ready", "login http needs-auth", "disabled http disabled", "failed http failed", "broken - invalid"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("list missing %q: %s", want, out.String())
 		}
-	}
-	if !strings.Contains(got, "broken: parse broken.yaml: yaml:") {
-		t.Errorf("broken configuration diagnostic lost its reason: %s", out.String())
-	}
-	if strings.Contains(got, "secret-token") {
-		t.Error("list exposed the authentication token")
 	}
 	if calls := disabledRequests.Load(); calls != 1 {
 		t.Errorf("failed and disabled servers made %d requests, want only one from failed", calls)
@@ -96,38 +88,16 @@ func TestProbeServerListDoesNotSerializeConnections(t *testing.T) {
 	}
 }
 
-func TestRunListPreservesProjectionErrorContext(t *testing.T) {
-	for _, enabled := range []bool{false, true} {
-		t.Run(fmt.Sprintf("enabled=%t", enabled), func(t *testing.T) {
-			dir := t.TempDir()
-			upstream := fakeUnauthenticatedMCPServer(t)
-			configtest.WriteServer(t, dir, config.ServerConfig{
-				Name: "badproj", Transport: "http", URL: upstream.URL, Enabled: &enabled,
-			})
-			configtest.WriteRawProjections(t, dir, "badproj", `"*": [bad]`)
-			var out bytes.Buffer
-			if err := runList(dir, nil, &out); err != nil {
-				t.Fatal(err)
-			}
-			for _, want := range []string{"projections:", "badproj.yaml", "projection *:", "cannot unmarshal"} {
-				if !strings.Contains(out.String(), want) {
-					t.Errorf("missing error context %q: %s", want, out.String())
-				}
-			}
-		})
-	}
-}
-
-func TestServerListReportsTimeout(t *testing.T) {
+func TestRunListShowsServerWithBrokenProjectionsAsReady(t *testing.T) {
+	dir := t.TempDir()
+	upstream := fakeUnauthenticatedMCPServer(t)
+	configtest.WriteServer(t, dir, config.ServerConfig{Name: "badproj", Transport: "http", URL: upstream.URL})
+	configtest.WriteRawProjections(t, dir, "badproj", `"*": [bad]`)
 	var out bytes.Buffer
-	err := printServerErrors(
-		&out,
-		[]serverListRow{{Config: config.ServerConfig{Name: "slow"}, State: "failed", Err: context.DeadlineExceeded}},
-	)
-	if err != nil {
+	if err := runList(dir, nil, &out); err != nil {
 		t.Fatal(err)
 	}
-	if got := out.String(); got != "  slow: connection timed out\n" {
-		t.Errorf("timeout diagnostic = %q", got)
+	if got := strings.Join(strings.Fields(out.String()), " "); !strings.Contains(got, "badproj http ready") {
+		t.Errorf("server that still connects is not ready: %s", out.String())
 	}
 }

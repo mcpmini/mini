@@ -31,7 +31,7 @@ func TestRunListUsesStoredOAuthLogin(t *testing.T) {
 	if got := upstream.lastAuthFor("tools/list"); got != "Bearer stored-access" {
 		t.Errorf("tool discovery authorization = %q, want saved login", got)
 	}
-	if got := strings.Join(strings.Fields(out.String()), " "); !strings.Contains(got, "live http oauth ready") {
+	if got := strings.Join(strings.Fields(out.String()), " "); !strings.Contains(got, "live http ready") {
 		t.Errorf("list does not show the authenticated server as ready: %s", out.String())
 	}
 	if tokens.hits.Load() != 0 {

@@ -118,8 +118,8 @@ func TestIntegrationCLI_aBrokenServerFileOnlyAffectsThatServer(t *testing.T) {
 	t.Run("ls shows it as invalid and checks the rest", func(t *testing.T) {
 		stdout, stderr, code := runCLI(t, cfg, "ls")
 		listed := strings.Join(strings.Fields(stdout), " ")
-		if code != 0 || !strings.Contains(listed, "svc stdio - ready") ||
-			!strings.Contains(listed, "broken - - invalid") {
+		if code != 0 || !strings.Contains(listed, "svc stdio ready") ||
+			!strings.Contains(listed, "broken - invalid") {
 			t.Errorf(
 				"ls = exit %d, stdout %q, stderr %q; want svc ready and broken invalid",
 				code,
