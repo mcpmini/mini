@@ -26,12 +26,23 @@ type projCtx struct {
 	cfg       *effectiveConfig
 	depth     int
 	path      []string
+	steps     []config.ExcludeStep
 	excluded  *[]string
 	truncated *[]Truncation
 }
 
-func (c projCtx) child(path []string, depthDelta int) projCtx {
-	return projCtx{cfg: c.cfg, depth: c.depth + depthDelta, path: path, excluded: c.excluded, truncated: c.truncated}
+func (c projCtx) child(segment string, step config.ExcludeStep, depthDelta int) projCtx {
+	child := projCtx{
+		cfg:       c.cfg,
+		depth:     c.depth + depthDelta,
+		path:      append(slices.Clone(c.path), segment),
+		excluded:  c.excluded,
+		truncated: c.truncated,
+	}
+	if len(c.cfg.exclude) > 0 {
+		child.steps = append(slices.Clone(c.steps), step)
+	}
+	return child
 }
 
 // Apply projects a parsed JSON value using the given config.
@@ -85,21 +96,21 @@ func projectMap(m map[string]any, ctx projCtx) map[string]any {
 }
 
 func shouldSkipField(key string, ctx projCtx) bool {
-	if isExcluded(key, ctx.path, ctx.cfg.exclude) {
+	if isExcluded(key, ctx.steps, ctx.cfg.exclude) {
 		return true
 	}
 	return ctx.depth == 0 && len(ctx.cfg.includeOnly) > 0 && !isIncluded(key, ctx.cfg.includeOnly)
 }
 
 func projectMapValue(value any, ctx projCtx, fieldName string) any {
-	childPath := append(slices.Clone(ctx.path), fieldName)
+	step := config.ExcludeStep{Field: fieldName}
 	switch sv := value.(type) {
 	case string:
-		return projectString(sv, ctx.child(childPath, 0), fieldName)
+		return projectString(sv, ctx.child(fieldName, step, 0), fieldName)
 	case map[string]any:
-		return project(sv, ctx.child(childPath, 1))
+		return project(sv, ctx.child(fieldName, step, 1))
 	case []any:
-		return projectNamedArray(sv, ctx.child(childPath, 1), fieldName)
+		return projectNamedArray(sv, ctx.child(fieldName, step, 1), fieldName)
 	default:
 		return value
 	}
@@ -113,8 +124,7 @@ func projectNamedArray(arr []any, ctx projCtx, fieldName string) []any {
 	arr, original := truncateArray(arr, ctx.cfg.arrayLimitFor(fieldName))
 	out := make([]any, len(arr))
 	for i, v := range arr {
-		itemCtx := ctx.child(append(slices.Clone(ctx.path), fmt.Sprintf("[%d]", i)), 0)
-		out[i] = project(v, itemCtx)
+		out[i] = project(v, ctx.child(fmt.Sprintf("[%d]", i), config.ExcludeStep{Array: true}, 0))
 	}
 	if len(arr) < original {
 		*ctx.truncated = append(*ctx.truncated, Truncation{JQPath: jq.FormatPath(ctx.path), Items: original - len(arr)})
@@ -152,9 +162,10 @@ func projectString(s string, ctx projCtx, fieldName string) string {
 
 func isIncluded(key string, includeOnly []string) bool { return slices.Contains(includeOnly, key) }
 
-func isExcluded(key string, parent []string, exclude [][]string) bool {
+func isExcluded(key string, parent []config.ExcludeStep, exclude [][]config.ExcludeStep) bool {
+	field := config.ExcludeStep{Field: key}
 	for _, rule := range exclude {
-		if len(rule) == len(parent)+1 && rule[len(parent)] == key && slices.Equal(parent, rule[:len(parent)]) {
+		if len(rule) == len(parent)+1 && rule[len(parent)] == field && slices.Equal(parent, rule[:len(parent)]) {
 			return true
 		}
 	}

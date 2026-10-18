@@ -99,6 +99,19 @@ Before writing a projection config:
 2. Match the `include` list to top-level keys if you use one.
 3. For wrapped responses, either include the wrapper key (`issues`, `items`, `nodes`) or use no include list and rely on depth_limit.
 
+### Exclude paths
+
+`exclude` paths are exact object fields from the response root, separated by dots. `user.avatar_url` removes that one field and keeps the rest of `user`; `description` removes only a root-level description. A path never crosses an array on its own: `[]` steps into every item. Use `[].author.avatar_url` for a flat array of commits, `items[].author.avatar_url` for one wrapped in `items`, and `groups[].members[].avatar_url` for nested arrays. Items where the path doesn't fit, such as a null author, are left alone. A path must end in a field name; to drop a whole array, name its property (`items`). Array indexes, wildcards and jq expressions are rejected.
+
+Quote any path containing `[]` in YAML. Unquoted, `- [].author.avatar_url` and `exclude: [items[].x]` are YAML syntax errors, and the whole server file fails to load:
+
+```yaml
+list_commits:
+  exclude:
+    - "[].author.avatar_url"
+    - "[].committer.avatar_url"
+```
+
 ### Write operation responses
 
 When an agent creates a PR, posts a comment, or pushes files, the response typically returns the created resource in the same shape as the corresponding read operation. Project write operation responses the same way as get operations — the agent needs the full confirmation, including the identifier (number, sha, html_url) to reference what it just created.
