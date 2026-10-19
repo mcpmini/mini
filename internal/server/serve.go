@@ -292,7 +292,7 @@ func (s *Server) handleToolsCall(ctx context.Context, params json.RawMessage, se
 	if err != nil {
 		return nil, err
 	}
-	result, err := s.routeTool(ctx, call.Name, call.Arguments, session)
+	result, err := s.routeTool(ctx, call, session)
 	if err != nil {
 		return normalizeToolCallError(err)
 	}
@@ -300,8 +300,11 @@ func (s *Server) handleToolsCall(ctx context.Context, params json.RawMessage, se
 }
 
 type toolCallRequest struct {
-	Name      string          `json:"name"`
-	Arguments json.RawMessage `json:"arguments"`
+	Name           string                 `json:"name"`
+	Arguments      json.RawMessage        `json:"arguments"`
+	Meta           transport.ToolCallMeta `json:"_meta"`
+	InputResponses json.RawMessage        `json:"inputResponses"`
+	RequestState   json.RawMessage        `json:"requestState"`
 }
 
 func parseToolCall(params json.RawMessage) (toolCallRequest, error) {
@@ -313,6 +316,18 @@ func parseToolCall(params json.RawMessage) (toolCallRequest, error) {
 		return toolCallRequest{}, fmt.Errorf("%w: tools/call requires name", errInvalidParams)
 	}
 	return call, nil
+}
+
+// mrtr is nil for legacy agents: only a modern agent can answer an upstream's input request.
+func (c toolCallRequest) mrtr(session *Session) *transport.ToolCallMRTR {
+	if !session.modern.Load() {
+		return nil
+	}
+	mrtr := &transport.ToolCallMRTR{InputResponses: c.InputResponses, RequestState: c.RequestState}
+	if caps := c.Meta.ClientCapabilities; caps != nil {
+		mrtr.Elicitation = caps.Elicitation
+	}
+	return mrtr
 }
 
 func normalizeToolCallError(err error) (any, error) {
@@ -338,11 +353,11 @@ func normalizeToolCallResult(result any) any {
 	return toolOKResult(result)
 }
 
-func (s *Server) routeTool(ctx context.Context, name string, args json.RawMessage, session *Session) (any, error) {
+func (s *Server) routeTool(ctx context.Context, call toolCallRequest, session *Session) (any, error) {
 	if session.toolMode() == transport.ToolModeProxy {
-		return s.routeProxyTool(ctx, name, args, session)
+		return s.routeProxyTool(ctx, call, session)
 	}
-	return s.routeStandardTool(ctx, name, args, session)
+	return s.routeStandardTool(ctx, call.Name, call.Arguments, session)
 }
 
 func (s *Server) routeStandardTool(

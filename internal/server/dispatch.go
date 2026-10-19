@@ -16,6 +16,7 @@ type dispatchParams struct {
 	Tool     string
 	Params   map[string]any
 	Session  *Session
+	MRTR     *transport.ToolCallMRTR
 }
 
 func (s *Server) dispatchRaw(ctx context.Context, p dispatchParams) (json.RawMessage, int64, error) {
@@ -30,14 +31,14 @@ func (s *Server) dispatchRawCall(ctx context.Context, p dispatchParams) (json.Ra
 	if p.Upstream.cfg.SessionMode == config.SessionModePerSession {
 		return s.callPerSession(ctx, p)
 	}
-	raw, err := p.Upstream.callTool(ctx, p.Tool, p.Params)
+	raw, err := p.Upstream.callTool(ctx, callToolParams{Tool: p.Tool, Args: p.Params, MRTR: p.MRTR})
 	//nolint:contextcheck // Recovery belongs to the shared upstream and must survive one request's cancellation.
 	s.maybeReconnect(p.Upstream, err)
 	return raw, err
 }
 
 func (s *Server) callPerSession(ctx context.Context, p dispatchParams) (json.RawMessage, error) {
-	args, err := json.Marshal(transport.ToolCallParams{Name: p.Tool, Arguments: p.Params})
+	args, err := json.Marshal(transport.NewToolCallParams(p.Tool, p.Params, p.MRTR))
 	if err != nil {
 		return nil, fmt.Errorf("marshal params: %w", err)
 	}

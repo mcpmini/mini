@@ -63,14 +63,20 @@ func (u *upstreamServer) shutdownAndClose() {
 	u.currentConn().Close() //nolint:errcheck // Server removal has no caller to receive connection cleanup errors.
 }
 
-func (u *upstreamServer) callTool(ctx context.Context, toolName string, args map[string]any) (json.RawMessage, error) {
+type callToolParams struct {
+	Tool string
+	Args map[string]any
+	MRTR *transport.ToolCallMRTR
+}
+
+func (u *upstreamServer) callTool(ctx context.Context, p callToolParams) (json.RawMessage, error) {
 	if err := u.acquireSem(); err != nil {
 		return nil, err
 	}
 	if u.sem != nil {
 		defer func() { <-u.sem }()
 	}
-	params, err := json.Marshal(transport.ToolCallParams{Name: toolName, Arguments: args})
+	params, err := json.Marshal(transport.NewToolCallParams(p.Tool, p.Args, p.MRTR))
 	if err != nil {
 		return nil, fmt.Errorf("marshal params: %w", err)
 	}
@@ -99,7 +105,7 @@ func (u *upstreamServer) dispatchCall(ctx context.Context, params json.RawMessag
 		return nil, u.classifyCallError(err)
 	}
 	toolErr := invoke.CheckResult(raw)
-	if toolErr != nil {
+	if toolErr != nil && !errors.Is(toolErr, invoke.ErrInputRequired) {
 		u.recordError(toolErr.Error())
 	}
 	return raw, toolErr

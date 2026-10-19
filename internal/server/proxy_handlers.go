@@ -15,26 +15,22 @@ import (
 	"github.com/mcpmini/mini/internal/jq"
 	"github.com/mcpmini/mini/internal/registry"
 	"github.com/mcpmini/mini/internal/response"
+	"github.com/mcpmini/mini/internal/transport"
 )
 
-func (s *Server) routeProxyTool(ctx context.Context, name string, args json.RawMessage, session *Session) (any, error) {
-	switch name {
+func (s *Server) routeProxyTool(ctx context.Context, call toolCallRequest, session *Session) (any, error) {
+	switch call.Name {
 	case "config":
-		return s.handleConfigure(ctx, args, session)
+		return s.handleConfigure(ctx, call.Arguments, session)
 	case "read":
-		return s.handleRead(ctx, args)
+		return s.handleRead(ctx, call.Arguments)
 	default:
-		return s.handleProxyCall(ctx, name, args, session)
+		return s.handleProxyCall(ctx, call, session)
 	}
 }
 
-func (s *Server) handleProxyCall(
-	ctx context.Context,
-	name string,
-	args json.RawMessage,
-	session *Session,
-) (any, error) {
-	server, tool, err := parseProxyToolName(name)
+func (s *Server) handleProxyCall(ctx context.Context, call toolCallRequest, session *Session) (any, error) {
+	server, tool, err := parseProxyToolName(call.Name)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", errInvalidParams, err)
 	}
@@ -45,7 +41,7 @@ func (s *Server) handleProxyCall(
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", errInvalidParams, err)
 	}
-	req, err := parseProxyRequest(args)
+	req, err := parseProxyRequest(call.Arguments)
 	if err != nil {
 		return nil, err
 	}
@@ -56,6 +52,7 @@ func (s *Server) handleProxyCall(
 		Entry:    entry,
 		Session:  session,
 		Controls: req.Controls,
+		MRTR:     call.mrtr(session),
 	})
 }
 
@@ -156,6 +153,7 @@ type proxyCallParams struct {
 	Entry    *registry.ToolEntry
 	Session  *Session
 	Controls proxyControls
+	MRTR     *transport.ToolCallMRTR
 }
 
 func (s *Server) proxyCallUpstream(ctx context.Context, p proxyCallParams) (any, error) {
@@ -165,12 +163,16 @@ func (s *Server) proxyCallUpstream(ctx context.Context, p proxyCallParams) (any,
 	}
 	raw, latencyMs, toolErr := s.dispatchRaw(
 		ctx,
-		dispatchParams{Upstream: upstream, Tool: p.Tool, Params: p.Params, Session: p.Session},
+		dispatchParams{Upstream: upstream, Tool: p.Tool, Params: p.Params, Session: p.Session, MRTR: p.MRTR},
 	)
 	upstream.totalLatencyMs.Add(latencyMs)
+	if errors.Is(toolErr, invoke.ErrInputRequired) && p.Session.modern.Load() {
+		p.Session.recordCall(latencyMs, 0, false)
+		return upstreamResult(raw), nil
+	}
 	if toolErr != nil {
 		p.Session.recordCall(latencyMs, 0, true)
-		return proxyToolFailure(raw, toolErr), nil
+		return proxyToolFailure(raw, invoke.ExplainInputRequired(p.Server, toolErr)), nil
 	}
 	return s.proxyRespond(proxyReply{Call: p, Upstream: upstream, Raw: raw, LatencyMs: latencyMs})
 }

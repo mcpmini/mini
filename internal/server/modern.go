@@ -116,6 +116,9 @@ func addModernResultFields(method string, result any) (any, error) {
 	if fields == nil {
 		return nil, fmt.Errorf("modern result must be a JSON object")
 	}
+	if _, ok := fields["resultType"]; ok && method != "tools/list" {
+		return result, nil
+	}
 	if _, ok := fields["resultType"]; !ok {
 		fields["resultType"] = json.RawMessage(`"complete"`)
 	}
