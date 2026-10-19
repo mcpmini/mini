@@ -48,7 +48,10 @@ type HTTPConnection struct {
 	listenerCtx       context.Context
 	listenerCancel    context.CancelFunc
 	listenerWG        sync.WaitGroup
-	toolsChanged      toolsChangedNotifier
+	// Guards closed, so no listener is added to listenerWG once Close has started waiting on it.
+	listenerMu   sync.Mutex
+	closed       bool
+	toolsChanged toolsChangedNotifier
 }
 
 // defaultHTTPClientTimeout is the hard network-level backstop. Set to 2× the default

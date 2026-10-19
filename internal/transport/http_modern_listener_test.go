@@ -325,6 +325,39 @@ func TestHTTPModernListener_eraResetWaitsForReprobeAndListensAgain(t *testing.T)
 	}
 }
 
+func TestHTTPModernListener_probeFinishingAfterCloseStartsNoListener(t *testing.T) {
+	probing := make(chan struct{})
+	releaseProbe := make(chan struct{})
+	server := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+		req := decodeRequest(t, r)
+		if req.Method == "server/discover" {
+			close(probing)
+			<-releaseProbe
+			writeRPCResult(t, w, req.ID, DiscoverResult{
+				SupportedVersions: ModernVersions,
+				Capabilities:      map[string]any{"tools": map[string]any{"listChanged": true}},
+			})
+			return
+		}
+		writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
+	})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: server.URL})
+	called := make(chan struct{})
+	go func() {
+		defer close(called)
+		conn.Call(t.Context(), "ping", nil) //nolint:errcheck // Only the listener state after Close matters here.
+	}()
+	<-probing
+	if err := conn.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	close(releaseProbe)
+	<-called
+	if conn.listener != nil {
+		t.Fatal("a probe that finished after Close started a notification listener")
+	}
+}
+
 func TestHTTPModernListener_closeCancelsStream(t *testing.T) {
 	entered := make(chan struct{}, 1)
 	server := modernListenerServer(t, true, func(w http.ResponseWriter, r *http.Request, _ Request) {

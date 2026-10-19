@@ -117,6 +117,11 @@ func (c *HTTPConnection) startListener() {
 	if c.listener != nil {
 		return
 	}
+	c.listenerMu.Lock()
+	defer c.listenerMu.Unlock()
+	if c.closed {
+		return
+	}
 	listenerCtx, cancel := context.WithCancel(c.listenerCtx)
 	c.listener = &sessionListener{cancel: cancel, done: make(chan struct{})}
 	c.listenerWG.Add(1)
@@ -274,6 +279,9 @@ func listenerDelay(status int, err error, backoff time.Duration) (delay, next ti
 }
 
 func (c *HTTPConnection) Close() error {
+	c.listenerMu.Lock()
+	c.closed = true
+	c.listenerMu.Unlock()
 	c.listenerCancel()
 	c.listenerWG.Wait()
 	return nil
