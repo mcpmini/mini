@@ -22,10 +22,11 @@ func TestHTTPModernListener_acknowledgesChangesAndReconnects(t *testing.T) {
 	acknowledgements := make(chan struct{}, 2)
 	notifications := make(chan struct{}, 2)
 	server := modernListenerServer(t, true, func(w http.ResponseWriter, r *http.Request, req Request) {
+		listen := listens.Add(1)
 		listenIDs <- req.ID
 		writeAck(t, w, req.ID)
 		acknowledgements <- struct{}{}
-		if listens.Add(1) == 1 {
+		if listen == 1 {
 			writeComplete(t, w, req.ID)
 			return
 		}
