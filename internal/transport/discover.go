@@ -23,6 +23,7 @@ type UnsupportedVersionData struct {
 type probeVerdict struct {
 	era     Era
 	version string
+	listen  bool
 }
 
 func setDiscoverRequestHeaders(req *http.Request) {
@@ -44,6 +45,12 @@ func (c *HTTPConnection) probeOnce(ctx context.Context) error {
 	c.eraKnown = true
 	if verdict.era == EraModern {
 		c.modernVersion.Store(&verdict.version)
+	}
+	if verdict.listen {
+		//nolint:contextcheck // Listener lifetime belongs to the connection, not the probe request.
+		c.startListener()
+	}
+	if verdict.era == EraModern {
 		slog.Info("upstream supports MCP 2026-07-28", "server", c.serverName)
 	}
 	return nil
@@ -91,7 +98,9 @@ func classifyDiscoverResult(result json.RawMessage) probeVerdict {
 	if json.Unmarshal(result, &discovered) != nil {
 		return probeVerdict{era: EraLegacy}
 	}
-	return modernVersionVerdict(discovered.SupportedVersions)
+	verdict := modernVersionVerdict(discovered.SupportedVersions)
+	verdict.listen = verdict.era == EraModern && toolsListChanged(discovered.Capabilities)
+	return verdict
 }
 
 func classifyDiscoverRPC(err *RPCError) (probeVerdict, error) {

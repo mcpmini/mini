@@ -110,10 +110,17 @@ func (c *HTTPConnection) restartListener(listen bool) {
 	if !listen {
 		return
 	}
-	ctx, cancel := context.WithCancel(c.listenerCtx)
+	c.startListener()
+}
+
+func (c *HTTPConnection) startListener() {
+	if c.listener != nil {
+		return
+	}
+	listenerCtx, cancel := context.WithCancel(c.listenerCtx)
 	c.listener = &sessionListener{cancel: cancel, done: make(chan struct{})}
 	c.listenerWG.Add(1)
-	go c.listenForNotifications(ctx, c.listener.done)
+	go c.listenForNotifications(listenerCtx, c.listener.done)
 }
 
 func (c *HTTPConnection) sendInitialize(ctx context.Context) (InitializeResult, error) {
@@ -183,8 +190,9 @@ func (c *HTTPConnection) dispatchNotification(notification Notification) {
 const maxListenerBackoff = 60 * time.Second
 
 type listenerState struct {
-	backoff      time.Duration
-	rejectedAuth string
+	backoff            time.Duration
+	rejectedAuth       string
+	acknowledgedBefore bool
 }
 
 func (c *HTTPConnection) listenForNotifications(ctx context.Context, done chan struct{}) {
@@ -205,7 +213,14 @@ func (c *HTTPConnection) listenForNotifications(ctx context.Context, done chan s
 }
 
 func (c *HTTPConnection) runListenerCycle(ctx context.Context, state *listenerState) (stop bool) {
-	status, err := c.consumeNotificationStream(ctx)
+	status, err := c.consumeNotificationStream(ctx, state)
+	if errors.Is(err, errUnsupportedListenFilter) {
+		slog.Debug("upstream did not acknowledge tool-change subscription", "url", c.url)
+		return true
+	}
+	if errors.Is(err, errListenComplete) {
+		err = nil
+	}
 	if shouldStopListener(ctx, c.url, status) {
 		return true
 	}
@@ -251,44 +266,6 @@ func listenerDelay(status int, err error, backoff time.Duration) (delay, next ti
 		return maxListenerBackoff, maxListenerBackoff
 	}
 	return backoff, min(backoff*2, maxListenerBackoff)
-}
-
-func (c *HTTPConnection) consumeNotificationStream(ctx context.Context) (int, error) {
-	resp, err := c.sendOneWithAuthRetry(ctx, c.newStreamClient(), c.buildStreamRequest)
-	if err != nil {
-		return 0, err
-	}
-	//nolint:errcheck // status and scan results determine handling; Close releases the response stream.
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return resp.StatusCode, fmt.Errorf("notification stream status %d", resp.StatusCode)
-	}
-	return resp.StatusCode, c.scanNotificationStream(resp.Body)
-}
-
-func (c *HTTPConnection) buildStreamRequest(ctx context.Context) (*http.Request, string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url, nil)
-	if err != nil {
-		return nil, "", err
-	}
-	sentAuth, err := c.setRequestHeaders(ctx, req)
-	if err != nil {
-		return nil, "", err
-	}
-	c.attachSessionID(req)
-	req.Header.Del("Content-Type")
-	req.Header.Set("Accept", "text/event-stream")
-	return req, sentAuth, nil
-}
-
-func (c *HTTPConnection) scanNotificationStream(body io.Reader) error {
-	return ScanSSEMessages(body, func(message json.RawMessage) error {
-		var notification Notification
-		if json.Unmarshal(message, &notification) == nil && notification.Method != "" {
-			c.dispatchNotification(notification)
-		}
-		return nil
-	})
 }
 
 func (c *HTTPConnection) Close() error {

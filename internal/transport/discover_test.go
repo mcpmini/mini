@@ -14,12 +14,16 @@ import (
 
 func TestClassifyDiscover(t *testing.T) {
 	for _, tc := range []struct {
-		name    string
-		result  string
-		err     error
-		wantEra Era
-		wantErr bool
+		name       string
+		result     string
+		err        error
+		wantEra    Era
+		wantVer    string
+		wantListen bool
+		wantErr    bool
 	}{
+		{name: "modern result with tool changes", result: `{"supportedVersions":["2026-07-28"],"capabilities":{"tools":{"listChanged":true}}}`, wantEra: EraModern, wantVer: "2026-07-28", wantListen: true},
+		{name: "modern result without tool changes", result: `{"supportedVersions":["2026-07-28"],"capabilities":{"tools":{"listChanged":false}}}`, wantEra: EraModern, wantVer: "2026-07-28"},
 		{name: "legacy result", result: `{"supportedVersions":["2025-11-25"]}`, wantEra: EraLegacy},
 		{name: "malformed result", result: `not json`, wantEra: EraLegacy},
 		{name: "unsupported without data", err: &RPCError{Code: -32022}, wantEra: EraLegacy},
@@ -36,8 +40,8 @@ func TestClassifyDiscover(t *testing.T) {
 			if tc.wantErr && !errors.Is(err, tc.err) {
 				t.Errorf("error = %v, want unchanged input error %v", err, tc.err)
 			}
-			if got.era != tc.wantEra || got.version != "" {
-				t.Errorf("verdict = %+v, want era %v and no modern version", got, tc.wantEra)
+			if got.era != tc.wantEra || got.version != tc.wantVer || got.listen != tc.wantListen {
+				t.Errorf("verdict = %+v, want era %v version %q listen %v", got, tc.wantEra, tc.wantVer, tc.wantListen)
 			}
 		})
 	}
