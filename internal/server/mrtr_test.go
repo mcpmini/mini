@@ -5,6 +5,8 @@ package server_test
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -98,6 +100,91 @@ func TestModernInputRequiredPassesThroughUnchanged(t *testing.T) {
 	if string(forwarded.InputResponses) != `{"r1":{"action":"accept"}}` ||
 		string(forwarded.RequestState) != `"opaque-123"` {
 		t.Errorf("forwarded retry fields = %s / %s", forwarded.InputResponses, forwarded.RequestState)
+	}
+}
+
+func TestModernInputRequestRoundTripThroughModernHTTPUpstream(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.DangerousAllowPrivateURLs = true
+	srv := newTestServer(t, server.Params{Config: cfg})
+	retries := make(chan mrtrCallParams, 1)
+	srv.ConnectUpstreams(t.Context(), []config.ServerConfig{
+		{Name: "svc", Transport: "http", URL: modernElicitingUpstream(t, retries)},
+	})
+	// Proxy-mode tools/list waits for a connecting upstream, so the calls below find it ready.
+	serveModern(t, srv, transporttest.ModernRequest(0, "tools/list", nil))
+	call := transport.ToolCallParams{Name: "svc__confirm", Arguments: map[string]any{}}
+	first := responsesByID(serveModern(t, srv, transporttest.ModernRequest(1, "tools/call", call)))[1]
+	if string(first.Result) != inputRequiredResult {
+		t.Fatalf("first call result = %s, want the upstream input request %s", first.Result, inputRequiredResult)
+	}
+	second := responsesByID(serveModern(t, srv, modernMRTRCall(2, "svc__confirm", map[string]any{})))[2]
+	if result := decodeResult[transport.ToolCallResult](t, second); result.IsError || len(result.Content) == 0 ||
+		result.Content[0].Text != "confirmed" {
+		t.Fatalf("retry result = %s, want the completed call", second.Result)
+	}
+	retry := <-retries
+	if string(retry.RequestState) != `"opaque-123"` || string(retry.InputResponses) != `{"r1":{"action":"accept"}}` ||
+		retry.Meta == nil || string(retry.Meta.ClientCapabilities) != `{"elicitation":{"form":{}}}` {
+		t.Fatalf("upstream retry = %+v, want the agent's answer, request state and only elicitation", retry)
+	}
+}
+
+// modernElicitingUpstream speaks 2026-07-28 and asks for input on a first call, completing the retry
+// that carries the request state back.
+func modernElicitingUpstream(t *testing.T, retries chan<- mrtrCallParams) string {
+	t.Helper()
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+			Params json.RawMessage `json:"params"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode upstream request: %v", err)
+			return
+		}
+		writeUpstreamResult(t, w, req.ID, elicitingResult(t, req.Method, req.Params, retries))
+	}))
+	t.Cleanup(upstream.Close)
+	return upstream.URL
+}
+
+func elicitingResult(t *testing.T, method string, params json.RawMessage, retries chan<- mrtrCallParams) any {
+	switch method {
+	case "server/discover":
+		return transport.DiscoverResult{SupportedVersions: transport.ModernVersions}
+	case "tools/list":
+		return transport.ToolsListResult{Tools: []transport.ToolDefinition{
+			{Name: "confirm", InputSchema: json.RawMessage(`{"type":"object"}`)},
+		}}
+	case "tools/call":
+		var call mrtrCallParams
+		if err := json.Unmarshal(params, &call); err != nil {
+			t.Errorf("decode tools/call params: %v", err)
+		}
+		if len(call.RequestState) == 0 {
+			return json.RawMessage(inputRequiredResult)
+		}
+		retries <- call
+		return transport.ToolCallResult{Content: []transport.ContentItem{{Type: "text", Text: "confirmed"}}}
+	}
+	return struct{}{}
+}
+
+func writeUpstreamResult(t *testing.T, w http.ResponseWriter, id json.RawMessage, result any) {
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Errorf("encode upstream result: %v", err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(transport.Response{JSONRPC: "2.0", ID: id, Result: encoded}); err != nil {
+		t.Errorf("write upstream result: %v", err)
 	}
 }
 

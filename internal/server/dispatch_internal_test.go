@@ -59,3 +59,28 @@ func TestCallPerSession_toolErrorResultReturnsRawWithToolError(t *testing.T) {
 		t.Fatalf("callPerSession raw = %s, want the upstream result unchanged", raw)
 	}
 }
+
+func TestCallPerSession_forwardsRetryFieldsAndReturnsTheInputRequest(t *testing.T) {
+	result := json.RawMessage(`{"resultType":"input_required","inputRequests":{},"requestState":"s1"}`)
+	conn := &transport.FakeConnection{Responses: map[string]json.RawMessage{"tools/call": result}}
+	session := newSession(clock.System())
+	session.GetOrSetConn("svc", conn)
+	srv := &Server{}
+
+	raw, err := srv.callPerSession(context.Background(), dispatchParams{
+		Upstream: &upstreamServer{cfg: config.ServerConfig{Name: "svc", SessionMode: config.SessionModePerSession}},
+		Tool:     "test",
+		Session:  session,
+		MRTR: &transport.ToolCallMRTR{
+			InputResponses: json.RawMessage(`{"r1":{}}`),
+			RequestState:   json.RawMessage(`"s0"`),
+		},
+	})
+	if !errors.Is(err, invoke.ErrInputRequired) || string(raw) != string(result) {
+		t.Fatalf("callPerSession = %s, %v; want the upstream input request and ErrInputRequired", raw, err)
+	}
+	want := `{"name":"test","arguments":null,"inputResponses":{"r1":{}},"requestState":"s0"}`
+	if string(conn.LastParams) != want {
+		t.Fatalf("per-session upstream received %s, want %s", conn.LastParams, want)
+	}
+}
