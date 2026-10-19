@@ -101,7 +101,7 @@ func TestUnknownMethod(t *testing.T) {
 func TestInitializedNotification_noResponse(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	initMsg := rpc("initialize", map[string]any{
-		"protocolVersion": transport.LegacyVersions[0],
+		"protocolVersion": transport.LatestLegacyVersion,
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "test", "version": "0"},
 	})
@@ -246,7 +246,7 @@ func TestRequestBeforeInitialize_rejected(t *testing.T) {
 	}
 }
 
-func TestServerDiscoverBeforeInitializeReturnsMethodNotFound(t *testing.T) {
+func TestServerDiscoverBeforeInitialize_methodNotFound(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	lines := rawServe(t, srv, rpc("server/discover", nil))
 	if len(lines) == 0 {
@@ -314,7 +314,7 @@ func TestRPCEnvelope_jsonrpc20(t *testing.T) {
 		input []byte
 	}{
 		{"initialize", rpc("initialize", map[string]any{
-			"protocolVersion": transport.LegacyVersions[0],
+			"protocolVersion": transport.LatestLegacyVersion,
 			"capabilities":    map[string]any{},
 			"clientInfo":      map[string]any{"name": "t", "version": "0"},
 		})},

@@ -201,7 +201,7 @@ func (c *StdioConnection) initialize(ctx context.Context) error {
 
 func newInitializeParams() InitializeParams {
 	return InitializeParams{
-		ProtocolVersion: LegacyVersions[0],
+		ProtocolVersion: LatestLegacyVersion,
 		Capabilities:    map[string]any{},
 		ClientInfo:      ClientInfo{Name: "mini", Version: version.Version},
 	}

@@ -10,8 +10,6 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
-
-	"github.com/mcpmini/mini/internal/version"
 )
 
 func (c *HTTPConnection) ListTools(ctx context.Context) ([]ToolDefinition, error) {
@@ -107,11 +105,7 @@ func (c *HTTPConnection) restartListener(listen bool) {
 
 func (c *HTTPConnection) sendInitialize(ctx context.Context) (InitializeResult, error) {
 	//nolint:errcheck // fixed handshake fields contain only JSON-serializable values.
-	params, _ := json.Marshal(InitializeParams{
-		ProtocolVersion: LegacyVersions[0],
-		Capabilities:    map[string]any{},
-		ClientInfo:      ClientInfo{Name: "mini", Version: version.Version},
-	})
+	params, _ := json.Marshal(newInitializeParams())
 	raw, err := c.rpc(ctx, "initialize", params)
 	if err != nil {
 		return InitializeResult{}, err

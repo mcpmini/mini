@@ -168,8 +168,10 @@ func (s *Server) handleRequest(
 }
 
 func (s *Server) awaitInitialization(ctx context.Context, req transport.Request, session *Session) bool {
-	// A client that supports both eras sends server/discover before it falls back to initialize:
-	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/8e12bf3c8f01f374146acfa19b8ece0018bfc86c/docs/specification/2026-07-28/basic/versioning.mdx#L73-L76
+	// Initialization comes first, but ping is allowed before it:
+	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/lifecycle.mdx#L118
+	// A client that supports both eras probes with server/discover before it falls back to initialize:
+	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/8e12bf3c8f01f374146acfa19b8ece0018bfc86c/docs/specification/2026-07-28/basic/versioning.mdx#L132-L146
 	if req.Method == "initialize" || req.Method == "ping" || req.Method == "server/discover" {
 		return true
 	}
@@ -250,7 +252,7 @@ func negotiatedLegacyVersion(requested string) string {
 	if transport.IsLegacyVersion(requested) {
 		return requested
 	}
-	return transport.LegacyVersions[0]
+	return transport.LatestLegacyVersion
 }
 
 // Fall back to the server-level default when the client sends no wire signal, so
@@ -271,7 +273,8 @@ func (s *Server) resolveToolMode(signal string) transport.ToolMode {
 
 func (s *Server) handleInitialize(params json.RawMessage, session *Session) (any, error) {
 	var p initializeClientParams
-	json.Unmarshal(params, &p) //nolint:errcheck // best-effort; standard clients omit this field
+	//nolint:errcheck // malformed params fall back to the default tool mode and the newest legacy version.
+	json.Unmarshal(params, &p)
 	session.setToolModeOnce(s.resolveToolMode(p.ToolMode))
 	instructions := compactInitInstructions
 	if session.toolMode() == transport.ToolModeProxy {

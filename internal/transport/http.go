@@ -284,7 +284,7 @@ func (c *HTTPConnection) buildHTTPRequest(ctx context.Context, rpcReq Request) (
 	}
 	// A strict legacy server can reject an unsupported version header before initialize
 	// negotiates a version both sides support:
-	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/ab3a39c13bd23be691c2760e1c6c5c15a64582e1/docs/specification/2025-11-25/basic/transports.mdx#L265-L267
+	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/ab3a39c13bd23be691c2760e1c6c5c15a64582e1/docs/specification/2025-11-25/basic/transports.mdx#L279-L280
 	if rpcReq.Method == "initialize" {
 		httpReq.Header.Del("MCP-Protocol-Version")
 	}
@@ -410,7 +410,7 @@ func parseRetryAfter(h string, now time.Time) time.Duration {
 func (c *HTTPConnection) setRequestHeaders(ctx context.Context, req *http.Request) (string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
-	protocolVersion := LegacyVersions[0]
+	protocolVersion := LatestLegacyVersion
 	c.mu.Lock()
 	if c.protocolVersion != "" {
 		protocolVersion = c.protocolVersion
