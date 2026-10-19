@@ -174,7 +174,7 @@ func TestHTTPModernListener_errorResponseIsARejectedAttempt(t *testing.T) {
 			if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
 				t.Fatalf("Call: %v", err)
 			}
-			status, err := conn.consumeNotificationStream(t.Context(), &listenerState{})
+			status, err := conn.consumeNotificationStream(t.Context(), &listenerState{modern: true})
 			if !errors.Is(err, errListenRejected) {
 				t.Fatalf("listen status %d error = %v, want errListenRejected", status, err)
 			}
@@ -283,6 +283,61 @@ func TestHTTPModernListener_reprobeKeepsTheRunningListener(t *testing.T) {
 	}
 	if conn.listener != running {
 		t.Fatal("re-probe replaced the running listener")
+	}
+}
+
+func TestHTTPModernListener_eraResetWaitsForReprobeAndListensAgain(t *testing.T) {
+	fakeClock := clock.NewFake()
+	var pings, listens, gets atomic.Int32
+	releaseFirst := make(chan struct{})
+	relisten := make(chan struct{}, 1)
+	server := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			gets.Add(1)
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		req := decodeRequest(t, r)
+		switch req.Method {
+		case "server/discover":
+			writeRPCResult(t, w, req.ID, DiscoverResult{
+				SupportedVersions: ModernVersions,
+				Capabilities:      map[string]any{"tools": map[string]any{"listChanged": true}},
+			})
+		case modernListenMethod:
+			w.Header().Set("Content-Type", "text/event-stream")
+			writeAck(t, w, req.ID)
+			if listens.Add(1) == 1 {
+				<-releaseFirst
+				return
+			}
+			relisten <- struct{}{}
+			<-r.Context().Done()
+		case "ping":
+			if pings.Add(1) == 2 {
+				writeHTTPRPCError(t, w, httpRPCErrorParams{id: req.ID, code: CodeUnsupportedProtocolVersion})
+				return
+			}
+			writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
+		}
+	})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: server.URL, Clock: fakeClock})
+	t.Cleanup(func() { conn.Close() })
+	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
+		t.Fatalf("first ping: %v", err)
+	}
+	if _, err := conn.Call(t.Context(), "ping", nil); err == nil {
+		t.Fatal("second ping succeeded, want the -32022 that resets the era")
+	}
+	close(releaseFirst)
+	advanceListenerTimerAndAwaitNextSleep(t, fakeClock, time.Second)
+	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
+		t.Fatalf("ping after re-probe: %v", err)
+	}
+	advanceListenerTimer(t, fakeClock, time.Second)
+	waitForListenerSignal(t, relisten, "listener did not subscribe again after the re-probe")
+	if got := gets.Load(); got != 0 {
+		t.Errorf("legacy GET streams = %d, want 0 from a modern listener", got)
 	}
 }
 

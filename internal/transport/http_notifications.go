@@ -120,7 +120,7 @@ func (c *HTTPConnection) startListener() {
 	listenerCtx, cancel := context.WithCancel(c.listenerCtx)
 	c.listener = &sessionListener{cancel: cancel, done: make(chan struct{})}
 	c.listenerWG.Add(1)
-	go c.listenForNotifications(listenerCtx, c.listener.done)
+	go c.listenForNotifications(listenerCtx, c.listener.done, c.isModern())
 }
 
 func (c *HTTPConnection) sendInitialize(ctx context.Context) (InitializeResult, error) {
@@ -190,6 +190,8 @@ func (c *HTTPConnection) dispatchNotification(notification Notification) {
 const maxListenerBackoff = 60 * time.Second
 
 type listenerState struct {
+	// Fixed for the listener's life: a legacy upstream gets a new listener from its own handshake.
+	modern       bool
 	backoff      time.Duration
 	rejectedAuth string
 	// The tool list mini holds may predate the subscription, so any acknowledgement that
@@ -197,10 +199,10 @@ type listenerState struct {
 	refreshOnAck bool
 }
 
-func (c *HTTPConnection) listenForNotifications(ctx context.Context, done chan struct{}) {
+func (c *HTTPConnection) listenForNotifications(ctx context.Context, done chan struct{}, modern bool) {
 	defer c.listenerWG.Done()
 	defer close(done)
-	state := listenerState{backoff: time.Second, refreshOnAck: true}
+	state := listenerState{modern: modern, backoff: time.Second, refreshOnAck: true}
 	for ctx.Err() == nil {
 		if state.rejectedAuth != "" && c.currentAuth(ctx) == state.rejectedAuth {
 			if !c.sleepCtx(ctx, maxListenerBackoff) {
@@ -215,6 +217,11 @@ func (c *HTTPConnection) listenForNotifications(ctx context.Context, done chan s
 }
 
 func (c *HTTPConnection) runListenerCycle(ctx context.Context, state *listenerState) (stop bool) {
+	if state.modern && !c.isModern() {
+		// The era was reset; listen again once the next call's probe settles it.
+		state.refreshOnAck = true
+		return !c.sleepCtx(ctx, time.Second)
+	}
 	status, err := c.consumeNotificationStream(ctx, state)
 	if errors.Is(err, errUnsupportedListenFilter) {
 		slog.Debug("upstream did not acknowledge tool-change subscription", "url", c.url)

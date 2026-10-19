@@ -20,7 +20,7 @@ var (
 )
 
 func (c *HTTPConnection) consumeNotificationStream(ctx context.Context, state *listenerState) (int, error) {
-	modern := c.isModern()
+	modern := state.modern
 	build := c.buildStreamRequest
 	if modern {
 		var err error
