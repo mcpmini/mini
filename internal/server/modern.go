@@ -75,6 +75,9 @@ func (s *Server) activateModern(session *Session) {
 	if session.modern.Swap(true) {
 		return
 	}
+	if session.daemonSession.Load() {
+		return
+	}
 	session.setToolModeOnce(s.resolveToolMode(""))
 	session.markInitialized()
 	session.clientReady.Store(true)

@@ -128,6 +128,11 @@ func (s *Server) handleRequest(
 	if unsupported := modernVersionError(req, session); unsupported != nil {
 		return *unsupported, true
 	}
+	if session.daemonSession.Load() {
+		if _, modern := transport.ProtocolVersionFromParams(req.Params); modern {
+			session.modern.Store(true)
+		}
+	}
 	if !s.awaitInitialization(ctx, req, session) {
 		return errorResponse(req.ID, transport.CodeInvalidRequest, transport.NotInitializedMessage), true
 	}
@@ -147,7 +152,9 @@ func (s *Server) awaitInitialization(ctx context.Context, req transport.Request,
 	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/lifecycle.mdx#L118
 	// A client that supports both eras probes with server/discover before it falls back to initialize:
 	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/8e12bf3c8f01f374146acfa19b8ece0018bfc86c/docs/specification/2026-07-28/basic/versioning.mdx#L132-L146
-	if req.Method == "initialize" || req.Method == "ping" || req.Method == "server/discover" {
+	// Daemon sessions still gate it, so proxy recovery learns the daemon lost its initialization.
+	if req.Method == "initialize" || req.Method == "ping" ||
+		(req.Method == "server/discover" && !session.daemonSession.Load()) {
 		return true
 	}
 	// Cap the wait so stale sessions (e.g. post daemon-restart or eviction) fail fast

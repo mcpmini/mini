@@ -85,7 +85,7 @@ func TestModernLegacyDiscoverRemainsMethodNotFound(t *testing.T) {
 	}
 }
 
-func TestModernDiscoverOverHTTPRemainsMethodNotFound(t *testing.T) {
+func TestModernDiscoverOverHTTPIsAccepted(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	init := httptest.NewRequest("POST", "http://127.0.0.1/mcp", bytes.NewReader(initRequest()))
 	init.Header.Set("Content-Type", "application/json")
@@ -107,8 +107,8 @@ func TestModernDiscoverOverHTTPRemainsMethodNotFound(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &message); err != nil {
 		t.Fatal(err)
 	}
-	if message.Error == nil || message.Error.Code != transport.CodeMethodNotFound {
-		t.Fatalf("HTTP server/discover error = %+v, want code %d", message.Error, transport.CodeMethodNotFound)
+	if decodeResult[modernResultFields](t, message).ResultType != transport.ResultComplete {
+		t.Fatalf("HTTP server/discover result = %s", message.Result)
 	}
 }
 

@@ -97,3 +97,15 @@ func TestServeReturnsPendingNotificationFailureAtEOF(t *testing.T) {
 		t.Fatalf("Serve error = %v, want pending notification failure %v", err, want)
 	}
 }
+
+func TestDaemonModernToolsChangedRemainsUntagged(t *testing.T) {
+	session := newSession(clock.System())
+	session.modern.Store(true)
+	session.daemonSession.Store(true)
+	raw := json.RawMessage(`{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}`)
+	var sent []any
+	session.forwardToolsChanged(raw, func(message any) { sent = append(sent, message) })
+	if len(sent) != 1 || string(sent[0].(json.RawMessage)) != string(raw) {
+		t.Fatalf("daemon notifications = %v, want one unchanged notification", sent)
+	}
+}

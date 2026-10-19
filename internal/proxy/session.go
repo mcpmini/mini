@@ -1,6 +1,8 @@
 package proxy
 
 import (
+	"encoding/json"
+	"sync"
 	"sync/atomic"
 
 	"github.com/mcpmini/mini/internal/clock"
@@ -15,6 +17,9 @@ type proxySession struct {
 	clock              clock.Clock
 	writer             *lineWriter
 	notificationStream *notificationStream
+	modern             atomic.Bool
+	listensMu          sync.Mutex
+	listens            map[string]json.RawMessage
 	initialized        atomic.Bool
 	clientReady        atomic.Bool
 }
@@ -25,7 +30,7 @@ func newProxySession(p RunParams, writer *lineWriter) *proxySession {
 	if p.ToolMode == transport.ToolModeProxy {
 		notifications = newNotificationStream(session, writer, p.Clock)
 	}
-	return &proxySession{
+	proxy := &proxySession{
 		daemon:             session,
 		resolver:           p.Resolver,
 		link:               newDaemonLink(p.Token),
@@ -33,7 +38,12 @@ func newProxySession(p RunParams, writer *lineWriter) *proxySession {
 		clock:              p.Clock,
 		writer:             writer,
 		notificationStream: notifications,
+		listens:            make(map[string]json.RawMessage),
 	}
+	if notifications != nil {
+		notifications.proxy = proxy
+	}
+	return proxy
 }
 
 func (s *proxySession) close() {

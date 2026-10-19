@@ -59,6 +59,58 @@ func TestHTTPServer_initializeCreatesSession(t *testing.T) {
 	}
 }
 
+func TestHTTPServer_modernDiscoverWaitsForInitialize(t *testing.T) {
+	srv := newTestServer(t, server.Params{})
+	created := serveHTTPPost(srv, []byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`), "")
+	sessionID := created.Header().Get("Mcp-Session-Id")
+	discover := []byte(
+		`{"jsonrpc":"2.0","id":2,"method":"server/discover","params":{"_meta":` +
+			`{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`,
+	)
+	message := decodeRecorderMessage(t, serveHTTPPost(srv, discover, sessionID))
+	if got := message["error"].(map[string]any)["code"]; got != float64(transport.CodeInvalidRequest) {
+		t.Fatalf("uninitialized discover code = %v", got)
+	}
+	initialized := serveHTTPPost(srv, initRequest(), sessionID)
+	if initialized.Code != http.StatusOK {
+		t.Fatalf("initialize status = %d", initialized.Code)
+	}
+	message = decodeRecorderMessage(t, serveHTTPPost(srv, discover, sessionID))
+	result := message["result"].(map[string]any)
+	if result["resultType"] != "complete" {
+		t.Fatalf("modern discover result = %v", result)
+	}
+	list := []byte(
+		`{"jsonrpc":"2.0","id":3,"method":"tools/list","params":{"_meta":` +
+			`{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`,
+	)
+	message = decodeRecorderMessage(t, serveHTTPPost(srv, list, sessionID))
+	result = message["result"].(map[string]any)
+	if result["resultType"] != "complete" || result["ttlMs"] == nil {
+		t.Fatalf("modern tools/list result = %v", result)
+	}
+}
+
+func serveHTTPPost(srv *server.Server, body []byte, sessionID string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/mcp", bytes.NewReader(body))
+	req.Host = "127.0.0.1"
+	if sessionID != "" {
+		req.Header.Set("Mcp-Session-Id", sessionID)
+	}
+	response := httptest.NewRecorder()
+	srv.ServeHTTP(response, req)
+	return response
+}
+
+func decodeRecorderMessage(t *testing.T, response *httptest.ResponseRecorder) map[string]any {
+	t.Helper()
+	var message map[string]any
+	if err := json.NewDecoder(response.Body).Decode(&message); err != nil {
+		t.Fatal(err)
+	}
+	return message
+}
+
 func initSession(t *testing.T, ts *httptest.Server) string {
 	t.Helper()
 	resp := mcpPost(t, ts, initRequest(), "")

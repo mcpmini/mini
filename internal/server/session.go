@@ -42,6 +42,7 @@ type Session struct {
 	modeOnce       sync.Once
 	clientReady    atomic.Bool
 	acceptsModern  atomic.Bool
+	daemonSession  atomic.Bool
 	modern         atomic.Bool
 	listensMu      sync.Mutex
 	listens        map[string]context.CancelFunc

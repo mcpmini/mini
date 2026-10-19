@@ -53,7 +53,14 @@ func runWithLimit(p RunParams, limit int) error {
 		if err := fp.session.writer.Err(); err != nil {
 			break
 		}
-		message := classifyForwardedMessage(maybeInjectToolMode(scanner.Bytes(), p.ToolMode))
+		line := scanner.Bytes()
+		if handled, err := fp.session.handleModernInput(line); handled {
+			if err != nil {
+				return err
+			}
+			continue
+		}
+		message := classifyForwardedMessage(maybeInjectToolMode(line, p.ToolMode))
 		if message.mustForwardSync() {
 			if err := forwardSync(message, fp); err != nil {
 				fp.wg.Wait()

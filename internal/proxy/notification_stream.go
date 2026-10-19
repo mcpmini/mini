@@ -16,6 +16,7 @@ type notificationStream struct {
 	daemon DaemonSession
 	writer *lineWriter
 	clock  clock.Clock
+	proxy  *proxySession
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -204,7 +205,21 @@ func (s *notificationStream) forward(message json.RawMessage) error {
 	if !json.Valid(message) {
 		return nil
 	}
-	return s.writer.writeLine(message)
+	if !s.proxy.modern.Load() {
+		return s.writer.writeLine(message)
+	}
+	s.proxy.listensMu.Lock()
+	defer s.proxy.listensMu.Unlock()
+	for _, id := range s.proxy.listens {
+		tagged, err := tagNotification(message, id)
+		if err != nil {
+			return err
+		}
+		if err := s.writer.writeLine(tagged); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *activeNotificationStream) stop() {
