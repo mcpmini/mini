@@ -77,6 +77,7 @@ func mustListTools(t *testing.T, conn *HTTPConnection) []ToolDefinition {
 }
 
 func mustLegacyHTTPConn(t *testing.T, cfg HTTPConnectionConfig) *HTTPConnection {
+	t.Helper()
 	conn := mustHTTPConn(t, cfg)
 	conn.eraKnown = true
 	return conn
@@ -134,11 +135,12 @@ func TestHTTPConnection_customHeadersSent(t *testing.T) {
 func TestParsePostBody_unmatchedErrorResponse(t *testing.T) {
 	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: "http://unused.invalid"})
 	for _, tc := range []struct {
-		name string
-		body string
-		want string
+		name     string
+		body     string
+		want     string
+		wantCode int
 	}{
-		{name: "single error", body: `{"jsonrpc":"2.0","id":"server-error","error":{"code":-32600,"message":"bad request"}}`, want: "bad request"},
+		{name: "single error", body: `{"jsonrpc":"2.0","id":"server-error","error":{"code":-32600,"message":"bad request"}}`, want: "bad request", wantCode: CodeInvalidRequest},
 		{name: "single result", body: `{"jsonrpc":"2.0","id":"server-error","result":{}}`, want: "request id 7 not found"},
 		{name: "multiple responses", body: "data: {\"jsonrpc\":\"2.0\",\"id\":\"server-error\",\"error\":{\"code\":-32600,\"message\":\"bad request\"}}\n\ndata: {\"jsonrpc\":\"2.0\",\"id\":8,\"result\":{}}\n\n", want: "request id 7 not found"},
 	} {
@@ -147,10 +149,10 @@ func TestParsePostBody_unmatchedErrorResponse(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("parsePostBody error = %v, want containing %q", err, tc.want)
 			}
-			if tc.name == "single error" {
+			if tc.wantCode != 0 {
 				var rpcErr *RPCError
-				if !errors.As(err, &rpcErr) || rpcErr.Code != -32600 {
-					t.Fatalf("error = %T %v, want *RPCError", err, err)
+				if !errors.As(err, &rpcErr) || rpcErr.Code != tc.wantCode {
+					t.Fatalf("error = %T %v, want *RPCError with code %d", err, err, tc.wantCode)
 				}
 			}
 		})

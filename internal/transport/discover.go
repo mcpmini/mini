@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -62,14 +61,12 @@ func (c *HTTPConnection) probeOnce(ctx context.Context) error {
 }
 
 func (c *HTTPConnection) probe(ctx context.Context) (json.RawMessage, error) {
-	params, err := json.Marshal(discoverRequestParams{Meta: discoverRequestMeta{
+	//nolint:errcheck // fixed discover fields contain only JSON-serializable values.
+	params, _ := json.Marshal(discoverRequestParams{Meta: discoverRequestMeta{
 		ProtocolVersion: ModernVersions[0],
 		ClientInfo:      ClientInfo{Name: "mini", Version: version.Version},
 		Capabilities:    map[string]any{},
 	}})
-	if err != nil {
-		return nil, fmt.Errorf("encode server/discover params: %w", err)
-	}
 	id := c.nextID.Add(1)
 	request := Request{JSONRPC: "2.0", ID: id, Method: "server/discover", Params: params}
 	return c.postWithAuthRetry(ctx, request)
@@ -108,10 +105,10 @@ func classifyDiscoverResult(result json.RawMessage) probeVerdict {
 }
 
 func classifyDiscoverRPC(err *RPCError) (probeVerdict, error) {
-	if err.Code == -32020 || err.Code == -32021 {
+	if err.Code == CodeHeaderMismatch || err.Code == CodeMissingRequiredClientCapability {
 		return probeVerdict{}, err
 	}
-	if err.Code != -32022 {
+	if err.Code != CodeUnsupportedProtocolVersion {
 		return probeVerdict{era: EraLegacy}, nil
 	}
 	data, ok := decodeUnsupportedVersionData(err.Data)

@@ -160,7 +160,7 @@ func applySsrfTransport(client *http.Client) {
 
 const maxRetries = 3
 
-// Call sends an MCP request, completing the initialize handshake first if needed.
+// Call sends an MCP request, probing the server's era and completing the initialize handshake first if needed.
 func (c *HTTPConnection) Call(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
 	if err := c.ensureReady(ctx); err != nil {
 		return nil, err
