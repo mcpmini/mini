@@ -168,7 +168,7 @@ func (s *Server) handleRequest(
 }
 
 func (s *Server) awaitInitialization(ctx context.Context, req transport.Request, session *Session) bool {
-	// Modern clients probe server/discover before any initialize, so it must not wait on the gate:
+	// A client that supports both eras sends server/discover before it falls back to initialize:
 	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/8e12bf3c8f01f374146acfa19b8ece0018bfc86c/docs/specification/2026-07-28/basic/versioning.mdx#L73-L76
 	if req.Method == "initialize" || req.Method == "ping" || req.Method == "server/discover" {
 		return true

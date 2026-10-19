@@ -64,8 +64,8 @@ func TestHTTPConnection_usesNegotiatedLegacyVersion(t *testing.T) {
 	if _, err := conn.Call(t.Context(), "tools/list", nil); err != nil {
 		t.Fatalf("Call: %v", err)
 	}
-	if initializeHeader != LegacyVersions[0] || offered != LegacyVersions[0] {
-		t.Errorf("initialize header/offer = %q/%q, want %q", initializeHeader, offered, LegacyVersions[0])
+	if initializeHeader != "" || offered != LegacyVersions[0] {
+		t.Errorf("initialize header/offer = %q/%q, want no header and %q", initializeHeader, offered, LegacyVersions[0])
 	}
 	if toolsHeader != "2025-06-18" {
 		t.Errorf("tools/list header = %q, want 2025-06-18", toolsHeader)

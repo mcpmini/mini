@@ -282,8 +282,11 @@ func (c *HTTPConnection) buildHTTPRequest(ctx context.Context, rpcReq Request) (
 	if err != nil {
 		return nil, "", err
 	}
+	// A strict legacy server can reject an unsupported version header before initialize
+	// negotiates a version both sides support:
+	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/ab3a39c13bd23be691c2760e1c6c5c15a64582e1/docs/specification/2025-11-25/basic/transports.mdx#L265-L267
 	if rpcReq.Method == "initialize" {
-		httpReq.Header.Set("MCP-Protocol-Version", LegacyVersions[0])
+		httpReq.Header.Del("MCP-Protocol-Version")
 	}
 	// The stored ID may belong to the session being replaced, and a new session must start
 	// with an InitializeRequest that carries no session ID:

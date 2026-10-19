@@ -48,8 +48,8 @@ func TestHTTPSession_renewalUsesNewlyNegotiatedVersion(t *testing.T) {
 		t.Errorf("renewed ping header = %q, want 2025-03-26", got)
 	}
 	inits := m.requestsWithMethod("initialize")
-	if got := inits[len(inits)-1].protocolVersion; got != LegacyVersions[0] {
-		t.Errorf("renewal initialize header = %q, want %q", got, LegacyVersions[0])
+	if got := inits[len(inits)-1].protocolVersion; got != "" {
+		t.Errorf("renewal initialize header = %q, want none", got)
 	}
 }
 
