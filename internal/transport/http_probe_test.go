@@ -82,7 +82,12 @@ func TestHTTPConnection_ProbeModernStillInitializes(t *testing.T) {
 		methods = append(methods, req.Method)
 		if req.Method == "server/discover" {
 			assertDiscoverRequest(t, r, req)
-			writeRPCResult(t, w, req.ID, DiscoverResult{SupportedVersions: []string{ModernVersions[0], LatestLegacyVersion}})
+			writeRPCResult(
+				t,
+				w,
+				req.ID,
+				DiscoverResult{SupportedVersions: []string{ModernVersions[0], LatestLegacyVersion}},
+			)
 			return
 		}
 		serveProbeCall(t, w, req)

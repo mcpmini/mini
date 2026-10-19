@@ -18,22 +18,11 @@ func TestClassifyDiscover(t *testing.T) {
 		result  string
 		err     error
 		wantEra Era
-		wantVer string
 		wantErr bool
 	}{
-		{name: "modern result", result: `{"supportedVersions":["2026-07-28"]}`, wantEra: EraModern, wantVer: "2026-07-28"},
 		{name: "legacy result", result: `{"supportedVersions":["2025-11-25"]}`, wantEra: EraLegacy},
 		{name: "malformed result", result: `not json`, wantEra: EraLegacy},
-		{name: "unsupported modern", err: unsupportedRPC(-32022, `{"supported":["2026-07-28"]}`), wantEra: EraModern, wantVer: "2026-07-28"},
-		{name: "unsupported legacy", err: unsupportedRPC(-32022, `{"supported":["2025-11-25"]}`), wantEra: EraLegacy},
 		{name: "unsupported without data", err: &RPCError{Code: -32022}, wantEra: EraLegacy},
-		{name: "method missing", err: &RPCError{Code: -32601}, wantEra: EraLegacy},
-		{name: "header mismatch", err: &RPCError{Code: -32020}, wantErr: true},
-		{name: "client mismatch", err: &RPCError{Code: -32021}, wantErr: true},
-		{name: "unsupported status", err: &HTTPStatusError{StatusCode: 405}, wantEra: EraLegacy},
-		{name: "bad request status", err: &HTTPStatusError{StatusCode: 400}, wantEra: EraLegacy},
-		{name: "forbidden status", err: &HTTPStatusError{StatusCode: 403}, wantErr: true},
-		{name: "server status", err: &HTTPStatusError{StatusCode: 500}, wantErr: true},
 		{name: "connection", err: &ConnectionError{Err: errors.New("dropped")}, wantErr: true},
 		{name: "reauthorization", err: ReauthorizationError("server", ErrReauthRequired), wantErr: true},
 		{name: "retry exhaustion", err: errors.New("exceeded max retries"), wantErr: true},
@@ -47,15 +36,11 @@ func TestClassifyDiscover(t *testing.T) {
 			if tc.wantErr && !errors.Is(err, tc.err) {
 				t.Errorf("error = %v, want unchanged input error %v", err, tc.err)
 			}
-			if got.era != tc.wantEra || got.version != tc.wantVer {
-				t.Errorf("verdict = %+v, want era %v version %q", got, tc.wantEra, tc.wantVer)
+			if got.era != tc.wantEra || got.version != "" {
+				t.Errorf("verdict = %+v, want era %v and no modern version", got, tc.wantEra)
 			}
 		})
 	}
-}
-
-func unsupportedRPC(code int, data string) *RPCError {
-	return &RPCError{Code: code, Data: json.RawMessage(data)}
 }
 
 func TestClassifyDiscoverResponses(t *testing.T) {
@@ -94,6 +79,9 @@ func TestClassifyDiscoverResponses(t *testing.T) {
 			}
 			if !tc.wantErr && got.era != tc.era {
 				t.Errorf("era = %v, want %v", got.era, tc.era)
+			}
+			if got.era == EraModern && got.version != ModernVersions[0] {
+				t.Errorf("modern version = %q, want %q", got.version, ModernVersions[0])
 			}
 		})
 	}

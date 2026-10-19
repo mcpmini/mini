@@ -329,18 +329,13 @@ func TestNotificationRequests_authProvider_sendHeader(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	conn, err := NewHTTPConnection(HTTPConnectionConfig{
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{
 		URL:            srv.URL,
 		Clock:          clock.NewFake(),
 		AuthProvider:   provider,
 		ServerName:     "testserver",
 		AuthHeaderName: "Authorization",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { conn.Close() })
-	conn.eraKnown = true
 
 	conn.ListTools(t.Context()) //nolint:errcheck
 	select {

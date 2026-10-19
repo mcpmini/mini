@@ -76,14 +76,9 @@ func TestNotificationListener_backoffDoublesOnPersistentFailure(t *testing.T) {
 	srv := newNotifListenerServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 	})
-	conn, err := NewHTTPConnection(HTTPConnectionConfig{
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{
 		URL: srv.URL, Clock: clk, AuthProvider: provider, AuthHeaderName: "Authorization",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { conn.Close() })
-	conn.eraKnown = true
 
 	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
 		t.Fatalf("handshake failed: %v", err)
@@ -144,14 +139,9 @@ func TestNotificationListener_survivesReauthRequired(t *testing.T) {
 
 	provider := &failNRefreshProvider{failsLeft: 2, current: "Bearer tok", next: "Bearer new"}
 	clk := clock.NewFake()
-	conn, err := NewHTTPConnection(HTTPConnectionConfig{
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{
 		URL: srv.URL, Clock: clk, AuthProvider: provider, AuthHeaderName: "Authorization",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { conn.Close() })
-	conn.eraKnown = true
 
 	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
 		t.Fatalf("handshake failed: %v", err)
@@ -189,12 +179,7 @@ func TestNotificationListener_successResetsBackoffToOne(t *testing.T) {
 		}
 	})
 
-	conn, err := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL, Clock: clk})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { conn.Close() })
-	conn.eraKnown = true
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Clock: clk})
 
 	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
 		t.Fatalf("handshake failed: %v", err)
@@ -299,14 +284,11 @@ func TestNotificationListener_survivesClientTimeout(t *testing.T) {
 	})
 
 	clk := clock.NewFake()
-	conn, err := NewHTTPConnection(HTTPConnectionConfig{
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{
 		URL:           srv.URL,
 		Clock:         clk,
 		ClientTimeout: clientTimeout,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	conn.SetNotificationHandler(func(n Notification) {
 		if n.Method == NotificationToolsChanged {
 			select {
@@ -315,8 +297,6 @@ func TestNotificationListener_survivesClientTimeout(t *testing.T) {
 			}
 		}
 	})
-	t.Cleanup(func() { conn.Close() })
-	conn.eraKnown = true
 
 	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
 		t.Fatalf("handshake failed: %v", err)
@@ -338,14 +318,9 @@ func TestNotificationListener_reauthWaitsMaxListenerBackoff(t *testing.T) {
 		getCount.Add(1)
 		w.WriteHeader(http.StatusUnauthorized)
 	})
-	conn, err := NewHTTPConnection(HTTPConnectionConfig{
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{
 		URL: srv.URL, Clock: clk, AuthProvider: provider, AuthHeaderName: "Authorization",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { conn.Close() })
-	conn.eraKnown = true
 
 	conn.Call(t.Context(), "ping", nil) //nolint:errcheck
 
@@ -385,14 +360,9 @@ func TestNotificationListener_reauthRecovery_newCredentialProceedsNormally(t *te
 	})
 
 	provider := &fakeAuthProvider{current: "Bearer tok", next: "Bearer tok2"}
-	conn, err := NewHTTPConnection(HTTPConnectionConfig{
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{
 		URL: srv.URL, Clock: clk, AuthProvider: provider, AuthHeaderName: "Authorization",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { conn.Close() })
-	conn.eraKnown = true
 
 	conn.Call(t.Context(), "ping", nil) //nolint:errcheck
 
