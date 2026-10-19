@@ -37,6 +37,11 @@ type listenNotifications struct {
 	ToolsListChanged bool `json:"toolsListChanged,omitempty"`
 }
 
+type listenSubscription struct {
+	id            json.RawMessage
+	notifications listenNotifications
+}
+
 func (s *Server) startListen(ctx context.Context, p handleScannedLineParams, line []byte) {
 	var req listenRequest
 	if err := json.Unmarshal(line, &req); err != nil || len(req.ID) == 0 {
@@ -56,7 +61,7 @@ func (s *Server) startListen(ctx context.Context, p handleScannedLineParams, lin
 	}
 	acknowledged := listenNotifications{ToolsListChanged: req.Params.Notifications.ToolsListChanged}
 	p.writeOut(listenAcknowledgment(req.ID, acknowledged))
-	s.waitOnListen(ctx, p, req.ID, acknowledged.ToolsListChanged)
+	s.waitOnListen(ctx, p, listenSubscription{id: req.ID, notifications: acknowledged})
 }
 
 func (s *Server) rejectListenVersion(p handleScannedLineParams, id json.RawMessage, version string) {
@@ -75,11 +80,12 @@ func listenAcknowledgment(id json.RawMessage, notifications listenNotifications)
 	}
 }
 
-func (s *Server) waitOnListen(ctx context.Context, p handleScannedLineParams, id json.RawMessage, tools bool) {
+func (s *Server) waitOnListen(ctx context.Context, p handleScannedLineParams, listen listenSubscription) {
+	id := listen.id
 	ctx, cancel := context.WithCancel(ctx)
 	p.session.registerInFlight(id, cancel)
-	p.session.addListen(id, cancel, tools)
-	if tools {
+	p.session.addListen(listen, cancel)
+	if listen.notifications.ToolsListChanged {
 		p.session.markClientReady()
 	}
 	p.wg.Add(1)

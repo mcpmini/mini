@@ -20,10 +20,10 @@ type handleScannedLineParams struct {
 	wg       *sync.WaitGroup
 }
 
-func (s *Session) addListen(id json.RawMessage, cancel context.CancelFunc, tools bool) {
+func (s *Session) addListen(listen listenSubscription, cancel context.CancelFunc) {
 	s.listensMu.Lock()
-	s.listens[string(id)] = cancel
-	s.listenTools[string(id)] = tools
+	s.listens[string(listen.id)] = cancel
+	s.listenTools[string(listen.id)] = listen.notifications.ToolsListChanged
 	s.listensMu.Unlock()
 }
 
