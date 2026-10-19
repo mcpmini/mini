@@ -24,7 +24,7 @@ func TestClassifyDiscover(t *testing.T) {
 	}{
 		{name: "modern result with tool changes", result: `{"supportedVersions":["2026-07-28"],"capabilities":{"tools":{"listChanged":true}}}`, wantEra: EraModern, wantVer: "2026-07-28", wantListen: true},
 		{name: "modern result without tool changes", result: `{"supportedVersions":["2026-07-28"],"capabilities":{"tools":{"listChanged":false}}}`, wantEra: EraModern, wantVer: "2026-07-28"},
-		{name: "legacy result", result: `{"supportedVersions":["2025-11-25"]}`, wantEra: EraLegacy},
+		{name: "legacy result with tool changes", result: `{"supportedVersions":["2025-11-25"],"capabilities":{"tools":{"listChanged":true}}}`, wantEra: EraLegacy},
 		{name: "malformed result", result: `not json`, wantEra: EraLegacy},
 		{name: "unsupported without data", err: &RPCError{Code: -32022}, wantEra: EraLegacy},
 		{name: "connection", err: &ConnectionError{Err: errors.New("dropped")}, wantErr: true},

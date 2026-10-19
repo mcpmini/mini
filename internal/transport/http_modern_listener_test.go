@@ -250,6 +250,42 @@ func TestHTTPModernListener_noListenForUnsupportedVersionError(t *testing.T) {
 	}
 }
 
+func TestHTTPModernListener_reprobeKeepsTheRunningListener(t *testing.T) {
+	var pings atomic.Int32
+	server := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+		req := decodeRequest(t, r)
+		switch req.Method {
+		case "server/discover":
+			writeRPCResult(t, w, req.ID, DiscoverResult{
+				SupportedVersions: ModernVersions,
+				Capabilities:      map[string]any{"tools": map[string]any{"listChanged": true}},
+			})
+		case modernListenMethod:
+			w.Header().Set("Content-Type", "text/event-stream")
+			writeAck(t, w, req.ID)
+			<-r.Context().Done()
+		case "ping":
+			if pings.Add(1) == 1 {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
+		}
+	})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: server.URL})
+	t.Cleanup(func() { conn.Close() })
+	if _, err := conn.Call(t.Context(), "ping", nil); !IsConnectionError(err) {
+		t.Fatalf("first ping error = %v, want a ConnectionError that resets the era", err)
+	}
+	running := conn.listener
+	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
+		t.Fatalf("ping after re-probe: %v", err)
+	}
+	if conn.listener != running {
+		t.Fatal("re-probe replaced the running listener")
+	}
+}
+
 func TestHTTPModernListener_closeCancelsStream(t *testing.T) {
 	entered := make(chan struct{}, 1)
 	server := modernListenerServer(t, true, func(w http.ResponseWriter, r *http.Request, _ Request) {
