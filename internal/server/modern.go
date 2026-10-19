@@ -50,8 +50,9 @@ func (s *Server) handleModernLine(p handleScannedLineParams, line []byte) bool {
 	if len(peekRequestID(line)) == 0 {
 		return false
 	}
-	_, modern := modernRequestVersion(line)
-	if modern {
+	version, modern := modernRequestVersion(line)
+	// A rejected version must leave the session as it was, so the client can still fall back to initialize.
+	if modern && slices.Contains(transport.ModernVersions, version) {
 		s.activateModern(p.session)
 	}
 	if modern && peekMethod(line) == transport.MethodSubscriptionsListen {
