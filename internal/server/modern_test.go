@@ -15,6 +15,7 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
+	"github.com/mcpmini/mini/internal/transport/transporttest"
 )
 
 func TestModernDiscoverToolsListAndCallWithoutInitialize(t *testing.T) {
@@ -24,10 +25,16 @@ func TestModernDiscoverToolsListAndCallWithoutInitialize(t *testing.T) {
 	if err := srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, conn); err != nil {
 		t.Fatal(err)
 	}
-	responses := responsesByID(serveModern(t, srv,
-		modernRequest(1, "server/discover", nil),
-		modernRequest(2, "tools/list", nil),
-		modernRequest(3, "tools/call", transport.ToolCallParams{Name: "svc__ping", Arguments: map[string]any{}}),
+	responses := responsesByID(serveModern(
+		t,
+		srv,
+		transporttest.ModernRequest(1, "server/discover", nil),
+		transporttest.ModernRequest(2, "tools/list", nil),
+		transporttest.ModernRequest(
+			3,
+			"tools/call",
+			transport.ToolCallParams{Name: "svc__ping", Arguments: map[string]any{}},
+		),
 	))
 	for id := 1; id <= 3; id++ {
 		if result := decodeResult[modernResultFields](t, responses[id]); result.ResultType != transport.ResultComplete {
@@ -47,7 +54,7 @@ func TestModernDiscoverToolsListAndCallWithoutInitialize(t *testing.T) {
 
 func TestModernCompactModeWithoutInitialize(t *testing.T) {
 	srv := newTestServer(t, server.Params{ToolMode: transport.ToolModeCompact})
-	response := responsesByID(serveModern(t, srv, modernRequest(1, "tools/list", nil)))[1]
+	response := responsesByID(serveModern(t, srv, transporttest.ModernRequest(1, "tools/list", nil)))[1]
 	list := decodeResult[transport.ToolsListResult](t, response)
 	if len(list.Tools) != 4 || decodeResult[modernResultFields](t, response).ResultType != transport.ResultComplete {
 		t.Fatalf("compact tools/list result = %s", response.Result)
@@ -56,7 +63,7 @@ func TestModernCompactModeWithoutInitialize(t *testing.T) {
 
 func TestModernUnsupportedVersion(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
-	response := responsesByID(serveModern(t, srv, modernRequestVersion("1900-01-01", 7, "tools/list", nil)))[7]
+	response := responsesByID(serveModern(t, srv, transporttest.ModernRequestVersion("1900-01-01", 7, "tools/list", nil)))[7]
 	if response.Error == nil || response.Error.Code != transport.CodeUnsupportedProtocolVersion ||
 		response.Error.Message != "Unsupported protocol version" {
 		t.Fatalf("unsupported version error = %+v", response.Error)
@@ -89,7 +96,7 @@ func TestModernDiscoverOverHTTPRemainsMethodNotFound(t *testing.T) {
 	req := httptest.NewRequest(
 		"POST",
 		"http://127.0.0.1/mcp",
-		bytes.NewReader(modernRequest(77, "server/discover", nil)),
+		bytes.NewReader(transporttest.ModernRequest(77, "server/discover", nil)),
 	)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Mcp-Session-Id", sessionID)
@@ -178,39 +185,4 @@ func responsesByID(messages []modernMessage) map[int]modernMessage {
 		}
 	}
 	return responses
-}
-
-func modernRequest(id int, method string, params any) []byte {
-	return modernRequestVersion(transport.ModernVersions[0], id, method, params)
-}
-
-func modernRequestVersion(version string, id int, method string, params any) []byte {
-	fields := map[string]any{}
-	if params != nil {
-		encoded, err := json.Marshal(params)
-		if err != nil {
-			panic(err)
-		}
-		if err := json.Unmarshal(encoded, &fields); err != nil {
-			panic(err)
-		}
-	}
-	fields["_meta"] = transport.RequestMeta{
-		ProtocolVersion:    version,
-		ClientInfo:         &transport.ClientInfo{Name: "test", Version: "0"},
-		ClientCapabilities: &transport.ClientCapabilities{},
-	}
-	encodedParams, err := json.Marshal(fields)
-	if err != nil {
-		panic(err)
-	}
-	return encodeLine(transport.Request{JSONRPC: "2.0", ID: id, Method: method, Params: encodedParams})
-}
-
-func encodeLine(message any) []byte {
-	encoded, err := json.Marshal(message)
-	if err != nil {
-		panic(err)
-	}
-	return append(encoded, '\n')
 }

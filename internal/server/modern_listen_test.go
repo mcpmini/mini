@@ -15,6 +15,7 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
+	"github.com/mcpmini/mini/internal/transport/transporttest"
 )
 
 func TestModernListenFilterAndNoListenSuppressNotifications(t *testing.T) {
@@ -111,12 +112,16 @@ func newServerWithRemovableUpstream(t *testing.T) *server.Server {
 }
 
 func listenRequest(id int, notifications transport.ListenNotifications) []byte {
-	return modernRequest(id, transport.MethodSubscriptionsListen, transport.ListenParams{Notifications: notifications})
+	return transporttest.ModernRequest(
+		id,
+		transport.MethodSubscriptionsListen,
+		transport.ListenParams{Notifications: notifications},
+	)
 }
 
 // removeServerRequest makes mini's own tool list change, which is what listeners are notified about.
 func removeServerRequest(id int) []byte {
-	return modernRequest(id, "tools/call", transport.ToolCallParams{
+	return transporttest.ModernRequest(id, "tools/call", transport.ToolCallParams{
 		Name:      "config",
 		Arguments: map[string]any{"action": "remove_server", "server": "removeme"},
 	})
