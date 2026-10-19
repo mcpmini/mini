@@ -38,7 +38,6 @@ type HTTPConnection struct {
 	initMu                  sync.Mutex
 	era                     Era
 	eraKnown                bool
-	// The negotiated modern version, nil while the connection isn't using the modern path.
 	// Atomic because request building reads it while a probe may hold initMu.
 	modernVersion     atomic.Pointer[string]
 	modernMu          sync.RWMutex

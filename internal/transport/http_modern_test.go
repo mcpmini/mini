@@ -212,7 +212,7 @@ func TestModernArgumentAtPathKeepsLevelsSeparate(t *testing.T) {
 			_, _ = argumentAtPath(
 				args,
 				[]string{"scope", "region"},
-			) // a nested lookup first must not leak into the root map
+			)
 			got, ok := argumentAtPath(args, tc.path)
 			if ok != (tc.want != "") || got != tc.want {
 				t.Fatalf("argumentAtPath(%v) = %q, %v; want %q", tc.path, got, ok, tc.want)
