@@ -272,6 +272,16 @@ func assertDiscoverRequest(t *testing.T, r *http.Request, req Request) {
 	}
 }
 
+type discoverRequestMeta struct {
+	ProtocolVersion string         `json:"io.modelcontextprotocol/protocolVersion"`
+	ClientInfo      ClientInfo     `json:"io.modelcontextprotocol/clientInfo"`
+	Capabilities    map[string]any `json:"io.modelcontextprotocol/clientCapabilities"`
+}
+
+type discoverRequestParams struct {
+	Meta discoverRequestMeta `json:"_meta"`
+}
+
 func serveProbeCall(t *testing.T, w http.ResponseWriter, req Request) {
 	t.Helper()
 	switch req.Method {

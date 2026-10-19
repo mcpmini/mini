@@ -79,14 +79,14 @@ func (c *HTTPConnection) callModern(
 			return nil, err
 		}
 	}
-	result, err := c.modernRPC(ctx, method, prepared)
+	result, err := c.rpc(ctx, method, prepared)
 	if method != "tools/call" || !isHeaderMismatch(err) {
 		return result, c.modernError(err)
 	}
 	if _, err = c.ListTools(ctx); err != nil {
 		return nil, err
 	}
-	result, err = c.modernRPC(ctx, method, prepared)
+	result, err = c.rpc(ctx, method, prepared)
 	return result, c.modernError(err)
 }
 
@@ -97,16 +97,6 @@ func isHeaderMismatch(err error) bool {
 	}
 	var statusErr *HTTPStatusError
 	return errors.As(err, &statusErr) && statusErr.RPC != nil && statusErr.RPC.Code == CodeHeaderMismatch
-}
-
-func (c *HTTPConnection) modernRPC(
-	ctx context.Context,
-	method string,
-	params json.RawMessage,
-) (json.RawMessage, error) {
-	id := c.nextID.Add(1)
-	req := Request{JSONRPC: "2.0", ID: id, Method: method, Params: params}
-	return c.postWithAuthRetry(ctx, req)
 }
 
 func (c *HTTPConnection) modernError(err error) error {

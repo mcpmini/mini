@@ -7,8 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
-
-	"github.com/mcpmini/mini/internal/version"
 )
 
 type DiscoverResult struct {
@@ -25,16 +23,6 @@ type UnsupportedVersionData struct {
 type probeVerdict struct {
 	era     Era
 	version string
-}
-
-type discoverRequestMeta struct {
-	ProtocolVersion string         `json:"io.modelcontextprotocol/protocolVersion"`
-	ClientInfo      ClientInfo     `json:"io.modelcontextprotocol/clientInfo"`
-	Capabilities    map[string]any `json:"io.modelcontextprotocol/clientCapabilities"`
-}
-
-type discoverRequestParams struct {
-	Meta discoverRequestMeta `json:"_meta"`
 }
 
 func setDiscoverRequestHeaders(req *http.Request) {
@@ -62,12 +50,10 @@ func (c *HTTPConnection) probeOnce(ctx context.Context) error {
 }
 
 func (c *HTTPConnection) probe(ctx context.Context) (json.RawMessage, error) {
-	//nolint:errcheck // fixed discover fields contain only JSON-serializable values.
-	params, _ := json.Marshal(discoverRequestParams{Meta: discoverRequestMeta{
-		ProtocolVersion: ModernVersions[0],
-		ClientInfo:      ClientInfo{Name: "mini", Version: version.Version},
-		Capabilities:    map[string]any{},
-	}})
+	params, err := c.prepareModernParams(nil)
+	if err != nil {
+		return nil, err
+	}
 	return c.rpc(ctx, "server/discover", params)
 }
 
