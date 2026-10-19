@@ -67,8 +67,38 @@ func startSessionNotifyForwarder(session *Session, writeOut func(any)) func() {
 	if !ok {
 		return func() {}
 	}
-	wait := startNotifyForwarder(writeOut, ch)
-	return func() { session.closeToolsChangedStream(ch); wait() }
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for notification := range ch {
+			session.forwardToolsChanged(notification, writeOut)
+		}
+	}()
+	return func() { session.closeToolsChangedStream(ch); wg.Wait() }
+}
+
+type modernToolsChangedNotification struct {
+	JSONRPC string                   `json:"jsonrpc"`
+	Method  string                   `json:"method"`
+	Params  modernToolsChangedParams `json:"params"`
+}
+
+type modernToolsChangedParams struct {
+	Meta subscriptionMeta `json:"_meta"`
+}
+
+func (s *Session) forwardToolsChanged(raw json.RawMessage, writeOut func(any)) {
+	if !s.modern.Load() {
+		writeOut(raw)
+		return
+	}
+	for _, id := range s.listenIDs() {
+		writeOut(modernToolsChangedNotification{
+			JSONRPC: "2.0", Method: "notifications/tools/list_changed",
+			Params: modernToolsChangedParams{Meta: subscriptionMeta{SubscriptionID: id}},
+		})
+	}
 }
 
 func writeJSON(w io.Writer, v any) error {

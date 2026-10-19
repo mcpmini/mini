@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -42,6 +41,11 @@ type Session struct {
 	mode           atomic.Int32 // holds ToolMode; zero value = ToolModeProxy
 	modeOnce       sync.Once
 	clientReady    atomic.Bool
+	acceptsModern  atomic.Bool
+	modern         atomic.Bool
+	listensMu      sync.Mutex
+	listens        map[string]context.CancelFunc
+	listenTools    map[string]bool
 	totalCalls     atomic.Int64
 	totalErrors    atomic.Int64
 	totalLatencyMs atomic.Int64
@@ -90,6 +94,8 @@ func newSession(clock clock.Clock) *Session {
 		conns:        make(map[string]transport.Connection),
 		dialMap:      make(map[string]*dialOnce),
 		inFlight:     make(map[string]context.CancelFunc),
+		listens:      make(map[string]context.CancelFunc),
+		listenTools:  make(map[string]bool),
 		lastUsed:     clock.Now(),
 		clock:        clock,
 		initDone:     make(chan struct{}),
@@ -125,6 +131,7 @@ func (s *Session) markClientReady() {
 // It unblocks waiting goroutines so they can return an error and let Serve exit.
 func (s *Session) markAborted() {
 	s.initAbortOnce.Do(func() { close(s.initAbort) })
+	s.cancelListens()
 }
 
 // waitInitialized blocks until initialization succeeds, the serving loop ends,
@@ -142,32 +149,6 @@ func (s *Session) waitInitialized(ctx context.Context) bool {
 		return false
 	case <-ctx.Done():
 		return false
-	}
-}
-
-// registerInFlight registers a cancellable context for the request with the
-// given raw-JSON ID. The ID is stored as its raw JSON string so that numeric
-// IDs (5) and string IDs ("5") are correctly distinguished.
-func (s *Session) registerInFlight(rawID json.RawMessage, cancel context.CancelFunc) {
-	s.inFlightMu.Lock()
-	s.inFlight[string(rawID)] = cancel
-	s.inFlightMu.Unlock()
-}
-
-func (s *Session) removeInFlight(rawID json.RawMessage) {
-	s.inFlightMu.Lock()
-	delete(s.inFlight, string(rawID))
-	s.inFlightMu.Unlock()
-}
-
-// cancelInFlight cancels the in-flight request matching rawID, if any.
-// Safe to call if the request has already completed.
-func (s *Session) cancelInFlight(rawID json.RawMessage) {
-	s.inFlightMu.Lock()
-	cancel := s.inFlight[string(rawID)]
-	s.inFlightMu.Unlock()
-	if cancel != nil {
-		cancel()
 	}
 }
 
@@ -236,6 +217,7 @@ func (s *Session) EvictConn(serverName string, conn transport.Connection) {
 }
 
 func (s *Session) Close() {
+	s.cancelListens()
 	s.mu.Lock()
 	for _, conn := range s.conns {
 		conn.Close() //nolint:errcheck // Session shutdown has no caller to receive connection cleanup errors.
