@@ -21,7 +21,7 @@ func (s *Server) startListen(ctx context.Context, p handleScannedLineParams, lin
 		)
 		return
 	}
-	if req.JSONRPC != "2.0" {
+	if req.JsonRPC != transport.JsonRPCVersion {
 		p.writeOut(errorResponse(req.ID, transport.CodeInvalidRequest, "jsonrpc must be \"2.0\""))
 		return
 	}

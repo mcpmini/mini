@@ -38,9 +38,14 @@ func serveRawMethod(t *testing.T, srv *server.Server, method string) map[string]
 		"clientInfo":      map[string]any{"name": "test", "version": "0"},
 	})
 	initReq, _ := json.Marshal(
-		map[string]any{"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": json.RawMessage(initParams)},
+		map[string]any{
+			"jsonrpc": transport.JsonRPCVersion,
+			"id":      0,
+			"method":  "initialize",
+			"params":  json.RawMessage(initParams),
+		},
 	)
-	callReq, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": method})
+	callReq, _ := json.Marshal(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": method})
 	in := bytes.NewReader(append(append(initReq, '\n'), append(callReq, '\n')...))
 	var out bytes.Buffer
 	done := make(chan error, 1)

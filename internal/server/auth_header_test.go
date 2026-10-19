@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/mcpmini/mini/internal/transport"
+
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
 )
@@ -26,7 +28,7 @@ func fakeMCPServer(
 		onRequest(w, r, req)
 		if method == "initialize" {
 			json.NewEncoder(w).Encode(map[string]any{
-				"jsonrpc": "2.0", "id": id,
+				"jsonrpc": transport.JsonRPCVersion, "id": id,
 				"result": map[string]any{
 					"protocolVersion": "2024-11-05",
 					"capabilities":    map[string]any{"tools": map[string]any{}},
@@ -35,7 +37,7 @@ func fakeMCPServer(
 			})
 		} else {
 			json.NewEncoder(w).
-				Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"tools": []any{}}})
+				Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, "result": map[string]any{"tools": []any{}}})
 		}
 	}))
 }

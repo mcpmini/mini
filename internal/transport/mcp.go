@@ -4,15 +4,17 @@ package transport
 
 import "encoding/json"
 
+const JsonRPCVersion = "2.0"
+
 type Request struct {
-	JSONRPC string          `json:"jsonrpc"`
+	JsonRPC string          `json:"jsonrpc"`
 	ID      any             `json:"id,omitempty"` // string | number | null
 	Method  string          `json:"method"`
 	Params  json.RawMessage `json:"params,omitempty"`
 }
 
 type Response struct {
-	JSONRPC string          `json:"jsonrpc"`
+	JsonRPC string          `json:"jsonrpc"`
 	ID      any             `json:"id,omitempty"`
 	Result  json.RawMessage `json:"result,omitempty"`
 	Error   *RPCError       `json:"error,omitempty"`
@@ -28,7 +30,7 @@ func (e *RPCError) Error() string { return e.Message }
 
 // Notification is a JSON-RPC message with no ID (fire-and-forget).
 type Notification struct {
-	JSONRPC string          `json:"jsonrpc"`
+	JsonRPC string          `json:"jsonrpc"`
 	Method  string          `json:"method"`
 	Params  json.RawMessage `json:"params,omitempty"`
 }

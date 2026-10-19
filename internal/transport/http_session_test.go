@@ -73,7 +73,7 @@ func TestHTTPSession_newSessionRejectedReturnsTypedError(t *testing.T) {
 func TestHTTPSession_404WithoutSessionIsPlainError(t *testing.T) {
 	m := newSessionFake()
 	m.stopIssuingSessions()
-	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if peekRPCMethod(r) == "ping" {
 			w.WriteHeader(http.StatusNotFound)
 			return
@@ -119,7 +119,7 @@ func TestHTTPSession_concurrentCallsOnExpiredSessionShareOneReinit(t *testing.T)
 
 func TestHTTPSession_401DuringReinitHandshakeRefreshesAndSucceeds(t *testing.T) {
 	m := newSessionFake()
-	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		reinit := peekRPCMethod(r) == "initialize" && m.initializeCount() > 0
 		if reinit && r.Header.Get("Authorization") != "Bearer new" {
 			w.Header().Set("WWW-Authenticate", "Bearer realm=test")
@@ -148,7 +148,7 @@ func TestHTTPSession_401DuringReinitHandshakeRefreshesAndSucceeds(t *testing.T) 
 func TestHTTPSession_slowResponseEchoingTheOldSessionDoesNotReplaceTheNewOne(t *testing.T) {
 	m := newSessionFake()
 	slow := newRequestHold(t)
-	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && slow.blockIfArmed() {
 			echoSessionWithOK(w, r)
 			return

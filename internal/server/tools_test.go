@@ -89,7 +89,7 @@ func TestToolsListChanged_notificationShape(t *testing.T) {
 		t.Fatal("tools/list_changed notification not sent after remove_server")
 	}
 	t.Run("jsonrpc 2.0", func(t *testing.T) {
-		if v, _ := found["jsonrpc"].(string); v != "2.0" {
+		if v, _ := found["jsonrpc"].(string); v != transport.JsonRPCVersion {
 			t.Errorf("notification jsonrpc = %q, want \"2.0\"", v)
 		}
 	})

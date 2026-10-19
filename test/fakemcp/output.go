@@ -39,5 +39,7 @@ func (s *outputSink) writeResult(result dispatchResult) error {
 func (s *outputSink) notifyToolsChanged() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.enc.Encode(transport.Notification{JSONRPC: "2.0", Method: transport.NotificationToolsChanged}) //nolint:errcheck
+	s.enc.Encode(
+		transport.Notification{JsonRPC: transport.JsonRPCVersion, Method: transport.NotificationToolsChanged},
+	) //nolint:errcheck
 }

@@ -75,13 +75,13 @@ func (u *testMCPUpstream) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	id := req["id"]
 	switch method {
 	case "initialize":
-		json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, //nolint:errcheck
+		json.NewEncoder(w).Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, //nolint:errcheck
 			"result": map[string]any{"protocolVersion": transport.LegacyVersions[0]}})
 	case "tools/list":
-		json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, //nolint:errcheck
+		json.NewEncoder(w).Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, //nolint:errcheck
 			"result": map[string]any{"tools": []any{map[string]any{"name": "t1", "inputSchema": map[string]any{}}}}})
 	case "tools/call":
-		json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, //nolint:errcheck
+		json.NewEncoder(w).Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, //nolint:errcheck
 			"result": map[string]any{"content": []any{map[string]any{"type": "text", "text": "ok"}}}})
 	}
 }
@@ -151,10 +151,10 @@ func serveSingleProxyCall(t *testing.T, srv *server.Server, toolName string) map
 		"clientInfo": map[string]any{"name": "test", "version": "0"},
 	})
 	initReq, _ := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": json.RawMessage(initRaw),
+		"jsonrpc": transport.JsonRPCVersion, "id": 0, "method": "initialize", "params": json.RawMessage(initRaw),
 	})
 	callReq, _ := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "tools/call",
 		"params": map[string]any{"name": toolName, "arguments": map[string]any{}},
 	})
 	var input bytes.Buffer

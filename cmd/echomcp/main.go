@@ -15,6 +15,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 func main() {
@@ -77,6 +79,6 @@ func echoResult(req map[string]any) map[string]any {
 }
 
 func respond(id, result any) {
-	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "result": result})
+	b, _ := json.Marshal(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, "result": result})
 	fmt.Fprintf(os.Stdout, "%s\n", b)
 }

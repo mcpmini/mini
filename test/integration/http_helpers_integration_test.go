@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/mcpmini/mini/internal/transport"
+
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
 )
@@ -67,7 +69,7 @@ func (f *fakeHTTPMCP) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	json.NewEncoder(w).
-		Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": fakeMCPResult(req.Method)})
+		Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": req.ID, "result": fakeMCPResult(req.Method)})
 	//nolint:errcheck
 }
 

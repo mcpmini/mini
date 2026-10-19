@@ -195,7 +195,7 @@ func peekIsInitialize(line []byte) bool {
 
 type requestID struct {
 	ID      json.RawMessage `json:"id"`
-	JSONRPC string          `json:"jsonrpc"`
+	JsonRPC string          `json:"jsonrpc"`
 }
 
 func peekMethod(line []byte) string {
@@ -240,7 +240,7 @@ func daemonErrorResponse(body []byte, msg string) []byte {
 	var req requestID
 	//nolint:errcheck // Preserve any decoded ID for the daemon error; the guards below reject missing identifiers.
 	json.Unmarshal(body, &req)
-	if req.ID == nil || req.JSONRPC == "" {
+	if req.ID == nil || req.JsonRPC == "" {
 		return nil // notification — no id to reply to
 	}
 	return marshalErrorResponse(req.ID, msg)
@@ -248,7 +248,7 @@ func daemonErrorResponse(body []byte, msg string) []byte {
 
 func marshalErrorResponse(id json.RawMessage, msg string) []byte {
 	resp := map[string]any{
-		"jsonrpc": "2.0",
+		"jsonrpc": transport.JsonRPCVersion,
 		"id":      id,
 		"error":   map[string]any{"code": -32603, "message": msg},
 	}

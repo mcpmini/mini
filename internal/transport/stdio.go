@@ -115,7 +115,7 @@ func (c *StdioConnection) Call(ctx context.Context, method string, params json.R
 }
 
 func (c *StdioConnection) sendRequest(id int64, method string, params json.RawMessage) error {
-	req := Request{JSONRPC: "2.0", ID: id, Method: method, Params: params}
+	req := Request{JsonRPC: JsonRPCVersion, ID: id, Method: method, Params: params}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.writeJSON(req)
@@ -199,7 +199,7 @@ func (c *StdioConnection) initialize(ctx context.Context) error {
 	c.logger.Info("upstream connected", "server", result.ServerInfo.Name, "protocol", result.ProtocolVersion)
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.writeJSON(Notification{JSONRPC: "2.0", Method: NotificationInitialized})
+	return c.writeJSON(Notification{JsonRPC: JsonRPCVersion, Method: NotificationInitialized})
 }
 
 func newInitializeParams() InitializeParams {

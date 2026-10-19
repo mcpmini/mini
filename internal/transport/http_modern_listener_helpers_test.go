@@ -92,5 +92,5 @@ func writeComplete(t *testing.T, w http.ResponseWriter, id any) {
 		t.Errorf("encode completion result: %v", err)
 		return
 	}
-	writeSSEJSON(t, w, Response{JSONRPC: "2.0", ID: id, Result: result})
+	writeSSEJSON(t, w, Response{JsonRPC: JsonRPCVersion, ID: id, Result: result})
 }

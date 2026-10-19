@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mcpmini/mini/internal/transport"
+
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
 )
@@ -105,11 +107,11 @@ func proxyStatsAfterCall(t *testing.T, srv *server.Server) (servers, sessions, r
 	const sessionID = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
 	postMCP(t, srv, sessionID, initMsg(false))
 	callResp := postMCP(t, srv, sessionID, map[string]any{
-		"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+		"jsonrpc": transport.JsonRPCVersion, "id": 2, "method": "tools/call",
 		"params": map[string]any{"name": "svc__tool", "arguments": map[string]any{}},
 	})
 	resp := postMCP(t, srv, sessionID, map[string]any{
-		"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+		"jsonrpc": transport.JsonRPCVersion, "id": 3, "method": "tools/call",
 		"params": map[string]any{"name": "config", "arguments": map[string]any{"action": "status"}},
 	})
 	var status map[string]any

@@ -39,11 +39,11 @@ func initMsg(compact bool) map[string]any {
 	if compact {
 		params[transport.ToolModeParam] = transport.ToolModeCompactValue
 	}
-	return map[string]any{"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": params}
+	return map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": 0, "method": "initialize", "params": params}
 }
 
 func toolsListMsg() map[string]any {
-	return map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
+	return map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "tools/list"}
 }
 
 func TestHTTPSession_InheritsServerCompactMode(t *testing.T) {
@@ -132,7 +132,7 @@ func TestProxy_SessionProjection_FieldExclusionPersistsAcrossCalls(t *testing.T)
 	postMCP(t, srv, sessionID, initMsg(false))
 
 	postMCP(t, srv, sessionID, map[string]any{
-		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "tools/call",
 		"params": map[string]any{"name": "config", "arguments": map[string]any{
 			"action": "set_projection", "server": "svc", "tool": "get_item",
 			"projection": map[string]any{"exclude": []string{"secret"}}, "session_only": true,
@@ -141,7 +141,7 @@ func TestProxy_SessionProjection_FieldExclusionPersistsAcrossCalls(t *testing.T)
 
 	for i := range 3 {
 		resp := postMCP(t, srv, sessionID, map[string]any{
-			"jsonrpc": "2.0", "id": 2 + i, "method": "tools/call",
+			"jsonrpc": transport.JsonRPCVersion, "id": 2 + i, "method": "tools/call",
 			"params": map[string]any{"name": "svc__get_item", "arguments": map[string]any{}},
 		})
 		res, _ := resp["result"].(map[string]any)
@@ -169,7 +169,7 @@ func TestProxy_SessionProjection_IsolatedBetweenSessions(t *testing.T) {
 	postMCP(t, srv, sessionB, initMsg(false))
 
 	postMCP(t, srv, sessionA, map[string]any{
-		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "tools/call",
 		"params": map[string]any{"name": "config", "arguments": map[string]any{
 			"action": "set_projection", "server": "svc", "tool": "get_item",
 			"projection": map[string]any{"exclude": []string{"secret"}}, "session_only": true,
@@ -178,7 +178,7 @@ func TestProxy_SessionProjection_IsolatedBetweenSessions(t *testing.T) {
 
 	callItem := func(sid string, id int) string {
 		resp := postMCP(t, srv, sid, map[string]any{
-			"jsonrpc": "2.0", "id": id, "method": "tools/call",
+			"jsonrpc": transport.JsonRPCVersion, "id": id, "method": "tools/call",
 			"params": map[string]any{"name": "svc__get_item", "arguments": map[string]any{}},
 		})
 		res, _ := resp["result"].(map[string]any)
@@ -209,7 +209,7 @@ func TestProxy_Reload_PreservesSessionProjections(t *testing.T) {
 	postMCP(t, srv, sessionID, initMsg(false))
 
 	postMCP(t, srv, sessionID, map[string]any{
-		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "tools/call",
 		"params": map[string]any{"name": "config", "arguments": map[string]any{
 			"action": "set_projection", "server": "svc", "tool": "get_item",
 			"projection": map[string]any{"exclude": []string{"secret"}}, "session_only": true,
@@ -217,12 +217,12 @@ func TestProxy_Reload_PreservesSessionProjections(t *testing.T) {
 	})
 
 	postMCP(t, srv, sessionID, map[string]any{
-		"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+		"jsonrpc": transport.JsonRPCVersion, "id": 2, "method": "tools/call",
 		"params": map[string]any{"name": "config", "arguments": map[string]any{"action": "reload"}},
 	})
 
 	resp := postMCP(t, srv, sessionID, map[string]any{
-		"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+		"jsonrpc": transport.JsonRPCVersion, "id": 3, "method": "tools/call",
 		"params": map[string]any{"name": "svc__get_item", "arguments": map[string]any{}},
 	})
 	res, _ := resp["result"].(map[string]any)
@@ -286,7 +286,12 @@ func TestResolveToolMode_proxySignalOnCompactServer(t *testing.T) {
 		transport.ToolModeParam: transport.ToolModeProxyValue,
 	}
 	const sessionID = "22222222-2222-2222-2222-222222222222"
-	postMCP(t, srv, sessionID, map[string]any{"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": params})
+	postMCP(
+		t,
+		srv,
+		sessionID,
+		map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": 0, "method": "initialize", "params": params},
+	)
 
 	tools := extractToolNames(postMCP(t, srv, sessionID, toolsListMsg()))
 	if !hasToolName(tools, "gh__list_issues") {
@@ -312,7 +317,12 @@ func TestResolveToolMode_unrecognizedSignal_fallsBackToServerDefault(t *testing.
 		transport.ToolModeParam: "turbo",
 	}
 	const sessionID = "33333333-3333-3333-3333-333333333333"
-	postMCP(t, srv, sessionID, map[string]any{"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": params})
+	postMCP(
+		t,
+		srv,
+		sessionID,
+		map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": 0, "method": "initialize", "params": params},
+	)
 
 	tools := extractToolNames(postMCP(t, srv, sessionID, toolsListMsg()))
 	if !hasToolName(tools, "call") {

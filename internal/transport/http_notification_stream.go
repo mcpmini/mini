@@ -53,7 +53,12 @@ func (c *HTTPConnection) buildModernListenRequest() (
 	if err != nil {
 		return nil, err
 	}
-	request := Request{JSONRPC: "2.0", ID: c.nextID.Add(1), Method: MethodSubscriptionsListen, Params: prepared}
+	request := Request{
+		JsonRPC: JsonRPCVersion,
+		ID:      c.nextID.Add(1),
+		Method:  MethodSubscriptionsListen,
+		Params:  prepared,
+	}
 	return func(ctx context.Context) (*http.Request, string, error) {
 		return c.buildModernHTTPRequest(ctx, request)
 	}, nil

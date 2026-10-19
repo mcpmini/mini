@@ -77,7 +77,7 @@ func TestHTTPSession_reinitKeepsASingleNotificationListener(t *testing.T) {
 func TestHTTPSession_requestsSentWhileReinitializingKeepTheOldSession(t *testing.T) {
 	m := newSessionFake()
 	reinit := newRequestHold(t)
-	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if peekRPCMethod(r) == "initialize" {
 			reinit.blockIfArmed()
 		}
@@ -105,7 +105,7 @@ func TestHTTPSession_requestsSentWhileReinitializingKeepTheOldSession(t *testing
 func TestHTTPSession_failedReinitializeKeepsTheOldSession(t *testing.T) {
 	m := newSessionFake()
 	var rejectNextInitialize atomic.Bool
-	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if peekRPCMethod(r) == "initialize" && rejectNextInitialize.CompareAndSwap(true, false) {
 			w.Header().Set("Retry-After", "30")
 			w.WriteHeader(http.StatusServiceUnavailable)
@@ -138,7 +138,7 @@ func TestHTTPSession_failedReinitializeKeepsTheOldSession(t *testing.T) {
 
 func TestHTTPSession_streamLeftOpenOnTheExpiredSessionMovesToTheNewOne(t *testing.T) {
 	m := newSessionFake()
-	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.Header.Get("Mcp-Session-Id") == "s1" {
 			m.gets <- "s1"
 			w.WriteHeader(http.StatusOK)
@@ -164,7 +164,7 @@ func TestHTTPSession_listenerThatGaveUpRestartsForTheNewSession(t *testing.T) {
 	m := newSessionFake()
 	var streamSupported atomic.Bool
 	rejected := make(chan struct{}, 1)
-	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && !streamSupported.Load() {
 			rejected <- struct{}{}
 			w.WriteHeader(http.StatusMethodNotAllowed)

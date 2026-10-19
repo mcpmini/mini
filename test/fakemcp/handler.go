@@ -55,7 +55,11 @@ func applyFault(req transport.Request, effect faultEffect) dispatchResult {
 }
 
 func faultRPCError(id any, message string) transport.Response {
-	return transport.Response{JSONRPC: "2.0", ID: id, Error: &transport.RPCError{Code: -32603, Message: message}}
+	return transport.Response{
+		JsonRPC: transport.JsonRPCVersion,
+		ID:      id,
+		Error:   &transport.RPCError{Code: -32603, Message: message},
+	}
 }
 
 func faultMessage(message, fallback string) string {
@@ -125,7 +129,7 @@ func parseToolCall(raw json.RawMessage) transport.ToolCallParams {
 
 func methodNotFound(req transport.Request) transport.Response {
 	return transport.Response{
-		JSONRPC: "2.0", ID: req.ID,
+		JsonRPC: transport.JsonRPCVersion, ID: req.ID,
 		Error: &transport.RPCError{Code: transport.CodeMethodNotFound, Message: "unknown method: " + req.Method},
 	}
 }
@@ -141,5 +145,5 @@ func extractToolName(req transport.Request) string {
 
 func respond(id any, result any) transport.Response {
 	b, _ := json.Marshal(result)
-	return transport.Response{JSONRPC: "2.0", ID: id, Result: b}
+	return transport.Response{JsonRPC: transport.JsonRPCVersion, ID: id, Result: b}
 }

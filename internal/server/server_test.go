@@ -69,7 +69,7 @@ func runEnvEchoServer() {
 }
 
 func envEchoWrite(id any, result any) {
-	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "result": result})
+	b, _ := json.Marshal(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, "result": result})
 	fmt.Fprintf(os.Stdout, "%s\n", b)
 }
 
@@ -117,7 +117,7 @@ func fakeMCPHandle(w http.ResponseWriter, r *http.Request, tools []map[string]an
 	switch req["method"] {
 	case "initialize":
 		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-			"jsonrpc": "2.0", "id": id,
+			"jsonrpc": transport.JsonRPCVersion, "id": id,
 			"result": map[string]any{
 				"protocolVersion": "2024-11-05",
 				"capabilities":    map[string]any{"tools": map[string]any{}},
@@ -126,10 +126,12 @@ func fakeMCPHandle(w http.ResponseWriter, r *http.Request, tools []map[string]an
 		})
 	case "tools/list":
 		json.NewEncoder(w).
-			Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"tools": tools}})
+			Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, "result": map[string]any{"tools": tools}})
 	//nolint:errcheck
 	default:
-		json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": nil}) //nolint:errcheck
+		json.NewEncoder(w).
+			Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, "result": nil})
+		//nolint:errcheck
 	}
 }
 
@@ -199,7 +201,7 @@ func fakeConn(tools ...string) *transport.FakeConnection {
 
 func rpc(method string, params any) []byte {
 	p, _ := json.Marshal(params)
-	req := map[string]any{"jsonrpc": "2.0", "id": 1, "method": method, "params": json.RawMessage(p)}
+	req := map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": method, "params": json.RawMessage(p)}
 	b, _ := json.Marshal(req)
 	return append(b, '\n')
 }
@@ -259,7 +261,12 @@ func newTestSession(t *testing.T, compact bool, input []byte) testSession {
 	}
 	initRaw, _ := json.Marshal(initParams(compact))
 	initReq, _ := json.Marshal(
-		map[string]any{"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": json.RawMessage(initRaw)},
+		map[string]any{
+			"jsonrpc": transport.JsonRPCVersion,
+			"id":      0,
+			"method":  "initialize",
+			"params":  json.RawMessage(initRaw),
+		},
 	)
 	return testSession{input: append(append(initReq, '\n'), input...), wantID: string(callReq.ID)}
 }

@@ -29,7 +29,7 @@ func newNotifListenerServer(t *testing.T, getHandler http.HandlerFunc) *httptest
 		switch req["method"] {
 		case "initialize":
 			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-				"jsonrpc": "2.0", "id": req["id"],
+				"jsonrpc": JsonRPCVersion, "id": req["id"],
 				"result": map[string]any{
 					"protocolVersion": LegacyVersions[0],
 					"capabilities":    map[string]any{"tools": map[string]any{"listChanged": true}},
@@ -39,7 +39,7 @@ func newNotifListenerServer(t *testing.T, getHandler http.HandlerFunc) *httptest
 			w.WriteHeader(http.StatusOK)
 		default:
 			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-				"jsonrpc": "2.0", "id": req["id"],
+				"jsonrpc": JsonRPCVersion, "id": req["id"],
 				"result": map[string]any{"ok": true},
 			})
 		}

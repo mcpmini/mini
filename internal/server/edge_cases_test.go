@@ -331,7 +331,7 @@ func TestRPCEnvelope_jsonrpc20(t *testing.T) {
 			if err := json.Unmarshal(lines[len(lines)-1], &msg); err != nil {
 				t.Fatalf("invalid JSON: %s", lines[len(lines)-1])
 			}
-			if v, _ := msg["jsonrpc"].(string); v != "2.0" {
+			if v, _ := msg["jsonrpc"].(string); v != transport.JsonRPCVersion {
 				t.Errorf("jsonrpc = %q, want \"2.0\"", v)
 			}
 			hasResult, hasError := msg["result"] != nil, msg["error"] != nil
@@ -397,7 +397,7 @@ func TestResponseID_echoesRequest(t *testing.T) {
 		t.Run("", func(t *testing.T) {
 			rawID, _ := json.Marshal(id)
 			reqBytes, _ := json.Marshal(map[string]any{
-				"jsonrpc": "2.0", "id": json.RawMessage(rawID), "method": "ping",
+				"jsonrpc": transport.JsonRPCVersion, "id": json.RawMessage(rawID), "method": "ping",
 			})
 			reqBytes = append(reqBytes, '\n')
 			lines := rawServe(t, newTestServer(t, server.Params{}), buildServeInput(true, [][]byte{reqBytes}))

@@ -225,11 +225,11 @@ func TestHTTPModernListener_noListenWithoutAdvertisedCapability(t *testing.T) {
 }
 
 func TestHTTPModernListener_noListenForUnsupportedVersionError(t *testing.T) {
-	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		req := decodeRequest(t, r)
 		if req.Method == "server/discover" {
 			response := Response{
-				JSONRPC: "2.0",
+				JsonRPC: JsonRPCVersion,
 				ID:      req.ID,
 				Error:   &RPCError{Code: -32022, Data: json.RawMessage(`{"supported":["2026-07-28"]}`)},
 			}
@@ -327,7 +327,7 @@ func TestHTTPModernListener_eraResetWaitsForReprobeAndListensAgain(t *testing.T)
 func TestHTTPModernListener_probeFinishingAfterCloseStartsNoListener(t *testing.T) {
 	probing := make(chan struct{})
 	releaseProbe := make(chan struct{})
-	server := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	server := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		req := decodeRequest(t, r)
 		if req.Method == "server/discover" {
 			close(probing)

@@ -85,7 +85,7 @@ func (c notifyOnCloseConn) Close() error {
 
 func emitToolsChanged(conn *transport.FakeConnection) {
 	conn.EmitNotification(transport.Notification{
-		JSONRPC: "2.0",
+		JsonRPC: transport.JsonRPCVersion,
 		Method:  transport.NotificationToolsChanged,
 	})
 }

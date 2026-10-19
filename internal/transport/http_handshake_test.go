@@ -34,7 +34,7 @@ func TestHTTPConnection_callCompletesHandshakeBeforeToolCall(t *testing.T) {
 
 func TestHTTPConnection_usesNegotiatedLegacyVersion(t *testing.T) {
 	var initializeHeader, toolsHeader, offered string
-	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		var req Request
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Errorf("decode request: %v", err)
@@ -75,7 +75,7 @@ func TestHTTPConnection_usesNegotiatedLegacyVersion(t *testing.T) {
 func TestHTTPConnection_rejectsUnsupportedNegotiatedVersion(t *testing.T) {
 	for _, version := range []string{"2026-07-28", "1999-01-01"} {
 		t.Run(version, func(t *testing.T) {
-			srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+			srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 				var req Request
 				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 					t.Errorf("decode request: %v", err)
@@ -100,7 +100,7 @@ func writeRPCResult(t *testing.T, w http.ResponseWriter, id any, result any) {
 		t.Errorf("marshal result: %v", err)
 		return
 	}
-	if err := json.NewEncoder(w).Encode(Response{JSONRPC: "2.0", ID: id, Result: raw}); err != nil {
+	if err := json.NewEncoder(w).Encode(Response{JsonRPC: JsonRPCVersion, ID: id, Result: raw}); err != nil {
 		t.Errorf("write result: %v", err)
 	}
 }
@@ -133,7 +133,7 @@ func TestHTTPConnection_concurrentFirstCallsHandshakeOnce(t *testing.T) {
 
 func TestHTTPConnection_callRetriesHandshakeAfterFailure(t *testing.T) {
 	var initializeCalls int
-	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]any
 		json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
 		switch req["method"] {
@@ -144,14 +144,14 @@ func TestHTTPConnection_callRetriesHandshakeAfterFailure(t *testing.T) {
 				return
 			}
 			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-				"jsonrpc": "2.0", "id": req["id"],
+				"jsonrpc": JsonRPCVersion, "id": req["id"],
 				"result": map[string]any{"protocolVersion": LegacyVersions[0]},
 			})
 		case "notifications/initialized":
 			w.WriteHeader(http.StatusOK)
 		case "ping":
 			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-				"jsonrpc": "2.0", "id": req["id"],
+				"jsonrpc": JsonRPCVersion, "id": req["id"],
 				"result": map[string]any{"ok": true},
 			})
 		}
@@ -240,14 +240,14 @@ func newHandshakeServerWithNotif(t *testing.T, notifHandler http.HandlerFunc) *h
 		switch req["method"] {
 		case "initialize":
 			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-				"jsonrpc": "2.0", "id": req["id"],
+				"jsonrpc": JsonRPCVersion, "id": req["id"],
 				"result": map[string]any{"protocolVersion": LegacyVersions[0]},
 			})
 		case "notifications/initialized":
 			notifHandler(w, r)
 		case "ping":
 			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-				"jsonrpc": "2.0", "id": req["id"],
+				"jsonrpc": JsonRPCVersion, "id": req["id"],
 				"result": map[string]any{"ok": true},
 			})
 		}
@@ -350,7 +350,7 @@ func TestNotificationStream_401_refreshesAndReconnects(t *testing.T) {
 		switch req["method"] {
 		case "initialize":
 			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-				"jsonrpc": "2.0", "id": req["id"],
+				"jsonrpc": JsonRPCVersion, "id": req["id"],
 				"result": map[string]any{
 					"protocolVersion": LegacyVersions[0],
 					"capabilities":    map[string]any{"tools": map[string]any{"listChanged": true}},
@@ -360,7 +360,7 @@ func TestNotificationStream_401_refreshesAndReconnects(t *testing.T) {
 			w.WriteHeader(http.StatusAccepted)
 		case "ping":
 			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-				"jsonrpc": "2.0", "id": req["id"],
+				"jsonrpc": JsonRPCVersion, "id": req["id"],
 				"result": map[string]any{"ok": true},
 			})
 		}
@@ -400,13 +400,13 @@ func (refreshSucceedsProvider) RefreshAuthorization(_ context.Context, _ string)
 }
 
 func TestPostWithAuthRetry_replay401WrapsErrReauthRequired(t *testing.T) {
-	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]any
 		json.NewDecoder(r.Body).Decode(&req)
 		switch req["method"] {
 		case "initialize":
 			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-				"jsonrpc": "2.0", "id": req["id"],
+				"jsonrpc": JsonRPCVersion, "id": req["id"],
 				"result": map[string]any{"protocolVersion": LegacyVersions[0]},
 			})
 		case "notifications/initialized":
@@ -454,7 +454,7 @@ func (s *strictInitServer) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Mcp-Session-Id", fmt.Sprintf("sess-%d", n))
 		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-			"jsonrpc": "2.0", "id": req["id"],
+			"jsonrpc": JsonRPCVersion, "id": req["id"],
 			"result": map[string]any{"protocolVersion": LegacyVersions[0]},
 		})
 	case "notifications/initialized":
@@ -469,7 +469,7 @@ func (s *strictInitServer) handle(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	case "ping":
 		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-			"jsonrpc": "2.0", "id": req["id"],
+			"jsonrpc": JsonRPCVersion, "id": req["id"],
 			"result": map[string]any{"ok": true},
 		})
 	}

@@ -15,7 +15,7 @@ func (n *toolsChangedNotifier) SetHandler(handler func(Notification)) {
 	n.pending = false
 	n.mu.Unlock()
 	if pending {
-		handler(Notification{JSONRPC: "2.0", Method: NotificationToolsChanged})
+		handler(Notification{JsonRPC: JsonRPCVersion, Method: NotificationToolsChanged})
 	}
 }
 
@@ -28,7 +28,7 @@ func (n *toolsChangedNotifier) NotifyToolsChanged() {
 		return
 	}
 	n.mu.Unlock()
-	handler(Notification{JSONRPC: "2.0", Method: NotificationToolsChanged})
+	handler(Notification{JsonRPC: JsonRPCVersion, Method: NotificationToolsChanged})
 }
 
 func (n *toolsChangedNotifier) Handler() func(Notification) {
