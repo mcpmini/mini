@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -406,4 +407,36 @@ func mustJSON(v any) string {
 		return fmt.Sprintf("%v", v)
 	}
 	return string(b)
+}
+
+type handleScannedLineParams struct {
+	ctx      context.Context
+	rawLine  []byte
+	session  *Session
+	writeOut func(any)
+	wg       *sync.WaitGroup
+}
+
+func (s *Server) handleScannedLine(p handleScannedLineParams) {
+	if len(p.rawLine) == 0 {
+		return
+	}
+	line := bytes.Clone(p.rawLine)
+	if s.handleModernLine(p, line) {
+		return
+	}
+	method := peekMethod(line)
+	// Lifecycle and cancellation transitions must finish before later requests start.
+	if method == "initialize" || method == transport.NotificationInitialized ||
+		method == transport.NotificationCancelled {
+		if resp, send := s.handleLine(p.ctx, line, p.session); send {
+			p.writeOut(resp)
+		}
+		return
+	}
+	p.wg.Add(1)
+	go func() {
+		defer p.wg.Done()
+		s.dispatchWithCancel(p.ctx, line, p.session, p.writeOut)
+	}()
 }

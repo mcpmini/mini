@@ -50,18 +50,6 @@ func (w *serializedWriter) Err() error {
 	return w.err
 }
 
-func startNotifyForwarder(writeOut func(any), ch chan json.RawMessage) func() {
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for n := range ch {
-			writeOut(n)
-		}
-	}()
-	return wg.Wait
-}
-
 func startSessionNotifyForwarder(session *Session, writeOut func(any)) func() {
 	ch, ok := session.openToolsChangedStream()
 	if !ok {

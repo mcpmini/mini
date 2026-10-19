@@ -23,11 +23,7 @@ func TestSerializedWriterKeepsFirstErrorAcrossResponsesAndNotifications(t *testi
 	})
 	w := newSerializedWriter(out, func() {})
 	w.Write(map[string]any{"id": 1})
-	ch := make(chan json.RawMessage, 1)
-	ch <- json.RawMessage(`{"method":"notifications/tools/list_changed"}`)
-	wait := startNotifyForwarder(w.Write, ch)
-	close(ch)
-	wait()
+	w.Write(json.RawMessage(`{"method":"notifications/tools/list_changed"}`))
 	w.Write(map[string]any{"id": 2})
 	if !errors.Is(w.Err(), want) {
 		t.Fatalf("latched error = %v, want failure cause %v", w.Err(), want)
