@@ -83,6 +83,7 @@ func TestNotificationListener_backoffDoublesOnPersistentFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { conn.Close() })
+	conn.eraKnown = true
 
 	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
 		t.Fatalf("handshake failed: %v", err)
@@ -150,6 +151,7 @@ func TestNotificationListener_survivesReauthRequired(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { conn.Close() })
+	conn.eraKnown = true
 
 	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
 		t.Fatalf("handshake failed: %v", err)
@@ -192,6 +194,7 @@ func TestNotificationListener_successResetsBackoffToOne(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { conn.Close() })
+	conn.eraKnown = true
 
 	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
 		t.Fatalf("handshake failed: %v", err)
@@ -313,6 +316,7 @@ func TestNotificationListener_survivesClientTimeout(t *testing.T) {
 		}
 	})
 	t.Cleanup(func() { conn.Close() })
+	conn.eraKnown = true
 
 	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
 		t.Fatalf("handshake failed: %v", err)
@@ -341,6 +345,7 @@ func TestNotificationListener_reauthWaitsMaxListenerBackoff(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { conn.Close() })
+	conn.eraKnown = true
 
 	conn.Call(t.Context(), "ping", nil) //nolint:errcheck
 
@@ -387,6 +392,7 @@ func TestNotificationListener_reauthRecovery_newCredentialProceedsNormally(t *te
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { conn.Close() })
+	conn.eraKnown = true
 
 	conn.Call(t.Context(), "ping", nil) //nolint:errcheck
 

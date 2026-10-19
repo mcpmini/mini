@@ -13,7 +13,7 @@ import (
 
 func TestHTTPSession_sessionExpiresTransparentRecovery(t *testing.T) {
 	m, srv := newSessionServer(t)
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 	mustPing(t, conn)
 
 	m.expireSession(m.sessionID())
@@ -37,7 +37,7 @@ func TestHTTPSession_sessionExpiresTransparentRecovery(t *testing.T) {
 
 func TestHTTPSession_renewalUsesNewlyNegotiatedVersion(t *testing.T) {
 	m, srv := newSessionServer(t)
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 	mustPing(t, conn)
 	m.setProtocolVersion("2025-03-26")
 	m.expireSession(m.sessionID())
@@ -55,7 +55,7 @@ func TestHTTPSession_renewalUsesNewlyNegotiatedVersion(t *testing.T) {
 
 func TestHTTPSession_newSessionRejectedReturnsTypedError(t *testing.T) {
 	m, srv := newSessionServer(t)
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 	mustPing(t, conn)
 
 	m.rejectEverySessionAfterHandshake()
@@ -80,7 +80,7 @@ func TestHTTPSession_404WithoutSessionIsPlainError(t *testing.T) {
 		}
 		m.handle(w, r)
 	})
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 
 	_, err := conn.Call(t.Context(), "ping", nil)
 
@@ -95,7 +95,7 @@ func TestHTTPSession_404WithoutSessionIsPlainError(t *testing.T) {
 
 func TestHTTPSession_concurrentCallsOnExpiredSessionShareOneReinit(t *testing.T) {
 	m, srv := newSessionServer(t)
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 	mustPing(t, conn)
 
 	m.expireSession(m.sessionID())
@@ -129,7 +129,9 @@ func TestHTTPSession_401DuringReinitHandshakeRefreshesAndSucceeds(t *testing.T) 
 		m.handle(w, r)
 	})
 	provider := &fakeAuthProvider{current: "Bearer old", next: "Bearer new"}
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, AuthProvider: provider, AuthHeaderName: "Authorization"})
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{
+		URL: srv.URL, AuthProvider: provider, AuthHeaderName: "Authorization",
+	})
 	mustPing(t, conn)
 
 	m.expireSession(m.sessionID())
@@ -153,7 +155,7 @@ func TestHTTPSession_slowResponseEchoingTheOldSessionDoesNotReplaceTheNewOne(t *
 		}
 		m.handle(w, r)
 	})
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 	mustPing(t, conn)
 	slow.arm()
 	slowPing := pingInBackground(t, conn)
@@ -179,7 +181,7 @@ func echoSessionWithOK(w http.ResponseWriter, r *http.Request) {
 
 func TestHTTPSession_reinitWithoutASessionStopsSendingTheOldOne(t *testing.T) {
 	m, srv := newSessionServer(t)
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 	mustPing(t, conn)
 
 	m.stopIssuingSessions()
@@ -200,7 +202,7 @@ func TestHTTPSession_reinitWithoutASessionStopsSendingTheOldOne(t *testing.T) {
 
 func TestHTTPSession_reinitAnnouncesThatToolsMayHaveChanged(t *testing.T) {
 	m, srv := newSessionServer(t)
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 	var mu sync.Mutex
 	var announced []string
 	conn.SetNotificationHandler(func(n Notification) {

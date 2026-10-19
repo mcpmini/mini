@@ -19,7 +19,7 @@ import (
 
 func TestHTTPConnection_callCompletesHandshakeBeforeToolCall(t *testing.T) {
 	fake, srv := newSessionServer(t)
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 	args, _ := json.Marshal(ToolCallParams{Name: "do_thing", Arguments: map[string]any{}})
 
 	if _, err := conn.Call(t.Context(), "tools/call", args); err != nil {
@@ -57,7 +57,7 @@ func TestHTTPConnection_usesNegotiatedLegacyVersion(t *testing.T) {
 			writeRPCResult(t, w, req.ID, ToolsListResult{Tools: []ToolDefinition{}})
 		}
 	})
-	conn := mustHTTPConn(t, HTTPConnectionConfig{
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{
 		URL:     srv.URL,
 		Headers: map[string]string{"MCP-Protocol-Version": "1999-01-01"},
 	})
@@ -83,7 +83,7 @@ func TestHTTPConnection_rejectsUnsupportedNegotiatedVersion(t *testing.T) {
 				}
 				writeRPCResult(t, w, req.ID, InitializeResult{ProtocolVersion: version})
 			})
-			conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+			conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 			_, err := conn.Call(t.Context(), "ping", nil)
 			want := fmt.Sprintf("upstream negotiated unsupported protocol version %q", version)
 			if err == nil || !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "parse initialize") {
@@ -107,7 +107,7 @@ func writeRPCResult(t *testing.T, w http.ResponseWriter, id any, result any) {
 
 func TestHTTPConnection_concurrentFirstCallsHandshakeOnce(t *testing.T) {
 	fake, srv := newSessionServer(t)
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 
 	const n = 8
 	var wg sync.WaitGroup
@@ -156,7 +156,7 @@ func TestHTTPConnection_callRetriesHandshakeAfterFailure(t *testing.T) {
 			})
 		}
 	})
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 
 	if _, err := conn.Call(t.Context(), "ping", nil); err == nil {
 		t.Fatal("expected first Call to fail when handshake fails")
@@ -171,7 +171,7 @@ func TestHTTPConnection_callRetriesHandshakeAfterFailure(t *testing.T) {
 
 func TestHTTPConnection_cancelledConcurrentCallerDoesNotPoisonHandshake(t *testing.T) {
 	fake, srv := newSessionServer(t)
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 
 	cancelledCtx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -205,7 +205,7 @@ func TestHTTPConnection_cancelledConcurrentCallerDoesNotPoisonHandshake(t *testi
 
 func TestHTTPConnection_listToolsThenCallSharesOneHandshake(t *testing.T) {
 	fake, srv := newSessionServer(t)
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 
 	if _, err := conn.ListTools(context.Background()); err != nil {
 		t.Fatalf("ListTools: %v", err)
@@ -222,7 +222,7 @@ func TestHTTPConnection_listToolsThenCallSharesOneHandshake(t *testing.T) {
 
 func TestHealth_doesNotTriggerHandshake(t *testing.T) {
 	fake, srv := newSessionServer(t)
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 
 	if err := conn.Health(context.Background()); err != nil {
 		t.Fatalf("Health: %v", err)
@@ -265,7 +265,7 @@ func TestHandshake_initializedNotification401_handshakeFails_and_isRetryable(t *
 			w.WriteHeader(http.StatusAccepted)
 		}
 	})
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 
 	_, err := conn.Call(t.Context(), "ping", nil)
 	if err == nil {
@@ -284,7 +284,7 @@ func TestHandshake_initializedNotification500_handshakeFails(t *testing.T) {
 	srv := newHandshakeServerWithNotif(t, func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "server error", http.StatusInternalServerError)
 	})
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 
 	_, err := conn.Call(t.Context(), "ping", nil)
 	if err == nil {
@@ -306,7 +306,9 @@ func TestHandshake_initializedNotification401_withProvider_refreshAndSucceeds(t 
 		}
 	})
 	provider := &fakeAuthProvider{current: "Bearer old", next: "Bearer new"}
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, AuthProvider: provider, AuthHeaderName: "Authorization"})
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{
+		URL: srv.URL, AuthProvider: provider, AuthHeaderName: "Authorization",
+	})
 
 	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
 		t.Fatalf("expected success after auth refresh, got: %v", err)
@@ -365,7 +367,9 @@ func TestNotificationStream_401_refreshesAndReconnects(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, AuthProvider: provider, AuthHeaderName: "Authorization"})
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{
+		URL: srv.URL, AuthProvider: provider, AuthHeaderName: "Authorization",
+	})
 
 	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
 		t.Fatalf("Call: %v", err)
@@ -412,7 +416,7 @@ func TestPostWithAuthRetry_replay401WrapsErrReauthRequired(t *testing.T) {
 			w.WriteHeader(http.StatusUnauthorized)
 		}
 	})
-	conn := mustHTTPConn(t, HTTPConnectionConfig{
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{
 		URL: srv.URL, ServerName: "svc", AuthProvider: refreshSucceedsProvider{}, AuthHeaderName: "Authorization",
 	})
 	_, err := conn.Call(t.Context(), "ping", nil)
@@ -476,7 +480,7 @@ func TestHandshake_initializedNotificationBothUnauthorized_isReauthRequired(t *t
 		w.WriteHeader(http.StatusUnauthorized)
 	})
 	provider := &fakeAuthProvider{current: "Bearer old", next: "Bearer new"}
-	conn := mustHTTPConn(t, HTTPConnectionConfig{
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{
 		URL: srv.URL, AuthProvider: provider, AuthHeaderName: "Authorization",
 	})
 
@@ -488,7 +492,7 @@ func TestHandshake_initializedNotificationBothUnauthorized_isReauthRequired(t *t
 
 func TestHandshake_sessionIDClearedAfterNotificationFailure(t *testing.T) {
 	srv, fake := newStrictInitServer(t)
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 
 	if _, err := conn.Call(t.Context(), "ping", nil); err == nil {
 		t.Fatal("expected first Call to fail when notifications/initialized returns 503")

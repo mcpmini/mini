@@ -1,0 +1,1 @@
+{"result":{"supportedVersions":["2026-07-28"],"capabilities":{"tools":{"listChanged":true},"prompts":{"listChanged":true}},"resultType":"complete","ttlMs":0,"cacheScope":"private","_meta":{"io.modelcontextprotocol/serverInfo":{"name":"docs-ai-search","version":"0.4.13"}}},"jsonrpc":"2.0","id":7}

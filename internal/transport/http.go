@@ -36,6 +36,9 @@ type HTTPConnection struct {
 	protocolVersion         string
 	mu                      sync.Mutex
 	initMu                  sync.Mutex
+	era                     Era
+	eraKnown                bool
+	modernVersion           string
 	initialized             bool
 	initializedBefore       bool
 	listener                *sessionListener
@@ -159,7 +162,7 @@ const maxRetries = 3
 
 // Call sends an MCP request, completing the initialize handshake first if needed.
 func (c *HTTPConnection) Call(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
-	if err := c.ensureInitialized(ctx); err != nil {
+	if err := c.ensureReady(ctx); err != nil {
 		return nil, err
 	}
 	return c.withSessionRecovery(ctx, func() (json.RawMessage, error) {
@@ -177,7 +180,7 @@ func (c *HTTPConnection) withSessionRecovery(
 		return result, err
 	}
 	c.compareAndResetSession(expiredErr.SessionID)
-	if initErr := c.ensureInitialized(ctx); initErr != nil {
+	if initErr := c.ensureReady(ctx); initErr != nil {
 		return nil, initErr
 	}
 	return do()
@@ -288,10 +291,13 @@ func (c *HTTPConnection) buildHTTPRequest(ctx context.Context, rpcReq Request) (
 	if rpcReq.Method == "initialize" {
 		httpReq.Header.Del("MCP-Protocol-Version")
 	}
+	if rpcReq.Method == "server/discover" {
+		setDiscoverRequestHeaders(httpReq)
+	}
 	// The stored ID may belong to the session being replaced, and a new session must start
 	// with an InitializeRequest that carries no session ID:
 	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/ab3a39c13bd23be691c2760e1c6c5c15a64582e1/docs/specification/2025-11-25/basic/transports.mdx#L213-L215
-	if rpcReq.Method != "initialize" {
+	if rpcReq.Method != "initialize" && rpcReq.Method != "server/discover" {
 		c.attachSessionID(httpReq)
 	}
 	return httpReq, sentAuth, nil
@@ -316,42 +322,6 @@ func (c *HTTPConnection) processResponse(
 	return postResult{body: result}, err
 }
 
-func (c *HTTPConnection) parsePostBody(body []byte, requestID any) (json.RawMessage, error) {
-	messages, err := splitHTTPMessages(body)
-	if err != nil {
-		return nil, err
-	}
-	for _, message := range messages {
-		var rpc struct {
-			ID     json.RawMessage `json:"id"`
-			Method string          `json:"method"`
-			Params json.RawMessage `json:"params"`
-			Result json.RawMessage `json:"result"`
-			Error  *RPCError       `json:"error"`
-		}
-		if err := json.Unmarshal(message, &rpc); err != nil {
-			return nil, fmt.Errorf("parse response: %w: %s", err, message[:min(200, len(message))])
-		}
-		if len(rpc.ID) == 0 && rpc.Method != "" {
-			c.dispatchNotification(Notification{JSONRPC: "2.0", Method: rpc.Method, Params: rpc.Params})
-			continue
-		}
-		if !sameJSONID(rpc.ID, requestID) {
-			continue
-		}
-		if rpc.Error != nil {
-			return nil, rpc.Error
-		}
-		return rpc.Result, nil
-	}
-	return nil, fmt.Errorf("response for request id %v not found", requestID)
-}
-
-func sameJSONID(raw json.RawMessage, id any) bool {
-	want, err := json.Marshal(id)
-	return err == nil && bytes.Equal(bytes.TrimSpace(raw), want)
-}
-
 func (c *HTTPConnection) storeSessionID(sessionID string) {
 	if len(sessionID) > 256 {
 		return
@@ -374,14 +344,6 @@ func (c *HTTPConnection) httpErrorResult(resp *http.Response, method string, sen
 		return postResult{}, &SessionExpiredError{SessionID: sentSessionID}
 	}
 	return postResult{}, nonRetryableHTTPError(resp, method, errBody)
-}
-
-func nonRetryableHTTPError(resp *http.Response, method string, errBody []byte) error {
-	if resp.StatusCode != http.StatusUnauthorized {
-		return fmt.Errorf("http %s: status %d: %s", method, resp.StatusCode, errBody)
-	}
-	return fmt.Errorf("http %s: status %d: %w", method, resp.StatusCode,
-		&UnauthorizedError{WWWAuthenticate: resp.Header.Get("WWW-Authenticate")})
 }
 
 func isRetryableStatus(statusCode int) bool {

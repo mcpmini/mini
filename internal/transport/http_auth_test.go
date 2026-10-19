@@ -115,7 +115,7 @@ func TestCall_authProvider_setsConfiguredHeader(t *testing.T) {
 		got = r.Header.Get("X-Custom-Auth")
 		w.Write(okRPCResponse(1)) //nolint:errcheck
 	})
-	conn := mustHTTPConn(t, HTTPConnectionConfig{
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{
 		URL:            srv.URL,
 		AuthProvider:   &fakeAuthProvider{current: "Bearer dyn"},
 		AuthHeaderName: "X-Custom-Auth",
@@ -135,7 +135,7 @@ func TestHealth_authProvider_sendsProviderValue(t *testing.T) {
 		gotSession = r.Header.Get("Mcp-Session-Id")
 		w.WriteHeader(http.StatusOK)
 	})
-	conn := mustHTTPConn(t, HTTPConnectionConfig{
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{
 		URL:            srv.URL,
 		AuthProvider:   &fakeAuthProvider{current: "Bearer dyn"},
 		AuthHeaderName: "Authorization",
@@ -163,7 +163,7 @@ func TestCall_authProviderError_failsWithoutContactingUpstream(t *testing.T) {
 		calls++
 		w.Write(okRPCResponse(1)) //nolint:errcheck
 	})
-	conn := mustHTTPConn(t, HTTPConnectionConfig{
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{
 		URL:            srv.URL,
 		ServerName:     "myserver",
 		AuthProvider:   &fakeAuthProvider{authErr: errors.New("no token")},
@@ -340,6 +340,7 @@ func TestNotificationRequests_authProvider_sendHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { conn.Close() })
+	conn.eraKnown = true
 
 	conn.ListTools(t.Context()) //nolint:errcheck
 	select {
@@ -362,7 +363,7 @@ func TestCall_staticAndProviderHeader_providerValueWins(t *testing.T) {
 		got = r.Header.Get("Authorization")
 		w.Write(okRPCResponse(1)) //nolint:errcheck
 	})
-	conn := mustHTTPConn(t, HTTPConnectionConfig{
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{
 		URL:            srv.URL,
 		Headers:        map[string]string{"Authorization": "Bearer static"},
 		AuthProvider:   &fakeAuthProvider{current: "Bearer dyn"},

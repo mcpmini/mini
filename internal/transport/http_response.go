@@ -1,0 +1,128 @@
+package transport
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"net/http"
+)
+
+type HTTPStatusError struct {
+	Method     string
+	StatusCode int
+	Body       string
+	RPC        *RPCError
+}
+
+func (e *HTTPStatusError) Error() string {
+	return fmt.Sprintf("http %s: status %d: %s", e.Method, e.StatusCode, e.Body)
+}
+
+func (c *HTTPConnection) parsePostBody(body []byte, requestID any) (json.RawMessage, error) {
+	messages, err := splitHTTPMessages(body)
+	if err != nil {
+		return nil, err
+	}
+	return c.findPostResponse(messages, requestID)
+}
+
+func (c *HTTPConnection) findPostResponse(messages []json.RawMessage, requestID any) (json.RawMessage, error) {
+	var responses unmatchedPostResponses
+	for _, message := range messages {
+		parsed, err := c.parseHTTPMessage(message, requestID)
+		if err != nil {
+			return nil, err
+		}
+		if !parsed.response {
+			continue
+		}
+		responses.add(parsed)
+		if parsed.matched && parsed.rpcError != nil {
+			return nil, parsed.rpcError
+		}
+		if parsed.matched {
+			return parsed.result, nil
+		}
+	}
+	return nil, responses.notFoundError(requestID)
+}
+
+type unmatchedPostResponses struct {
+	count     int
+	soleError *RPCError
+}
+
+func (r *unmatchedPostResponses) add(message parsedHTTPMessage) {
+	r.count++
+	r.soleError = message.rpcError
+}
+
+func (r unmatchedPostResponses) notFoundError(requestID any) error {
+	if r.count == 1 && r.soleError != nil {
+		return r.soleError
+	}
+	return fmt.Errorf("response for request id %v not found", requestID)
+}
+
+type parsedHTTPMessage struct {
+	result   json.RawMessage
+	rpcError *RPCError
+	response bool
+	matched  bool
+}
+
+func (c *HTTPConnection) parseHTTPMessage(message []byte, requestID any) (parsedHTTPMessage, error) {
+	var rpc struct {
+		ID     json.RawMessage `json:"id"`
+		Method string          `json:"method"`
+		Params json.RawMessage `json:"params"`
+		Result json.RawMessage `json:"result"`
+		Error  *RPCError       `json:"error"`
+	}
+	if err := json.Unmarshal(message, &rpc); err != nil {
+		return parsedHTTPMessage{}, fmt.Errorf("parse response: %w: %s", err, message[:min(200, len(message))])
+	}
+	if len(rpc.ID) == 0 && rpc.Method != "" {
+		c.dispatchNotification(Notification{JSONRPC: "2.0", Method: rpc.Method, Params: rpc.Params})
+		return parsedHTTPMessage{}, nil
+	}
+	return parsedHTTPMessage{
+		result: rpc.Result, rpcError: rpc.Error,
+		response: true, matched: sameJSONID(rpc.ID, requestID),
+	}, nil
+}
+
+func sameJSONID(raw json.RawMessage, id any) bool {
+	want, err := json.Marshal(id)
+	return err == nil && bytes.Equal(bytes.TrimSpace(raw), want)
+}
+
+func nonRetryableHTTPError(resp *http.Response, method string, errBody []byte) error {
+	if resp.StatusCode == http.StatusUnauthorized {
+		return fmt.Errorf("http %s: status %d: %w", method, resp.StatusCode,
+			&UnauthorizedError{WWWAuthenticate: resp.Header.Get("WWW-Authenticate")})
+	}
+	body := string(errBody)
+	return &HTTPStatusError{Method: method, StatusCode: resp.StatusCode, Body: body, RPC: parseHTTPStatusRPC(errBody)}
+}
+
+func parseHTTPStatusRPC(body []byte) *RPCError {
+	response, ok := decodeHTTPStatusRPC(body)
+	if !ok {
+		return nil
+	}
+	return response.Error
+}
+
+type httpStatusRPCResponse struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      json.RawMessage `json:"id"`
+	Error   *RPCError       `json:"error"`
+}
+
+func decodeHTTPStatusRPC(body []byte) (httpStatusRPCResponse, bool) {
+	var response httpStatusRPCResponse
+	err := json.Unmarshal(body, &response)
+	valid := err == nil && response.JSONRPC == "2.0" && len(response.ID) > 0 && response.Error != nil
+	return response, valid
+}
