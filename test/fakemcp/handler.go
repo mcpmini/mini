@@ -76,7 +76,7 @@ func faultOversized(id any, sizeBytes int) dispatchResult {
 }
 
 var fakeInitResult = transport.InitializeResult{
-	ProtocolVersion: transport.ProtocolVersion,
+	ProtocolVersion: transport.LegacyVersions[0],
 	Capabilities:    map[string]any{"tools": map[string]any{"listChanged": true}},
 	ServerInfo:      transport.ServerInfo{Name: "fakemcp", Version: "0.1.0"},
 }

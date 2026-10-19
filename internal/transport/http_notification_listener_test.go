@@ -31,7 +31,7 @@ func newNotifListenerServer(t *testing.T, getHandler http.HandlerFunc) *httptest
 			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
 				"jsonrpc": "2.0", "id": req["id"],
 				"result": map[string]any{
-					"protocolVersion": ProtocolVersion,
+					"protocolVersion": LegacyVersions[0],
 					"capabilities":    map[string]any{"tools": map[string]any{"listChanged": true}},
 				},
 			})

@@ -26,6 +26,32 @@ func timeoutAfter() <-chan time.Time {
 	return time.After(5 * time.Second)
 }
 
+func TestHandshake_offersNewestLegacyVersion(t *testing.T) {
+	var protocolVersion string
+	client := serveSocket(t, func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Method string `json:"method"`
+			Params struct {
+				ProtocolVersion string `json:"protocolVersion"`
+			} `json:"params"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode request: %v", err)
+			return
+		}
+		if req.Method == "initialize" {
+			protocolVersion = req.Params.ProtocolVersion
+		}
+		if _, err := fmt.Fprint(w, `{"jsonrpc":"2.0","id":-1,"result":{}}`); err != nil {
+			t.Errorf("write response: %v", err)
+		}
+	})
+	DaemonSession{client: client, sessionID: "sess"}.Handshake(0)
+	if protocolVersion != "2025-11-25" {
+		t.Errorf("handshake protocolVersion = %q, want 2025-11-25", protocolVersion)
+	}
+}
+
 func toolCallLine() string {
 	return `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{}}` + "\n"
 }

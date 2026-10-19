@@ -32,6 +32,79 @@ func TestHTTPConnection_callCompletesHandshakeBeforeToolCall(t *testing.T) {
 	}
 }
 
+func TestHTTPConnection_usesNegotiatedLegacyVersion(t *testing.T) {
+	var initializeHeader, toolsHeader, offered string
+	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+		var req Request
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode request: %v", err)
+			return
+		}
+		switch req.Method {
+		case "initialize":
+			initializeHeader = r.Header.Get("MCP-Protocol-Version")
+			var params InitializeParams
+			if err := json.Unmarshal(req.Params, &params); err != nil {
+				t.Errorf("decode initialize params: %v", err)
+				return
+			}
+			offered = params.ProtocolVersion
+			writeRPCResult(t, w, req.ID, InitializeResult{ProtocolVersion: "2025-06-18"})
+		case NotificationInitialized:
+			w.WriteHeader(http.StatusAccepted)
+		case "tools/list":
+			toolsHeader = r.Header.Get("MCP-Protocol-Version")
+			writeRPCResult(t, w, req.ID, ToolsListResult{Tools: []ToolDefinition{}})
+		}
+	})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{
+		URL:     srv.URL,
+		Headers: map[string]string{"MCP-Protocol-Version": "1999-01-01"},
+	})
+	if _, err := conn.Call(t.Context(), "tools/list", nil); err != nil {
+		t.Fatalf("Call: %v", err)
+	}
+	if initializeHeader != LegacyVersions[0] || offered != LegacyVersions[0] {
+		t.Errorf("initialize header/offer = %q/%q, want %q", initializeHeader, offered, LegacyVersions[0])
+	}
+	if toolsHeader != "2025-06-18" {
+		t.Errorf("tools/list header = %q, want 2025-06-18", toolsHeader)
+	}
+}
+
+func TestHTTPConnection_rejectsUnsupportedNegotiatedVersion(t *testing.T) {
+	for _, version := range []string{"2026-07-28", "1999-01-01"} {
+		t.Run(version, func(t *testing.T) {
+			srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+				var req Request
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					t.Errorf("decode request: %v", err)
+					return
+				}
+				writeRPCResult(t, w, req.ID, InitializeResult{ProtocolVersion: version})
+			})
+			conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+			_, err := conn.Call(t.Context(), "ping", nil)
+			want := fmt.Sprintf("upstream negotiated unsupported protocol version %q", version)
+			if err == nil || !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "parse initialize") {
+				t.Fatalf("Call error = %v, want %q without a parse error", err, want)
+			}
+		})
+	}
+}
+
+func writeRPCResult(t *testing.T, w http.ResponseWriter, id any, result any) {
+	t.Helper()
+	raw, err := json.Marshal(result)
+	if err != nil {
+		t.Errorf("marshal result: %v", err)
+		return
+	}
+	if err := json.NewEncoder(w).Encode(Response{JSONRPC: "2.0", ID: id, Result: raw}); err != nil {
+		t.Errorf("write result: %v", err)
+	}
+}
+
 func TestHTTPConnection_concurrentFirstCallsHandshakeOnce(t *testing.T) {
 	fake, srv := newSessionServer(t)
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
@@ -72,7 +145,7 @@ func TestHTTPConnection_callRetriesHandshakeAfterFailure(t *testing.T) {
 			}
 			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
 				"jsonrpc": "2.0", "id": req["id"],
-				"result": map[string]any{"protocolVersion": ProtocolVersion},
+				"result": map[string]any{"protocolVersion": LegacyVersions[0]},
 			})
 		case "notifications/initialized":
 			w.WriteHeader(http.StatusOK)
@@ -168,7 +241,7 @@ func newHandshakeServerWithNotif(t *testing.T, notifHandler http.HandlerFunc) *h
 		case "initialize":
 			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
 				"jsonrpc": "2.0", "id": req["id"],
-				"result": map[string]any{"protocolVersion": ProtocolVersion},
+				"result": map[string]any{"protocolVersion": LegacyVersions[0]},
 			})
 		case "notifications/initialized":
 			notifHandler(w, r)
@@ -277,7 +350,7 @@ func TestNotificationStream_401_refreshesAndReconnects(t *testing.T) {
 			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
 				"jsonrpc": "2.0", "id": req["id"],
 				"result": map[string]any{
-					"protocolVersion": ProtocolVersion,
+					"protocolVersion": LegacyVersions[0],
 					"capabilities":    map[string]any{"tools": map[string]any{"listChanged": true}},
 				},
 			})
@@ -330,7 +403,7 @@ func TestPostWithAuthRetry_replay401WrapsErrReauthRequired(t *testing.T) {
 		case "initialize":
 			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
 				"jsonrpc": "2.0", "id": req["id"],
-				"result": map[string]any{"protocolVersion": ProtocolVersion},
+				"result": map[string]any{"protocolVersion": LegacyVersions[0]},
 			})
 		case "notifications/initialized":
 			w.WriteHeader(http.StatusAccepted)
@@ -378,7 +451,7 @@ func (s *strictInitServer) handle(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Mcp-Session-Id", fmt.Sprintf("sess-%d", n))
 		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
 			"jsonrpc": "2.0", "id": req["id"],
-			"result": map[string]any{"protocolVersion": ProtocolVersion},
+			"result": map[string]any{"protocolVersion": LegacyVersions[0]},
 		})
 	case "notifications/initialized":
 		s.mu.Lock()

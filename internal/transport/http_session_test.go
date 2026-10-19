@@ -35,6 +35,24 @@ func TestHTTPSession_sessionExpiresTransparentRecovery(t *testing.T) {
 	}
 }
 
+func TestHTTPSession_renewalUsesNewlyNegotiatedVersion(t *testing.T) {
+	m, srv := newSessionServer(t)
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	mustPing(t, conn)
+	m.setProtocolVersion("2025-03-26")
+	m.expireSession(m.sessionID())
+	mustPing(t, conn)
+
+	pings := m.requestsWithMethod("ping")
+	if got := pings[len(pings)-1].protocolVersion; got != "2025-03-26" {
+		t.Errorf("renewed ping header = %q, want 2025-03-26", got)
+	}
+	inits := m.requestsWithMethod("initialize")
+	if got := inits[len(inits)-1].protocolVersion; got != LegacyVersions[0] {
+		t.Errorf("renewal initialize header = %q, want %q", got, LegacyVersions[0])
+	}
+}
+
 func TestHTTPSession_newSessionRejectedReturnsTypedError(t *testing.T) {
 	m, srv := newSessionServer(t)
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})

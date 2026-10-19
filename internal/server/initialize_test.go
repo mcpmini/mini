@@ -53,28 +53,42 @@ func TestInitialize_CapabilitiesListChanged(t *testing.T) {
 	t.Fatal("no initialize response found")
 }
 
-// TestInitialize_versionNegotiation verifies that the server always responds with its own
-// supported version regardless of what the client requests. Clients that cannot handle
-// the server's version SHOULD disconnect (the client's responsibility, not the server's).
-// Spec: "If the server supports the requested protocol version, it MUST respond with the same
-// version. Otherwise, the server MUST respond with another protocol version it supports."
-// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/lifecycle.mdx#L128
 func TestInitialize_versionNegotiation(t *testing.T) {
-	for _, clientVer := range []string{"2024-11-05", "2025-03-26", "99.99.99", ""} {
-		t.Run("client="+clientVer, func(t *testing.T) {
+	type versionCase struct {
+		name    string
+		version string
+		present bool
+		want    string
+	}
+	tests := make([]versionCase, 0, len(transport.LegacyVersions)+3)
+	for _, version := range transport.LegacyVersions {
+		tests = append(tests, versionCase{name: version, version: version, present: true, want: version})
+	}
+	for _, version := range []string{"2026-07-28", "99.99.99"} {
+		tests = append(
+			tests,
+			versionCase{name: version, version: version, present: true, want: transport.LegacyVersions[0]},
+		)
+	}
+	tests = append(tests, versionCase{name: "absent", want: transport.LegacyVersions[0]})
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
 			srv := newTestServer(t, server.Params{})
-			resp := serve(t, srv, rpc("initialize", map[string]any{
-				"protocolVersion": clientVer,
-				"capabilities":    map[string]any{},
-				"clientInfo":      map[string]any{"name": "test", "version": "0"},
-			}))
+			params := map[string]any{
+				"capabilities": map[string]any{},
+				"clientInfo":   map[string]any{"name": "test", "version": "0"},
+			}
+			if tc.present {
+				params["protocolVersion"] = tc.version
+			}
+			resp := serve(t, srv, rpc("initialize", params))
 			if resp["error"] != nil {
-				t.Fatalf("initialize error for client version %q: %v", clientVer, resp["error"])
+				t.Fatalf("initialize error for client version %q: %v", tc.version, resp["error"])
 			}
 			result, _ := resp["result"].(map[string]any)
 			got, _ := result["protocolVersion"].(string)
-			if got != transport.ProtocolVersion {
-				t.Errorf("server protocolVersion = %q, want %q", got, transport.ProtocolVersion)
+			if got != tc.want {
+				t.Errorf("server protocolVersion = %q, want %q", got, tc.want)
 			}
 		})
 	}
@@ -87,7 +101,7 @@ func TestInitialize_versionNegotiation(t *testing.T) {
 func TestInitialize_serverInfoPresent(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	resp := serve(t, srv, rpc("initialize", map[string]any{
-		"protocolVersion": transport.ProtocolVersion,
+		"protocolVersion": transport.LegacyVersions[0],
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "test", "version": "0"},
 	}))
@@ -106,7 +120,7 @@ func TestInitialize_serverInfoPresent(t *testing.T) {
 func TestInitialize_doubleInitialize(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	secondInit := rpc("initialize", map[string]any{
-		"protocolVersion": transport.ProtocolVersion,
+		"protocolVersion": transport.LegacyVersions[0],
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "test", "version": "0"},
 	})

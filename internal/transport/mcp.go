@@ -90,12 +90,6 @@ const (
 	CodeInternalError  = -32603
 )
 
-// ProtocolVersion is the MCP spec version this implementation targets.
-// The server MUST respond with this version (or another it supports); the client
-// disconnects if it cannot handle the server's version.
-// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/lifecycle.mdx#L57
-const ProtocolVersion = "2025-03-26"
-
 // NotificationInitialized is the method name sent after the initialize handshake.
 const NotificationInitialized = "notifications/initialized"
 

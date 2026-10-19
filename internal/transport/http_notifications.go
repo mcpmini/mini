@@ -69,6 +69,9 @@ func (c *HTTPConnection) initHandshake(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	c.mu.Lock()
+	c.protocolVersion = result.ProtocolVersion
+	c.mu.Unlock()
 	if err := c.sendInitializedNotification(ctx); err != nil {
 		return err
 	}
@@ -105,7 +108,7 @@ func (c *HTTPConnection) restartListener(listen bool) {
 func (c *HTTPConnection) sendInitialize(ctx context.Context) (InitializeResult, error) {
 	//nolint:errcheck // fixed handshake fields contain only JSON-serializable values.
 	params, _ := json.Marshal(InitializeParams{
-		ProtocolVersion: ProtocolVersion,
+		ProtocolVersion: LegacyVersions[0],
 		Capabilities:    map[string]any{},
 		ClientInfo:      ClientInfo{Name: "mini", Version: version.Version},
 	})

@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"log/slog"
 	"os/exec"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -338,6 +340,53 @@ func TestInitialize_respectsDeadlineWhenUpstreamNeverResponds(t *testing.T) {
 	if elapsed >= 5*time.Second {
 		t.Fatalf("initialize did not respect deadline, took %v", elapsed)
 	}
+}
+
+func TestStdioInitialize_offersNewestLegacyAndRejectsUnsupportedVersion(t *testing.T) {
+	request, err := initializeStdioForTest(t, "2025-06-18")
+	if err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	var params InitializeParams
+	if err := json.Unmarshal(request.Params, &params); err != nil {
+		t.Fatalf("decode initialize params: %v", err)
+	}
+	if params.ProtocolVersion != LegacyVersions[0] {
+		t.Errorf("offered protocolVersion = %q, want %q", params.ProtocolVersion, LegacyVersions[0])
+	}
+	for _, version := range []string{"2026-07-28", "1999-01-01"} {
+		_, err := initializeStdioForTest(t, version)
+		want := fmt.Sprintf("upstream negotiated unsupported protocol version %q", version)
+		if err == nil || !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "parse initialize") {
+			t.Errorf("initialize error = %v, want %q without a parse error", err, want)
+		}
+	}
+}
+
+func initializeStdioForTest(t *testing.T, replyVersion string) (Request, error) {
+	t.Helper()
+	conn, serverW, serverR := makePipeConn(t)
+	done := make(chan error, 1)
+	go func() { done <- conn.initialize(context.Background()) }()
+	request := readStdioRequest(t, serverR)
+	sendResponse(serverW, request.ID, InitializeResult{ProtocolVersion: replyVersion})
+	if IsLegacyVersion(replyVersion) {
+		readStdioRequest(t, serverR)
+	}
+	return request, <-done
+}
+
+func readStdioRequest(t *testing.T, r io.Reader) Request {
+	t.Helper()
+	line, err := bufio.NewReader(r).ReadBytes('\n')
+	if err != nil {
+		t.Fatalf("read stdio request: %v", err)
+	}
+	var request Request
+	if err := json.Unmarshal(line, &request); err != nil {
+		t.Fatalf("decode stdio request: %v", err)
+	}
+	return request
 }
 
 func TestNewStdioConnection_hungUpstreamKilledOnDeadline(t *testing.T) {

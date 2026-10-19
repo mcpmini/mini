@@ -23,7 +23,7 @@ func jitteredBackoff(attempt int) time.Duration {
 func (s DaemonSession) Handshake(mode transport.ToolMode) {
 	//nolint:errcheck // fixed handshake fields contain only JSON-serializable values.
 	params, _ := json.Marshal(transport.InitializeParams{
-		ProtocolVersion: transport.ProtocolVersion,
+		ProtocolVersion: transport.LegacyVersions[0],
 		Capabilities:    map[string]any{},
 		ClientInfo:      transport.ClientInfo{Name: "mini", Version: version.Version},
 	})

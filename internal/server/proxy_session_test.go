@@ -32,7 +32,7 @@ func postMCP(t *testing.T, srv *server.Server, sessionID string, msg any) map[st
 
 func initMsg(compact bool) map[string]any {
 	params := map[string]any{
-		"protocolVersion": transport.ProtocolVersion,
+		"protocolVersion": transport.LegacyVersions[0],
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "test", "version": "0"},
 	}
@@ -280,7 +280,7 @@ func TestResolveToolMode_proxySignalOnCompactServer(t *testing.T) {
 	addProxyConn(t, srv, "gh", fakeConn("list_issues"))
 
 	params := map[string]any{
-		"protocolVersion":       transport.ProtocolVersion,
+		"protocolVersion":       transport.LegacyVersions[0],
 		"capabilities":          map[string]any{},
 		"clientInfo":            map[string]any{"name": "test", "version": "0"},
 		transport.ToolModeParam: transport.ToolModeProxyValue,
@@ -306,7 +306,7 @@ func TestResolveToolMode_unrecognizedSignal_fallsBackToServerDefault(t *testing.
 	addProxyConn(t, srv, "gh", fakeConn("list_issues"))
 
 	params := map[string]any{
-		"protocolVersion":       transport.ProtocolVersion,
+		"protocolVersion":       transport.LegacyVersions[0],
 		"capabilities":          map[string]any{},
 		"clientInfo":            map[string]any{"name": "test", "version": "0"},
 		transport.ToolModeParam: "turbo",

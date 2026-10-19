@@ -201,7 +201,7 @@ func (c *StdioConnection) initialize(ctx context.Context) error {
 
 func newInitializeParams() InitializeParams {
 	return InitializeParams{
-		ProtocolVersion: ProtocolVersion,
+		ProtocolVersion: LegacyVersions[0],
 		Capabilities:    map[string]any{},
 		ClientInfo:      ClientInfo{Name: "mini", Version: version.Version},
 	}
@@ -211,6 +211,12 @@ func parseInitializeResult(raw json.RawMessage) (InitializeResult, error) {
 	var result InitializeResult
 	if err := json.Unmarshal(raw, &result); err != nil {
 		return InitializeResult{}, fmt.Errorf("parse initialize: %w", err)
+	}
+	if !IsLegacyVersion(result.ProtocolVersion) {
+		return InitializeResult{}, fmt.Errorf(
+			"upstream negotiated unsupported protocol version %q",
+			result.ProtocolVersion,
+		)
 	}
 	return result, nil
 }

@@ -130,18 +130,26 @@ func TestHTTPConnection_sessionIDPersisted(t *testing.T) {
 	var receivedSessionID string
 	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		callCount++
-		if callCount == 1 {
-			w.Header().Set("Mcp-Session-Id", "sess-abc")
-		} else {
-			receivedSessionID = r.Header.Get("Mcp-Session-Id")
+		var req Request
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode request: %v", err)
+			return
 		}
-		json.NewEncoder(w).Encode(map[string]any{
-			"jsonrpc": "2.0", "id": callCount, "result": map[string]any{},
-		})
+		if req.Method == "initialize" {
+			w.Header().Set("Mcp-Session-Id", "sess-abc")
+			writeRPCResult(t, w, req.ID, InitializeResult{ProtocolVersion: LegacyVersions[0]})
+			return
+		}
+		receivedSessionID = r.Header.Get("Mcp-Session-Id")
+		writeRPCResult(t, w, req.ID, map[string]any{})
 	})
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
-	conn.Call(t.Context(), "first", nil)  //nolint:errcheck
-	conn.Call(t.Context(), "second", nil) //nolint:errcheck
+	if _, err := conn.Call(t.Context(), "first", nil); err != nil {
+		t.Fatalf("first call: %v", err)
+	}
+	if _, err := conn.Call(t.Context(), "second", nil); err != nil {
+		t.Fatalf("second call: %v", err)
+	}
 
 	if receivedSessionID != "sess-abc" {
 		t.Errorf("expected session ID sess-abc on second call, got %q", receivedSessionID)
@@ -429,7 +437,7 @@ func newHandshakeServer(t *testing.T, toolsResult any, calls *int) *httptest.Ser
 		case "initialize":
 			json.NewEncoder(w).Encode(map[string]any{
 				"jsonrpc": "2.0", "id": req["id"],
-				"result": map[string]any{"protocolVersion": ProtocolVersion},
+				"result": map[string]any{"protocolVersion": LegacyVersions[0]},
 			})
 		case "tools/list":
 			json.NewEncoder(w).Encode(map[string]any{
@@ -485,7 +493,7 @@ func TestListTools_retriesInitializeAfterFailure(t *testing.T) {
 			}
 			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
 				"jsonrpc": "2.0", "id": req["id"],
-				"result": map[string]any{"protocolVersion": ProtocolVersion},
+				"result": map[string]any{"protocolVersion": LegacyVersions[0]},
 			})
 		case "tools/list":
 			listCalls++
@@ -525,7 +533,7 @@ func TestListTools_reusesSuccessfulInitialize(t *testing.T) {
 			initializeCalls++
 			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
 				"jsonrpc": "2.0", "id": req["id"],
-				"result": map[string]any{"protocolVersion": ProtocolVersion},
+				"result": map[string]any{"protocolVersion": LegacyVersions[0]},
 			})
 		case "tools/list":
 			listCalls++
@@ -615,7 +623,7 @@ func TestListTools_HTTPPagination(t *testing.T) {
 		case "initialize":
 			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
 				"jsonrpc": "2.0", "id": req["id"],
-				"result": map[string]any{"protocolVersion": ProtocolVersion},
+				"result": map[string]any{"protocolVersion": LegacyVersions[0]},
 			})
 		case "tools/list":
 			var cursor string

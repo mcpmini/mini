@@ -220,7 +220,7 @@ func parseResponse(t *testing.T, data []byte) map[string]any {
 
 func initParams(compact bool) map[string]any {
 	params := map[string]any{
-		"protocolVersion": transport.ProtocolVersion,
+		"protocolVersion": transport.LegacyVersions[0],
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "test", "version": "0"},
 	}
