@@ -93,10 +93,10 @@ func (c *HTTPConnection) callModern(
 func isHeaderMismatch(err error) bool {
 	var rpcErr *RPCError
 	if errors.As(err, &rpcErr) {
-		return rpcErr.Code == -32020
+		return rpcErr.Code == CodeHeaderMismatch
 	}
 	var statusErr *HTTPStatusError
-	return errors.As(err, &statusErr) && statusErr.RPC != nil && statusErr.RPC.Code == -32020
+	return errors.As(err, &statusErr) && statusErr.RPC != nil && statusErr.RPC.Code == CodeHeaderMismatch
 }
 
 func (c *HTTPConnection) modernRPC(
@@ -131,7 +131,7 @@ func (c *HTTPConnection) modernError(err error) error {
 }
 
 func (c *HTTPConnection) modernRPCError(err *RPCError) error {
-	if err.Code == -32022 {
+	if err.Code == CodeUnsupportedProtocolVersion {
 		c.resetModernEra()
 	}
 	return err
