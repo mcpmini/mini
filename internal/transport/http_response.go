@@ -61,8 +61,15 @@ func (r unmatchedPostResponses) notFoundError(requestID any) error {
 	if r.count == 1 && r.soleError != nil {
 		return r.soleError
 	}
-	return fmt.Errorf("response for request id %v not found", requestID)
+	return unusableResponseError{fmt.Errorf("response for request id %v not found", requestID)}
 }
+
+// unusableResponseError marks a reply body that answers nothing; the discover probe reads it as a legacy server.
+type unusableResponseError struct{ err error }
+
+func (e unusableResponseError) Error() string { return e.err.Error() }
+
+func (e unusableResponseError) Unwrap() error { return e.err }
 
 type parsedHTTPMessage struct {
 	result   json.RawMessage
@@ -80,7 +87,8 @@ func (c *HTTPConnection) parseHTTPMessage(message []byte, requestID any) (parsed
 		Error  *RPCError       `json:"error"`
 	}
 	if err := json.Unmarshal(message, &rpc); err != nil {
-		return parsedHTTPMessage{}, fmt.Errorf("parse response: %w: %s", err, message[:min(200, len(message))])
+		err = fmt.Errorf("parse response: %w: %s", err, message[:min(200, len(message))])
+		return parsedHTTPMessage{}, unusableResponseError{err}
 	}
 	if len(rpc.ID) == 0 && rpc.Method != "" {
 		c.dispatchNotification(Notification{JSONRPC: "2.0", Method: rpc.Method, Params: rpc.Params})

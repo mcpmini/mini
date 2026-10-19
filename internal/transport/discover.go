@@ -55,7 +55,7 @@ func (c *HTTPConnection) probeOnce(ctx context.Context) error {
 	}
 	c.era, c.modernVersion, c.eraKnown = verdict.era, verdict.version, true
 	if verdict.era == EraModern {
-		slog.Info("upstream supports MCP 2026-07-28; using legacy until modern requests land", "server", c.serverName)
+		slog.Info("upstream supports MCP 2026-07-28", "server", c.serverName)
 	}
 	return nil
 }
@@ -67,9 +67,7 @@ func (c *HTTPConnection) probe(ctx context.Context) (json.RawMessage, error) {
 		ClientInfo:      ClientInfo{Name: "mini", Version: version.Version},
 		Capabilities:    map[string]any{},
 	}})
-	id := c.nextID.Add(1)
-	request := Request{JSONRPC: "2.0", ID: id, Method: "server/discover", Params: params}
-	return c.postWithAuthRetry(ctx, request)
+	return c.rpc(ctx, "server/discover", params)
 }
 
 func classifyDiscover(result json.RawMessage, err error) (probeVerdict, error) {
@@ -80,6 +78,11 @@ func classifyDiscover(result json.RawMessage, err error) (probeVerdict, error) {
 }
 
 func classifyDiscoverError(err error) (probeVerdict, error) {
+	// The spec reads anything other than a recognized modern answer as legacy, including a reply that answers nothing.
+	var unusable unusableResponseError
+	if errors.As(err, &unusable) {
+		return probeVerdict{era: EraLegacy}, nil
+	}
 	var rpcErr *RPCError
 	if errors.As(err, &rpcErr) {
 		return classifyDiscoverRPC(rpcErr)

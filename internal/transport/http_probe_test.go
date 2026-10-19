@@ -37,6 +37,44 @@ func TestHTTPConnection_ProbeRunsBeforeInitialize(t *testing.T) {
 	}
 }
 
+func TestHTTPConnection_ProbeWithoutAnAnswerFallsBackToLegacy(t *testing.T) {
+	tests := []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{name: "empty 200", status: http.StatusOK},
+		{name: "empty 202", status: http.StatusAccepted},
+		{name: "unmatched id", status: http.StatusOK, body: `{"jsonrpc":"2.0","id":99,"result":{}}`},
+		{name: "not JSON", status: http.StatusOK, body: "ok"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var methods []string
+			srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+				req := decodeRequest(t, r)
+				methods = append(methods, req.Method)
+				if req.Method == "server/discover" {
+					w.WriteHeader(tt.status)
+					if _, err := fmt.Fprint(w, tt.body); err != nil {
+						t.Errorf("write discover reply: %v", err)
+					}
+					return
+				}
+				serveProbeCall(t, w, req)
+			})
+			conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+			if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
+				t.Fatalf("Call: %v", err)
+			}
+			want := []string{"server/discover", "initialize", NotificationInitialized, "ping"}
+			if !slices.Equal(methods, want) || conn.era != EraLegacy {
+				t.Fatalf("methods = %v, era = %v; want %v and legacy", methods, conn.era, want)
+			}
+		})
+	}
+}
+
 func TestHTTPConnection_ProbeModernStillInitializes(t *testing.T) {
 	fixture, err := discoverFixtures.ReadFile("testdata/discover/github-like.json")
 	if err != nil {

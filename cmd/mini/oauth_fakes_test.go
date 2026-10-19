@@ -74,11 +74,6 @@ func (u *testMCPUpstream) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	id := req["id"]
 	switch method {
-	case "server/discover":
-		json.NewEncoder(w).Encode(map[string]any{
-			"jsonrpc": "2.0", "id": id,
-			"result": map[string]any{"supportedVersions": []string{}},
-		}) //nolint:errcheck
 	case "initialize":
 		json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, //nolint:errcheck
 			"result": map[string]any{"protocolVersion": transport.LegacyVersions[0]}})
