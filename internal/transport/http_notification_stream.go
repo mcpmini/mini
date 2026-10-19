@@ -39,7 +39,7 @@ func (c *HTTPConnection) consumeNotificationStream(ctx context.Context, state *l
 		return resp.StatusCode, fmt.Errorf("notification stream status %d", resp.StatusCode)
 	}
 	if modern {
-		return resp.StatusCode, c.scanSubscriptionStream(resp, state)
+		return resp.StatusCode, c.scanSubscriptionStream(resp)
 	}
 	return resp.StatusCode, c.scanNotificationStream(resp.Body)
 }
@@ -71,8 +71,8 @@ func (c *HTTPConnection) buildModernListenRequest() (
 
 // A server may answer any POST with a single JSON body instead of an SSE stream:
 // https://github.com/modelcontextprotocol/modelcontextprotocol/blob/8e12bf3c8f01f374146acfa19b8ece0018bfc86c/docs/specification/2026-07-28/basic/transports/streamable-http.mdx#L88-L91
-func (c *HTTPConnection) scanSubscriptionStream(resp *http.Response, state *listenerState) error {
-	handle := func(message json.RawMessage) error { return c.handleSubscriptionMessage(message, state) }
+func (c *HTTPConnection) scanSubscriptionStream(resp *http.Response) error {
+	handle := c.handleSubscriptionMessage
 	if mediaType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type")); err == nil &&
 		mediaType == "application/json" {
 		body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
@@ -84,10 +84,10 @@ func (c *HTTPConnection) scanSubscriptionStream(resp *http.Response, state *list
 	return ScanSSEMessages(resp.Body, handle)
 }
 
-func (c *HTTPConnection) handleSubscriptionMessage(message json.RawMessage, state *listenerState) error {
+func (c *HTTPConnection) handleSubscriptionMessage(message json.RawMessage) error {
 	var notification Notification
 	if json.Unmarshal(message, &notification) == nil && notification.Method != "" {
-		return c.handleSubscriptionNotification(notification, state)
+		return c.handleSubscriptionNotification(notification)
 	}
 	var response Response
 	if json.Unmarshal(message, &response) == nil && response.ID != nil {
@@ -106,10 +106,7 @@ func listenResponseOutcome(response Response) error {
 	return nil
 }
 
-func (c *HTTPConnection) handleSubscriptionNotification(
-	notification Notification,
-	state *listenerState,
-) error {
+func (c *HTTPConnection) handleSubscriptionNotification(notification Notification) error {
 	if notification.Method != "notifications/subscriptions/acknowledged" {
 		c.dispatchNotification(notification)
 		return nil
@@ -119,10 +116,9 @@ func (c *HTTPConnection) handleSubscriptionNotification(
 		return errUnsupportedListenFilter
 	}
 	slog.Debug("upstream acknowledged notification subscription", "url", c.url)
-	if state.refreshOnAck {
-		c.toolsChanged.NotifyToolsChanged()
-	}
-	state.refreshOnAck = false
+	// Every stream follows a gap in coverage (startup or an ended attempt), so the tool list
+	// mini holds may predate the subscription.
+	c.toolsChanged.NotifyToolsChanged()
 	return nil
 }
 

@@ -194,15 +194,12 @@ type listenerState struct {
 	modern       bool
 	backoff      time.Duration
 	rejectedAuth string
-	// The tool list mini holds may predate the subscription, so any acknowledgement that
-	// follows a gap in coverage (startup or an ended attempt) re-fetches it.
-	refreshOnAck bool
 }
 
 func (c *HTTPConnection) listenForNotifications(ctx context.Context, done chan struct{}, modern bool) {
 	defer c.listenerWG.Done()
 	defer close(done)
-	state := listenerState{modern: modern, backoff: time.Second, refreshOnAck: true}
+	state := listenerState{modern: modern, backoff: time.Second}
 	for ctx.Err() == nil {
 		if state.rejectedAuth != "" && c.currentAuth(ctx) == state.rejectedAuth {
 			if !c.sleepCtx(ctx, maxListenerBackoff) {
@@ -219,7 +216,6 @@ func (c *HTTPConnection) listenForNotifications(ctx context.Context, done chan s
 func (c *HTTPConnection) runListenerCycle(ctx context.Context, state *listenerState) (stop bool) {
 	if state.modern && !c.isModern() {
 		// The era was reset; listen again once the next call's probe settles it.
-		state.refreshOnAck = true
 		return !c.sleepCtx(ctx, time.Second)
 	}
 	status, err := c.consumeNotificationStream(ctx, state)
@@ -237,7 +233,6 @@ func (c *HTTPConnection) runListenerCycle(ctx context.Context, state *listenerSt
 		slog.Warn("upstream notification stream interrupted", "url", c.url, "err", err)
 	}
 	state.rejectedAuth = c.rejectedAuthAfter(ctx, err)
-	state.refreshOnAck = true
 	delay, next := listenerDelay(status, err, state.backoff)
 	state.backoff = next
 	return !c.sleepCtx(ctx, delay)
