@@ -29,7 +29,7 @@ func newProxySession(p RunParams, writer *lineWriter) *proxySession {
 			Daemon: session, Writer: writer, Clock: p.Clock, Subscriptions: subs,
 		})
 	}
-	proxy := &proxySession{
+	return &proxySession{
 		daemon:             session,
 		resolver:           p.Resolver,
 		link:               newDaemonLink(p.Token),
@@ -39,7 +39,6 @@ func newProxySession(p RunParams, writer *lineWriter) *proxySession {
 		notificationStream: notifications,
 		subs:               subs,
 	}
-	return proxy
 }
 
 func (s *proxySession) close() {

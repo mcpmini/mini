@@ -41,8 +41,8 @@ type Session struct {
 	mode        atomic.Int32 // holds ToolMode; zero value = ToolModeProxy
 	modeOnce    sync.Once
 	clientReady atomic.Bool
-	// HTTP sessions sit behind the stdio proxy, which runs the handshake and tags notifications
-	// for modern agents, so they keep the initialization gate and send untagged notifications.
+	// HTTP sessions keep the initialization gate even for modern requests: the stdio proxy runs the
+	// handshake for its modern agents and learns from "not initialized" that the daemon lost it.
 	httpSession    atomic.Bool
 	modern         atomic.Bool
 	listensMu      sync.Mutex

@@ -135,7 +135,7 @@ func TestRun_modernCompactModeUsesHandshakeToolMode(t *testing.T) {
 
 func TestProxySession_modernListenAcknowledgesAndCancelsLocally(t *testing.T) {
 	session, out := newModernReadyProxySession(t, transport.ToolModeProxy)
-	handled, err := session.handleLocalModernLine(listenLine(5))
+	handled, err := handleLocal(t, session, listenLine(5))
 	if err != nil || !handled {
 		t.Fatalf("listen handled=%t error=%v", handled, err)
 	}
@@ -147,7 +147,7 @@ func TestProxySession_modernListenAcknowledgesAndCancelsLocally(t *testing.T) {
 	if got := proxyListenCount(session); got != 1 {
 		t.Fatalf("registered listens = %d, want 1", got)
 	}
-	handled, err = session.handleLocalModernLine(cancelLine(t, 5))
+	handled, err = handleLocal(t, session, cancelLine(t, 5))
 	if err != nil || !handled || proxyListenCount(session) != 0 || strings.Count(out.String(), "\n") != 1 {
 		t.Fatalf(
 			"cancel handled=%t error=%v listens=%d output=%q",
@@ -160,7 +160,7 @@ func TestProxySession_modernListenAcknowledgesAndCancelsLocally(t *testing.T) {
 	if strings.Count(out.String(), "\n") != 1 {
 		t.Fatalf("notification arrived after cancel: %q", out.String())
 	}
-	handled, err = session.handleLocalModernLine(cancelLine(t, 6))
+	handled, err = handleLocal(t, session, cancelLine(t, 6))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +171,7 @@ func TestProxySession_modernListenAcknowledgesAndCancelsLocally(t *testing.T) {
 
 func TestProxySession_modernListenCompactAcknowledgesEmptyFilter(t *testing.T) {
 	session, out := newModernReadyProxySession(t, transport.ToolModeCompact)
-	if handled, err := session.handleLocalModernLine(listenLine("listen")); err != nil || !handled {
+	if handled, err := handleLocal(t, session, listenLine("listen")); err != nil || !handled {
 		t.Fatalf("listen handled=%t error=%v", handled, err)
 	}
 	if ack := decodeLine[transport.SubscriptionAck](t, out.Bytes()); ack.Params.Notifications.ToolsListChanged {
@@ -189,7 +189,7 @@ func TestProxySession_modernListenWithMalformedParamsIsRejectedLocally(t *testin
 		transport.MethodSubscriptionsListen,
 		map[string]any{"notifications": "all"},
 	)
-	if handled, err := session.handleLocalModernLine(listen); err != nil || !handled {
+	if handled, err := handleLocal(t, session, listen); err != nil || !handled {
 		t.Fatalf("listen handled=%t error=%v", handled, err)
 	}
 	response := decodeLine[transport.Response](t, out.Bytes())
@@ -200,9 +200,7 @@ func TestProxySession_modernListenWithMalformedParamsIsRejectedLocally(t *testin
 
 func TestNotificationStream_modernTaggingAndLegacyForwarding(t *testing.T) {
 	session, out := newTestProxySession(t, transport.ToolModeProxy)
-	notification := json.RawMessage(
-		`{"jsonrpc":"2.0","method":"notifications/tools/list_changed","params":{"_meta":{"existing":"kept"}}}`,
-	)
+	notification := toolsChangedLine(t)
 	if err := session.notificationStream.forward(notification); err != nil {
 		t.Fatal(err)
 	}
@@ -228,26 +226,24 @@ func TestNotificationStream_modernTaggingAndLegacyForwarding(t *testing.T) {
 	if err := session.notificationStream.forward(notification); err != nil {
 		t.Fatal(err)
 	}
-	tagged := decodeLine[taggedToolsChanged](t, out.Bytes())
-	if meta := tagged.Params.Meta; meta.Existing != "kept" || string(meta.SubscriptionID) != "9" {
+	tagged := decodeLine[transport.ToolsListChangedNotification](t, out.Bytes())
+	if tagged.Method != transport.NotificationToolsChanged || string(tagged.Params.Meta.SubscriptionID) != "9" {
 		t.Fatalf("tagged notification = %s", out.Bytes())
 	}
-}
-
-// taggedToolsChanged keeps a metadata key the daemon set, to show tagging preserves it.
-type taggedToolsChanged struct {
-	Params struct {
-		Meta struct {
-			transport.SubscriptionMeta
-			Existing string `json:"existing"`
-		} `json:"_meta"`
-	} `json:"params"`
+	out.Reset()
+	other := json.RawMessage(`{"jsonrpc":"2.0","method":"notifications/message","params":{"level":"info"}}`)
+	if err := session.notificationStream.forward(other); err != nil {
+		t.Fatal(err)
+	}
+	if out.Len() != 0 {
+		t.Fatalf("modern agent received a notification type it did not subscribe to: %q", out.String())
+	}
 }
 
 func TestProxySession_modernListenWithWrongJSONRPCGoesToDaemon(t *testing.T) {
 	session, out := newTestProxySession(t, transport.ToolModeProxy)
 	listen := bytes.Replace(listenLine(5), []byte(`"jsonrpc":"2.0"`), []byte(`"jsonrpc":"1.0"`), 1)
-	handled, err := session.handleLocalModernLine(listen)
+	handled, err := handleLocal(t, session, listen)
 	if err != nil || handled || out.Len() != 0 || proxyListenCount(session) != 0 {
 		t.Fatalf("handled=%t error=%v output=%q listens=%d", handled, err, out.String(), proxyListenCount(session))
 	}
@@ -268,6 +264,11 @@ func newModernReadyProxySession(t *testing.T, toolMode transport.ToolMode) (*pro
 	session.subs.modern.Store(true)
 	session.clientReady.Store(true)
 	return session, out
+}
+
+func handleLocal(t *testing.T, session *proxySession, line []byte) (bool, error) {
+	t.Helper()
+	return session.handleLocalModernLine(decodeLine[modernLine](t, line))
 }
 
 func toolsChangedLine(t *testing.T) json.RawMessage {

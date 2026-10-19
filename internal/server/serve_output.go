@@ -69,7 +69,7 @@ func startSessionNotifyForwarder(session *Session, writeOut func(any)) func() {
 }
 
 func (s *Session) forwardToolsChanged(raw json.RawMessage, writeOut func(any)) {
-	if !s.modern.Load() || s.httpSession.Load() {
+	if !s.modern.Load() {
 		writeOut(raw)
 		return
 	}

@@ -216,8 +216,17 @@ func (s *notificationStream) forward(message json.RawMessage) error {
 	if !s.subs.modern.Load() {
 		return s.writer.writeLine(message)
 	}
+	// A modern agent receives only the notification types it subscribed to, and listens cover only tool changes.
+	var notification transport.Notification
+	if err := json.Unmarshal(
+		message,
+		&notification,
+	); err != nil ||
+		notification.Method != transport.NotificationToolsChanged {
+		return nil //nolint:nilerr // A message that is not a tool change has no listen to go to.
+	}
 	return s.subs.forEach(func(id json.RawMessage) error {
-		tagged, err := tagNotification(message, id)
+		tagged, err := json.Marshal(transport.NewToolsListChangedNotification(id))
 		if err != nil {
 			return err
 		}

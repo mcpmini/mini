@@ -14,12 +14,8 @@ type modernLine struct {
 	Params  json.RawMessage `json:"params"`
 }
 
-func isModernLine(line []byte) bool {
-	var message modernLine
-	if json.Unmarshal(line, &message) != nil {
-		return false
-	}
-	version, modern := transport.ProtocolVersionFromParams(message.Params)
+func (m modernLine) isModern() bool {
+	version, modern := transport.ProtocolVersionFromParams(m.Params)
 	return modern && slices.Contains(transport.ModernVersions, version)
 }
 
@@ -35,20 +31,20 @@ func (s *proxySession) ensureModernReady() {
 }
 
 func (s *proxySession) handleModernInput(line []byte) (bool, error) {
-	if isModernLine(line) {
-		s.ensureModernReady()
-	}
-	return s.handleLocalModernLine(line)
-}
-
-func (s *proxySession) handleLocalModernLine(line []byte) (bool, error) {
 	var message modernLine
 	if json.Unmarshal(line, &message) != nil {
 		return false, nil //nolint:nilerr // Malformed lines must reach the daemon for its parse error.
 	}
+	if message.isModern() {
+		s.ensureModernReady()
+	}
+	return s.handleLocalModernLine(message)
+}
+
+func (s *proxySession) handleLocalModernLine(message modernLine) (bool, error) {
 	switch message.Method {
 	case transport.MethodSubscriptionsListen:
-		if message.JSONRPC != "2.0" || !isModernLine(line) || len(message.ID) == 0 || string(message.ID) == "null" ||
+		if message.JSONRPC != "2.0" || !message.isModern() || len(message.ID) == 0 || string(message.ID) == "null" ||
 			!s.clientReady.Load() {
 			return false, nil
 		}
@@ -89,57 +85,4 @@ func (s *proxySession) writeInvalidListenParams(id json.RawMessage) error {
 		return err
 	}
 	return s.writeLine(line)
-}
-
-func tagNotification(line, id json.RawMessage) ([]byte, error) {
-	var notification transport.Notification
-	if err := json.Unmarshal(line, &notification); err != nil {
-		return nil, err
-	}
-	params, err := tagNotificationParams(notification.Params, id)
-	if err != nil {
-		return nil, err
-	}
-	notification.Params = params
-	return json.Marshal(notification)
-}
-
-func tagNotificationParams(raw, id json.RawMessage) (json.RawMessage, error) {
-	params, err := decodeNotificationParams(raw)
-	if err != nil {
-		return nil, err
-	}
-	meta, err := addSubscriptionID(params["_meta"], id)
-	if err != nil {
-		return nil, err
-	}
-	params["_meta"] = meta
-	return json.Marshal(params)
-}
-
-func decodeNotificationParams(raw json.RawMessage) (map[string]json.RawMessage, error) {
-	var params map[string]json.RawMessage
-	if len(raw) > 0 {
-		if err := json.Unmarshal(raw, &params); err != nil {
-			return nil, err
-		}
-	}
-	if params == nil {
-		params = make(map[string]json.RawMessage)
-	}
-	return params, nil
-}
-
-func addSubscriptionID(raw, id json.RawMessage) (json.RawMessage, error) {
-	meta := make(map[string]json.RawMessage)
-	if len(raw) > 0 {
-		if err := json.Unmarshal(raw, &meta); err != nil {
-			return nil, err
-		}
-	}
-	if meta == nil {
-		meta = make(map[string]json.RawMessage)
-	}
-	meta[transport.SubscriptionIDMeta] = id
-	return json.Marshal(meta)
 }
