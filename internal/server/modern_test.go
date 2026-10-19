@@ -127,22 +127,17 @@ func decodeParams[T any](t *testing.T, message modernMessage) T {
 
 func serveModern(t *testing.T, srv *server.Server, lines ...[]byte) []modernMessage {
 	t.Helper()
-	var messages []modernMessage
-	for _, line := range bytes.Split(bytes.TrimSpace(serveModernRaw(t, srv, lines...)), []byte("\n")) {
-		messages = append(messages, decodeMessage(t, line))
-	}
-	return messages
-}
-
-func serveModernRaw(t *testing.T, srv *server.Server, lines ...[]byte) []byte {
-	t.Helper()
 	var out bytes.Buffer
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := srv.Serve(ctx, bytes.NewReader(bytes.Join(lines, nil)), &out); err != nil {
 		t.Fatalf("Serve modern requests: %v", err)
 	}
-	return out.Bytes()
+	var messages []modernMessage
+	for _, line := range bytes.Split(bytes.TrimSpace(out.Bytes()), []byte("\n")) {
+		messages = append(messages, decodeMessage(t, line))
+	}
+	return messages
 }
 
 func decodeMessage(t *testing.T, line []byte) modernMessage {

@@ -64,7 +64,7 @@ type ToolsListResult struct {
 type ToolCallParams struct {
 	Name           string          `json:"name"`
 	Arguments      map[string]any  `json:"arguments"`
-	Meta           *ToolCallMeta   `json:"_meta,omitempty"`
+	Meta           *RequestMeta    `json:"_meta,omitempty"`
 	InputResponses json.RawMessage `json:"inputResponses,omitempty"`
 	RequestState   json.RawMessage `json:"requestState,omitempty"`
 }

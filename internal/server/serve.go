@@ -300,11 +300,11 @@ func (s *Server) handleToolsCall(ctx context.Context, params json.RawMessage, se
 }
 
 type toolCallRequest struct {
-	Name           string                 `json:"name"`
-	Arguments      json.RawMessage        `json:"arguments"`
-	Meta           transport.ToolCallMeta `json:"_meta"`
-	InputResponses json.RawMessage        `json:"inputResponses"`
-	RequestState   json.RawMessage        `json:"requestState"`
+	Name           string                `json:"name"`
+	Arguments      json.RawMessage       `json:"arguments"`
+	Meta           transport.RequestMeta `json:"_meta"`
+	InputResponses json.RawMessage       `json:"inputResponses"`
+	RequestState   json.RawMessage       `json:"requestState"`
 }
 
 func parseToolCall(params json.RawMessage) (toolCallRequest, error) {

@@ -2,23 +2,11 @@ package transport
 
 import "encoding/json"
 
-const clientCapsMeta = "io.modelcontextprotocol/clientCapabilities"
-
 // ToolCallMRTR carries elicitation capabilities and opaque retry fields for modern tool calls.
 type ToolCallMRTR struct {
 	Elicitation    json.RawMessage
 	InputResponses json.RawMessage
 	RequestState   json.RawMessage
-}
-
-// ToolCallMeta decodes only the client capability mini passes on, so other capabilities an agent
-// declares never reach upstreams.
-type ToolCallMeta struct {
-	ClientCapabilities *ToolCallCapabilities `json:"io.modelcontextprotocol/clientCapabilities,omitempty"`
-}
-
-type ToolCallCapabilities struct {
-	Elicitation json.RawMessage `json:"elicitation,omitempty"`
 }
 
 func NewToolCallParams(name string, args map[string]any, mrtr *ToolCallMRTR) ToolCallParams {
@@ -29,7 +17,7 @@ func NewToolCallParams(name string, args map[string]any, mrtr *ToolCallMRTR) Too
 	params.InputResponses = mrtr.InputResponses
 	params.RequestState = mrtr.RequestState
 	if len(mrtr.Elicitation) > 0 {
-		params.Meta = &ToolCallMeta{ClientCapabilities: &ToolCallCapabilities{Elicitation: mrtr.Elicitation}}
+		params.Meta = &RequestMeta{ClientCapabilities: &ClientCapabilities{Elicitation: mrtr.Elicitation}}
 	}
 	return params
 }
@@ -41,7 +29,7 @@ func stripModernToolCallFields(params json.RawMessage) json.RawMessage {
 	if err := json.Unmarshal(params, &fields); err != nil {
 		return params
 	}
-	removedMeta := deleteMetaKey(fields, clientCapsMeta)
+	removedMeta := deleteMetaKey(fields, clientCapabilitiesMeta)
 	removedFields := deleteKeys(fields, "inputResponses", "requestState")
 	if !removedMeta && !removedFields {
 		return params

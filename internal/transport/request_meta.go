@@ -3,12 +3,18 @@ package transport
 import "encoding/json"
 
 type RequestMeta struct {
-	ProtocolVersion    string              `json:"io.modelcontextprotocol/protocolVersion"`
+	ProtocolVersion    string              `json:"io.modelcontextprotocol/protocolVersion,omitempty"`
 	ClientInfo         *ClientInfo         `json:"io.modelcontextprotocol/clientInfo,omitempty"`
 	ClientCapabilities *ClientCapabilities `json:"io.modelcontextprotocol/clientCapabilities,omitempty"`
 }
 
-type ClientCapabilities struct{}
+const clientCapabilitiesMeta = "io.modelcontextprotocol/clientCapabilities"
+
+// ClientCapabilities decodes only the capability mini passes on, so other capabilities an agent
+// declares never reach upstreams.
+type ClientCapabilities struct {
+	Elicitation json.RawMessage `json:"elicitation,omitempty"`
+}
 
 type requestParamsMeta struct {
 	Meta RequestMeta `json:"_meta"`
