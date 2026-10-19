@@ -306,6 +306,17 @@ func TestInvokeRaw_ToolError(t *testing.T) {
 	}
 }
 
+func TestInvoke_InputRequiredNamesServer(t *testing.T) {
+	conn := fakeConn("tools/call", `{"resultType":"input_required","requestState":"s"}`)
+	_, err := invoke.Invoke(context.Background(), invoke.InvokeParams{
+		Server: "svc", Tool: "confirm", Conn: conn, Clock: clock.NewFake(),
+	})
+	want := "svc asked for user input, which mini can only pass to an agent using MCP 2026-07-28 in proxy mode"
+	if !errors.Is(err, invoke.ErrInputRequired) || err.Error() != want {
+		t.Fatalf("Invoke error = %v, want %q", err, want)
+	}
+}
+
 func TestInvokeRaw_ConnError(t *testing.T) {
 	conn := &transport.FakeConnection{Err: errors.New("network down")}
 	_, _, err := invoke.InvokeRaw(

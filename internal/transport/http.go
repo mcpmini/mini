@@ -174,6 +174,9 @@ func (c *HTTPConnection) Call(ctx context.Context, method string, params json.Ra
 	if c.isModern() {
 		return c.callModern(ctx, method, params)
 	}
+	if method == "tools/call" {
+		params = stripModernToolCallFields(params)
+	}
 	return c.withSessionRecovery(ctx, func() (json.RawMessage, error) {
 		return c.rpc(ctx, method, params)
 	})

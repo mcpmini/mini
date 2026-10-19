@@ -100,6 +100,9 @@ func newConn(cmd *exec.Cmd, stdin io.WriteCloser, stdout io.ReadCloser, logger *
 }
 
 func (c *StdioConnection) Call(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+	if method == "tools/call" {
+		params = stripModernToolCallFields(params)
+	}
 	id := c.nextID.Add(1)
 	ch := c.pending.register(id)
 

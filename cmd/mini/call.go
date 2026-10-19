@@ -187,7 +187,9 @@ func mustDialCall(ctx context.Context, configDir string, cc callContext) transpo
 func executeRaw(ctx context.Context, conn transport.Connection, cc callContext) {
 	raw, _, err := invoke.InvokeRaw(
 		ctx,
-		invoke.InvokeRawParams{Clock: cc.clock, Conn: conn, Tool: cc.toolName, Params: cc.params},
+		invoke.InvokeRawParams{
+			Clock: cc.clock, Conn: conn, Server: cc.serverName, Tool: cc.toolName, Params: cc.params,
+		},
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "mini: %v\n", err)

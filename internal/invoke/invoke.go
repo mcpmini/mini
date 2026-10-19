@@ -32,7 +32,10 @@ type InvokeResult struct {
 }
 
 func Invoke(ctx context.Context, p InvokeParams) (*InvokeResult, error) {
-	raw, latencyMs, err := InvokeRaw(ctx, InvokeRawParams{Clock: p.Clock, Conn: p.Conn, Tool: p.Tool, Params: p.Params})
+	raw, latencyMs, err := InvokeRaw(
+		ctx,
+		InvokeRawParams{Clock: p.Clock, Conn: p.Conn, Server: p.Server, Tool: p.Tool, Params: p.Params},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -58,6 +61,7 @@ func buildEnvelopeFromParams(raw json.RawMessage, p InvokeParams) (*response.Env
 type InvokeRawParams struct {
 	Clock  clock.Clock
 	Conn   transport.Connection
+	Server string
 	Tool   string
 	Params map[string]any
 }
@@ -74,7 +78,7 @@ func InvokeRaw(ctx context.Context, p InvokeRawParams) (json.RawMessage, int64, 
 		return nil, latency, err
 	}
 	extracted, err := ExtractContent(raw)
-	return extracted, latency, err
+	return extracted, latency, ExplainInputRequired(p.Server, err)
 }
 
 type BuildEnvelopeParams struct {
@@ -111,7 +115,24 @@ func buildResponseParams(p BuildEnvelopeParams, result projection.Result) respon
 // ErrToolReturnedError marks a result with isError set, so callers can tell an upstream tool failure from a malformed result.
 var ErrToolReturnedError = errors.New("tool returned error")
 
-var ErrInputRequired = errors.New("upstream asked for user input, which mini can't relay yet")
+var ErrInputRequired = errors.New("upstream asked for user input")
+
+type inputRequiredError struct{ server string }
+
+func (e inputRequiredError) Error() string {
+	return e.server + " asked for user input, which mini can only pass to an agent using MCP 2026-07-28 in proxy mode"
+}
+
+func (inputRequiredError) Unwrap() error { return ErrInputRequired }
+
+// ExplainInputRequired names the server in an input_required error for callers that can't pass the
+// request on to the agent; other errors are returned unchanged.
+func ExplainInputRequired(server string, err error) error {
+	if errors.Is(err, ErrInputRequired) {
+		return inputRequiredError{server: server}
+	}
+	return err
+}
 
 // CheckResult reports decoding failures and upstream tool errors.
 func CheckResult(raw json.RawMessage) error {

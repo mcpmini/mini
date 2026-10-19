@@ -7,21 +7,26 @@ import (
 )
 
 // ModernRequest encodes one newline-terminated 2026-07-28 request whose params carry the
-// per-request metadata alongside the given typed params.
+// per-request metadata alongside the given typed params. Metadata keys the params already set win.
 func ModernRequest(id any, method string, params any) []byte {
 	return ModernRequestVersion(transport.ModernVersions[0], id, method, params)
 }
 
 func ModernRequestVersion(version string, id any, method string, params any) []byte {
-	fields := map[string]any{}
+	fields := map[string]json.RawMessage{}
 	if params != nil {
 		mustUnmarshal(mustMarshal(params), &fields)
 	}
-	fields["_meta"] = transport.RequestMeta{
+	meta := map[string]json.RawMessage{}
+	mustUnmarshal(mustMarshal(transport.RequestMeta{
 		ProtocolVersion:    version,
 		ClientInfo:         &transport.ClientInfo{Name: "test", Version: "0"},
 		ClientCapabilities: &transport.ClientCapabilities{},
+	}), &meta)
+	if raw, ok := fields["_meta"]; ok {
+		mustUnmarshal(raw, &meta)
 	}
+	fields["_meta"] = mustMarshal(meta)
 	request := transport.Request{JSONRPC: "2.0", ID: id, Method: method, Params: mustMarshal(fields)}
 	return append(mustMarshal(request), '\n')
 }
