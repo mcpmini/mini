@@ -8,42 +8,13 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-type listenRequest struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      json.RawMessage `json:"id"`
-	Params  struct {
-		Notifications struct {
-			ToolsListChanged bool `json:"toolsListChanged"`
-		} `json:"notifications"`
-	} `json:"params"`
-}
-
-type subscriptionAck struct {
-	JSONRPC string                `json:"jsonrpc"`
-	Method  string                `json:"method"`
-	Params  subscriptionAckParams `json:"params"`
-}
-
-type subscriptionAckParams struct {
-	Meta          subscriptionMeta    `json:"_meta"`
-	Notifications listenNotifications `json:"notifications"`
-}
-
-type subscriptionMeta struct {
-	SubscriptionID json.RawMessage `json:"io.modelcontextprotocol/subscriptionId"`
-}
-
-type listenNotifications struct {
-	ToolsListChanged bool `json:"toolsListChanged,omitempty"`
-}
-
 type listenSubscription struct {
 	id            json.RawMessage
-	notifications listenNotifications
+	notifications transport.ListenNotifications
 }
 
 func (s *Server) startListen(ctx context.Context, p handleScannedLineParams, line []byte) {
-	var req listenRequest
+	var req transport.ListenRequest
 	if err := json.Unmarshal(line, &req); err != nil || len(req.ID) == 0 {
 		p.writeOut(
 			errorResponse(peekRequestID(line), transport.CodeInvalidParams, "invalid subscriptions/listen params"),
@@ -59,8 +30,8 @@ func (s *Server) startListen(ctx context.Context, p handleScannedLineParams, lin
 		s.rejectListenVersion(p, req.ID, version)
 		return
 	}
-	acknowledged := listenNotifications{ToolsListChanged: req.Params.Notifications.ToolsListChanged}
-	p.writeOut(listenAcknowledgment(req.ID, acknowledged))
+	acknowledged := transport.ListenNotifications{ToolsListChanged: req.Params.Notifications.ToolsListChanged}
+	p.writeOut(transport.NewSubscriptionAck(req.ID, acknowledged))
 	s.waitOnListen(ctx, p, listenSubscription{id: req.ID, notifications: acknowledged})
 }
 
@@ -71,13 +42,6 @@ func (s *Server) rejectListenVersion(p handleScannedLineParams, id json.RawMessa
 		return
 	}
 	p.writeOut(response)
-}
-
-func listenAcknowledgment(id json.RawMessage, notifications listenNotifications) subscriptionAck {
-	return subscriptionAck{
-		JSONRPC: "2.0", Method: "notifications/subscriptions/acknowledged",
-		Params: subscriptionAckParams{Meta: subscriptionMeta{SubscriptionID: id}, Notifications: notifications},
-	}
 }
 
 func (s *Server) waitOnListen(ctx context.Context, p handleScannedLineParams, listen listenSubscription) {

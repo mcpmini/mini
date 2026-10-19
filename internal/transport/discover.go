@@ -10,9 +10,29 @@ import (
 )
 
 type DiscoverResult struct {
-	SupportedVersions []string       `json:"supportedVersions"`
-	Capabilities      map[string]any `json:"capabilities"`
-	Instructions      string         `json:"instructions,omitempty"`
+	ResultType        string             `json:"resultType,omitempty"`
+	SupportedVersions []string           `json:"supportedVersions"`
+	Capabilities      ServerCapabilities `json:"capabilities"`
+	Instructions      string             `json:"instructions,omitempty"`
+	Meta              *DiscoverMeta      `json:"_meta,omitempty"`
+	TTLMs             int                `json:"ttlMs"`
+	CacheScope        string             `json:"cacheScope,omitempty"`
+}
+
+type ServerCapabilities struct {
+	Tools *ToolsCapability `json:"tools,omitempty"`
+}
+
+type ToolsCapability struct {
+	ListChanged bool `json:"listChanged"`
+}
+
+func (c ServerCapabilities) ToolsListChanged() bool {
+	return c.Tools != nil && c.Tools.ListChanged
+}
+
+type DiscoverMeta struct {
+	ServerInfo ServerInfo `json:"io.modelcontextprotocol/serverInfo"`
 }
 
 type UnsupportedVersionData struct {
@@ -97,7 +117,7 @@ func classifyDiscoverResult(result json.RawMessage) probeVerdict {
 		return probeVerdict{era: EraLegacy}
 	}
 	verdict := modernVersionVerdict(discovered.SupportedVersions)
-	verdict.listen = verdict.era == EraModern && toolsListChanged(discovered.Capabilities)
+	verdict.listen = verdict.era == EraModern && discovered.Capabilities.ToolsListChanged()
 	return verdict
 }
 

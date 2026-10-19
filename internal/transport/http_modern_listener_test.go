@@ -65,8 +65,7 @@ func TestHTTPModernListener_dispatchesTaggedToolChange(t *testing.T) {
 	notifications := make(chan struct{}, 2)
 	server := modernListenerServer(t, true, func(w http.ResponseWriter, _ *http.Request, req Request) {
 		writeAck(t, w, req.ID)
-		writeSSEMessage(t, w, modernToolsChangedMessage)
-		w.(http.Flusher).Flush()
+		writeSSEJSON(t, w, NewToolsListChangedNotification(rawID(t, req.ID)))
 	})
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: server.URL})
 	conn.SetNotificationHandler(func(Notification) { notifications <- struct{}{} })
@@ -113,14 +112,14 @@ func TestHTTPModernListener_requestCarriesProtocolAndFilter(t *testing.T) {
 	checked := make(chan struct{}, 1)
 	server := modernListenerServer(t, true, func(w http.ResponseWriter, _ *http.Request, req Request) {
 		listens.Add(1)
-		if req.Method != modernListenMethod || req.ID == nil {
+		if req.Method != MethodSubscriptionsListen || req.ID == nil {
 			t.Errorf("listen request = %+v", req)
 		}
 		var fields map[string]json.RawMessage
 		if err := json.Unmarshal(req.Params, &fields); err != nil {
 			t.Errorf("decode listen params: %v", err)
 		}
-		var filter listenParams
+		var filter ListenParams
 		if err := json.Unmarshal(req.Params, &filter); err != nil || !filter.Notifications.ToolsListChanged {
 			t.Errorf("listen filter = %+v, err = %v", filter, err)
 		}
@@ -144,9 +143,8 @@ func TestHTTPModernListener_requestCarriesProtocolAndFilter(t *testing.T) {
 }
 
 func TestHTTPModernListener_stopsWhenAckOmitsToolChanges(t *testing.T) {
-	server := modernListenerServer(t, true, func(w http.ResponseWriter, _ *http.Request, _ Request) {
-		writeSSEMessage(t, w, modernAckWithoutTools)
-		w.(http.Flusher).Flush()
+	server := modernListenerServer(t, true, func(w http.ResponseWriter, _ *http.Request, req Request) {
+		writeSSEJSON(t, w, NewSubscriptionAck(rawID(t, req.ID), ListenNotifications{}))
 	})
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: server.URL})
 	t.Cleanup(func() { conn.Close() })
@@ -336,7 +334,7 @@ func TestHTTPModernListener_probeFinishingAfterCloseStartsNoListener(t *testing.
 			<-releaseProbe
 			writeRPCResult(t, w, req.ID, DiscoverResult{
 				SupportedVersions: ModernVersions,
-				Capabilities:      map[string]any{"tools": map[string]any{"listChanged": true}},
+				Capabilities:      ServerCapabilities{Tools: &ToolsCapability{ListChanged: true}},
 			})
 			return
 		}

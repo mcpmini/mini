@@ -219,9 +219,9 @@ func modernHandler(t *testing.T, u modernUpstream) http.HandlerFunc {
 			if u.Probes != nil {
 				u.Probes.Add(1)
 			}
-			result := DiscoverResult{SupportedVersions: ModernVersions, Capabilities: map[string]any{}}
+			result := DiscoverResult{SupportedVersions: ModernVersions}
 			if u.ListChanged {
-				result.Capabilities["tools"] = map[string]any{"listChanged": true}
+				result.Capabilities.Tools = &ToolsCapability{ListChanged: true}
 			}
 			writeRPCResult(t, w, req.ID, result)
 		case req.Method == "tools/list" && u.Tools != nil:

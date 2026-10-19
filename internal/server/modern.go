@@ -54,7 +54,7 @@ func (s *Server) handleModernLine(p handleScannedLineParams, line []byte) bool {
 	if modern {
 		s.activateModern(p.session)
 	}
-	if modern && peekMethod(line) == "subscriptions/listen" {
+	if modern && peekMethod(line) == transport.MethodSubscriptionsListen {
 		s.startListen(p.ctx, p, line)
 		return true
 	}
@@ -68,19 +68,7 @@ func modernRequestVersion(line []byte) (string, bool) {
 	if json.Unmarshal(line, &request) != nil {
 		return "", false
 	}
-	return protocolVersionFromParams(request.Params)
-}
-
-func protocolVersionFromParams(params json.RawMessage) (string, bool) {
-	var request struct {
-		Meta struct {
-			ProtocolVersion string `json:"io.modelcontextprotocol/protocolVersion"`
-		} `json:"_meta"`
-	}
-	if json.Unmarshal(params, &request) != nil || request.Meta.ProtocolVersion == "" {
-		return "", false
-	}
-	return request.Meta.ProtocolVersion, true
+	return transport.ProtocolVersionFromParams(request.Params)
 }
 
 func (s *Server) activateModern(session *Session) {
@@ -93,7 +81,7 @@ func (s *Server) activateModern(session *Session) {
 }
 
 func modernVersionError(req transport.Request, session *Session) *transport.Response {
-	version, modern := protocolVersionFromParams(req.Params)
+	version, modern := transport.ProtocolVersionFromParams(req.Params)
 	if !modern || !session.acceptsModern.Load() || slices.Contains(transport.ModernVersions, version) {
 		return nil
 	}
@@ -112,7 +100,7 @@ func unsupportedVersionResponse(id any, requested string) (transport.Response, e
 		return transport.Response{}, err
 	}
 	return transport.Response{JSONRPC: "2.0", ID: id, Error: &transport.RPCError{
-		Code: -32022, Message: "Unsupported protocol version", Data: data,
+		Code: transport.CodeUnsupportedProtocolVersion, Message: "Unsupported protocol version", Data: data,
 	}}, nil
 }
 
@@ -142,36 +130,16 @@ func addModernResultFields(method string, result any) (any, error) {
 	return fields, nil
 }
 
-type modernDiscoverResult struct {
-	ResultType        string             `json:"resultType"`
-	SupportedVersions []string           `json:"supportedVersions"`
-	Capabilities      modernCapabilities `json:"capabilities"`
-	Instructions      string             `json:"instructions"`
-	Meta              modernDiscoverMeta `json:"_meta"`
-	TTLMS             int                `json:"ttlMs"`
-	CacheScope        string             `json:"cacheScope"`
-}
-
-type modernCapabilities struct {
-	Tools modernToolsCapability `json:"tools"`
-}
-
-type modernToolsCapability struct {
-	ListChanged bool `json:"listChanged"`
-}
-
-type modernDiscoverMeta struct {
-	ServerInfo transport.ServerInfo `json:"io.modelcontextprotocol/serverInfo"`
-}
-
-func (s *Server) handleDiscover(session *Session) modernDiscoverResult {
+func (s *Server) handleDiscover(session *Session) transport.DiscoverResult {
 	supported := append(append([]string{}, transport.ModernVersions...), transport.LegacyVersions...)
-	return modernDiscoverResult{
-		ResultType:        "complete",
+	return transport.DiscoverResult{
+		ResultType:        string(transport.ResultComplete),
 		SupportedVersions: supported,
-		Capabilities:      modernCapabilities{Tools: modernToolsCapability{ListChanged: true}},
+		Capabilities:      transport.ServerCapabilities{Tools: &transport.ToolsCapability{ListChanged: true}},
 		Instructions:      s.initInstructions(session),
-		Meta:              modernDiscoverMeta{ServerInfo: transport.ServerInfo{Name: "mini", Version: version.Version}},
-		TTLMS:             0, CacheScope: "private",
+		Meta: &transport.DiscoverMeta{
+			ServerInfo: transport.ServerInfo{Name: "mini", Version: version.Version},
+		},
+		CacheScope: "private",
 	}
 }

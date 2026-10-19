@@ -11,8 +11,6 @@ import (
 	"net/http"
 )
 
-const modernListenMethod = "subscriptions/listen"
-
 var (
 	errUnsupportedListenFilter = errors.New("server did not acknowledge tools-list changes")
 	errListenComplete          = errors.New("subscription completed")
@@ -44,18 +42,10 @@ func (c *HTTPConnection) consumeNotificationStream(ctx context.Context, state *l
 	return resp.StatusCode, c.scanNotificationStream(resp.Body)
 }
 
-type listenNotifications struct {
-	ToolsListChanged bool `json:"toolsListChanged"`
-}
-
-type listenParams struct {
-	Notifications listenNotifications `json:"notifications"`
-}
-
 func (c *HTTPConnection) buildModernListenRequest() (
 	func(context.Context) (*http.Request, string, error), error,
 ) {
-	params, err := json.Marshal(listenParams{Notifications: listenNotifications{ToolsListChanged: true}})
+	params, err := json.Marshal(ListenParams{Notifications: ListenNotifications{ToolsListChanged: true}})
 	if err != nil {
 		return nil, fmt.Errorf("encode subscriptions/listen params: %w", err)
 	}
@@ -63,7 +53,7 @@ func (c *HTTPConnection) buildModernListenRequest() (
 	if err != nil {
 		return nil, err
 	}
-	request := Request{JSONRPC: "2.0", ID: c.nextID.Add(1), Method: modernListenMethod, Params: prepared}
+	request := Request{JSONRPC: "2.0", ID: c.nextID.Add(1), Method: MethodSubscriptionsListen, Params: prepared}
 	return func(ctx context.Context) (*http.Request, string, error) {
 		return c.buildModernHTTPRequest(ctx, request)
 	}, nil
@@ -107,11 +97,11 @@ func listenResponseOutcome(response Response) error {
 }
 
 func (c *HTTPConnection) handleSubscriptionNotification(notification Notification) error {
-	if notification.Method != "notifications/subscriptions/acknowledged" {
+	if notification.Method != NotificationSubscriptionsAcknowledged {
 		c.dispatchNotification(notification)
 		return nil
 	}
-	var ack listenParams
+	var ack ListenParams
 	if json.Unmarshal(notification.Params, &ack) != nil || !ack.Notifications.ToolsListChanged {
 		return errUnsupportedListenFilter
 	}

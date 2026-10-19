@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"sync"
+
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 type serializedWriter struct {
@@ -66,26 +68,13 @@ func startSessionNotifyForwarder(session *Session, writeOut func(any)) func() {
 	return func() { session.closeToolsChangedStream(ch); wg.Wait() }
 }
 
-type modernToolsChangedNotification struct {
-	JSONRPC string                   `json:"jsonrpc"`
-	Method  string                   `json:"method"`
-	Params  modernToolsChangedParams `json:"params"`
-}
-
-type modernToolsChangedParams struct {
-	Meta subscriptionMeta `json:"_meta"`
-}
-
 func (s *Session) forwardToolsChanged(raw json.RawMessage, writeOut func(any)) {
 	if !s.modern.Load() {
 		writeOut(raw)
 		return
 	}
 	for _, id := range s.listenIDs() {
-		writeOut(modernToolsChangedNotification{
-			JSONRPC: "2.0", Method: "notifications/tools/list_changed",
-			Params: modernToolsChangedParams{Meta: subscriptionMeta{SubscriptionID: id}},
-		})
+		writeOut(transport.NewToolsListChangedNotification(id))
 	}
 }
 
