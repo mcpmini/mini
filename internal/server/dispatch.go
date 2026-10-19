@@ -24,7 +24,7 @@ func (s *Server) dispatchRaw(ctx context.Context, p dispatchParams) (json.RawMes
 	defer cancel()
 	start := s.clock.Now()
 	raw, err := s.dispatchRawCall(ctx, p)
-	return raw, s.clock.Since(start).Milliseconds(), err
+	return raw, s.clock.Since(start).Milliseconds(), invoke.ExplainInputRequired(p.Upstream.cfg.Name, err)
 }
 
 func (s *Server) dispatchRawCall(ctx context.Context, p dispatchParams) (json.RawMessage, error) {

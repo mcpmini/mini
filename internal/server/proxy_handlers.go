@@ -166,13 +166,13 @@ func (s *Server) proxyCallUpstream(ctx context.Context, p proxyCallParams) (any,
 		dispatchParams{Upstream: upstream, Tool: p.Tool, Params: p.Params, Session: p.Session, MRTR: p.MRTR},
 	)
 	upstream.totalLatencyMs.Add(latencyMs)
-	if errors.Is(toolErr, invoke.ErrInputRequired) && p.Session.modern.Load() {
+	if errors.Is(toolErr, invoke.ErrInputRequired) && p.MRTR != nil {
 		p.Session.recordCall(latencyMs, 0, false)
 		return upstreamResult(raw), nil
 	}
 	if toolErr != nil {
 		p.Session.recordCall(latencyMs, 0, true)
-		return proxyToolFailure(raw, invoke.ExplainInputRequired(p.Server, toolErr)), nil
+		return proxyToolFailure(raw, toolErr), nil
 	}
 	return s.proxyRespond(proxyReply{Call: p, Upstream: upstream, Raw: raw, LatencyMs: latencyMs})
 }

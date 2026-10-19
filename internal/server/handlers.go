@@ -230,7 +230,7 @@ type toolErrParams struct {
 func (s *Server) handleToolErr(p toolErrParams) (any, error) {
 	p.Session.recordCall(p.LatencyMs, 0, true)
 	s.logToolError(p.Server, p.Tool, p.LatencyMs, p.Err)
-	env := response.BuildError("tool_error", invoke.ExplainInputRequired(p.Server, p.Err).Error(), false, "")
+	env := response.BuildError("tool_error", p.Err.Error(), false, "")
 	projCfg := s.resolveProjection(p.Server, p.Tool, p.Session)
 	return s.formatEnvelope(p.Server, p.Tool, env, projCfg)
 }

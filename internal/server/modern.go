@@ -116,21 +116,22 @@ func addModernResultFields(method string, result any) (any, error) {
 	if fields == nil {
 		return nil, fmt.Errorf("modern result must be a JSON object")
 	}
-	if _, ok := fields["resultType"]; ok && method != "tools/list" {
-		return result, nil
+	_, hasResultType := fields["resultType"]
+	if hasResultType && method != "tools/list" {
+		return result, nil // An upstream result that sets its own type reaches the agent byte-identical.
 	}
-	if _, ok := fields["resultType"]; !ok {
-		fields["resultType"] = json.RawMessage(`"complete"`)
-	}
+	addMissingField(fields, "resultType", json.RawMessage(`"complete"`))
 	if method == "tools/list" {
-		if _, ok := fields["ttlMs"]; !ok {
-			fields["ttlMs"] = json.RawMessage(`0`)
-		}
-		if _, ok := fields["cacheScope"]; !ok {
-			fields["cacheScope"] = json.RawMessage(`"private"`)
-		}
+		addMissingField(fields, "ttlMs", json.RawMessage(`0`))
+		addMissingField(fields, "cacheScope", json.RawMessage(`"private"`))
 	}
 	return fields, nil
+}
+
+func addMissingField(fields map[string]json.RawMessage, key string, value json.RawMessage) {
+	if _, ok := fields[key]; !ok {
+		fields[key] = value
+	}
 }
 
 func (s *Server) handleDiscover(session *Session) transport.DiscoverResult {

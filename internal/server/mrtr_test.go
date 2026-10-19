@@ -76,6 +76,9 @@ func TestModernInputRequiredPassesThroughUnchanged(t *testing.T) {
 	if calls := conn.toolCalls.Load(); calls != 1 {
 		t.Fatalf("upstream tools/call count = %d, want 1", calls)
 	}
+	if errs := upstreamErrorCount(t, srv, "svc"); errs != 0 {
+		t.Errorf("input request counted as %v upstream errors, want 0", errs)
+	}
 	var forwarded struct {
 		Meta           map[string]json.RawMessage `json:"_meta"`
 		InputResponses json.RawMessage            `json:"inputResponses"`
@@ -169,4 +172,18 @@ func rawResultByID(t *testing.T, out []byte, id string) json.RawMessage {
 	}
 	t.Fatalf("no response with id %s in %s", id, out)
 	return nil
+}
+
+func upstreamErrorCount(t *testing.T, srv *server.Server, name string) float64 {
+	t.Helper()
+	var status struct {
+		Servers map[string]struct {
+			Errors float64 `json:"errors"`
+		} `json:"servers"`
+	}
+	text := toolResultText(t, serve(t, srv, callTool("config", map[string]any{"action": "status"})))
+	if err := json.Unmarshal([]byte(text), &status); err != nil {
+		t.Fatalf("status is not JSON: %v", err)
+	}
+	return status.Servers[name].Errors
 }

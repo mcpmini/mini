@@ -2,6 +2,8 @@ package transport
 
 import "encoding/json"
 
+const clientCapsMeta = "io.modelcontextprotocol/clientCapabilities"
+
 // ToolCallMRTR carries elicitation capabilities and opaque retry fields for modern tool calls.
 type ToolCallMRTR struct {
 	Elicitation    json.RawMessage
