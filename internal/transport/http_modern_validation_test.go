@@ -30,6 +30,8 @@ func TestModernToolHeaderValidationDropsOnlyInvalidDefinitions(t *testing.T) {
 		modernTool("items", `{"type":"object","properties":{"rows":{"type":"array",
 			"items":{"type":"string","x-mcp-header":"P"}}}}`),
 		modernTool("valid after items", `{"type":"object","properties":{}}`),
+		modernTool("root", `{"type":"string","x-mcp-header":"P"}`),
+		modernTool("valid after root", `{"type":"object","properties":{}}`),
 		modernTool("anyOf", `{"type":"object","properties":{"p":{"anyOf":[{"type":"string","x-mcp-header":"P"}]}}}`),
 		modernTool("valid after anyOf", `{"type":"object","properties":{"x-mcp-header":{"type":"string"}}}`),
 	}
@@ -37,7 +39,7 @@ func TestModernToolHeaderValidationDropsOnlyInvalidDefinitions(t *testing.T) {
 	got := conn.rebuildToolHeaders(tools)
 	want := []string{
 		"valid after number", "valid after missing type", "valid after type list",
-		"valid after space", "valid after duplicate", "valid after items", "valid after anyOf",
+		"valid after space", "valid after duplicate", "valid after items", "valid after root", "valid after anyOf",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("valid tool count = %d, want %d", len(got), len(want))

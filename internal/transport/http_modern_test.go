@@ -78,6 +78,37 @@ func TestModernRequestCarriesMetadataAndParameterHeaders(t *testing.T) {
 	}
 }
 
+func TestModernRequestRefreshesAuthorizationAndReplays(t *testing.T) {
+	var callAuth []string
+	conn, provider := newAuthReplayConn(t, func(w http.ResponseWriter, r *http.Request) {
+		req := decodeRequest(t, r)
+		switch req.Method {
+		case "server/discover":
+			writeRPCResult(t, w, req.ID, DiscoverResult{SupportedVersions: ModernVersions})
+		case "tools/list":
+			writeRPCResult(t, w, req.ID, ToolsListResult{Tools: []ToolDefinition{modernTool("x", `{}`)}})
+		case "tools/call":
+			callAuth = append(callAuth, r.Header.Get("Authorization"))
+			assertModernHeader(t, r, "Mcp-Method", "tools/call")
+			if r.Header.Get("Authorization") == "Bearer old" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
+		}
+	})
+	if _, err := conn.Call(t.Context(), "tools/call", json.RawMessage(`{"name":"x","arguments":{}}`)); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(callAuth, []string{"Bearer old", "Bearer new"}) || provider.refreshes != 1 {
+		t.Fatalf(
+			"tools/call auth = %v, refreshes = %d; want old then new after one refresh",
+			callAuth,
+			provider.refreshes,
+		)
+	}
+}
+
 func TestModernValueEncoding(t *testing.T) {
 	cases := []struct{ input, want string }{
 		{"us-west1", "us-west1"},
@@ -202,6 +233,7 @@ func TestModernArgumentAtPathKeepsLevelsSeparate(t *testing.T) {
 	}{
 		{name: "missing nested value ignores parent key", args: `{"region":"outer","scope":{}}`, path: []string{"scope", "region"}},
 		{name: "nested value", args: `{"region":"outer","scope":{"region":"inner"}}`, path: []string{"scope", "region"}, want: "inner"},
+		{name: "root value beside a nested one", args: `{"region":"outer","scope":{"region":"inner"}}`, path: []string{"region"}, want: "outer"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var args map[string]json.RawMessage
@@ -213,18 +245,5 @@ func TestModernArgumentAtPathKeepsLevelsSeparate(t *testing.T) {
 				t.Fatalf("argumentAtPath(%v) = %q, %v; want %q", tc.path, got, ok, tc.want)
 			}
 		})
-	}
-}
-
-func TestModernArgumentAtPathNestedLookupLeavesRootIntact(t *testing.T) {
-	var args map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(`{"scope":{"region":"inner"},"region":"outer"}`), &args); err != nil {
-		t.Fatal(err)
-	}
-	if got, ok := argumentAtPath(args, []string{"scope", "region"}); !ok || got != "inner" {
-		t.Fatalf("nested lookup = %q, %v; want inner", got, ok)
-	}
-	if got, ok := argumentAtPath(args, []string{"region"}); !ok || got != "outer" {
-		t.Fatalf("root lookup after nested lookup = %q, %v; want outer", got, ok)
 	}
 }
