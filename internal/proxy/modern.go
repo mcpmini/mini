@@ -14,10 +14,6 @@ type modernLine struct {
 	Params  json.RawMessage `json:"params"`
 }
 
-type cancelledRequestParams struct {
-	RequestID json.RawMessage `json:"requestId"`
-}
-
 func isModernLine(line []byte) bool {
 	var message modernLine
 	if json.Unmarshal(line, &message) != nil {
@@ -62,7 +58,7 @@ func (s *proxySession) handleLocalModernLine(line []byte) (bool, error) {
 		}
 		return true, s.acknowledgeListen(message.ID, params)
 	case transport.NotificationCancelled:
-		var params cancelledRequestParams
+		var params transport.CancelledParams
 		if json.Unmarshal(message.Params, &params) != nil {
 			return false, nil //nolint:nilerr // Malformed cancellation stays on the daemon path.
 		}
@@ -96,11 +92,7 @@ func (s *proxySession) writeInvalidListenParams(id json.RawMessage) error {
 }
 
 func tagNotification(line, id json.RawMessage) ([]byte, error) {
-	var notification struct {
-		JSONRPC string          `json:"jsonrpc"`
-		Method  string          `json:"method"`
-		Params  json.RawMessage `json:"params"`
-	}
+	var notification transport.Notification
 	if err := json.Unmarshal(line, &notification); err != nil {
 		return nil, err
 	}

@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/transport"
+	"github.com/mcpmini/mini/internal/transport/transporttest"
 )
 
 type compactRecoveryTransport struct {
@@ -25,52 +25,35 @@ type compactRecoveryTransport struct {
 }
 
 func (d *compactRecoveryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	body, err := io.ReadAll(req.Body)
+	request, err := readDaemonRequest(req)
 	if err != nil {
 		return nil, err
 	}
-	var message struct {
-		ID     json.RawMessage `json:"id"`
-		Method string          `json:"method"`
-		Params struct {
-			ToolMode string `json:"_mini_tool_mode"`
-		} `json:"params"`
-	}
-	if err := json.Unmarshal(body, &message); err != nil {
-		return nil, err
-	}
-	if message.Method == "initialize" {
+	switch request.Method {
+	case "initialize":
 		d.initializes++
-		d.compact = message.Params.ToolMode == transport.ToolModeCompactValue
-	}
-	if message.Method == "tools/call" {
+		d.compact = request.Params.ToolMode == transport.ToolModeCompactValue
+	case transport.NotificationInitialized:
+		return localDaemonResponse(http.StatusAccepted, ""), nil
+	case "tools/call":
 		d.calls++
 		if d.calls == 1 {
-			return localDaemonResponse(
-				http.StatusOK,
-				`{"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"`+
-					transport.NotInitializedMessage+`"}}`,
-			), nil
+			return daemonResponse(transport.Response{JSONRPC: "2.0", ID: request.ID, Error: &transport.RPCError{
+				Code: transport.CodeInvalidRequest, Message: transport.NotInitializedMessage,
+			}})
 		}
 	}
-	if message.Method == transport.NotificationInitialized {
-		return localDaemonResponse(http.StatusAccepted, ""), nil
-	}
-	return localDaemonResponse(
-		http.StatusOK,
-		`{"jsonrpc":"2.0","id":`+string(message.ID)+`,"result":{"data":{"answer":"ok"}}}`,
-	), nil
+	return daemonResult(request.ID, json.RawMessage(`{"data":{"answer":"ok"}}`))
 }
 
 func TestRun_modernCompactCallRecoversAfterIdleEviction(t *testing.T) {
 	daemon := &compactRecoveryTransport{}
 	fakeClock := clock.NewFake()
-	line := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}` + "\n"
 	var out bytes.Buffer
 	done := make(chan error, 1)
 	go func() {
 		done <- Run(RunParams{
-			Client: &http.Client{Transport: daemon}, SessionID: "sess", In: strings.NewReader(line), Out: &out,
+			Client: &http.Client{Transport: daemon}, SessionID: "sess", In: modernInput(transporttest.ModernRequest(1, "tools/call", nil)), Out: &out,
 			ToolMode: transport.ToolModeCompact, Clock: fakeClock,
 		})
 	}()
@@ -95,39 +78,28 @@ func (d *restartingDaemonTransport) RoundTrip(req *http.Request) (*http.Response
 	if d.resolved.Load() == 0 {
 		return nil, &net.OpError{Op: "dial", Err: syscall.ECONNREFUSED}
 	}
-	body, err := io.ReadAll(req.Body)
+	request, err := readDaemonRequest(req)
 	if err != nil {
 		return nil, err
 	}
-	var message struct {
-		ID     json.RawMessage `json:"id"`
-		Method string          `json:"method"`
-	}
-	if err := json.Unmarshal(body, &message); err != nil {
-		return nil, err
-	}
-	if message.Method == "initialize" {
+	if request.Method == "initialize" {
 		d.initializes++
 	}
-	if message.Method == transport.NotificationInitialized {
+	if request.Method == transport.NotificationInitialized {
 		return localDaemonResponse(http.StatusAccepted, ""), nil
 	}
-	return localDaemonResponse(
-		http.StatusOK,
-		`{"jsonrpc":"2.0","id":`+string(message.ID)+`,"result":{"tools":[{"name":"call"}]}}`,
-	), nil
+	return daemonResult(request.ID, transport.ToolsListResult{Tools: []transport.ToolDefinition{{Name: "call"}}})
 }
 
 func TestRun_modernAgentRecoversAfterDaemonRestart(t *testing.T) {
 	var resolves atomic.Int32
 	daemon := &restartingDaemonTransport{resolved: &resolves}
 	fakeClock := clock.NewFake()
-	line := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}` + "\n"
 	var out bytes.Buffer
 	done := make(chan error, 1)
 	go func() {
 		done <- Run(RunParams{
-			Client: &http.Client{Transport: daemon}, SessionID: "sess", In: strings.NewReader(line), Out: &out,
+			Client: &http.Client{Transport: daemon}, SessionID: "sess", In: modernInput(transporttest.ModernRequest(1, "tools/list", nil)), Out: &out,
 			ToolMode: transport.ToolModeCompact, Clock: fakeClock,
 			Resolver: NewDaemonResolver(func() (string, error) {
 				resolves.Add(1)
@@ -147,9 +119,6 @@ func TestRun_modernAgentRecoversAfterDaemonRestart(t *testing.T) {
 	}
 }
 
-const modernListenFirstLine = `{"jsonrpc":"2.0","id":1,"method":"subscriptions/listen","params":{"_meta":` +
-	`{"io.modelcontextprotocol/protocolVersion":"2026-07-28"},"notifications":{"toolsListChanged":true}}}` + "\n"
-
 func TestRun_modernListenFirstRecoversDaemonBeforeAcknowledging(t *testing.T) {
 	var resolves atomic.Int32
 	daemon := &restartingDaemonTransport{resolved: &resolves}
@@ -158,7 +127,7 @@ func TestRun_modernListenFirstRecoversDaemonBeforeAcknowledging(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- Run(RunParams{
-			Client: &http.Client{Transport: daemon}, SessionID: "sess", In: strings.NewReader(modernListenFirstLine),
+			Client: &http.Client{Transport: daemon}, SessionID: "sess", In: modernInput(listenLine(1)),
 			Out: &out, ToolMode: transport.ToolModeCompact, Clock: fakeClock,
 			Resolver: NewDaemonResolver(func() (string, error) {
 				resolves.Add(1)
@@ -184,7 +153,7 @@ func TestRun_modernListenFirstWithUnreachableDaemonIsNotAcknowledged(t *testing.
 	daemon := &restartingDaemonTransport{resolved: &resolves}
 	var out bytes.Buffer
 	err := Run(RunParams{
-		Client: &http.Client{Transport: daemon}, SessionID: "sess", In: strings.NewReader(modernListenFirstLine),
+		Client: &http.Client{Transport: daemon}, SessionID: "sess", In: modernInput(listenLine(1)),
 		Out: &out, ToolMode: transport.ToolModeCompact, Clock: clock.NewFake(),
 		Resolver: NewDaemonResolver(func() (string, error) { return "", errors.New("no daemon") }),
 	})

@@ -5,16 +5,17 @@ package proxy
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/transport"
+	"github.com/mcpmini/mini/internal/transport/transporttest"
 )
 
 type localDaemonTransport struct {
@@ -28,63 +29,74 @@ func (d *localDaemonTransport) RoundTrip(req *http.Request) (*http.Response, err
 	if req.Method == http.MethodGet {
 		return localDaemonResponse(http.StatusNoContent, ""), nil
 	}
-	body, err := io.ReadAll(req.Body)
+	request, err := readDaemonRequest(req)
 	if err != nil {
 		return nil, err
 	}
-	var message requestID
-	if err := json.Unmarshal(body, &message); err != nil {
-		return nil, err
-	}
-	var method struct {
-		Method string `json:"method"`
-		Params struct {
-			ToolMode string `json:"_mini_tool_mode"`
-		} `json:"params"`
-	}
-	if err := json.Unmarshal(body, &method); err != nil {
-		return nil, err
-	}
 	d.mu.Lock()
-	d.methods = append(d.methods, method.Method)
-	if method.Method == "initialize" {
+	d.methods = append(d.methods, request.Method)
+	if request.Method == "initialize" {
 		d.initializes++
-		d.compact = method.Params.ToolMode == transport.ToolModeCompactValue
+		d.compact = request.Params.ToolMode == transport.ToolModeCompactValue
 	}
 	compact := d.compact
 	d.mu.Unlock()
-	if method.Method == transport.NotificationInitialized {
+	if request.Method == transport.NotificationInitialized {
 		return localDaemonResponse(http.StatusAccepted, ""), nil
 	}
-	result := `{"ok":true}`
-	if method.Method == "tools/list" && compact {
-		result = `{"tools":[{"name":"list"},{"name":"call"},{"name":"perm_call"},{"name":"config"}]}`
+	if request.Method == "tools/list" && compact {
+		return daemonResult(request.ID, transport.ToolsListResult{Tools: []transport.ToolDefinition{
+			{Name: "list"}, {Name: "call"}, {Name: "perm_call"}, {Name: "config"},
+		}})
 	}
-	return localDaemonResponse(http.StatusOK, `{"jsonrpc":"2.0","id":`+string(message.ID)+`,"result":`+result+`}`), nil
+	return daemonResult(request.ID, json.RawMessage(`{"ok":true}`))
 }
 
-func localDaemonResponse(status int, body string) *http.Response {
-	return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}
+func modernInput(lines ...[]byte) io.Reader {
+	return bytes.NewReader(bytes.Join(lines, nil))
+}
+
+func listenLine(id any) []byte {
+	return transporttest.ModernRequest(id, transport.MethodSubscriptionsListen,
+		transport.ListenParams{Notifications: transport.ListenNotifications{ToolsListChanged: true}})
+}
+
+func cancelLine(t *testing.T, id int) []byte {
+	t.Helper()
+	params, err := json.Marshal(transport.CancelledParams{RequestID: json.RawMessage(strconv.Itoa(id))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	line, err := json.Marshal(transport.Notification{
+		JSONRPC: "2.0", Method: transport.NotificationCancelled, Params: params,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return line
+}
+
+func decodeLine[T any](t *testing.T, line []byte) T {
+	t.Helper()
+	var message T
+	if err := json.Unmarshal(bytes.TrimSpace(line), &message); err != nil {
+		t.Fatalf("decode %s: %v", line, err)
+	}
+	return message
 }
 
 func TestRun_modernRequestsHandshakeOnce(t *testing.T) {
 	daemon := &localDaemonTransport{}
-	client := &http.Client{Transport: daemon}
-	requests := []string{
-		`{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`,
-		`{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`,
-		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`,
+	requests := [][]byte{
+		transporttest.ModernRequest(1, "server/discover", nil),
+		transporttest.ModernRequest(2, "tools/list", nil),
 	}
-	for id := 4; id < 14; id++ {
-		requests = append(requests, fmt.Sprintf(
-			`{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`,
-			id,
-		))
+	for id := 3; id < 14; id++ {
+		requests = append(requests, transporttest.ModernRequest(id, "tools/call", nil))
 	}
-	lines := strings.Join(requests, "\n") + "\n"
 	var out bytes.Buffer
 	err := Run(RunParams{
-		Client: client, SessionID: "sess", In: strings.NewReader(lines), Out: &out,
+		Client: &http.Client{Transport: daemon}, SessionID: "sess", In: modernInput(requests...), Out: &out,
 		ToolMode: transport.ToolModeProxy, Clock: clock.NewFake(),
 	})
 	if err != nil {
@@ -104,10 +116,10 @@ func TestRun_modernRequestsHandshakeOnce(t *testing.T) {
 
 func TestRun_modernCompactModeUsesHandshakeToolMode(t *testing.T) {
 	daemon := &localDaemonTransport{}
-	line := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}` + "\n"
 	var out bytes.Buffer
 	err := Run(RunParams{
-		Client: &http.Client{Transport: daemon}, SessionID: "sess", In: strings.NewReader(line), Out: &out,
+		Client: &http.Client{Transport: daemon}, SessionID: "sess", Out: &out,
+		In:       modernInput(transporttest.ModernRequest(1, "tools/list", nil)),
 		ToolMode: transport.ToolModeCompact, Clock: clock.NewFake(),
 	})
 	if err != nil {
@@ -122,54 +134,33 @@ func TestRun_modernCompactModeUsesHandshakeToolMode(t *testing.T) {
 }
 
 func TestProxySession_modernListenAcknowledgesAndCancelsLocally(t *testing.T) {
-	var out bytes.Buffer
-	session := newProxySession(
-		RunParams{ToolMode: transport.ToolModeProxy, Clock: clock.NewFake()},
-		newLineWriter(&out),
-	)
-	defer session.close()
-	session.subs.modern.Store(true)
-	session.clientReady.Store(true)
-	listen := []byte(
-		`{"jsonrpc":"2.0","id":5,"method":"subscriptions/listen","params":{"_meta":` +
-			`{"io.modelcontextprotocol/protocolVersion":"2026-07-28"},"notifications":` +
-			`{"toolsListChanged":true}}}`,
-	)
-	handled, err := session.handleLocalModernLine(listen)
+	session, out := newModernReadyProxySession(t, transport.ToolModeProxy)
+	handled, err := session.handleLocalModernLine(listenLine(5))
 	if err != nil || !handled {
 		t.Fatalf("listen handled=%t error=%v", handled, err)
 	}
-	var ack map[string]any
-	if err = json.Unmarshal(out.Bytes(), &ack); err != nil {
-		t.Fatal(err)
-	}
-	params := ack["params"].(map[string]any)
-	if ack["method"] != "notifications/subscriptions/acknowledged" ||
-		params["_meta"].(map[string]any)[transport.SubscriptionIDMeta] != float64(5) ||
-		params["notifications"].(map[string]any)["toolsListChanged"] != true {
-		t.Fatalf("listen acknowledgment = %v", ack)
+	ack := decodeLine[transport.SubscriptionAck](t, out.Bytes())
+	if ack.Method != transport.NotificationSubscriptionsAcknowledged ||
+		string(ack.Params.Meta.SubscriptionID) != "5" || !ack.Params.Notifications.ToolsListChanged {
+		t.Fatalf("listen acknowledgment = %s", out.Bytes())
 	}
 	if got := proxyListenCount(session); got != 1 {
 		t.Fatalf("registered listens = %d, want 1", got)
 	}
-	cancel := []byte(`{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":5}}`)
-	handled, err = session.handleLocalModernLine(cancel)
+	handled, err = session.handleLocalModernLine(cancelLine(t, 5))
 	if err != nil || !handled || proxyListenCount(session) != 0 || strings.Count(out.String(), "\n") != 1 {
 		t.Fatalf(
 			"cancel handled=%t error=%v listens=%d output=%q",
 			handled, err, proxyListenCount(session), out.String(),
 		)
 	}
-	if err = session.notificationStream.forward(json.RawMessage(
-		`{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}`,
-	)); err != nil {
+	if err = session.notificationStream.forward(toolsChangedLine(t)); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Count(out.String(), "\n") != 1 {
 		t.Fatalf("notification arrived after cancel: %q", out.String())
 	}
-	unknown := []byte(`{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":6}}`)
-	handled, err = session.handleLocalModernLine(unknown)
+	handled, err = session.handleLocalModernLine(cancelLine(t, 6))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,28 +170,12 @@ func TestProxySession_modernListenAcknowledgesAndCancelsLocally(t *testing.T) {
 }
 
 func TestProxySession_modernListenCompactAcknowledgesEmptyFilter(t *testing.T) {
-	var out bytes.Buffer
-	session := newProxySession(
-		RunParams{ToolMode: transport.ToolModeCompact, Clock: clock.NewFake()},
-		newLineWriter(&out),
-	)
-	defer session.close()
-	session.subs.modern.Store(true)
-	session.clientReady.Store(true)
-	line := []byte(
-		`{"jsonrpc":"2.0","id":"listen","method":"subscriptions/listen","params":{"_meta":` +
-			`{"io.modelcontextprotocol/protocolVersion":"2026-07-28"},"notifications":` +
-			`{"toolsListChanged":true}}}`,
-	)
-	if handled, err := session.handleLocalModernLine(line); err != nil || !handled {
+	session, out := newModernReadyProxySession(t, transport.ToolModeCompact)
+	if handled, err := session.handleLocalModernLine(listenLine("listen")); err != nil || !handled {
 		t.Fatalf("listen handled=%t error=%v", handled, err)
 	}
-	var ack map[string]any
-	if err := json.Unmarshal(out.Bytes(), &ack); err != nil {
-		t.Fatal(err)
-	}
-	if notifications := ack["params"].(map[string]any)["notifications"].(map[string]any); len(notifications) != 0 {
-		t.Fatalf("compact acknowledgment notifications = %v", notifications)
+	if ack := decodeLine[transport.SubscriptionAck](t, out.Bytes()); ack.Params.Notifications.ToolsListChanged {
+		t.Fatalf("compact acknowledgment = %s, want an empty filter", out.Bytes())
 	}
 	if got := proxyListenCount(session); got != 0 {
 		t.Fatalf("compact registered listens = %d, want 0", got)
@@ -208,15 +183,9 @@ func TestProxySession_modernListenCompactAcknowledgesEmptyFilter(t *testing.T) {
 }
 
 func TestNotificationStream_modernTaggingAndLegacyForwarding(t *testing.T) {
-	var out bytes.Buffer
-	session := newProxySession(
-		RunParams{ToolMode: transport.ToolModeProxy, Clock: clock.NewFake()},
-		newLineWriter(&out),
-	)
-	defer session.close()
+	session, out := newTestProxySession(t, transport.ToolModeProxy)
 	notification := json.RawMessage(
-		`{"jsonrpc":"2.0","method":"notifications/tools/list_changed","params":{"_meta":` +
-			`{"existing":"kept"}}}`,
+		`{"jsonrpc":"2.0","method":"notifications/tools/list_changed","params":{"_meta":{"existing":"kept"}}}`,
 	)
 	if err := session.notificationStream.forward(notification); err != nil {
 		t.Fatal(err)
@@ -243,14 +212,55 @@ func TestNotificationStream_modernTaggingAndLegacyForwarding(t *testing.T) {
 	if err := session.notificationStream.forward(notification); err != nil {
 		t.Fatal(err)
 	}
-	var tagged map[string]any
-	if err := json.Unmarshal(bytes.TrimSpace(out.Bytes()), &tagged); err != nil {
+	tagged := decodeLine[taggedToolsChanged](t, out.Bytes())
+	if meta := tagged.Params.Meta; meta.Existing != "kept" || string(meta.SubscriptionID) != "9" {
+		t.Fatalf("tagged notification = %s", out.Bytes())
+	}
+}
+
+// taggedToolsChanged keeps a metadata key the daemon set, to show tagging preserves it.
+type taggedToolsChanged struct {
+	Params struct {
+		Meta struct {
+			transport.SubscriptionMeta
+			Existing string `json:"existing"`
+		} `json:"_meta"`
+	} `json:"params"`
+}
+
+func TestProxySession_modernListenWithWrongJSONRPCGoesToDaemon(t *testing.T) {
+	session, out := newTestProxySession(t, transport.ToolModeProxy)
+	listen := bytes.Replace(listenLine(5), []byte(`"jsonrpc":"2.0"`), []byte(`"jsonrpc":"1.0"`), 1)
+	handled, err := session.handleLocalModernLine(listen)
+	if err != nil || handled || out.Len() != 0 || proxyListenCount(session) != 0 {
+		t.Fatalf("handled=%t error=%v output=%q listens=%d", handled, err, out.String(), proxyListenCount(session))
+	}
+}
+
+func newTestProxySession(t *testing.T, toolMode transport.ToolMode) (*proxySession, *bytes.Buffer) {
+	t.Helper()
+	var out bytes.Buffer
+	session := newProxySession(RunParams{ToolMode: toolMode, Clock: clock.NewFake()}, newLineWriter(&out))
+	t.Cleanup(session.close)
+	return session, &out
+}
+
+// newModernReadyProxySession skips the handshake a first modern request would forward to the daemon.
+func newModernReadyProxySession(t *testing.T, toolMode transport.ToolMode) (*proxySession, *bytes.Buffer) {
+	t.Helper()
+	session, out := newTestProxySession(t, toolMode)
+	session.subs.modern.Store(true)
+	session.clientReady.Store(true)
+	return session, out
+}
+
+func toolsChangedLine(t *testing.T) json.RawMessage {
+	t.Helper()
+	line, err := json.Marshal(transport.Notification{JSONRPC: "2.0", Method: transport.NotificationToolsChanged})
+	if err != nil {
 		t.Fatal(err)
 	}
-	meta := tagged["params"].(map[string]any)["_meta"].(map[string]any)
-	if meta["existing"] != "kept" || meta[transport.SubscriptionIDMeta] != float64(9) {
-		t.Fatalf("tagged notification meta = %v", meta)
-	}
+	return line
 }
 
 func proxyListenCount(session *proxySession) int {
@@ -260,22 +270,4 @@ func proxyListenCount(session *proxySession) int {
 		return nil
 	})
 	return count
-}
-
-func TestProxySession_modernListenWithWrongJSONRPCGoesToDaemon(t *testing.T) {
-	var out bytes.Buffer
-	session := newProxySession(
-		RunParams{ToolMode: transport.ToolModeProxy, Clock: clock.NewFake()},
-		newLineWriter(&out),
-	)
-	defer session.close()
-	listen := []byte(
-		`{"jsonrpc":"1.0","id":5,"method":"subscriptions/listen","params":{"_meta":` +
-			`{"io.modelcontextprotocol/protocolVersion":"2026-07-28"},"notifications":` +
-			`{"toolsListChanged":true}}}`,
-	)
-	handled, err := session.handleLocalModernLine(listen)
-	if err != nil || handled || out.Len() != 0 || proxyListenCount(session) != 0 {
-		t.Fatalf("handled=%t error=%v output=%q listens=%d", handled, err, out.String(), proxyListenCount(session))
-	}
 }

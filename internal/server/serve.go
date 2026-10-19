@@ -214,9 +214,7 @@ func (s *Server) dispatch(ctx context.Context, req transport.Request, session *S
 // in-flight upstream call for that request ID via the session's per-request context.
 // https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/utilities/cancellation.mdx
 func handleCancelled(params json.RawMessage, session *Session) {
-	var p struct {
-		RequestID json.RawMessage `json:"requestId"`
-	}
+	var p transport.CancelledParams
 	if err := json.Unmarshal(params, &p); err != nil || len(p.RequestID) == 0 {
 		return
 	}

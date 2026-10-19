@@ -16,6 +16,7 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
+	"github.com/mcpmini/mini/internal/transport/transporttest"
 )
 
 func mcpPost(t *testing.T, ts *httptest.Server, body []byte, sessionID string) *http.Response {
@@ -63,31 +64,23 @@ func TestHTTPServer_modernDiscoverWaitsForInitialize(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	created := serveHTTPPost(srv, []byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`), "")
 	sessionID := created.Header().Get("Mcp-Session-Id")
-	discover := []byte(
-		`{"jsonrpc":"2.0","id":2,"method":"server/discover","params":{"_meta":` +
-			`{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`,
-	)
-	message := decodeRecorderMessage(t, serveHTTPPost(srv, discover, sessionID))
-	if got := message["error"].(map[string]any)["code"]; got != float64(transport.CodeInvalidRequest) {
-		t.Fatalf("uninitialized discover code = %v", got)
+	discover := transporttest.ModernRequest(2, "server/discover", nil)
+	if message := decodeRecorderMessage(t, serveHTTPPost(srv, discover, sessionID)); message.Error == nil ||
+		message.Error.Code != transport.CodeInvalidRequest {
+		t.Fatalf("uninitialized discover error = %+v", message.Error)
 	}
-	initialized := serveHTTPPost(srv, initRequest(), sessionID)
-	if initialized.Code != http.StatusOK {
+	if initialized := serveHTTPPost(srv, initRequest(), sessionID); initialized.Code != http.StatusOK {
 		t.Fatalf("initialize status = %d", initialized.Code)
 	}
-	message = decodeRecorderMessage(t, serveHTTPPost(srv, discover, sessionID))
-	result := message["result"].(map[string]any)
-	if result["resultType"] != "complete" {
-		t.Fatalf("modern discover result = %v", result)
+	message := decodeRecorderMessage(t, serveHTTPPost(srv, discover, sessionID))
+	if result := decodeResult[modernResultFields](t, message); result.ResultType != transport.ResultComplete {
+		t.Fatalf("modern discover result = %s", message.Result)
 	}
-	list := []byte(
-		`{"jsonrpc":"2.0","id":3,"method":"tools/list","params":{"_meta":` +
-			`{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`,
-	)
+	list := transporttest.ModernRequest(3, "tools/list", nil)
 	message = decodeRecorderMessage(t, serveHTTPPost(srv, list, sessionID))
-	result = message["result"].(map[string]any)
-	if result["resultType"] != "complete" || result["ttlMs"] == nil {
-		t.Fatalf("modern tools/list result = %v", result)
+	if result := decodeResult[modernResultFields](t, message); result.ResultType != transport.ResultComplete ||
+		result.TTLMs == nil {
+		t.Fatalf("modern tools/list result = %s", message.Result)
 	}
 }
 
@@ -102,13 +95,9 @@ func serveHTTPPost(srv *server.Server, body []byte, sessionID string) *httptest.
 	return response
 }
 
-func decodeRecorderMessage(t *testing.T, response *httptest.ResponseRecorder) map[string]any {
+func decodeRecorderMessage(t *testing.T, response *httptest.ResponseRecorder) modernMessage {
 	t.Helper()
-	var message map[string]any
-	if err := json.NewDecoder(response.Body).Decode(&message); err != nil {
-		t.Fatal(err)
-	}
-	return message
+	return decodeMessage(t, response.Body.Bytes())
 }
 
 func initSession(t *testing.T, ts *httptest.Server) string {
