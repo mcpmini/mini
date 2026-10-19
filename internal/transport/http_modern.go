@@ -143,28 +143,16 @@ func (c *HTTPConnection) buildModernHTTPRequest(ctx context.Context, req Request
 	if err != nil {
 		return nil, "", err
 	}
-	sentAuth, err := c.setModernRequestHeaders(ctx, httpReq, req.Method)
+	sentAuth, err := c.setRequestHeaders(ctx, httpReq)
 	if err != nil {
 		return nil, "", err
 	}
+	httpReq.Header.Set("MCP-Protocol-Version", c.currentModernVersion())
+	httpReq.Header.Set("Mcp-Method", req.Method)
 	if req.Method == "tools/call" {
 		c.addToolCallHeaders(httpReq, req.Params)
 	}
 	return httpReq, sentAuth, nil
-}
-
-func (c *HTTPConnection) setModernRequestHeaders(
-	ctx context.Context,
-	req *http.Request,
-	method string,
-) (string, error) {
-	sentAuth, err := c.setRequestHeaders(ctx, req)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("MCP-Protocol-Version", c.currentModernVersion())
-	req.Header.Set("Mcp-Method", method)
-	return sentAuth, nil
 }
 
 func encodeModernHeaderValue(value string) string {

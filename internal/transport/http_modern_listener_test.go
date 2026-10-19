@@ -5,6 +5,7 @@ package transport
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"sync/atomic"
@@ -142,22 +143,45 @@ func TestHTTPModernListener_requestCarriesProtocolAndFilter(t *testing.T) {
 }
 
 func TestHTTPModernListener_stopsWhenAckOmitsToolChanges(t *testing.T) {
-	var listens atomic.Int32
-	ackSeen := make(chan struct{}, 1)
 	server := modernListenerServer(t, true, func(w http.ResponseWriter, _ *http.Request, _ Request) {
-		listens.Add(1)
 		writeSSEMessage(t, w, modernAckWithoutTools)
 		w.(http.Flusher).Flush()
-		ackSeen <- struct{}{}
 	})
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: server.URL})
 	t.Cleanup(func() { conn.Close() })
 	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
 		t.Fatalf("Call: %v", err)
 	}
-	waitForListenerSignal(t, ackSeen, "acknowledgement was not sent")
-	if got := listens.Load(); got != 1 {
-		t.Errorf("listen requests = %d, want 1", got)
+	waitForListenerSignal(t, conn.listener.done, "listener kept running after an acknowledgement without tool changes")
+}
+
+func TestHTTPModernListener_errorResponseIsARejectedAttempt(t *testing.T) {
+	for _, contentType := range []string{"text/event-stream", "application/json"} {
+		t.Run(contentType, func(t *testing.T) {
+			server := modernListenerServer(t, true, func(w http.ResponseWriter, _ *http.Request, req Request) {
+				w.Header().Set("Content-Type", contentType)
+				message := fmt.Sprintf(`{"jsonrpc":"2.0","id":%v,"error":{"code":-32603,"message":"boom"}}`, req.ID)
+				if contentType == "application/json" {
+					if _, err := fmt.Fprint(w, message); err != nil {
+						t.Errorf("write JSON error: %v", err)
+					}
+					return
+				}
+				writeSSEMessage(t, w, message)
+			})
+			conn := mustHTTPConn(t, HTTPConnectionConfig{URL: server.URL, Clock: clock.NewFake()})
+			t.Cleanup(func() { conn.Close() })
+			if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
+				t.Fatalf("Call: %v", err)
+			}
+			status, err := conn.consumeNotificationStream(t.Context(), &listenerState{})
+			if !errors.Is(err, errListenRejected) {
+				t.Fatalf("listen status %d error = %v, want errListenRejected", status, err)
+			}
+			if delay, next := listenerDelay(status, err, time.Second); delay != time.Second || next != 2*time.Second {
+				t.Fatalf("delay after rejection = %v then %v, want backoff 1s then 2s", delay, next)
+			}
+		})
 	}
 }
 

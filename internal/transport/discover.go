@@ -45,13 +45,11 @@ func (c *HTTPConnection) probeOnce(ctx context.Context) error {
 	c.eraKnown = true
 	if verdict.era == EraModern {
 		c.modernVersion.Store(&verdict.version)
+		slog.Info("upstream supports MCP 2026-07-28", "server", c.serverName)
 	}
 	if verdict.listen {
 		//nolint:contextcheck // Listener lifetime belongs to the connection, not the probe request.
 		c.startListener()
-	}
-	if verdict.era == EraModern {
-		slog.Info("upstream supports MCP 2026-07-28", "server", c.serverName)
 	}
 	return nil
 }

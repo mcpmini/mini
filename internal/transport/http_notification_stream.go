@@ -1,13 +1,13 @@
 package transport
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 )
 
@@ -16,6 +16,7 @@ const modernListenMethod = "subscriptions/listen"
 var (
 	errUnsupportedListenFilter = errors.New("server did not acknowledge tools-list changes")
 	errListenComplete          = errors.New("subscription completed")
+	errListenRejected          = errors.New("server rejected subscriptions/listen")
 )
 
 func (c *HTTPConnection) consumeNotificationStream(ctx context.Context, state *listenerState) (int, error) {
@@ -38,7 +39,7 @@ func (c *HTTPConnection) consumeNotificationStream(ctx context.Context, state *l
 		return resp.StatusCode, fmt.Errorf("notification stream status %d", resp.StatusCode)
 	}
 	if modern {
-		return resp.StatusCode, c.scanSubscriptionStream(resp.Body, state)
+		return resp.StatusCode, c.scanSubscriptionStream(resp, state)
 	}
 	return resp.StatusCode, c.scanNotificationStream(resp.Body)
 }
@@ -48,10 +49,6 @@ type listenNotifications struct {
 }
 
 type listenParams struct {
-	Notifications listenNotifications `json:"notifications"`
-}
-
-type acknowledgedParams struct {
 	Notifications listenNotifications `json:"notifications"`
 }
 
@@ -67,38 +64,46 @@ func (c *HTTPConnection) buildModernListenRequest() (
 		return nil, err
 	}
 	request := Request{JSONRPC: "2.0", ID: c.nextID.Add(1), Method: modernListenMethod, Params: prepared}
-	return c.modernListenRequestBuilder(request), nil
-}
-
-func (c *HTTPConnection) modernListenRequestBuilder(
-	request Request,
-) func(context.Context) (*http.Request, string, error) {
 	return func(ctx context.Context) (*http.Request, string, error) {
-		body, err := json.Marshal(request)
-		if err != nil {
-			return nil, "", err
-		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(body))
-		if err != nil {
-			return nil, "", err
-		}
-		sentAuth, err := c.setModernRequestHeaders(ctx, req, modernListenMethod)
-		return req, sentAuth, err
-	}
+		return c.buildModernHTTPRequest(ctx, request)
+	}, nil
 }
 
-func (c *HTTPConnection) scanSubscriptionStream(body io.Reader, state *listenerState) error {
-	return ScanSSEMessages(body, func(message json.RawMessage) error {
-		var notification Notification
-		if json.Unmarshal(message, &notification) == nil && notification.Method != "" {
-			return c.handleSubscriptionNotification(notification, state)
+// A server may answer any POST with a single JSON body instead of an SSE stream:
+// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/8e12bf3c8f01f374146acfa19b8ece0018bfc86c/docs/specification/2026-07-28/basic/transports/streamable-http.mdx#L88-L91
+func (c *HTTPConnection) scanSubscriptionStream(resp *http.Response, state *listenerState) error {
+	handle := func(message json.RawMessage) error { return c.handleSubscriptionMessage(message, state) }
+	if mediaType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type")); err == nil &&
+		mediaType == "application/json" {
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+		if err != nil {
+			return err
 		}
-		var response Response
-		if json.Unmarshal(message, &response) == nil && response.ID != nil && len(response.Result) != 0 {
-			return errListenComplete
-		}
-		return nil
-	})
+		return handle(body)
+	}
+	return ScanSSEMessages(resp.Body, handle)
+}
+
+func (c *HTTPConnection) handleSubscriptionMessage(message json.RawMessage, state *listenerState) error {
+	var notification Notification
+	if json.Unmarshal(message, &notification) == nil && notification.Method != "" {
+		return c.handleSubscriptionNotification(notification, state)
+	}
+	var response Response
+	if json.Unmarshal(message, &response) == nil && response.ID != nil {
+		return listenResponseOutcome(response)
+	}
+	return nil
+}
+
+func listenResponseOutcome(response Response) error {
+	if response.Error != nil {
+		return fmt.Errorf("%w: %w", errListenRejected, response.Error)
+	}
+	if len(response.Result) != 0 {
+		return errListenComplete
+	}
+	return nil
 }
 
 func (c *HTTPConnection) handleSubscriptionNotification(
@@ -109,7 +114,7 @@ func (c *HTTPConnection) handleSubscriptionNotification(
 		c.dispatchNotification(notification)
 		return nil
 	}
-	var ack acknowledgedParams
+	var ack listenParams
 	if json.Unmarshal(notification.Params, &ack) != nil || !ack.Notifications.ToolsListChanged {
 		return errUnsupportedListenFilter
 	}

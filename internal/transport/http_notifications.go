@@ -262,7 +262,7 @@ func (c *HTTPConnection) rejectedAuthAfter(ctx context.Context, err error) strin
 }
 
 func listenerDelay(status int, err error, backoff time.Duration) (delay, next time.Duration) {
-	if status == http.StatusOK {
+	if status == http.StatusOK && !errors.Is(err, errListenRejected) {
 		return time.Second, time.Second
 	}
 	if errors.Is(err, ErrReauthRequired) {
