@@ -7,8 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
-
-	"github.com/mcpmini/mini/internal/version"
 )
 
 type DiscoverResult struct {
@@ -27,16 +25,6 @@ type probeVerdict struct {
 	version string
 }
 
-type discoverRequestMeta struct {
-	ProtocolVersion string         `json:"io.modelcontextprotocol/protocolVersion"`
-	ClientInfo      ClientInfo     `json:"io.modelcontextprotocol/clientInfo"`
-	Capabilities    map[string]any `json:"io.modelcontextprotocol/clientCapabilities"`
-}
-
-type discoverRequestParams struct {
-	Meta discoverRequestMeta `json:"_meta"`
-}
-
 func setDiscoverRequestHeaders(req *http.Request) {
 	req.Header.Set("MCP-Protocol-Version", ModernVersions[0])
 	req.Header.Set("Mcp-Method", "server/discover")
@@ -53,20 +41,19 @@ func (c *HTTPConnection) probeOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	c.era, c.modernVersion, c.eraKnown = verdict.era, verdict.version, true
+	c.eraKnown = true
 	if verdict.era == EraModern {
+		c.modernVersion.Store(&verdict.version)
 		slog.Info("upstream supports MCP 2026-07-28", "server", c.serverName)
 	}
 	return nil
 }
 
 func (c *HTTPConnection) probe(ctx context.Context) (json.RawMessage, error) {
-	//nolint:errcheck // fixed discover fields contain only JSON-serializable values.
-	params, _ := json.Marshal(discoverRequestParams{Meta: discoverRequestMeta{
-		ProtocolVersion: ModernVersions[0],
-		ClientInfo:      ClientInfo{Name: "mini", Version: version.Version},
-		Capabilities:    map[string]any{},
-	}})
+	params, err := c.prepareModernParams(nil)
+	if err != nil {
+		return nil, err
+	}
 	return c.rpc(ctx, "server/discover", params)
 }
 

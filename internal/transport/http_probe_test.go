@@ -68,14 +68,14 @@ func TestHTTPConnection_ProbeWithoutAnAnswerFallsBackToLegacy(t *testing.T) {
 				t.Fatalf("Call: %v", err)
 			}
 			want := []string{"server/discover", "initialize", NotificationInitialized, "ping"}
-			if !slices.Equal(methods, want) || conn.era != EraLegacy {
-				t.Fatalf("methods = %v, era = %v; want %v and legacy", methods, conn.era, want)
+			if !slices.Equal(methods, want) || conn.isModern() {
+				t.Fatalf("methods = %v, modern = %v; want %v and legacy", methods, conn.isModern(), want)
 			}
 		})
 	}
 }
 
-func TestHTTPConnection_ProbeModernStillInitializes(t *testing.T) {
+func TestHTTPConnection_ProbeModernUsesModernRequests(t *testing.T) {
 	var methods []string
 	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		req := decodeRequest(t, r)
@@ -96,11 +96,11 @@ func TestHTTPConnection_ProbeModernStillInitializes(t *testing.T) {
 	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
 		t.Fatalf("Call: %v", err)
 	}
-	if !slices.Equal(methods, []string{"server/discover", "initialize", NotificationInitialized, "ping"}) {
+	if !slices.Equal(methods, []string{"server/discover", "ping"}) {
 		t.Fatalf("methods = %v", methods)
 	}
-	if conn.era != EraModern || conn.modernVersion != ModernVersions[0] {
-		t.Errorf("stored era/version = %v/%q", conn.era, conn.modernVersion)
+	if !conn.isModern() || conn.currentModernVersion() != ModernVersions[0] {
+		t.Errorf("modern = %v, version = %q", conn.isModern(), conn.currentModernVersion())
 	}
 }
 
@@ -270,6 +270,16 @@ func assertDiscoverRequest(t *testing.T, r *http.Request, req Request) {
 		len(params.Meta.Capabilities) != 0 {
 		t.Errorf("probe meta = %+v", params.Meta)
 	}
+}
+
+type discoverRequestMeta struct {
+	ProtocolVersion string         `json:"io.modelcontextprotocol/protocolVersion"`
+	ClientInfo      ClientInfo     `json:"io.modelcontextprotocol/clientInfo"`
+	Capabilities    map[string]any `json:"io.modelcontextprotocol/clientCapabilities"`
+}
+
+type discoverRequestParams struct {
+	Meta discoverRequestMeta `json:"_meta"`
 }
 
 func serveProbeCall(t *testing.T, w http.ResponseWriter, req Request) {

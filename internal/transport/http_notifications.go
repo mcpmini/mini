@@ -13,12 +13,22 @@ import (
 )
 
 func (c *HTTPConnection) ListTools(ctx context.Context) ([]ToolDefinition, error) {
-	return paginateToolsList(ctx, c.callToolsPage)
+	tools, err := paginateToolsList(ctx, c.callToolsPage)
+	if err != nil {
+		return nil, err
+	}
+	if c.isModern() {
+		return c.rebuildToolHeaders(tools), nil
+	}
+	return tools, nil
 }
 
 func (c *HTTPConnection) ensureReady(ctx context.Context) error {
 	if err := c.probeOnce(ctx); err != nil {
 		return err
+	}
+	if c.isModern() {
+		return nil
 	}
 	renewed, err := c.initializeOnce(ctx)
 	if renewed {

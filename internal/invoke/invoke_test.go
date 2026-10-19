@@ -201,6 +201,31 @@ func TestCheckResult(t *testing.T) {
 	})
 }
 
+func TestCheckResult_ResultType(t *testing.T) {
+	inputRequired := json.RawMessage(`{"resultType":"input_required","content":[]}`)
+	unknown := json.RawMessage(`{"resultType":"bogus","content":[]}`)
+	extract := func(raw json.RawMessage) error {
+		_, err := invoke.ExtractContent(raw)
+		return err
+	}
+	for _, tc := range []struct {
+		name  string
+		check func(json.RawMessage) error
+	}{
+		{name: "CheckResult", check: invoke.CheckResult},
+		{name: "ExtractContent", check: extract},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := tc.check(inputRequired); !errors.Is(err, invoke.ErrInputRequired) {
+				t.Errorf("input_required error = %v, want ErrInputRequired", err)
+			}
+			if err := tc.check(unknown); err == nil || err.Error() != `upstream returned unknown resultType "bogus"` {
+				t.Errorf("unknown resultType error = %v", err)
+			}
+		})
+	}
+}
+
 // TestExtractContent_StructuredContent verifies that structuredContent (added in
 // MCP spec 2025-06-18) is used when a server omits the text content fallback.
 // Spec: servers SHOULD include a text representation for backwards compatibility,
