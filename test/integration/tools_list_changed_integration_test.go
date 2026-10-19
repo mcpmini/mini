@@ -12,6 +12,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mcpmini/mini/internal/transport"
+	"github.com/mcpmini/mini/internal/transport/transporttest"
 )
 
 func TestIntegrationDaemonProxyRelaysToolsListChangedAfterUpstreamMutation(t *testing.T) {
@@ -63,11 +66,10 @@ func TestIntegrationDaemonProxyTagsToolsListChangedForModernListen(t *testing.T)
 
 	stdin, scanner := startProxyCmd(t, cfg, "")
 	lines := scanProxyLines(scanner)
-	meta := `"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}`
-	writeProxyLine(t, stdin, `{"jsonrpc":"2.0","id":"L","method":"subscriptions/listen","params":{`+
-		meta+`,"notifications":{"toolsListChanged":true}}}`)
-	waitForProxyLine(t, lines, "notifications/subscriptions/acknowledged")
-	writeProxyLine(t, stdin, `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{`+meta+`}}`)
+	listen := transport.ListenParams{Notifications: transport.ListenNotifications{ToolsListChanged: true}}
+	writeProxyLine(t, stdin, transporttest.ModernRequest("L", transport.MethodSubscriptionsListen, listen))
+	waitForProxyLine(t, lines, transport.NotificationSubscriptionsAcknowledged)
+	writeProxyLine(t, stdin, transporttest.ModernRequest(2, "tools/list", nil))
 	waitForProxyLine(t, lines, `"svc__get_item"`)
 
 	putFakeTool(t, fakeToolParams{
@@ -75,8 +77,10 @@ func TestIntegrationDaemonProxyTagsToolsListChangedForModernListen(t *testing.T)
 		Name:        "dynamic_tool",
 		Content:     `{"id":2,"name":"after"}`,
 	})
-	changed := waitForProxyLine(t, lines, "notifications/tools/list_changed")
-	if !strings.Contains(changed, `"io.modelcontextprotocol/subscriptionId":"L"`) {
+	changed := waitForProxyLine(t, lines, transport.NotificationToolsChanged)
+	var notification transport.ToolsListChangedNotification
+	if err := json.Unmarshal([]byte(changed), &notification); err != nil ||
+		string(notification.Params.Meta.SubscriptionID) != `"L"` {
 		t.Fatalf("tools/list_changed for a modern listen was not tagged: %s", changed)
 	}
 }
@@ -92,9 +96,9 @@ func scanProxyLines(scanner *bufio.Scanner) <-chan string {
 	return lines
 }
 
-func writeProxyLine(t *testing.T, stdin io.Writer, line string) {
+func writeProxyLine(t *testing.T, stdin io.Writer, line []byte) {
 	t.Helper()
-	if _, err := io.WriteString(stdin, line+"\n"); err != nil {
+	if _, err := stdin.Write(line); err != nil {
 		t.Fatalf("write to proxy: %v", err)
 	}
 }
