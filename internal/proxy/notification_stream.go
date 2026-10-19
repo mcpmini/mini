@@ -16,6 +16,7 @@ type notificationStream struct {
 	daemon DaemonSession
 	writer *lineWriter
 	clock  clock.Clock
+	subs   *subscriptions
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -33,12 +34,20 @@ type activeNotificationStream struct {
 	done   chan struct{}
 }
 
-func newNotificationStream(daemon DaemonSession, writer *lineWriter, clk clock.Clock) *notificationStream {
+type notificationStreamParams struct {
+	Daemon        DaemonSession
+	Writer        *lineWriter
+	Clock         clock.Clock
+	Subscriptions *subscriptions
+}
+
+func newNotificationStream(p notificationStreamParams) *notificationStream {
 	ctx, cancel := context.WithCancel(context.Background())
 	stream := &notificationStream{
-		daemon: daemon,
-		writer: writer,
-		clock:  clk,
+		daemon: p.Daemon,
+		writer: p.Writer,
+		clock:  p.Clock,
+		subs:   p.Subscriptions,
 		ctx:    ctx,
 		cancel: cancel,
 		wake:   make(chan struct{}, 1),
@@ -204,7 +213,24 @@ func (s *notificationStream) forward(message json.RawMessage) error {
 	if !json.Valid(message) {
 		return nil
 	}
-	return s.writer.writeLine(message)
+	if !s.subs.modern.Load() {
+		return s.writer.writeLine(message)
+	}
+	// A modern agent receives only the notification types it subscribed to, and listens cover only tool changes.
+	var notification transport.Notification
+	if err := json.Unmarshal(message, &notification); err != nil {
+		return nil //nolint:nilerr // Only a tool change has a listen to go to.
+	}
+	if notification.Method != transport.NotificationToolsChanged {
+		return nil
+	}
+	return s.subs.forEach(func(id json.RawMessage) error {
+		tagged, err := json.Marshal(transport.NewToolsListChangedNotification(id))
+		if err != nil {
+			return err
+		}
+		return s.writer.writeLine(tagged)
+	})
 }
 
 func (s *activeNotificationStream) stop() {

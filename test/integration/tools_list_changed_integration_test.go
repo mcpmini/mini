@@ -3,13 +3,18 @@
 package integration_test
 
 import (
+	"bufio"
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mcpmini/mini/internal/transport"
+	"github.com/mcpmini/mini/internal/transport/transporttest"
 )
 
 func TestIntegrationDaemonProxyRelaysToolsListChangedAfterUpstreamMutation(t *testing.T) {
@@ -43,6 +48,76 @@ func TestIntegrationDaemonProxyRelaysToolsListChangedAfterUpstreamMutation(t *te
 	refreshed := proxyToolNames(t, client)
 	if !containsString(refreshed, "svc__dynamic_tool") {
 		t.Fatalf("refreshed tools/list missing svc__dynamic_tool: %v", refreshed)
+	}
+}
+
+func TestIntegrationDaemonProxyTagsToolsListChangedForModernListen(t *testing.T) {
+	t.Parallel()
+	cfg := shortConfigDir(t)
+	fixtures := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"name":"before"}`})
+	controlFile := filepath.Join(cfg, "actual-upstream-control")
+	writeFakeServerWithControlFile(t, fakeServerControlParams{
+		ConfigDir:   cfg,
+		ServerName:  "svc",
+		Fixtures:    fixtures,
+		ControlFile: controlFile,
+	})
+	startDaemon(t, cfg)
+
+	stdin, scanner := startProxyCmd(t, cfg, "")
+	lines := scanProxyLines(scanner)
+	listen := transport.ListenParams{Notifications: transport.ListenNotifications{ToolsListChanged: true}}
+	writeProxyLine(t, stdin, transporttest.ModernRequest("L", transport.MethodSubscriptionsListen, listen))
+	waitForProxyLine(t, lines, transport.NotificationSubscriptionsAcknowledged)
+	writeProxyLine(t, stdin, transporttest.ModernRequest(2, "tools/list", nil))
+	waitForProxyLine(t, lines, `"svc__get_item"`)
+
+	putFakeTool(t, fakeToolParams{
+		ControlAddr: waitForControlFile(t, controlFile),
+		Name:        "dynamic_tool",
+		Content:     `{"id":2,"name":"after"}`,
+	})
+	changed := waitForProxyLine(t, lines, transport.NotificationToolsChanged)
+	var notification transport.ToolsListChangedNotification
+	if err := json.Unmarshal([]byte(changed), &notification); err != nil ||
+		string(notification.Params.Meta.SubscriptionID) != `"L"` {
+		t.Fatalf("tools/list_changed for a modern listen was not tagged: %s", changed)
+	}
+}
+
+func scanProxyLines(scanner *bufio.Scanner) <-chan string {
+	lines := make(chan string, 64)
+	go func() {
+		defer close(lines)
+		for scanner.Scan() {
+			lines <- scanner.Text()
+		}
+	}()
+	return lines
+}
+
+func writeProxyLine(t *testing.T, stdin io.Writer, line []byte) {
+	t.Helper()
+	if _, err := stdin.Write(line); err != nil {
+		t.Fatalf("write to proxy: %v", err)
+	}
+}
+
+func waitForProxyLine(t *testing.T, lines <-chan string, want string) string {
+	t.Helper()
+	deadline := time.After(10 * time.Second)
+	for {
+		select {
+		case line, ok := <-lines:
+			if !ok {
+				t.Fatalf("proxy output closed before %q", want)
+			}
+			if strings.Contains(line, want) {
+				return line
+			}
+		case <-deadline:
+			t.Fatalf("no proxy output containing %q", want)
+		}
 	}
 }
 

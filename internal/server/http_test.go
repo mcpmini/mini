@@ -16,6 +16,7 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
+	"github.com/mcpmini/mini/internal/transport/transporttest"
 )
 
 func mcpPost(t *testing.T, ts *httptest.Server, body []byte, sessionID string) *http.Response {
@@ -57,6 +58,60 @@ func TestHTTPServer_initializeCreatesSession(t *testing.T) {
 	if resp.Header.Get("Mcp-Session-Id") == "" {
 		t.Error("expected Mcp-Session-Id header to be set")
 	}
+}
+
+func TestHTTPServer_modernDiscoverWaitsForInitialize(t *testing.T) {
+	srv := newTestServer(t, server.Params{})
+	created := serveHTTPPost(srv, []byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`), "")
+	sessionID := created.Header().Get("Mcp-Session-Id")
+	discover := transporttest.ModernRequest(2, "server/discover", nil)
+	if message := decodeRecorderMessage(t, serveHTTPPost(srv, discover, sessionID)); message.Error == nil ||
+		message.Error.Code != transport.CodeInvalidRequest {
+		t.Fatalf("uninitialized discover error = %+v", message.Error)
+	}
+	if initialized := serveHTTPPost(srv, initRequest(), sessionID); initialized.Code != http.StatusOK {
+		t.Fatalf("initialize status = %d", initialized.Code)
+	}
+	message := decodeRecorderMessage(t, serveHTTPPost(srv, discover, sessionID))
+	if result := decodeResult[modernResultFields](t, message); result.ResultType != transport.ResultComplete {
+		t.Fatalf("modern discover result = %s", message.Result)
+	}
+	list := transporttest.ModernRequest(3, "tools/list", nil)
+	message = decodeRecorderMessage(t, serveHTTPPost(srv, list, sessionID))
+	if result := decodeResult[modernResultFields](t, message); result.ResultType != transport.ResultComplete ||
+		result.TTLMs == nil {
+		t.Fatalf("modern tools/list result = %s", message.Result)
+	}
+}
+
+func TestHTTPServer_modernUnsupportedVersionIsRejected(t *testing.T) {
+	srv := newTestServer(t, server.Params{})
+	sessionID := serveHTTPPost(srv, initRequest(), "").Header().Get("Mcp-Session-Id")
+	request := transporttest.ModernRequestVersion("1900-01-01", 2, "tools/list", nil)
+	message := decodeRecorderMessage(t, serveHTTPPost(srv, request, sessionID))
+	if message.Error == nil || message.Error.Code != transport.CodeUnsupportedProtocolVersion {
+		t.Fatalf(
+			"unsupported version error = %+v, want code %d",
+			message.Error,
+			transport.CodeUnsupportedProtocolVersion,
+		)
+	}
+}
+
+func serveHTTPPost(srv *server.Server, body []byte, sessionID string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/mcp", bytes.NewReader(body))
+	req.Host = "127.0.0.1"
+	if sessionID != "" {
+		req.Header.Set("Mcp-Session-Id", sessionID)
+	}
+	response := httptest.NewRecorder()
+	srv.ServeHTTP(response, req)
+	return response
+}
+
+func decodeRecorderMessage(t *testing.T, response *httptest.ResponseRecorder) modernMessage {
+	t.Helper()
+	return decodeMessage(t, response.Body.Bytes())
 }
 
 func initSession(t *testing.T, ts *httptest.Server) string {

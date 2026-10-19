@@ -17,7 +17,7 @@ func (s *Server) startListen(ctx context.Context, p handleScannedLineParams, lin
 	var req transport.ListenRequest
 	if err := json.Unmarshal(line, &req); err != nil || len(req.ID) == 0 {
 		p.writeOut(
-			errorResponse(peekRequestID(line), transport.CodeInvalidParams, "invalid subscriptions/listen params"),
+			errorResponse(peekRequestID(line), transport.CodeInvalidParams, transport.InvalidListenParamsMessage),
 		)
 		return
 	}

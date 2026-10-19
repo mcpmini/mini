@@ -15,15 +15,19 @@ type proxySession struct {
 	clock              clock.Clock
 	writer             *lineWriter
 	notificationStream *notificationStream
+	subs               *subscriptions
 	initialized        atomic.Bool
 	clientReady        atomic.Bool
 }
 
 func newProxySession(p RunParams, writer *lineWriter) *proxySession {
 	session := DaemonSession{client: p.Client, sessionID: p.SessionID}
+	subs := newSubscriptions()
 	var notifications *notificationStream
 	if p.ToolMode == transport.ToolModeProxy {
-		notifications = newNotificationStream(session, writer, p.Clock)
+		notifications = newNotificationStream(notificationStreamParams{
+			Daemon: session, Writer: writer, Clock: p.Clock, Subscriptions: subs,
+		})
 	}
 	return &proxySession{
 		daemon:             session,
@@ -33,6 +37,7 @@ func newProxySession(p RunParams, writer *lineWriter) *proxySession {
 		clock:              p.Clock,
 		writer:             writer,
 		notificationStream: notifications,
+		subs:               subs,
 	}
 }
 

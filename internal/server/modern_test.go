@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"net/http/httptest"
 	"slices"
 	"strconv"
 	"testing"
@@ -82,33 +81,6 @@ func TestModernLegacyDiscoverRemainsMethodNotFound(t *testing.T) {
 	msgs := serveAll(t, newTestServer(t, server.Params{}), rpc("server/discover", nil))
 	if got := rpcErrorCode(msgs[len(msgs)-1]); got != transport.CodeMethodNotFound {
 		t.Fatalf("legacy server/discover code = %v", got)
-	}
-}
-
-func TestModernDiscoverOverHTTPRemainsMethodNotFound(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	init := httptest.NewRequest("POST", "http://127.0.0.1/mcp", bytes.NewReader(initRequest()))
-	init.Header.Set("Content-Type", "application/json")
-	init.Host = "127.0.0.1"
-	initResponse := httptest.NewRecorder()
-	srv.ServeHTTP(initResponse, init)
-	sessionID := initResponse.Header().Get("Mcp-Session-Id")
-	req := httptest.NewRequest(
-		"POST",
-		"http://127.0.0.1/mcp",
-		bytes.NewReader(transporttest.ModernRequest(77, "server/discover", nil)),
-	)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Mcp-Session-Id", sessionID)
-	req.Host = "127.0.0.1"
-	response := httptest.NewRecorder()
-	srv.ServeHTTP(response, req)
-	var message modernMessage
-	if err := json.Unmarshal(response.Body.Bytes(), &message); err != nil {
-		t.Fatal(err)
-	}
-	if message.Error == nil || message.Error.Code != transport.CodeMethodNotFound {
-		t.Fatalf("HTTP server/discover error = %+v, want code %d", message.Error, transport.CodeMethodNotFound)
 	}
 }
 

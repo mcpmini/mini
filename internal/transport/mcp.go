@@ -107,6 +107,10 @@ const NotificationToolsChanged = "notifications/tools/list_changed"
 // https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/utilities/cancellation.mdx
 const NotificationCancelled = "notifications/cancelled"
 
+type CancelledParams struct {
+	RequestID json.RawMessage `json:"requestId"`
+}
+
 const ToolModeParam = "_mini_tool_mode"
 
 const (

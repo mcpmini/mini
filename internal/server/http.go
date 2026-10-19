@@ -166,6 +166,7 @@ func (s *Server) parsePostRequest(w http.ResponseWriter, r *http.Request) (parse
 		return parsedPostRequest{}, false
 	}
 	session, release := s.sessions.acquire(sessionID)
+	session.httpSession.Store(true)
 	return parsedPostRequest{body: body, sessionID: sessionID, session: session, release: release}, true
 }
 

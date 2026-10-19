@@ -38,10 +38,12 @@ type Session struct {
 	initOnce      sync.Once
 	initAbortOnce sync.Once
 
-	mode           atomic.Int32 // holds ToolMode; zero value = ToolModeProxy
-	modeOnce       sync.Once
-	clientReady    atomic.Bool
-	acceptsModern  atomic.Bool
+	mode        atomic.Int32 // holds ToolMode; zero value = ToolModeProxy
+	modeOnce    sync.Once
+	clientReady atomic.Bool
+	// HTTP sessions keep the initialization gate even for modern requests: the stdio proxy runs the
+	// handshake for its modern agents and learns from "not initialized" that the daemon lost it.
+	httpSession    atomic.Bool
 	modern         atomic.Bool
 	listensMu      sync.Mutex
 	listens        map[string]context.CancelFunc

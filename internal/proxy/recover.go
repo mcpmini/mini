@@ -21,6 +21,12 @@ func jitteredBackoff(attempt int) time.Duration {
 
 // Responses are discarded; the caller retries the original request after handshake completes.
 func (s DaemonSession) Handshake(mode transport.ToolMode) {
+	initialize, initialized := handshakeLines(mode)
+	s.Send(initialize)
+	s.Send(initialized)
+}
+
+func handshakeLines(mode transport.ToolMode) (initialize, initialized []byte) {
 	//nolint:errcheck // fixed handshake fields contain only JSON-serializable values.
 	params, _ := json.Marshal(transport.InitializeParams{
 		ProtocolVersion: transport.LatestLegacyVersion,
@@ -31,8 +37,7 @@ func (s DaemonSession) Handshake(mode transport.ToolMode) {
 	initMsg, _ := json.Marshal(
 		transport.Request{JSONRPC: "2.0", ID: -1, Method: "initialize", Params: json.RawMessage(params)},
 	)
-	s.Send(maybeInjectToolMode(initMsg, mode))
 	//nolint:errcheck // fixed notification fields are JSON-serializable.
 	notif, _ := json.Marshal(transport.Notification{JSONRPC: "2.0", Method: transport.NotificationInitialized})
-	s.Send(notif)
+	return maybeInjectToolMode(initMsg, mode), notif
 }

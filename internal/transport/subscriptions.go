@@ -5,6 +5,7 @@ import "encoding/json"
 const (
 	MethodSubscriptionsListen             = "subscriptions/listen"
 	NotificationSubscriptionsAcknowledged = "notifications/subscriptions/acknowledged"
+	InvalidListenParamsMessage            = "invalid subscriptions/listen params"
 )
 
 type ListenNotifications struct {
