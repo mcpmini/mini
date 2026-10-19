@@ -17,7 +17,7 @@ func (s *Server) startListen(ctx context.Context, p handleScannedLineParams, lin
 	var req transport.ListenRequest
 	if err := json.Unmarshal(line, &req); err != nil || len(req.ID) == 0 {
 		p.writeOut(
-			errorResponse(peekRequestID(line), transport.CodeInvalidParams, "invalid subscriptions/listen params"),
+			errorResponse(peekRequestID(line), transport.CodeInvalidParams, transport.InvalidListenParamsMessage),
 		)
 		return
 	}
@@ -30,7 +30,7 @@ func (s *Server) startListen(ctx context.Context, p handleScannedLineParams, lin
 		s.rejectListenVersion(p, req.ID, version)
 		return
 	}
-	acknowledged := transport.ListenNotifications{ToolsListChanged: req.Params.Notifications.ToolsListChanged}
+	acknowledged := req.Params.Notifications
 	p.writeOut(transport.NewSubscriptionAck(req.ID, acknowledged))
 	s.waitOnListen(ctx, p, listenSubscription{id: req.ID, notifications: acknowledged})
 }

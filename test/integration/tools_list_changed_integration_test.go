@@ -3,7 +3,9 @@
 package integration_test
 
 import (
+	"bufio"
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -43,6 +45,75 @@ func TestIntegrationDaemonProxyRelaysToolsListChangedAfterUpstreamMutation(t *te
 	refreshed := proxyToolNames(t, client)
 	if !containsString(refreshed, "svc__dynamic_tool") {
 		t.Fatalf("refreshed tools/list missing svc__dynamic_tool: %v", refreshed)
+	}
+}
+
+func TestIntegrationDaemonProxyTagsToolsListChangedForModernListen(t *testing.T) {
+	t.Parallel()
+	cfg := shortConfigDir(t)
+	fixtures := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"name":"before"}`})
+	controlFile := filepath.Join(cfg, "actual-upstream-control")
+	writeFakeServerWithControlFile(t, fakeServerControlParams{
+		ConfigDir:   cfg,
+		ServerName:  "svc",
+		Fixtures:    fixtures,
+		ControlFile: controlFile,
+	})
+	startDaemon(t, cfg)
+
+	stdin, scanner := startProxyCmd(t, cfg, "")
+	lines := scanProxyLines(scanner)
+	meta := `"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}`
+	writeProxyLine(t, stdin, `{"jsonrpc":"2.0","id":"L","method":"subscriptions/listen","params":{`+
+		meta+`,"notifications":{"toolsListChanged":true}}}`)
+	waitForProxyLine(t, lines, "notifications/subscriptions/acknowledged")
+	writeProxyLine(t, stdin, `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{`+meta+`}}`)
+	waitForProxyLine(t, lines, `"svc__get_item"`)
+
+	putFakeTool(t, fakeToolParams{
+		ControlAddr: waitForControlFile(t, controlFile),
+		Name:        "dynamic_tool",
+		Content:     `{"id":2,"name":"after"}`,
+	})
+	changed := waitForProxyLine(t, lines, "notifications/tools/list_changed")
+	if !strings.Contains(changed, `"io.modelcontextprotocol/subscriptionId":"L"`) {
+		t.Fatalf("tools/list_changed for a modern listen was not tagged: %s", changed)
+	}
+}
+
+func scanProxyLines(scanner *bufio.Scanner) <-chan string {
+	lines := make(chan string, 64)
+	go func() {
+		defer close(lines)
+		for scanner.Scan() {
+			lines <- scanner.Text()
+		}
+	}()
+	return lines
+}
+
+func writeProxyLine(t *testing.T, stdin io.Writer, line string) {
+	t.Helper()
+	if _, err := io.WriteString(stdin, line+"\n"); err != nil {
+		t.Fatalf("write to proxy: %v", err)
+	}
+}
+
+func waitForProxyLine(t *testing.T, lines <-chan string, want string) string {
+	t.Helper()
+	deadline := time.After(10 * time.Second)
+	for {
+		select {
+		case line, ok := <-lines:
+			if !ok {
+				t.Fatalf("proxy output closed before %q", want)
+			}
+			if strings.Contains(line, want) {
+				return line
+			}
+		case <-deadline:
+			t.Fatalf("no proxy output containing %q", want)
+		}
 	}
 }
 

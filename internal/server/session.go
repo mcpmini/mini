@@ -38,11 +38,12 @@ type Session struct {
 	initOnce      sync.Once
 	initAbortOnce sync.Once
 
-	mode           atomic.Int32 // holds ToolMode; zero value = ToolModeProxy
-	modeOnce       sync.Once
-	clientReady    atomic.Bool
-	acceptsModern  atomic.Bool
-	daemonSession  atomic.Bool
+	mode        atomic.Int32 // holds ToolMode; zero value = ToolModeProxy
+	modeOnce    sync.Once
+	clientReady atomic.Bool
+	// HTTP sessions sit behind the stdio proxy, which runs the handshake and tags notifications
+	// for modern agents, so they keep the initialization gate and send untagged notifications.
+	httpSession    atomic.Bool
 	modern         atomic.Bool
 	listensMu      sync.Mutex
 	listens        map[string]context.CancelFunc

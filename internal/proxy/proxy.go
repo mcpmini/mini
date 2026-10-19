@@ -56,6 +56,7 @@ func runWithLimit(p RunParams, limit int) error {
 		line := scanner.Bytes()
 		if handled, err := fp.session.handleModernInput(line); handled {
 			if err != nil {
+				fp.wg.Wait()
 				return err
 			}
 			continue

@@ -47,7 +47,7 @@ func (s *Session) cancelListens() {
 }
 
 func (s *Server) handleModernLine(p handleScannedLineParams, line []byte) bool {
-	if len(peekRequestID(line)) == 0 || !p.session.acceptsModern.Load() {
+	if len(peekRequestID(line)) == 0 {
 		return false
 	}
 	_, modern := modernRequestVersion(line)
@@ -72,10 +72,7 @@ func modernRequestVersion(line []byte) (string, bool) {
 }
 
 func (s *Server) activateModern(session *Session) {
-	if session.modern.Swap(true) {
-		return
-	}
-	if session.daemonSession.Load() {
+	if session.modern.Swap(true) || session.httpSession.Load() {
 		return
 	}
 	session.setToolModeOnce(s.resolveToolMode(""))
@@ -85,7 +82,7 @@ func (s *Server) activateModern(session *Session) {
 
 func modernVersionError(req transport.Request, session *Session) *transport.Response {
 	version, modern := transport.ProtocolVersionFromParams(req.Params)
-	if !modern || !session.acceptsModern.Load() || slices.Contains(transport.ModernVersions, version) {
+	if !modern || slices.Contains(transport.ModernVersions, version) {
 		return nil
 	}
 	response, err := unsupportedVersionResponse(req.ID, version)

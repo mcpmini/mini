@@ -16,7 +16,7 @@ type notificationStream struct {
 	daemon DaemonSession
 	writer *lineWriter
 	clock  clock.Clock
-	proxy  *proxySession
+	subs   *subscriptions
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -34,12 +34,20 @@ type activeNotificationStream struct {
 	done   chan struct{}
 }
 
-func newNotificationStream(daemon DaemonSession, writer *lineWriter, clk clock.Clock) *notificationStream {
+type notificationStreamParams struct {
+	Daemon        DaemonSession
+	Writer        *lineWriter
+	Clock         clock.Clock
+	Subscriptions *subscriptions
+}
+
+func newNotificationStream(p notificationStreamParams) *notificationStream {
 	ctx, cancel := context.WithCancel(context.Background())
 	stream := &notificationStream{
-		daemon: daemon,
-		writer: writer,
-		clock:  clk,
+		daemon: p.Daemon,
+		writer: p.Writer,
+		clock:  p.Clock,
+		subs:   p.Subscriptions,
 		ctx:    ctx,
 		cancel: cancel,
 		wake:   make(chan struct{}, 1),
@@ -205,21 +213,16 @@ func (s *notificationStream) forward(message json.RawMessage) error {
 	if !json.Valid(message) {
 		return nil
 	}
-	if !s.proxy.modern.Load() {
+	if !s.subs.modern.Load() {
 		return s.writer.writeLine(message)
 	}
-	s.proxy.listensMu.Lock()
-	defer s.proxy.listensMu.Unlock()
-	for _, id := range s.proxy.listens {
+	return s.subs.forEach(func(id json.RawMessage) error {
 		tagged, err := tagNotification(message, id)
 		if err != nil {
 			return err
 		}
-		if err := s.writer.writeLine(tagged); err != nil {
-			return err
-		}
-	}
-	return nil
+		return s.writer.writeLine(tagged)
+	})
 }
 
 func (s *activeNotificationStream) stop() {

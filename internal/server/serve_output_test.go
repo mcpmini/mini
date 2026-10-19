@@ -101,7 +101,7 @@ func TestServeReturnsPendingNotificationFailureAtEOF(t *testing.T) {
 func TestDaemonModernToolsChangedRemainsUntagged(t *testing.T) {
 	session := newSession(clock.System())
 	session.modern.Store(true)
-	session.daemonSession.Store(true)
+	session.httpSession.Store(true)
 	raw := json.RawMessage(`{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}`)
 	var sent []any
 	session.forwardToolsChanged(raw, func(message any) { sent = append(sent, message) })

@@ -21,7 +21,6 @@ import (
 func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 	sessionID := transport.NewSessionID()
 	session := s.sessions.getOrCreate(sessionID)
-	session.acceptsModern.Store(true)
 	defer s.sessions.delete(sessionID)
 	return s.serveLoop(ctx, in, out, session)
 }
@@ -128,10 +127,8 @@ func (s *Server) handleRequest(
 	if unsupported := modernVersionError(req, session); unsupported != nil {
 		return *unsupported, true
 	}
-	if session.daemonSession.Load() {
-		if _, modern := transport.ProtocolVersionFromParams(req.Params); modern {
-			session.modern.Store(true)
-		}
+	if _, modern := transport.ProtocolVersionFromParams(req.Params); modern {
+		s.activateModern(session)
 	}
 	if !s.awaitInitialization(ctx, req, session) {
 		return errorResponse(req.ID, transport.CodeInvalidRequest, transport.NotInitializedMessage), true
@@ -152,9 +149,9 @@ func (s *Server) awaitInitialization(ctx context.Context, req transport.Request,
 	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/lifecycle.mdx#L118
 	// A client that supports both eras probes with server/discover before it falls back to initialize:
 	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/8e12bf3c8f01f374146acfa19b8ece0018bfc86c/docs/specification/2026-07-28/basic/versioning.mdx#L132-L146
-	// Daemon sessions still gate it, so proxy recovery learns the daemon lost its initialization.
+	// HTTP sessions still gate it, so proxy recovery learns the daemon lost its initialization.
 	if req.Method == "initialize" || req.Method == "ping" ||
-		(req.Method == "server/discover" && !session.daemonSession.Load()) {
+		(req.Method == "server/discover" && !session.httpSession.Load()) {
 		return true
 	}
 	// Cap the wait so stale sessions (e.g. post daemon-restart or eviction) fail fast
@@ -190,7 +187,7 @@ func dispatchErrorResponse(id any, err error) transport.Response {
 func (s *Server) dispatch(ctx context.Context, req transport.Request, session *Session) (any, error) {
 	switch req.Method {
 	case "server/discover":
-		if !session.acceptsModern.Load() || !session.modern.Load() {
+		if !session.modern.Load() {
 			return nil, fmt.Errorf("%w: %s", errMethodNotFound, req.Method)
 		}
 		return s.handleDiscover(session), nil

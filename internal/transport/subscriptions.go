@@ -5,6 +5,8 @@ import "encoding/json"
 const (
 	MethodSubscriptionsListen             = "subscriptions/listen"
 	NotificationSubscriptionsAcknowledged = "notifications/subscriptions/acknowledged"
+	SubscriptionIDMeta                    = "io.modelcontextprotocol/subscriptionId"
+	InvalidListenParamsMessage            = "invalid subscriptions/listen params"
 )
 
 type ListenNotifications struct {

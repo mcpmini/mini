@@ -7,19 +7,11 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-const subscriptionIDMeta = "io.modelcontextprotocol/subscriptionId"
-
 type modernLine struct {
 	JSONRPC string          `json:"jsonrpc"`
 	ID      json.RawMessage `json:"id"`
 	Method  string          `json:"method"`
 	Params  json.RawMessage `json:"params"`
-}
-
-type listenRequestParams struct {
-	Notifications struct {
-		ToolsListChanged bool `json:"toolsListChanged"`
-	} `json:"notifications"`
 }
 
 type cancelledRequestParams struct {
@@ -36,7 +28,7 @@ func isModernLine(line []byte) bool {
 }
 
 func (s *proxySession) ensureModernReady() {
-	s.modern.Store(true)
+	s.subs.modern.Store(true)
 	if s.clientReady.Load() {
 		return
 	}
@@ -59,14 +51,14 @@ func (s *proxySession) handleLocalModernLine(line []byte) (bool, error) {
 		return false, nil //nolint:nilerr // Malformed lines must reach the daemon for its parse error.
 	}
 	switch message.Method {
-	case "subscriptions/listen":
+	case transport.MethodSubscriptionsListen:
 		if message.JSONRPC != "2.0" || !isModernLine(line) || len(message.ID) == 0 || string(message.ID) == "null" ||
 			!s.clientReady.Load() {
 			return false, nil
 		}
-		var params listenRequestParams
+		var params transport.ListenParams
 		if json.Unmarshal(message.Params, &params) != nil {
-			return false, nil //nolint:nilerr // Malformed listen params stay on the daemon path.
+			return true, s.writeInvalidListenParams(message.ID)
 		}
 		return true, s.acknowledgeListen(message.ID, params)
 	case transport.NotificationCancelled:
@@ -74,79 +66,33 @@ func (s *proxySession) handleLocalModernLine(line []byte) (bool, error) {
 		if json.Unmarshal(message.Params, &params) != nil {
 			return false, nil //nolint:nilerr // Malformed cancellation stays on the daemon path.
 		}
-		if s.removeListen(params.RequestID) {
+		if s.subs.remove(params.RequestID) {
 			return true, nil
 		}
 	}
 	return false, nil
 }
 
-func (s *proxySession) acknowledgeListen(id json.RawMessage, params listenRequestParams) error {
+func (s *proxySession) acknowledgeListen(id json.RawMessage, params transport.ListenParams) error {
 	toolsChanged := params.Notifications.ToolsListChanged && s.notificationStream != nil
-	notifications := modernListenNotifications{ToolsListChanged: toolsChanged}
-	if !toolsChanged {
-		notifications = modernListenNotifications{}
-	}
-	return s.writeListenAcknowledgment(listenAckParams{
-		id: id, notifications: notifications, register: toolsChanged,
+	ack := transport.NewSubscriptionAck(id, transport.ListenNotifications{ToolsListChanged: toolsChanged})
+	return s.subs.acknowledge(ack, func(ack transport.SubscriptionAck) error {
+		line, err := json.Marshal(ack)
+		if err != nil {
+			return err
+		}
+		return s.writeLine(line)
 	})
 }
 
-type listenAckParams struct {
-	id            json.RawMessage
-	notifications modernListenNotifications
-	register      bool
-}
-
-func (s *proxySession) writeListenAcknowledgment(p listenAckParams) error {
-	line, err := marshalListenAcknowledgment(p.id, p.notifications)
+func (s *proxySession) writeInvalidListenParams(id json.RawMessage) error {
+	line, err := json.Marshal(transport.Response{JSONRPC: "2.0", ID: id, Error: &transport.RPCError{
+		Code: transport.CodeInvalidParams, Message: transport.InvalidListenParamsMessage,
+	}})
 	if err != nil {
 		return err
 	}
-	s.listensMu.Lock()
-	defer s.listensMu.Unlock()
-	if err := s.writeLine(line); err != nil {
-		return err
-	}
-	if p.register {
-		s.listens[string(p.id)] = append(json.RawMessage(nil), p.id...)
-	}
-	return nil
-}
-
-func marshalListenAcknowledgment(id json.RawMessage, notifications modernListenNotifications) ([]byte, error) {
-	ack := modernListenAcknowledgment{
-		JSONRPC: "2.0", Method: "notifications/subscriptions/acknowledged",
-		Params: modernListenParams{
-			Meta: map[string]json.RawMessage{subscriptionIDMeta: id}, Notifications: notifications,
-		},
-	}
-	return json.Marshal(ack)
-}
-
-type modernListenAcknowledgment struct {
-	JSONRPC string             `json:"jsonrpc"`
-	Method  string             `json:"method"`
-	Params  modernListenParams `json:"params"`
-}
-
-type modernListenParams struct {
-	Meta          map[string]json.RawMessage `json:"_meta"`
-	Notifications modernListenNotifications  `json:"notifications"`
-}
-
-type modernListenNotifications struct {
-	ToolsListChanged bool `json:"toolsListChanged,omitempty"`
-}
-
-func (s *proxySession) removeListen(id json.RawMessage) bool {
-	s.listensMu.Lock()
-	defer s.listensMu.Unlock()
-	if _, ok := s.listens[string(id)]; !ok {
-		return false
-	}
-	delete(s.listens, string(id))
-	return true
+	return s.writeLine(line)
 }
 
 func tagNotification(line, id json.RawMessage) ([]byte, error) {
@@ -202,6 +148,6 @@ func addSubscriptionID(raw, id json.RawMessage) (json.RawMessage, error) {
 	if meta == nil {
 		meta = make(map[string]json.RawMessage)
 	}
-	meta[subscriptionIDMeta] = id
+	meta[transport.SubscriptionIDMeta] = id
 	return json.Marshal(meta)
 }

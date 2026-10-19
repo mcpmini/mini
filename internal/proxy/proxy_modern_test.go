@@ -128,7 +128,7 @@ func TestProxySession_modernListenAcknowledgesAndCancelsLocally(t *testing.T) {
 		newLineWriter(&out),
 	)
 	defer session.close()
-	session.modern.Store(true)
+	session.subs.modern.Store(true)
 	session.clientReady.Store(true)
 	listen := []byte(
 		`{"jsonrpc":"2.0","id":5,"method":"subscriptions/listen","params":{"_meta":` +
@@ -145,7 +145,7 @@ func TestProxySession_modernListenAcknowledgesAndCancelsLocally(t *testing.T) {
 	}
 	params := ack["params"].(map[string]any)
 	if ack["method"] != "notifications/subscriptions/acknowledged" ||
-		params["_meta"].(map[string]any)[subscriptionIDMeta] != float64(5) ||
+		params["_meta"].(map[string]any)[transport.SubscriptionIDMeta] != float64(5) ||
 		params["notifications"].(map[string]any)["toolsListChanged"] != true {
 		t.Fatalf("listen acknowledgment = %v", ack)
 	}
@@ -185,7 +185,7 @@ func TestProxySession_modernListenCompactAcknowledgesEmptyFilter(t *testing.T) {
 		newLineWriter(&out),
 	)
 	defer session.close()
-	session.modern.Store(true)
+	session.subs.modern.Store(true)
 	session.clientReady.Store(true)
 	line := []byte(
 		`{"jsonrpc":"2.0","id":"listen","method":"subscriptions/listen","params":{"_meta":` +
@@ -225,16 +225,17 @@ func TestNotificationStream_modernTaggingAndLegacyForwarding(t *testing.T) {
 		t.Fatalf("legacy notification output = %q", out.String())
 	}
 	out.Reset()
-	session.modern.Store(true)
+	session.subs.modern.Store(true)
 	if err := session.notificationStream.forward(notification); err != nil {
 		t.Fatal(err)
 	}
 	if out.Len() != 0 {
 		t.Fatalf("modern notification without listen was forwarded: %q", out.String())
 	}
-	session.listensMu.Lock()
-	session.listens[`9`] = json.RawMessage(`9`)
-	session.listensMu.Unlock()
+	listen := transport.NewSubscriptionAck(json.RawMessage(`9`), transport.ListenNotifications{ToolsListChanged: true})
+	if err := session.subs.acknowledge(listen, func(transport.SubscriptionAck) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
 	session.restoreLifecycle(linkState{generation: 1})
 	if got := proxyListenCount(session); got != 1 {
 		t.Fatalf("listens after recovery = %d, want 1", got)
@@ -247,15 +248,18 @@ func TestNotificationStream_modernTaggingAndLegacyForwarding(t *testing.T) {
 		t.Fatal(err)
 	}
 	meta := tagged["params"].(map[string]any)["_meta"].(map[string]any)
-	if meta["existing"] != "kept" || meta[subscriptionIDMeta] != float64(9) {
+	if meta["existing"] != "kept" || meta[transport.SubscriptionIDMeta] != float64(9) {
 		t.Fatalf("tagged notification meta = %v", meta)
 	}
 }
 
 func proxyListenCount(session *proxySession) int {
-	session.listensMu.Lock()
-	defer session.listensMu.Unlock()
-	return len(session.listens)
+	count := 0
+	_ = session.subs.forEach(func(json.RawMessage) error { //nolint:errcheck // the callback never fails.
+		count++
+		return nil
+	})
+	return count
 }
 
 func TestProxySession_modernListenWithWrongJSONRPCGoesToDaemon(t *testing.T) {
