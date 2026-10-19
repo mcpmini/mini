@@ -30,7 +30,7 @@ func (c *HTTPConnection) withAuthRetry(ctx context.Context, attempt func() (stri
 	return err
 }
 
-func (c *HTTPConnection) postWithAuthRetry(ctx context.Context, rpcReq Request) (json.RawMessage, error) {
+func (c *HTTPConnection) postWithAuthRetry(ctx context.Context, rpcReq httpCall) (json.RawMessage, error) {
 	var last postResult
 	err := c.withAuthRetry(ctx, func() (string, error) {
 		var err error

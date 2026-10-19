@@ -23,12 +23,11 @@ func (c *HTTPConnection) ListTools(ctx context.Context) ([]ToolDefinition, error
 	return tools, nil
 }
 
-func (c *HTTPConnection) ensureReady(ctx context.Context) error {
-	if err := c.probeOnce(ctx); err != nil {
-		return err
-	}
-	if c.isModern() {
-		return nil
+// ensureReady returns the modern version to send this call under, or "" once a legacy session is ready.
+func (c *HTTPConnection) ensureReady(ctx context.Context) (string, error) {
+	modernVersion, err := c.probeOnce(ctx)
+	if err != nil || modernVersion != "" {
+		return modernVersion, err
 	}
 	renewed, err := c.initializeOnce(ctx)
 	if renewed {
@@ -41,7 +40,7 @@ func (c *HTTPConnection) ensureReady(ctx context.Context) error {
 		// Without this notification, mini would keep serving the tool list from s1.
 		c.toolsChanged.NotifyToolsChanged()
 	}
-	return err
+	return "", err
 }
 
 func (c *HTTPConnection) initializeOnce(ctx context.Context) (renewed bool, err error) {

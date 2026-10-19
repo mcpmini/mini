@@ -168,11 +168,12 @@ const maxRetries = 3
 
 // Call sends an MCP request, probing the server's era and completing the initialize handshake first if needed.
 func (c *HTTPConnection) Call(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
-	if err := c.ensureReady(ctx); err != nil {
+	modernVersion, err := c.ensureReady(ctx)
+	if err != nil {
 		return nil, err
 	}
-	if c.isModern() {
-		return c.callModern(ctx, method, params)
+	if modernVersion != "" {
+		return c.callModern(ctx, modernVersion, method, params)
 	}
 	if method == "tools/call" {
 		params = stripModernToolCallFields(params)
@@ -192,7 +193,7 @@ func (c *HTTPConnection) withSessionRecovery(
 		return result, err
 	}
 	c.compareAndResetSession(expiredErr.SessionID)
-	if initErr := c.ensureReady(ctx); initErr != nil {
+	if _, initErr := c.ensureReady(ctx); initErr != nil {
 		return nil, initErr
 	}
 	return do()
@@ -209,10 +210,24 @@ func (c *HTTPConnection) compareAndResetSession(expiredID string) {
 	}
 }
 
+// httpCall is one JSON-RPC request and the protocol it was prepared under, kept for all its retries so a
+// concurrent era reset cannot send modern params with legacy headers. An empty modernVersion is legacy.
+type httpCall struct {
+	Request
+	modernVersion string
+}
+
 func (c *HTTPConnection) rpc(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
-	id := c.nextID.Add(1)
-	req := Request{JsonRPC: JsonRPCVersion, ID: id, Method: method, Params: params}
-	return c.postWithAuthRetry(ctx, req)
+	return c.rpcAs(ctx, "", method, params)
+}
+
+func (c *HTTPConnection) rpcAs(
+	ctx context.Context,
+	modernVersion, method string,
+	params json.RawMessage,
+) (json.RawMessage, error) {
+	req := Request{JsonRPC: JsonRPCVersion, ID: c.nextID.Add(1), Method: method, Params: params}
+	return c.postWithAuthRetry(ctx, httpCall{Request: req, modernVersion: modernVersion})
 }
 
 type postResult struct {
@@ -222,7 +237,7 @@ type postResult struct {
 	sentAuth  string
 }
 
-func (c *HTTPConnection) post(ctx context.Context, rpcReq Request) (postResult, error) {
+func (c *HTTPConnection) post(ctx context.Context, rpcReq httpCall) (postResult, error) {
 	backoff := time.Second
 	for i := range maxRetries {
 		result, done, err := c.postWithRetryDelay(ctx, rpcReq, i, &backoff)
@@ -235,7 +250,7 @@ func (c *HTTPConnection) post(ctx context.Context, rpcReq Request) (postResult, 
 
 func (c *HTTPConnection) postWithRetryDelay(
 	ctx context.Context,
-	rpcReq Request,
+	rpcReq httpCall,
 	i int,
 	backoff *time.Duration,
 ) (postResult, bool, error) {
@@ -267,7 +282,7 @@ func nextRetryDelay(delay time.Duration, backoff *time.Duration) time.Duration {
 	return delay
 }
 
-func (c *HTTPConnection) doPost(ctx context.Context, rpcReq Request) (postResult, error) {
+func (c *HTTPConnection) doPost(ctx context.Context, rpcReq httpCall) (postResult, error) {
 	httpReq, sentAuth, err := c.buildHTTPRequest(ctx, rpcReq)
 	if err != nil {
 		return postResult{}, err
@@ -279,15 +294,16 @@ func (c *HTTPConnection) doPost(ctx context.Context, rpcReq Request) (postResult
 	}
 	//nolint:errcheck // processResponse determines the result; Close releases the response stream.
 	defer resp.Body.Close()
-	result, err := c.processResponse(resp, rpcReq, sentSessionID)
+	result, err := c.processResponse(resp, rpcReq.Request, sentSessionID)
 	result.sentAuth = sentAuth
 	return result, err
 }
 
-func (c *HTTPConnection) buildHTTPRequest(ctx context.Context, rpcReq Request) (*http.Request, string, error) {
-	if c.isModern() {
-		return c.buildModernHTTPRequest(ctx, rpcReq)
+func (c *HTTPConnection) buildHTTPRequest(ctx context.Context, call httpCall) (*http.Request, string, error) {
+	if call.modernVersion != "" {
+		return c.buildModernHTTPRequest(ctx, call.Request, call.modernVersion)
 	}
+	rpcReq := call.Request
 	reqBody, err := json.Marshal(rpcReq)
 	if err != nil {
 		return nil, "", err

@@ -218,3 +218,41 @@ func TestModern4xxWithoutRPCResetsDiscovery(t *testing.T) {
 		t.Fatalf("call after 404 reset: %v, probes=%d", err, probes.Load())
 	}
 }
+
+func TestModernCallKeepsItsEraThroughAConcurrentReset(t *testing.T) {
+	listing := make(chan struct{})
+	release := make(chan struct{})
+	callHeaders := make(chan http.Header, 1)
+	srv := newModernServer(t, modernUpstream{Handle: func(w http.ResponseWriter, r *http.Request, req Request) {
+		switch req.Method {
+		case "tools/list":
+			close(listing)
+			<-release
+			writeRPCResult(t, w, req.ID, ToolsListResult{Tools: []ToolDefinition{modernTool("x", `{}`)}})
+		case "ping":
+			writeHTTPRPCError(t, w, httpRPCErrorParams{id: req.ID, code: CodeUnsupportedProtocolVersion})
+		case "tools/call":
+			callHeaders <- r.Header.Clone()
+			writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
+		}
+	}})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	called := make(chan error, 1)
+	go func() {
+		_, err := conn.Call(t.Context(), "tools/call", json.RawMessage(`{"name":"x","arguments":{}}`))
+		called <- err
+	}()
+	<-listing
+	if _, err := conn.Call(t.Context(), "ping", nil); err == nil {
+		t.Fatal("ping succeeded, want the unsupported-version error that resets the era")
+	}
+	close(release)
+	if err := <-called; err != nil {
+		t.Fatal(err)
+	}
+	headers := <-callHeaders
+	if headers.Get("MCP-Protocol-Version") != ModernVersions[0] || headers.Get("Mcp-Method") != "tools/call" {
+		t.Fatalf("tools/call sent with protocol %q and method %q after a concurrent reset, want modern headers",
+			headers.Get("MCP-Protocol-Version"), headers.Get("Mcp-Method"))
+	}
+}

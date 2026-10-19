@@ -51,16 +51,20 @@ func setDiscoverRequestHeaders(req *http.Request) {
 	req.Header.Set("Mcp-Method", "server/discover")
 }
 
-func (c *HTTPConnection) probeOnce(ctx context.Context) error {
+// probeOnce returns the modern version this upstream speaks, or "" for legacy.
+func (c *HTTPConnection) probeOnce(ctx context.Context) (string, error) {
 	c.initMu.Lock()
 	defer c.initMu.Unlock()
 	if c.eraKnown {
-		return nil
+		if version := c.modernVersion.Load(); version != nil {
+			return *version, nil
+		}
+		return "", nil
 	}
 	result, err := c.probe(ctx)
 	verdict, err := classifyDiscover(result, err)
 	if err != nil {
-		return err
+		return "", err
 	}
 	c.eraKnown = true
 	if verdict.era == EraModern {
@@ -71,11 +75,14 @@ func (c *HTTPConnection) probeOnce(ctx context.Context) error {
 		//nolint:contextcheck // Listener lifetime belongs to the connection, not the probe request.
 		c.startListener()
 	}
-	return nil
+	if verdict.era == EraModern {
+		return verdict.version, nil
+	}
+	return "", nil
 }
 
 func (c *HTTPConnection) probe(ctx context.Context) (json.RawMessage, error) {
-	params, err := c.prepareModernParams(nil)
+	params, err := c.prepareModernParams(nil, ModernVersions[0])
 	if err != nil {
 		return nil, err
 	}

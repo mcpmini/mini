@@ -61,10 +61,10 @@ func (c *HTTPConnection) isModern() bool {
 
 func (c *HTTPConnection) callModern(
 	ctx context.Context,
-	method string,
+	protocolVersion, method string,
 	params json.RawMessage,
 ) (json.RawMessage, error) {
-	prepared, err := c.prepareModernParams(params)
+	prepared, err := c.prepareModernParams(params, protocolVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -73,14 +73,14 @@ func (c *HTTPConnection) callModern(
 			return nil, err
 		}
 	}
-	result, err := c.rpc(ctx, method, prepared)
+	result, err := c.rpcAs(ctx, protocolVersion, method, prepared)
 	if method != "tools/call" || !isHeaderMismatch(err) {
 		return result, c.modernError(err)
 	}
 	if _, err = c.ListTools(ctx); err != nil {
 		return nil, err
 	}
-	result, err = c.rpc(ctx, method, prepared)
+	result, err = c.rpcAs(ctx, protocolVersion, method, prepared)
 	return result, c.modernError(err)
 }
 
@@ -128,7 +128,11 @@ func (c *HTTPConnection) resetModernEra() {
 	c.initMu.Unlock()
 }
 
-func (c *HTTPConnection) buildModernHTTPRequest(ctx context.Context, req Request) (*http.Request, string, error) {
+func (c *HTTPConnection) buildModernHTTPRequest(
+	ctx context.Context,
+	req Request,
+	protocolVersion string,
+) (*http.Request, string, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, "", err
@@ -141,7 +145,7 @@ func (c *HTTPConnection) buildModernHTTPRequest(ctx context.Context, req Request
 	if err != nil {
 		return nil, "", err
 	}
-	httpReq.Header.Set("MCP-Protocol-Version", c.currentModernVersion())
+	httpReq.Header.Set("MCP-Protocol-Version", protocolVersion)
 	httpReq.Header.Set("Mcp-Method", req.Method)
 	if req.Method == "tools/call" {
 		c.addToolCallHeaders(httpReq, req.Params)
