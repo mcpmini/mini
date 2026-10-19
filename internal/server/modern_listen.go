@@ -30,7 +30,7 @@ func (s *Server) startListen(ctx context.Context, p handleScannedLineParams, lin
 		s.rejectListenVersion(p, req.ID, version)
 		return
 	}
-	acknowledged := req.Params.Notifications
+	acknowledged := transport.ListenNotifications{ToolsListChanged: req.Params.Notifications.ToolsListChanged}
 	p.writeOut(transport.NewSubscriptionAck(req.ID, acknowledged))
 	s.waitOnListen(ctx, p, listenSubscription{id: req.ID, notifications: acknowledged})
 }

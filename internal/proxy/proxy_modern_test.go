@@ -134,8 +134,8 @@ func TestRun_modernCompactModeUsesHandshakeToolMode(t *testing.T) {
 }
 
 func TestProxySession_modernListenAcknowledgesAndCancelsLocally(t *testing.T) {
-	session, out := newModernReadyProxySession(t, transport.ToolModeProxy)
-	handled, err := handleLocal(t, session, listenLine(5))
+	session, out := newReadyProxySession(t, transport.ToolModeProxy)
+	handled, err := session.handleModernInput(listenLine(5))
 	if err != nil || !handled {
 		t.Fatalf("listen handled=%t error=%v", handled, err)
 	}
@@ -147,7 +147,7 @@ func TestProxySession_modernListenAcknowledgesAndCancelsLocally(t *testing.T) {
 	if got := proxyListenCount(session); got != 1 {
 		t.Fatalf("registered listens = %d, want 1", got)
 	}
-	handled, err = handleLocal(t, session, cancelLine(t, 5))
+	handled, err = session.handleModernInput(cancelLine(t, 5))
 	if err != nil || !handled || proxyListenCount(session) != 0 || strings.Count(out.String(), "\n") != 1 {
 		t.Fatalf(
 			"cancel handled=%t error=%v listens=%d output=%q",
@@ -160,7 +160,7 @@ func TestProxySession_modernListenAcknowledgesAndCancelsLocally(t *testing.T) {
 	if strings.Count(out.String(), "\n") != 1 {
 		t.Fatalf("notification arrived after cancel: %q", out.String())
 	}
-	handled, err = handleLocal(t, session, cancelLine(t, 6))
+	handled, err = session.handleModernInput(cancelLine(t, 6))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,8 +170,8 @@ func TestProxySession_modernListenAcknowledgesAndCancelsLocally(t *testing.T) {
 }
 
 func TestProxySession_modernListenCompactAcknowledgesEmptyFilter(t *testing.T) {
-	session, out := newModernReadyProxySession(t, transport.ToolModeCompact)
-	if handled, err := handleLocal(t, session, listenLine("listen")); err != nil || !handled {
+	session, out := newReadyProxySession(t, transport.ToolModeCompact)
+	if handled, err := session.handleModernInput(listenLine("listen")); err != nil || !handled {
 		t.Fatalf("listen handled=%t error=%v", handled, err)
 	}
 	if ack := decodeLine[transport.SubscriptionAck](t, out.Bytes()); ack.Params.Notifications.ToolsListChanged {
@@ -183,13 +183,13 @@ func TestProxySession_modernListenCompactAcknowledgesEmptyFilter(t *testing.T) {
 }
 
 func TestProxySession_modernListenWithMalformedParamsIsRejectedLocally(t *testing.T) {
-	session, out := newModernReadyProxySession(t, transport.ToolModeProxy)
+	session, out := newReadyProxySession(t, transport.ToolModeProxy)
 	listen := transporttest.ModernRequest(
 		7,
 		transport.MethodSubscriptionsListen,
 		map[string]any{"notifications": "all"},
 	)
-	if handled, err := handleLocal(t, session, listen); err != nil || !handled {
+	if handled, err := session.handleModernInput(listen); err != nil || !handled {
 		t.Fatalf("listen handled=%t error=%v", handled, err)
 	}
 	response := decodeLine[transport.Response](t, out.Bytes())
@@ -257,11 +257,10 @@ func newTestProxySession(t *testing.T, toolMode transport.ToolMode) (*proxySessi
 	return session, &out
 }
 
-// newModernReadyProxySession skips the handshake a first modern request would forward to the daemon.
-func newModernReadyProxySession(t *testing.T, toolMode transport.ToolMode) (*proxySession, *bytes.Buffer) {
+// newReadyProxySession skips the handshake a first modern request would forward to the daemon.
+func newReadyProxySession(t *testing.T, toolMode transport.ToolMode) (*proxySession, *bytes.Buffer) {
 	t.Helper()
 	session, out := newTestProxySession(t, toolMode)
-	session.subs.modern.Store(true)
 	session.clientReady.Store(true)
 	return session, out
 }
