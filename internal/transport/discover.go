@@ -53,7 +53,7 @@ func (c *HTTPConnection) probeOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	c.era, c.eraKnown = verdict.era, true
+	c.eraKnown = true
 	if verdict.era == EraModern {
 		c.modernVersion.Store(&verdict.version)
 		slog.Info("upstream supports MCP 2026-07-28", "server", c.serverName)

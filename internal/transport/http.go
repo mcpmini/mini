@@ -36,7 +36,6 @@ type HTTPConnection struct {
 	protocolVersion         string
 	mu                      sync.Mutex
 	initMu                  sync.Mutex
-	era                     Era
 	eraKnown                bool
 	// Atomic because request building reads it while a probe may hold initMu.
 	modernVersion     atomic.Pointer[string]

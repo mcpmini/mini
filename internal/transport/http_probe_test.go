@@ -68,8 +68,8 @@ func TestHTTPConnection_ProbeWithoutAnAnswerFallsBackToLegacy(t *testing.T) {
 				t.Fatalf("Call: %v", err)
 			}
 			want := []string{"server/discover", "initialize", NotificationInitialized, "ping"}
-			if !slices.Equal(methods, want) || conn.era != EraLegacy {
-				t.Fatalf("methods = %v, era = %v; want %v and legacy", methods, conn.era, want)
+			if !slices.Equal(methods, want) || conn.isModern() {
+				t.Fatalf("methods = %v, modern = %v; want %v and legacy", methods, conn.isModern(), want)
 			}
 		})
 	}
@@ -99,8 +99,8 @@ func TestHTTPConnection_ProbeModernUsesModernRequests(t *testing.T) {
 	if !slices.Equal(methods, []string{"server/discover", "ping"}) {
 		t.Fatalf("methods = %v", methods)
 	}
-	if conn.era != EraModern || conn.currentModernVersion() != ModernVersions[0] || !conn.isModern() {
-		t.Errorf("stored era/version = %v/%q", conn.era, conn.currentModernVersion())
+	if !conn.isModern() || conn.currentModernVersion() != ModernVersions[0] {
+		t.Errorf("modern = %v, version = %q", conn.isModern(), conn.currentModernVersion())
 	}
 }
 
