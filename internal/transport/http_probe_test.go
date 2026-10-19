@@ -252,8 +252,10 @@ func decodeRequest(t *testing.T, r *http.Request) Request {
 
 func assertDiscoverRequest(t *testing.T, r *http.Request, req Request) {
 	t.Helper()
+	// Runs on the server's handler goroutine, where Fatal would leave the client waiting for a reply.
 	if req.Method != "server/discover" || req.ID == nil {
-		t.Fatalf("request = %+v, want discover with an id", req)
+		t.Errorf("request = %+v, want discover with an id", req)
+		return
 	}
 	if r.Header.Get("MCP-Protocol-Version") != ModernVersions[0] || r.Header.Get("Mcp-Method") != "server/discover" {
 		t.Errorf("probe headers = %q/%q", r.Header.Get("MCP-Protocol-Version"), r.Header.Get("Mcp-Method"))
@@ -263,7 +265,8 @@ func assertDiscoverRequest(t *testing.T, r *http.Request, req Request) {
 	}
 	var params discoverRequestParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		t.Fatalf("decode probe params: %v", err)
+		t.Errorf("decode probe params: %v", err)
+		return
 	}
 	if params.Meta.ProtocolVersion != ModernVersions[0] ||
 		params.Meta.ClientInfo.Name != "mini" || params.Meta.ClientInfo.Version == "" ||
