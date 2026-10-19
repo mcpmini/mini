@@ -43,7 +43,8 @@ func TestHTTPModernListener_acknowledgesChangesAndReconnects(t *testing.T) {
 	advanceListenerTimer(t, fakeClock, time.Second)
 	waitForListenerSignal(t, acknowledgements, "first acknowledgement was not sent")
 	waitForListenerSignal(t, acknowledgements, "re-listen acknowledgement was not sent")
-	waitForListenerSignal(t, notifications, "tool-change handler did not run")
+	waitForListenerSignal(t, notifications, "first acknowledgement did not refresh tools")
+	waitForListenerSignal(t, notifications, "re-listen acknowledgement did not refresh tools")
 	if got := listens.Load(); got != 2 {
 		t.Errorf("listen requests = %d, want 2", got)
 	}
@@ -71,12 +72,37 @@ func TestHTTPModernListener_dispatchesTaggedToolChange(t *testing.T) {
 	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
 		t.Fatalf("Call: %v", err)
 	}
+	waitForListenerSignal(t, notifications, "first acknowledgement did not refresh tools")
 	waitForListenerSignal(t, notifications, "tool-change notification was not dispatched")
-	select {
-	case <-notifications:
-		t.Error("first acknowledgement triggered an extra refresh")
-	default:
+}
+
+func TestHTTPModernListener_firstAckAfterFailedListenRefreshes(t *testing.T) {
+	fakeClock := clock.NewFake()
+	var listens atomic.Int32
+	acknowledgements := make(chan struct{}, 1)
+	notifications := make(chan struct{}, 2)
+	server := modernListenerServer(t, true, func(w http.ResponseWriter, r *http.Request, req Request) {
+		if listens.Add(1) == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		writeAck(t, w, req.ID)
+		acknowledgements <- struct{}{}
+		<-r.Context().Done()
+	})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: server.URL, Clock: fakeClock})
+	conn.SetNotificationHandler(func(n Notification) {
+		if n.Method == NotificationToolsChanged {
+			notifications <- struct{}{}
+		}
+	})
+	t.Cleanup(func() { conn.Close() })
+	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
+		t.Fatalf("Call: %v", err)
 	}
+	advanceListenerTimer(t, fakeClock, time.Second)
+	waitForListenerSignal(t, acknowledgements, "listen after the failed attempt was not acknowledged")
+	waitForListenerSignal(t, notifications, "first acknowledgement after a failed listen did not refresh tools")
 }
 
 func TestHTTPModernListener_requestCarriesProtocolAndFilter(t *testing.T) {

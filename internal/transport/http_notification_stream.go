@@ -114,10 +114,10 @@ func (c *HTTPConnection) handleSubscriptionNotification(
 		return errUnsupportedListenFilter
 	}
 	slog.Debug("upstream acknowledged notification subscription", "url", c.url)
-	if state.acknowledgedBefore {
+	if state.refreshOnAck {
 		c.toolsChanged.NotifyToolsChanged()
 	}
-	state.acknowledgedBefore = true
+	state.refreshOnAck = false
 	return nil
 }
 

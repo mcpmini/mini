@@ -190,15 +190,17 @@ func (c *HTTPConnection) dispatchNotification(notification Notification) {
 const maxListenerBackoff = 60 * time.Second
 
 type listenerState struct {
-	backoff            time.Duration
-	rejectedAuth       string
-	acknowledgedBefore bool
+	backoff      time.Duration
+	rejectedAuth string
+	// The tool list mini holds may predate the subscription, so any acknowledgement that
+	// follows a gap in coverage (startup or an ended attempt) re-fetches it.
+	refreshOnAck bool
 }
 
 func (c *HTTPConnection) listenForNotifications(ctx context.Context, done chan struct{}) {
 	defer c.listenerWG.Done()
 	defer close(done)
-	state := listenerState{backoff: time.Second}
+	state := listenerState{backoff: time.Second, refreshOnAck: true}
 	for ctx.Err() == nil {
 		if state.rejectedAuth != "" && c.currentAuth(ctx) == state.rejectedAuth {
 			if !c.sleepCtx(ctx, maxListenerBackoff) {
@@ -228,6 +230,7 @@ func (c *HTTPConnection) runListenerCycle(ctx context.Context, state *listenerSt
 		slog.Warn("upstream notification stream interrupted", "url", c.url, "err", err)
 	}
 	state.rejectedAuth = c.rejectedAuthAfter(ctx, err)
+	state.refreshOnAck = true
 	delay, next := listenerDelay(status, err, state.backoff)
 	state.backoff = next
 	return !c.sleepCtx(ctx, delay)
