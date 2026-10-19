@@ -188,11 +188,13 @@ func modernTool(name, schema string) ToolDefinition {
 }
 
 // modernUpstream is a fake 2026-07-28 server: it answers server/discover itself, tools/list when
-// Tools is set, and hands every other request to Handle (or answers {"ok":true}).
+// Tools is set, and hands every other request to Handle (or answers {"ok":true}). Like a real
+// modern server it has no GET stream, so a GET gets 405 and is counted in GetStreams.
 type modernUpstream struct {
 	Tools       []ToolDefinition
 	ListChanged bool
 	Probes      *atomic.Int32
+	GetStreams  *atomic.Int32
 	Handle      func(w http.ResponseWriter, r *http.Request, req Request)
 }
 
@@ -204,6 +206,13 @@ func newModernServer(t *testing.T, u modernUpstream) *httptest.Server {
 func modernHandler(t *testing.T, u modernUpstream) http.HandlerFunc {
 	t.Helper()
 	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			if u.GetStreams != nil {
+				u.GetStreams.Add(1)
+			}
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
 		req := decodeRequest(t, r)
 		switch {
 		case req.Method == "server/discover":

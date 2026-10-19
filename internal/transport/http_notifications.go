@@ -110,10 +110,22 @@ func (c *HTTPConnection) restartListener(listen bool) {
 	if !listen {
 		return
 	}
-	ctx, cancel := context.WithCancel(c.listenerCtx)
+	c.startListener()
+}
+
+func (c *HTTPConnection) startListener() {
+	if c.listener != nil {
+		return
+	}
+	c.listenerMu.Lock()
+	defer c.listenerMu.Unlock()
+	if c.closed {
+		return
+	}
+	listenerCtx, cancel := context.WithCancel(c.listenerCtx)
 	c.listener = &sessionListener{cancel: cancel, done: make(chan struct{})}
 	c.listenerWG.Add(1)
-	go c.listenForNotifications(ctx, c.listener.done)
+	go c.listenForNotifications(listenerCtx, c.listener.done, c.isModern())
 }
 
 func (c *HTTPConnection) sendInitialize(ctx context.Context) (InitializeResult, error) {
@@ -183,14 +195,16 @@ func (c *HTTPConnection) dispatchNotification(notification Notification) {
 const maxListenerBackoff = 60 * time.Second
 
 type listenerState struct {
+	// Fixed for the listener's life: a legacy upstream gets a new listener from its own handshake.
+	modern       bool
 	backoff      time.Duration
 	rejectedAuth string
 }
 
-func (c *HTTPConnection) listenForNotifications(ctx context.Context, done chan struct{}) {
+func (c *HTTPConnection) listenForNotifications(ctx context.Context, done chan struct{}, modern bool) {
 	defer c.listenerWG.Done()
 	defer close(done)
-	state := listenerState{backoff: time.Second}
+	state := listenerState{modern: modern, backoff: time.Second}
 	for ctx.Err() == nil {
 		if state.rejectedAuth != "" && c.currentAuth(ctx) == state.rejectedAuth {
 			if !c.sleepCtx(ctx, maxListenerBackoff) {
@@ -205,7 +219,18 @@ func (c *HTTPConnection) listenForNotifications(ctx context.Context, done chan s
 }
 
 func (c *HTTPConnection) runListenerCycle(ctx context.Context, state *listenerState) (stop bool) {
-	status, err := c.consumeNotificationStream(ctx)
+	if state.modern && !c.isModern() {
+		// The era was reset; listen again once the next call's probe settles it.
+		return !c.sleepCtx(ctx, time.Second)
+	}
+	status, err := c.consumeNotificationStream(ctx, state)
+	if errors.Is(err, errUnsupportedListenFilter) {
+		slog.Debug("upstream did not acknowledge tool-change subscription", "url", c.url)
+		return true
+	}
+	if errors.Is(err, errListenComplete) {
+		err = nil
+	}
 	if shouldStopListener(ctx, c.url, status) {
 		return true
 	}
@@ -244,7 +269,7 @@ func (c *HTTPConnection) rejectedAuthAfter(ctx context.Context, err error) strin
 }
 
 func listenerDelay(status int, err error, backoff time.Duration) (delay, next time.Duration) {
-	if status == http.StatusOK {
+	if status == http.StatusOK && !errors.Is(err, errListenRejected) {
 		return time.Second, time.Second
 	}
 	if errors.Is(err, ErrReauthRequired) {
@@ -253,45 +278,10 @@ func listenerDelay(status int, err error, backoff time.Duration) (delay, next ti
 	return backoff, min(backoff*2, maxListenerBackoff)
 }
 
-func (c *HTTPConnection) consumeNotificationStream(ctx context.Context) (int, error) {
-	resp, err := c.sendOneWithAuthRetry(ctx, c.newStreamClient(), c.buildStreamRequest)
-	if err != nil {
-		return 0, err
-	}
-	//nolint:errcheck // status and scan results determine handling; Close releases the response stream.
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return resp.StatusCode, fmt.Errorf("notification stream status %d", resp.StatusCode)
-	}
-	return resp.StatusCode, c.scanNotificationStream(resp.Body)
-}
-
-func (c *HTTPConnection) buildStreamRequest(ctx context.Context) (*http.Request, string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url, nil)
-	if err != nil {
-		return nil, "", err
-	}
-	sentAuth, err := c.setRequestHeaders(ctx, req)
-	if err != nil {
-		return nil, "", err
-	}
-	c.attachSessionID(req)
-	req.Header.Del("Content-Type")
-	req.Header.Set("Accept", "text/event-stream")
-	return req, sentAuth, nil
-}
-
-func (c *HTTPConnection) scanNotificationStream(body io.Reader) error {
-	return ScanSSEMessages(body, func(message json.RawMessage) error {
-		var notification Notification
-		if json.Unmarshal(message, &notification) == nil && notification.Method != "" {
-			c.dispatchNotification(notification)
-		}
-		return nil
-	})
-}
-
 func (c *HTTPConnection) Close() error {
+	c.listenerMu.Lock()
+	c.closed = true
+	c.listenerMu.Unlock()
 	c.listenerCancel()
 	c.listenerWG.Wait()
 	return nil
