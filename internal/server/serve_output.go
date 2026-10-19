@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"sync"
+
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 type serializedWriter struct {
@@ -50,25 +52,30 @@ func (w *serializedWriter) Err() error {
 	return w.err
 }
 
-func startNotifyForwarder(writeOut func(any), ch chan json.RawMessage) func() {
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for n := range ch {
-			writeOut(n)
-		}
-	}()
-	return wg.Wait
-}
-
 func startSessionNotifyForwarder(session *Session, writeOut func(any)) func() {
 	ch, ok := session.openToolsChangedStream()
 	if !ok {
 		return func() {}
 	}
-	wait := startNotifyForwarder(writeOut, ch)
-	return func() { session.closeToolsChangedStream(ch); wait() }
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for notification := range ch {
+			session.forwardToolsChanged(notification, writeOut)
+		}
+	}()
+	return func() { session.closeToolsChangedStream(ch); wg.Wait() }
+}
+
+func (s *Session) forwardToolsChanged(raw json.RawMessage, writeOut func(any)) {
+	if !s.modern.Load() {
+		writeOut(raw)
+		return
+	}
+	for _, id := range s.listenIDs() {
+		writeOut(transport.NewToolsListChangedNotification(id))
+	}
 }
 
 func writeJSON(w io.Writer, v any) error {

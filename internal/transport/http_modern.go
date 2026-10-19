@@ -11,12 +11,6 @@ import (
 	"strings"
 )
 
-const (
-	protocolVersionMeta = "io.modelcontextprotocol/protocolVersion"
-	clientInfoMeta      = "io.modelcontextprotocol/clientInfo"
-	clientCapsMeta      = "io.modelcontextprotocol/clientCapabilities"
-)
-
 type headerParameter struct {
 	name string
 	path []string

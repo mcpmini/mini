@@ -33,18 +33,17 @@ func (c *HTTPConnection) prepareModernParams(params json.RawMessage) (json.RawMe
 }
 
 func (c *HTTPConnection) addDefaultMeta(meta map[string]json.RawMessage) error {
-	clientInfo, err := json.Marshal(ClientInfo{Name: "mini", Version: version.Version})
+	encoded, err := json.Marshal(RequestMeta{
+		ProtocolVersion:    c.currentModernVersion(),
+		ClientInfo:         &ClientInfo{Name: "mini", Version: version.Version},
+		ClientCapabilities: &ClientCapabilities{},
+	})
 	if err != nil {
-		return fmt.Errorf("encode modern client info: %w", err)
+		return fmt.Errorf("encode modern request metadata: %w", err)
 	}
-	protocolVersion, err := json.Marshal(c.currentModernVersion())
-	if err != nil {
-		return fmt.Errorf("encode modern protocol version: %w", err)
-	}
-	defaults := map[string]json.RawMessage{
-		protocolVersionMeta: protocolVersion,
-		clientInfoMeta:      clientInfo,
-		clientCapsMeta:      json.RawMessage(`{}`),
+	var defaults map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &defaults); err != nil {
+		return fmt.Errorf("decode modern request metadata: %w", err)
 	}
 	for key, value := range defaults {
 		if _, ok := meta[key]; !ok {

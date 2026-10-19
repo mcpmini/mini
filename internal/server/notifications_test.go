@@ -27,8 +27,12 @@ func TestNotification_toolsChangedAfterAddServer(t *testing.T) {
 		}),
 	)
 
-	if !hasNotification(msgs, "notifications/tools/list_changed") {
-		t.Errorf("expected notifications/tools/list_changed after add_server; got: %v", msgs)
+	notification := findMethod(msgs, "notifications/tools/list_changed")
+	if notification == nil {
+		t.Fatalf("expected notifications/tools/list_changed after add_server; got: %v", msgs)
+	}
+	if params, ok := notification["params"].(map[string]any); ok && params["_meta"] != nil {
+		t.Errorf("legacy tools changed notification must be untagged, got: %v", notification)
 	}
 }
 
@@ -56,4 +60,13 @@ func TestNotification_noNotificationForOtherConfigureActions(t *testing.T) {
 			t.Errorf("unexpected tools/list_changed for configure status: %v", m)
 		}
 	}
+}
+
+func findMethod(messages []map[string]any, method string) map[string]any {
+	for _, message := range messages {
+		if message["method"] == method {
+			return message
+		}
+	}
+	return nil
 }

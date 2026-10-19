@@ -21,6 +21,7 @@ import (
 func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 	sessionID := transport.NewSessionID()
 	session := s.sessions.getOrCreate(sessionID)
+	session.acceptsModern.Store(true)
 	defer s.sessions.delete(sessionID)
 	return s.serveLoop(ctx, in, out, session)
 }
@@ -53,38 +54,6 @@ func (s *Server) scanServeInput(ctx context.Context, in io.Reader, session *Sess
 	session.markAborted()
 	wg.Wait()
 	return scanner.Err()
-}
-
-type handleScannedLineParams struct {
-	ctx      context.Context
-	rawLine  []byte
-	session  *Session
-	writeOut func(any)
-	wg       *sync.WaitGroup
-}
-
-func (s *Server) handleScannedLine(p handleScannedLineParams) {
-	if len(p.rawLine) == 0 {
-		return
-	}
-	line := bytes.Clone(p.rawLine)
-	// Initialize is processed synchronously (blocking the scanner loop) so that
-	// session.initDone is closed before any subsequent request goroutine starts.
-	// This eliminates the race between markInitialized and goroutines that wait
-	// on it. The spec also says the initialize request MUST NOT be cancelled, so
-	// skipping in-flight registration is correct.
-	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/utilities/cancellation.mdx#L32
-	if method := peekMethod(line); method == "initialize" || method == transport.NotificationInitialized {
-		if resp, send := s.handleLine(p.ctx, line, p.session); send {
-			p.writeOut(resp)
-		}
-		return
-	}
-	p.wg.Add(1)
-	go func() {
-		defer p.wg.Done()
-		s.dispatchWithCancel(p.ctx, line, p.session, p.writeOut)
-	}()
 }
 
 func (s *Server) handleLineCancellable(ctx context.Context, line []byte, session *Session) (transport.Response, bool) {
@@ -156,6 +125,9 @@ func (s *Server) handleRequest(
 	req transport.Request,
 	session *Session,
 ) (transport.Response, bool) {
+	if unsupported := modernVersionError(req, session); unsupported != nil {
+		return *unsupported, true
+	}
 	if !s.awaitInitialization(ctx, req, session) {
 		return errorResponse(req.ID, transport.CodeInvalidRequest, transport.NotInitializedMessage), true
 	}
@@ -163,6 +135,9 @@ func (s *Server) handleRequest(
 	result, err := s.dispatch(ctx, req, session)
 	if req.Method == "initialize" && err == nil {
 		session.markInitialized()
+	}
+	if err == nil && session.modern.Load() {
+		result, err = addModernResultFields(req.Method, result)
 	}
 	return buildDispatchResponse(req.ID, result, err)
 }
@@ -207,6 +182,11 @@ func dispatchErrorResponse(id any, err error) transport.Response {
 
 func (s *Server) dispatch(ctx context.Context, req transport.Request, session *Session) (any, error) {
 	switch req.Method {
+	case "server/discover":
+		if !session.acceptsModern.Load() || !session.modern.Load() {
+			return nil, fmt.Errorf("%w: %s", errMethodNotFound, req.Method)
+		}
+		return s.handleDiscover(session), nil
 	case "initialize":
 		return s.handleInitialize(req.Params, session)
 	case "tools/list":
@@ -237,6 +217,7 @@ func handleCancelled(params json.RawMessage, session *Session) {
 		return
 	}
 	session.cancelInFlight(p.RequestID)
+	session.removeListen(p.RequestID)
 }
 
 const compactInitInstructions = "mini is an MCP proxy. Use `list` to discover tools across connected servers, `call` to invoke them, `perm_call` for tools requiring elevated permissions, and `configure` to manage servers and settings."
@@ -276,16 +257,19 @@ func (s *Server) handleInitialize(params json.RawMessage, session *Session) (any
 	//nolint:errcheck // malformed params fall back to the default tool mode and the newest legacy version.
 	json.Unmarshal(params, &p)
 	session.setToolModeOnce(s.resolveToolMode(p.ToolMode))
-	instructions := compactInitInstructions
-	if session.toolMode() == transport.ToolModeProxy {
-		instructions = proxyInitInstructions
-	}
 	return transport.InitializeResult{
 		ProtocolVersion: negotiatedLegacyVersion(p.ProtocolVersion),
 		Capabilities:    map[string]any{"tools": map[string]any{"listChanged": true}},
 		ServerInfo:      transport.ServerInfo{Name: "mini", Version: version.Version},
-		Instructions:    instructions,
+		Instructions:    s.initInstructions(session),
 	}, nil
+}
+
+func (s *Server) initInstructions(session *Session) string {
+	if session.toolMode() == transport.ToolModeProxy {
+		return proxyInitInstructions
+	}
+	return compactInitInstructions
 }
 
 func (s *Server) handleToolsList(ctx context.Context, session *Session) (any, error) {
@@ -423,4 +407,36 @@ func mustJSON(v any) string {
 		return fmt.Sprintf("%v", v)
 	}
 	return string(b)
+}
+
+type handleScannedLineParams struct {
+	ctx      context.Context
+	rawLine  []byte
+	session  *Session
+	writeOut func(any)
+	wg       *sync.WaitGroup
+}
+
+func (s *Server) handleScannedLine(p handleScannedLineParams) {
+	if len(p.rawLine) == 0 {
+		return
+	}
+	line := bytes.Clone(p.rawLine)
+	if s.handleModernLine(p, line) {
+		return
+	}
+	method := peekMethod(line)
+	// Lifecycle and cancellation transitions must finish before later requests start.
+	if method == "initialize" || method == transport.NotificationInitialized ||
+		method == transport.NotificationCancelled {
+		if resp, send := s.handleLine(p.ctx, line, p.session); send {
+			p.writeOut(resp)
+		}
+		return
+	}
+	p.wg.Add(1)
+	go func() {
+		defer p.wg.Done()
+		s.dispatchWithCancel(p.ctx, line, p.session, p.writeOut)
+	}()
 }
