@@ -252,26 +252,20 @@ func TestHTTPModernListener_noListenForUnsupportedVersionError(t *testing.T) {
 
 func TestHTTPModernListener_reprobeKeepsTheRunningListener(t *testing.T) {
 	var pings atomic.Int32
-	server := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
-		req := decodeRequest(t, r)
-		switch req.Method {
-		case "server/discover":
-			writeRPCResult(t, w, req.ID, DiscoverResult{
-				SupportedVersions: ModernVersions,
-				Capabilities:      map[string]any{"tools": map[string]any{"listChanged": true}},
-			})
-		case modernListenMethod:
-			w.Header().Set("Content-Type", "text/event-stream")
-			writeAck(t, w, req.ID)
-			<-r.Context().Done()
-		case "ping":
-			if pings.Add(1) == 1 {
+	listen := listenOnly(t, func(w http.ResponseWriter, r *http.Request, req Request) {
+		writeAck(t, w, req.ID)
+		<-r.Context().Done()
+	})
+	server := newModernServer(
+		t,
+		modernUpstream{ListChanged: true, Handle: func(w http.ResponseWriter, r *http.Request, req Request) {
+			if req.Method == "ping" && pings.Add(1) == 1 {
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
-			writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
-		}
-	})
+			listen(w, r, req)
+		}},
+	)
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: server.URL})
 	t.Cleanup(func() { conn.Close() })
 	if _, err := conn.Call(t.Context(), "ping", nil); !IsConnectionError(err) {
@@ -291,35 +285,25 @@ func TestHTTPModernListener_eraResetWaitsForReprobeAndListensAgain(t *testing.T)
 	var pings, listens, gets atomic.Int32
 	releaseFirst := make(chan struct{})
 	relisten := make(chan struct{}, 1)
-	server := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			gets.Add(1)
-			w.WriteHeader(http.StatusMethodNotAllowed)
+	listen := listenOnly(t, func(w http.ResponseWriter, r *http.Request, req Request) {
+		writeAck(t, w, req.ID)
+		if listens.Add(1) == 1 {
+			<-releaseFirst
 			return
 		}
-		req := decodeRequest(t, r)
-		switch req.Method {
-		case "server/discover":
-			writeRPCResult(t, w, req.ID, DiscoverResult{
-				SupportedVersions: ModernVersions,
-				Capabilities:      map[string]any{"tools": map[string]any{"listChanged": true}},
-			})
-		case modernListenMethod:
-			w.Header().Set("Content-Type", "text/event-stream")
-			writeAck(t, w, req.ID)
-			if listens.Add(1) == 1 {
-				<-releaseFirst
-				return
-			}
-			relisten <- struct{}{}
-			<-r.Context().Done()
-		case "ping":
-			if pings.Add(1) == 2 {
+		relisten <- struct{}{}
+		<-r.Context().Done()
+	})
+	server := newModernServer(t, modernUpstream{
+		ListChanged: true,
+		GetStreams:  &gets,
+		Handle: func(w http.ResponseWriter, r *http.Request, req Request) {
+			if req.Method == "ping" && pings.Add(1) == 2 {
 				writeHTTPRPCError(t, w, httpRPCErrorParams{id: req.ID, code: CodeUnsupportedProtocolVersion})
 				return
 			}
-			writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
-		}
+			listen(w, r, req)
+		},
 	})
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: server.URL, Clock: fakeClock})
 	t.Cleanup(func() { conn.Close() })

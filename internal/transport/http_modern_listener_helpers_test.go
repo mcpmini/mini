@@ -24,30 +24,24 @@ func modernListenerServer(
 	listen func(http.ResponseWriter, *http.Request, Request),
 ) *httptest.Server {
 	t.Helper()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		req := decodeRequest(t, r)
-		switch req.Method {
-		case "server/discover":
-			if !advertise {
-				writeRPCResult(t, w, req.ID, map[string]any{"supportedVersions": ModernVersions})
-				return
-			}
-			writeRPCResult(t, w, req.ID, DiscoverResult{
-				SupportedVersions: ModernVersions,
-				Capabilities:      map[string]any{"tools": map[string]any{"listChanged": true}},
-			})
-		case "ping":
+	return newModernServer(t, modernUpstream{ListChanged: advertise, Handle: listenOnly(t, listen)})
+}
+
+// listenOnly hands subscriptions/listen requests to listen as an SSE stream and answers the rest.
+func listenOnly(
+	t *testing.T,
+	listen func(http.ResponseWriter, *http.Request, Request),
+) func(http.ResponseWriter, *http.Request, Request) {
+	t.Helper()
+	return func(w http.ResponseWriter, r *http.Request, req Request) {
+		if req.Method != modernListenMethod {
 			writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
-		case modernListenMethod:
-			assertModernListenHeaders(t, r)
-			w.Header().Set("Content-Type", "text/event-stream")
-			listen(w, r, req)
-		default:
-			t.Errorf("unexpected method %q", req.Method)
+			return
 		}
-	}))
-	t.Cleanup(server.Close)
-	return server
+		assertModernListenHeaders(t, r)
+		w.Header().Set("Content-Type", "text/event-stream")
+		listen(w, r, req)
+	}
 }
 
 func assertModernListenHeaders(t *testing.T, r *http.Request) {
