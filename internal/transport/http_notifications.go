@@ -96,6 +96,15 @@ type sessionListener struct {
 	done   chan struct{}
 }
 
+func (l *sessionListener) stopped() bool {
+	select {
+	case <-l.done:
+		return true
+	default:
+		return false
+	}
+}
+
 func (c *HTTPConnection) restartListener(listen bool) {
 	// Each session negotiates its own capabilities, including whether it sends list-changed
 	// notifications, so each session gets its own listener:
@@ -114,13 +123,18 @@ func (c *HTTPConnection) restartListener(listen bool) {
 }
 
 func (c *HTTPConnection) startListener() {
-	if c.listener != nil {
+	// A listener that stopped for good (say the upstream refused subscriptions/listen) is replaced:
+	// discovery advertising tool changes again is the upstream saying it can now send them.
+	if c.listener != nil && !c.listener.stopped() {
 		return
 	}
 	c.listenerMu.Lock()
 	defer c.listenerMu.Unlock()
 	if c.closed {
 		return
+	}
+	if c.listener != nil {
+		c.listener.cancel()
 	}
 	listenerCtx, cancel := context.WithCancel(c.listenerCtx)
 	c.listener = &sessionListener{cancel: cancel, done: make(chan struct{})}
