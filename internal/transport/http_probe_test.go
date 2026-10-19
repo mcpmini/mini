@@ -48,7 +48,9 @@ func TestHTTPConnection_ProbeModernStillInitializes(t *testing.T) {
 		methods = append(methods, req.Method)
 		if req.Method == "server/discover" {
 			assertDiscoverRequest(t, r, req)
-			fmt.Fprint(w, string(fixture)) //nolint:errcheck
+			if _, err := fmt.Fprint(w, string(fixture)); err != nil {
+				t.Errorf("write discover fixture: %v", err)
+			}
 			return
 		}
 		serveProbeCall(t, w, req)
@@ -72,7 +74,9 @@ func TestHTTPConnection_failedProbeRetriesNextCall(t *testing.T) {
 		req := decodeRequest(t, r)
 		if req.Method == "server/discover" && probes.Add(1) <= maxRetries {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			fmt.Fprint(w, "temporarily unavailable") //nolint:errcheck
+			if _, err := fmt.Fprint(w, "temporarily unavailable"); err != nil {
+				t.Errorf("write unavailable response: %v", err)
+			}
 			return
 		}
 		if req.Method == "server/discover" {

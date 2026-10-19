@@ -78,7 +78,6 @@ func mustListTools(t *testing.T, conn *HTTPConnection) []ToolDefinition {
 
 func mustLegacyHTTPConn(t *testing.T, cfg HTTPConnectionConfig) *HTTPConnection {
 	conn := mustHTTPConn(t, cfg)
-	// These tests assert fixed request IDs, which the discover probe would shift.
 	conn.eraKnown = true
 	return conn
 }
