@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -80,14 +81,9 @@ func TestModernRequestCarriesMetadataAndParameterHeaders(t *testing.T) {
 
 func TestModernRequestRefreshesAuthorizationAndReplays(t *testing.T) {
 	var callAuth []string
-	conn, provider := newAuthReplayConn(t, func(w http.ResponseWriter, r *http.Request) {
-		req := decodeRequest(t, r)
-		switch req.Method {
-		case "server/discover":
-			writeRPCResult(t, w, req.ID, DiscoverResult{SupportedVersions: ModernVersions})
-		case "tools/list":
-			writeRPCResult(t, w, req.ID, ToolsListResult{Tools: []ToolDefinition{modernTool("x", `{}`)}})
-		case "tools/call":
+	conn, provider := newAuthReplayConn(t, modernHandler(t, modernUpstream{
+		Tools: []ToolDefinition{modernTool("x", `{}`)},
+		Handle: func(w http.ResponseWriter, r *http.Request, req Request) {
 			callAuth = append(callAuth, r.Header.Get("Authorization"))
 			assertModernHeader(t, r, "Mcp-Method", "tools/call")
 			if r.Header.Get("Authorization") == "Bearer old" {
@@ -95,8 +91,8 @@ func TestModernRequestRefreshesAuthorizationAndReplays(t *testing.T) {
 				return
 			}
 			writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
-		}
-	})
+		},
+	}))
 	if _, err := conn.Call(t.Context(), "tools/call", json.RawMessage(`{"name":"x","arguments":{}}`)); err != nil {
 		t.Fatal(err)
 	}
@@ -189,6 +185,44 @@ func TestResultTypeOf(t *testing.T) {
 
 func modernTool(name, schema string) ToolDefinition {
 	return ToolDefinition{Name: name, InputSchema: json.RawMessage(schema)}
+}
+
+// modernUpstream is a fake 2026-07-28 server: it answers server/discover itself, tools/list when
+// Tools is set, and hands every other request to Handle (or answers {"ok":true}).
+type modernUpstream struct {
+	Tools       []ToolDefinition
+	ListChanged bool
+	Probes      *atomic.Int32
+	Handle      func(w http.ResponseWriter, r *http.Request, req Request)
+}
+
+func newModernServer(t *testing.T, u modernUpstream) *httptest.Server {
+	t.Helper()
+	return newJSONRPCServer(t, modernHandler(t, u))
+}
+
+func modernHandler(t *testing.T, u modernUpstream) http.HandlerFunc {
+	t.Helper()
+	return func(w http.ResponseWriter, r *http.Request) {
+		req := decodeRequest(t, r)
+		switch {
+		case req.Method == "server/discover":
+			if u.Probes != nil {
+				u.Probes.Add(1)
+			}
+			result := DiscoverResult{SupportedVersions: ModernVersions, Capabilities: map[string]any{}}
+			if u.ListChanged {
+				result.Capabilities["tools"] = map[string]any{"listChanged": true}
+			}
+			writeRPCResult(t, w, req.ID, result)
+		case req.Method == "tools/list" && u.Tools != nil:
+			writeRPCResult(t, w, req.ID, ToolsListResult{Tools: u.Tools})
+		case u.Handle != nil:
+			u.Handle(w, r, req)
+		default:
+			writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
+		}
+	}
 }
 
 func assertModernHeader(t *testing.T, r *http.Request, name, want string) {

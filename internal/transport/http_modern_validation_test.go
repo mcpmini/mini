@@ -56,15 +56,11 @@ func TestModernToolHeaderValidationDropsOnlyInvalidDefinitions(t *testing.T) {
 
 func TestModernHeaderMismatchRelistsAndRetriesOnce(t *testing.T) {
 	var lists, calls atomic.Int32
-	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
-		req := decodeRequest(t, r)
+	srv := newModernServer(t, modernUpstream{Handle: func(w http.ResponseWriter, r *http.Request, req Request) {
 		switch req.Method {
-		case "server/discover":
-			writeRPCResult(t, w, req.ID, DiscoverResult{SupportedVersions: ModernVersions})
 		case "tools/list":
-			list := lists.Add(1)
 			name := "Old"
-			if list == 2 {
+			if lists.Add(1) == 2 {
 				name = "New"
 			}
 			tool := modernTool("x", `{"type":"object","properties":{"p":{"type":"string","x-mcp-header":"`+name+`"}}}`)
@@ -84,8 +80,8 @@ func TestModernHeaderMismatchRelistsAndRetriesOnce(t *testing.T) {
 			}
 			writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
 		}
-	})
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Clock: clock.NewFake()})
+	}})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 	_, err := conn.Call(t.Context(), "tools/call", json.RawMessage(`{"name":"x","arguments":{"p":"new"}}`))
 	if err != nil {
 		t.Fatal(err)
@@ -97,20 +93,14 @@ func TestModernHeaderMismatchRelistsAndRetriesOnce(t *testing.T) {
 
 func TestModernHeaderMismatchStopsAfterRetry(t *testing.T) {
 	var calls atomic.Int32
-	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
-		req := decodeRequest(t, r)
-		switch req.Method {
-		case "server/discover":
-			writeRPCResult(t, w, req.ID, DiscoverResult{SupportedVersions: ModernVersions})
-		case "tools/list":
-			tool := modernTool("x", `{"type":"object","properties":{}}`)
-			writeRPCResult(t, w, req.ID, ToolsListResult{Tools: []ToolDefinition{tool}})
-		case "tools/call":
+	srv := newModernServer(t, modernUpstream{
+		Tools: []ToolDefinition{modernTool("x", `{"type":"object","properties":{}}`)},
+		Handle: func(w http.ResponseWriter, _ *http.Request, req Request) {
 			calls.Add(1)
 			writeHeaderMismatch(t, w, req.ID)
-		}
+		},
 	})
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Clock: clock.NewFake()})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 	_, err := conn.Call(t.Context(), "tools/call", json.RawMessage(`{"name":"x","arguments":{}}`))
 	var rpcErr *RPCError
 	if !errors.As(err, &rpcErr) || rpcErr.Code != -32020 {
@@ -165,21 +155,17 @@ func TestModernLegacyAnnotatedToolsKeepLegacyWireShape(t *testing.T) {
 func rpcErrorUntilReprobe(t *testing.T, code int) (*HTTPConnection, *atomic.Int32) {
 	t.Helper()
 	var probes atomic.Int32
-	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
-		req := decodeRequest(t, r)
-		switch req.Method {
-		case "server/discover":
-			probes.Add(1)
-			writeRPCResult(t, w, req.ID, DiscoverResult{SupportedVersions: ModernVersions})
-		case "ping":
+	srv := newModernServer(
+		t,
+		modernUpstream{Probes: &probes, Handle: func(w http.ResponseWriter, _ *http.Request, req Request) {
 			if probes.Load() == 1 {
 				writeHTTPRPCError(t, w, httpRPCErrorParams{id: req.ID, code: code})
-			} else {
-				writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
+				return
 			}
-		}
-	})
-	return mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Clock: clock.NewFake()}), &probes
+			writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
+		}},
+	)
+	return mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL}), &probes
 }
 
 func TestModernUnsupportedVersionErrorResetsDiscovery(t *testing.T) {
@@ -210,24 +196,20 @@ func TestModernOtherRPCErrorKeepsDiscovery(t *testing.T) {
 
 func TestModern4xxWithoutRPCResetsDiscovery(t *testing.T) {
 	var probes atomic.Int32
-	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
-		req := decodeRequest(t, r)
-		switch req.Method {
-		case "server/discover":
-			probes.Add(1)
-			writeRPCResult(t, w, req.ID, DiscoverResult{SupportedVersions: ModernVersions})
-		case "ping":
+	srv := newModernServer(
+		t,
+		modernUpstream{Probes: &probes, Handle: func(w http.ResponseWriter, _ *http.Request, req Request) {
 			if probes.Load() == 1 {
 				w.WriteHeader(http.StatusNotFound)
-				if _, writeErr := w.Write([]byte("<html>missing</html>")); writeErr != nil {
-					t.Errorf("write HTML error body: %v", writeErr)
+				if _, err := w.Write([]byte("<html>missing</html>")); err != nil {
+					t.Errorf("write HTML error body: %v", err)
 				}
 				return
 			}
 			writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
-		}
-	})
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Clock: clock.NewFake()})
+		}},
+	)
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 	_, err := conn.Call(t.Context(), "ping", nil)
 	if !IsConnectionError(err) {
 		t.Fatalf("404 error = %T %v, want ConnectionError", err, err)
