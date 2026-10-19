@@ -4,18 +4,13 @@ package transport
 
 import (
 	"context"
-	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 )
-
-//go:embed testdata/discover/*.json
-var discoverFixtures embed.FS
 
 func TestClassifyDiscover(t *testing.T) {
 	for _, tc := range []struct {
@@ -63,7 +58,7 @@ func unsupportedRPC(code int, data string) *RPCError {
 	return &RPCError{Code: code, Data: json.RawMessage(data)}
 }
 
-func TestClassifyDiscoverFixtures(t *testing.T) {
+func TestClassifyDiscoverResponses(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		status  int
@@ -72,18 +67,17 @@ func TestClassifyDiscoverFixtures(t *testing.T) {
 		era     Era
 		wantErr bool
 	}{
-		{name: "huggingface", status: 200, body: "huggingface.json", era: EraModern},
-		{name: "cloudflare-docs", status: 200, body: "cloudflare-docs.json", era: EraModern},
-		{name: "aws-knowledge", status: 200, body: "aws-knowledge.json", era: EraLegacy},
-		{name: "wolfram", status: 200, body: "wolfram.json", era: EraLegacy},
-		{name: "twilio-docs", status: 405, body: "twilio-docs.json", era: EraLegacy},
-		{name: "deepwiki", status: 400, body: "deepwiki.json", era: EraLegacy},
-		{name: "exa", status: 400, body: "exa.json", era: EraLegacy},
-		{name: "github-like", status: 200, body: "github-like.json", era: EraModern},
-		{name: "unsupported modern", status: 200, body: "unsupported-modern.json", era: EraModern},
-		{name: "unsupported legacy", status: 200, body: "unsupported-legacy-only.json", era: EraLegacy},
-		{name: "header mismatch", status: 200, body: "header-mismatch.json", wantErr: true},
-		{name: "client mismatch", status: 200, body: `{"jsonrpc":"2.0","id":7,"error":{"code":-32021,"message":"client mismatch"}}`, wantErr: true},
+		{name: "modern result", status: 200, body: `{"jsonrpc":"2.0","id":1,"result":{"supportedVersions":["2026-07-28","2025-11-25"],"capabilities":{}}}`, era: EraModern},
+		{name: "method not found", status: 200, body: `{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"Method not found"}}`, era: EraLegacy},
+		{name: "pretty-printed error body", status: 200, body: "{\n\t\"jsonrpc\":\"2.0\",\n\t\"id\":1,\n\t\"error\":{\"code\":-32601,\"message\":\"Unknown method\"}\n}", era: EraLegacy},
+		{name: "405 with JSON-RPC body", status: 405, body: `{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"not supported"}}`, era: EraLegacy},
+		// Seen in the wild: legacy servers that reject the version answer 400 with an id that isn't the request's.
+		{name: "400 with a non-request id", status: 400, body: `{"jsonrpc":"2.0","id":"server-error","error":{"code":-32600,"message":"Unsupported protocol version"}}`, era: EraLegacy},
+		{name: "400 with a null id", status: 400, body: `{"jsonrpc":"2.0","id":null,"error":{"code":-32000,"message":"Unsupported protocol version"}}`, era: EraLegacy},
+		{name: "unsupported version listing modern", status: 200, body: `{"jsonrpc":"2.0","id":1,"error":{"code":-32022,"message":"Unsupported protocol version","data":{"supported":["2026-07-28","2025-11-25"]}}}`, era: EraModern},
+		{name: "unsupported version listing only legacy", status: 200, body: `{"jsonrpc":"2.0","id":1,"error":{"code":-32022,"message":"Unsupported protocol version","data":{"supported":["2025-11-25","2025-06-18"]}}}`, era: EraLegacy},
+		{name: "header mismatch", status: 200, body: `{"jsonrpc":"2.0","id":1,"error":{"code":-32020,"message":"header mismatch"}}`, wantErr: true},
+		{name: "client mismatch", status: 200, body: `{"jsonrpc":"2.0","id":1,"error":{"code":-32021,"message":"client mismatch"}}`, wantErr: true},
 		{name: "forbidden", status: 403, body: "forbidden", wantErr: true},
 		{name: "timeout", status: 408, body: "timeout", wantErr: true},
 		{name: "rate limited", status: 429, body: "retry later", wantErr: true},
@@ -91,17 +85,8 @@ func TestClassifyDiscoverFixtures(t *testing.T) {
 		{name: "dropped connection", dropped: true, wantErr: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			body := tc.body
-			if strings.HasSuffix(body, ".json") {
-				contents, err := discoverFixtures.ReadFile("testdata/discover/" + body)
-				if err != nil {
-					t.Fatal(err)
-				}
-				body = string(contents)
-			}
-			srv := discoverFixtureServer(t, discoverFixture{status: tc.status, body: body, dropped: tc.dropped})
+			srv := discoverFixtureServer(t, discoverFixture{status: tc.status, body: tc.body, dropped: tc.dropped})
 			conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
-			conn.nextID.Store(6)
 			result, callErr := conn.rpc(t.Context(), "server/discover", nil)
 			got, err := classifyDiscover(result, callErr)
 			if (err != nil) != tc.wantErr {

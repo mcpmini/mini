@@ -76,25 +76,18 @@ func TestHTTPConnection_ProbeWithoutAnAnswerFallsBackToLegacy(t *testing.T) {
 }
 
 func TestHTTPConnection_ProbeModernStillInitializes(t *testing.T) {
-	fixture, err := discoverFixtures.ReadFile("testdata/discover/github-like.json")
-	if err != nil {
-		t.Fatal(err)
-	}
 	var methods []string
 	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		req := decodeRequest(t, r)
 		methods = append(methods, req.Method)
 		if req.Method == "server/discover" {
 			assertDiscoverRequest(t, r, req)
-			if _, err := fmt.Fprint(w, string(fixture)); err != nil {
-				t.Errorf("write discover fixture: %v", err)
-			}
+			writeRPCResult(t, w, req.ID, DiscoverResult{SupportedVersions: []string{ModernVersions[0], LatestLegacyVersion}})
 			return
 		}
 		serveProbeCall(t, w, req)
 	})
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
-	conn.nextID.Store(6)
 	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
 		t.Fatalf("Call: %v", err)
 	}
