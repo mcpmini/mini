@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http/httptest"
+	"slices"
+	"strconv"
 	"testing"
 	"time"
 
@@ -22,80 +24,56 @@ func TestModernDiscoverToolsListAndCallWithoutInitialize(t *testing.T) {
 	if err := srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, conn); err != nil {
 		t.Fatal(err)
 	}
-	msgs := serveModern(t, srv,
-		modernRPC("server/discover", 1, nil),
-		modernRPC("tools/list", 2, nil),
-		modernRPC("tools/call", 3, map[string]any{"name": "svc__ping", "arguments": map[string]any{}}),
-	)
-	results := responsesByID(msgs)
-	for _, id := range []string{"1", "2", "3"} {
-		result, _ := results[id]["result"].(map[string]any)
-		if result["resultType"] != "complete" {
-			t.Errorf("response %s resultType = %v", id, result["resultType"])
+	responses := responsesByID(serveModern(t, srv,
+		modernRequest(1, "server/discover", nil),
+		modernRequest(2, "tools/list", nil),
+		modernRequest(3, "tools/call", transport.ToolCallParams{Name: "svc__ping", Arguments: map[string]any{}}),
+	))
+	for id := 1; id <= 3; id++ {
+		if result := decodeResult[modernResultFields](t, responses[id]); result.ResultType != transport.ResultComplete {
+			t.Errorf("response %d resultType = %q", id, result.ResultType)
 		}
 	}
-	list := results["2"]["result"].(map[string]any)
-	if list["ttlMs"] != float64(0) || list["cacheScope"] != "private" {
-		t.Errorf("tools/list cache fields = %v", list)
+	list := decodeResult[modernResultFields](t, responses[2])
+	if list.TTLMs == nil || *list.TTLMs != 0 || list.CacheScope != "private" {
+		t.Errorf("tools/list cache fields = %s", responses[2].Result)
 	}
-	if results["3"]["error"] != nil {
-		t.Fatalf("modern tools/call failed: %v", results["3"]["error"])
-	}
-	discover := results["1"]["result"].(map[string]any)
-	if discover["supportedVersions"] == nil || discover["_meta"] == nil || discover["ttlMs"] != float64(0) {
-		t.Errorf("incomplete discovery result: %v", discover)
-	}
-	capabilities := discover["capabilities"].(map[string]any)
-	if capabilities["tools"].(map[string]any)["listChanged"] != true {
-		t.Errorf("discovery capabilities = %v", capabilities)
-	}
-	meta := discover["_meta"].(map[string]any)
-	if meta["io.modelcontextprotocol/serverInfo"].(map[string]any)["name"] != "mini" {
-		t.Errorf("discovery serverInfo = %v", meta)
+	discover := decodeResult[transport.DiscoverResult](t, responses[1])
+	if len(discover.SupportedVersions) == 0 || discover.Meta == nil || discover.Meta.ServerInfo.Name != "mini" ||
+		!discover.Capabilities.ToolsListChanged() {
+		t.Errorf("incomplete discovery result: %s", responses[1].Result)
 	}
 }
 
 func TestModernCompactModeWithoutInitialize(t *testing.T) {
 	srv := newTestServer(t, server.Params{ToolMode: transport.ToolModeCompact})
-	msgs := serveModern(t, srv, modernRPC("tools/list", 1, nil))
-	result := responsesByID(msgs)["1"]["result"].(map[string]any)
-	tools := result["tools"].([]any)
-	if len(tools) != 4 || result["resultType"] != "complete" {
-		t.Fatalf("compact tools/list result = %v", result)
+	response := responsesByID(serveModern(t, srv, modernRequest(1, "tools/list", nil)))[1]
+	list := decodeResult[transport.ToolsListResult](t, response)
+	if len(list.Tools) != 4 || decodeResult[modernResultFields](t, response).ResultType != transport.ResultComplete {
+		t.Fatalf("compact tools/list result = %s", response.Result)
 	}
 }
 
 func TestModernUnsupportedVersion(t *testing.T) {
-	msgs := serveModern(t, newTestServer(t, server.Params{}), modernRPCVersion("tools/list", 7, "1900-01-01", nil))
-	errObj := responsesByID(msgs)["7"]["error"].(map[string]any)
-	if errObj["code"] != float64(-32022) || errObj["message"] != "Unsupported protocol version" {
-		t.Fatalf("unsupported version error = %v", errObj)
+	srv := newTestServer(t, server.Params{})
+	response := responsesByID(serveModern(t, srv, modernRequestVersion("1900-01-01", 7, "tools/list", nil)))[7]
+	if response.Error == nil || response.Error.Code != transport.CodeUnsupportedProtocolVersion ||
+		response.Error.Message != "Unsupported protocol version" {
+		t.Fatalf("unsupported version error = %+v", response.Error)
 	}
-	data := errObj["data"].(map[string]any)
-	if data["requested"] != "1900-01-01" ||
-		!sameVersions(
-			data["supported"].([]any),
-			append(append([]string{}, transport.ModernVersions...), transport.LegacyVersions...),
-		) {
-		t.Fatalf("unsupported version data = %v", data)
+	var data transport.UnsupportedVersionData
+	if err := json.Unmarshal(response.Error.Data, &data); err != nil {
+		t.Fatal(err)
 	}
-}
-
-func sameVersions(got []any, want []string) bool {
-	if len(got) != len(want) {
-		return false
+	supported := slices.Concat(transport.ModernVersions, transport.LegacyVersions)
+	if data.Requested != "1900-01-01" || !slices.Equal(data.Supported, supported) {
+		t.Fatalf("unsupported version data = %+v", data)
 	}
-	for i := range want {
-		if got[i] != want[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func TestModernLegacyDiscoverRemainsMethodNotFound(t *testing.T) {
 	msgs := serveAll(t, newTestServer(t, server.Params{}), rpc("server/discover", nil))
-	if got := rpcErrorCode(responsesByID(msgs)["1"]); got != transport.CodeMethodNotFound {
+	if got := rpcErrorCode(msgs[len(msgs)-1]); got != transport.CodeMethodNotFound {
 		t.Fatalf("legacy server/discover code = %v", got)
 	}
 }
@@ -108,78 +86,131 @@ func TestModernDiscoverOverHTTPRemainsMethodNotFound(t *testing.T) {
 	initResponse := httptest.NewRecorder()
 	srv.ServeHTTP(initResponse, init)
 	sessionID := initResponse.Header().Get("Mcp-Session-Id")
-	req := httptest.NewRequest("POST", "http://127.0.0.1/mcp", bytes.NewReader(modernRPC("server/discover", 77, nil)))
+	req := httptest.NewRequest(
+		"POST",
+		"http://127.0.0.1/mcp",
+		bytes.NewReader(modernRequest(77, "server/discover", nil)),
+	)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Mcp-Session-Id", sessionID)
 	req.Host = "127.0.0.1"
 	response := httptest.NewRecorder()
 	srv.ServeHTTP(response, req)
-	var message map[string]any
+	var message modernMessage
 	if err := json.Unmarshal(response.Body.Bytes(), &message); err != nil {
 		t.Fatal(err)
 	}
-	if got := rpcErrorCode(message); got != transport.CodeMethodNotFound {
-		t.Fatalf("HTTP server/discover code = %v, want %d", got, transport.CodeMethodNotFound)
+	if message.Error == nil || message.Error.Code != transport.CodeMethodNotFound {
+		t.Fatalf("HTTP server/discover error = %+v, want code %d", message.Error, transport.CodeMethodNotFound)
 	}
 }
 
-func serveModern(t *testing.T, srv *server.Server, lines ...[]byte) []map[string]any {
+// modernMessage holds any JSON-RPC message mini writes: a response or a notification.
+type modernMessage struct {
+	ID     json.RawMessage     `json:"id,omitempty"`
+	Method string              `json:"method,omitempty"`
+	Params json.RawMessage     `json:"params,omitempty"`
+	Result json.RawMessage     `json:"result,omitempty"`
+	Error  *transport.RPCError `json:"error,omitempty"`
+}
+
+func (m modernMessage) isResponseTo(id int) bool {
+	return m.Method == "" && string(m.ID) == strconv.Itoa(id)
+}
+
+// modernResultFields are the fields mini adds to every result for a modern client.
+type modernResultFields struct {
+	ResultType transport.ResultType `json:"resultType"`
+	TTLMs      *int                 `json:"ttlMs"`
+	CacheScope string               `json:"cacheScope"`
+}
+
+func decodeResult[T any](t *testing.T, response modernMessage) T {
 	t.Helper()
-	input := bytes.Join(lines, []byte{})
+	var result T
+	if response.Error != nil {
+		t.Fatalf("response %s failed: %+v", response.ID, response.Error)
+	}
+	if err := json.Unmarshal(response.Result, &result); err != nil {
+		t.Fatalf("decode result %s: %v", response.Result, err)
+	}
+	return result
+}
+
+func decodeParams[T any](t *testing.T, message modernMessage) T {
+	t.Helper()
+	var params T
+	if err := json.Unmarshal(message.Params, &params); err != nil {
+		t.Fatalf("decode %s params %s: %v", message.Method, message.Params, err)
+	}
+	return params
+}
+
+func serveModern(t *testing.T, srv *server.Server, lines ...[]byte) []modernMessage {
+	t.Helper()
 	var out bytes.Buffer
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := srv.Serve(ctx, bytes.NewReader(input), &out); err != nil {
+	if err := srv.Serve(ctx, bytes.NewReader(bytes.Join(lines, nil)), &out); err != nil {
 		t.Fatalf("Serve modern requests: %v", err)
 	}
-	return parseMessages(out.Bytes())
-}
-
-func modernRPC(method string, id any, params any) []byte {
-	return modernRPCVersion(method, id, transport.ModernVersions[0], params)
-}
-
-func modernRPCVersion(method string, id any, version string, params any) []byte {
-	fields := map[string]any{"_meta": map[string]any{
-		"io.modelcontextprotocol/protocolVersion":    version,
-		"io.modelcontextprotocol/clientInfo":         map[string]any{"name": "test", "version": "0"},
-		"io.modelcontextprotocol/clientCapabilities": map[string]any{},
-	}}
-	if params != nil {
-		for key, value := range params.(map[string]any) {
-			fields[key] = value
-		}
+	var messages []modernMessage
+	for _, line := range bytes.Split(bytes.TrimSpace(out.Bytes()), []byte("\n")) {
+		messages = append(messages, decodeMessage(t, line))
 	}
-	encoded, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": fields})
-	if err != nil {
-		panic(err)
-	}
-	return append(encoded, '\n')
+	return messages
 }
 
-func responsesByID(messages []map[string]any) map[string]map[string]any {
-	responses := make(map[string]map[string]any)
+func decodeMessage(t *testing.T, line []byte) modernMessage {
+	t.Helper()
+	var message modernMessage
+	if err := json.Unmarshal(line, &message); err != nil {
+		t.Fatalf("decode message %s: %v", line, err)
+	}
+	return message
+}
+
+func responsesByID(messages []modernMessage) map[int]modernMessage {
+	responses := make(map[int]modernMessage)
 	for _, message := range messages {
-		if id, ok := message["id"]; ok {
-			responses[jsonID(id)] = message
+		if id, err := strconv.Atoi(string(message.ID)); err == nil && message.Method == "" {
+			responses[id] = message
 		}
 	}
 	return responses
 }
 
-func findMethod(messages []map[string]any, method string) map[string]any {
-	for _, message := range messages {
-		if message["method"] == method {
-			return message
-		}
-	}
-	return nil
+func modernRequest(id int, method string, params any) []byte {
+	return modernRequestVersion(transport.ModernVersions[0], id, method, params)
 }
 
-func jsonID(id any) string {
-	encoded, err := json.Marshal(id)
+func modernRequestVersion(version string, id int, method string, params any) []byte {
+	fields := map[string]any{}
+	if params != nil {
+		encoded, err := json.Marshal(params)
+		if err != nil {
+			panic(err)
+		}
+		if err := json.Unmarshal(encoded, &fields); err != nil {
+			panic(err)
+		}
+	}
+	fields["_meta"] = transport.RequestMeta{
+		ProtocolVersion:    version,
+		ClientInfo:         &transport.ClientInfo{Name: "test", Version: "0"},
+		ClientCapabilities: &transport.ClientCapabilities{},
+	}
+	encodedParams, err := json.Marshal(fields)
 	if err != nil {
 		panic(err)
 	}
-	return string(encoded)
+	return encodeLine(transport.Request{JSONRPC: "2.0", ID: id, Method: method, Params: encodedParams})
+}
+
+func encodeLine(message any) []byte {
+	encoded, err := json.Marshal(message)
+	if err != nil {
+		panic(err)
+	}
+	return append(encoded, '\n')
 }

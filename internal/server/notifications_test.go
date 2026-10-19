@@ -61,3 +61,12 @@ func TestNotification_noNotificationForOtherConfigureActions(t *testing.T) {
 		}
 	}
 }
+
+func findMethod(messages []map[string]any, method string) map[string]any {
+	for _, message := range messages {
+		if message["method"] == method {
+			return message
+		}
+	}
+	return nil
+}
