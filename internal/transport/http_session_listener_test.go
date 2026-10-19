@@ -15,7 +15,7 @@ import (
 func TestHTTPSession_get404NeverTriggersReinit(t *testing.T) {
 	m, srv := newSessionServer(t)
 	m.answerNotificationStreamWithNotFound()
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 
 	for range 5 {
 		mustPing(t, conn)
@@ -35,7 +35,7 @@ func TestHTTPSession_listenerReconnectsImmediatelyAfterReinit(t *testing.T) {
 	m, srv := newSessionServer(t)
 	m.answerNotificationStreamWithNotFound()
 	clk := clock.NewFake()
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Clock: clk})
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Clock: clk})
 	mustPing(t, conn)
 	m.awaitNotificationStream(t)
 	for _, backoff := range []time.Duration{time.Second, 2 * time.Second, 4 * time.Second} {
@@ -54,7 +54,7 @@ func TestHTTPSession_listenerReconnectsImmediatelyAfterReinit(t *testing.T) {
 func TestHTTPSession_reinitKeepsASingleNotificationListener(t *testing.T) {
 	m, srv := newSessionServer(t)
 	clk := clock.NewFake()
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Clock: clk})
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Clock: clk})
 	mustPing(t, conn)
 	m.awaitNotificationStream(t)
 	awaitListenerTimer(t, clk)
@@ -84,7 +84,7 @@ func TestHTTPSession_requestsSentWhileReinitializingKeepTheOldSession(t *testing
 		m.handle(w, r)
 	})
 	clk := clock.NewFake()
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Clock: clk})
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Clock: clk})
 	mustPing(t, conn)
 	oldSID := m.awaitNotificationStream(t)
 	awaitListenerTimer(t, clk)
@@ -114,7 +114,7 @@ func TestHTTPSession_failedReinitializeKeepsTheOldSession(t *testing.T) {
 		m.handle(w, r)
 	})
 	clk := clock.NewFake()
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Clock: clk})
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Clock: clk})
 	mustPing(t, conn)
 	oldSID := m.awaitNotificationStream(t)
 	awaitListenerTimer(t, clk)
@@ -148,7 +148,7 @@ func TestHTTPSession_streamLeftOpenOnTheExpiredSessionMovesToTheNewOne(t *testin
 		}
 		m.handle(w, r)
 	})
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 	mustPing(t, conn)
 	m.awaitNotificationStream(t)
 
@@ -172,7 +172,7 @@ func TestHTTPSession_listenerThatGaveUpRestartsForTheNewSession(t *testing.T) {
 		}
 		m.handle(w, r)
 	})
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 	mustPing(t, conn)
 	<-rejected
 

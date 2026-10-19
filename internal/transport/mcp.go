@@ -88,6 +88,10 @@ const (
 	CodeMethodNotFound = -32601
 	CodeInvalidParams  = -32602
 	CodeInternalError  = -32603
+
+	CodeHeaderMismatch                  = -32020
+	CodeMissingRequiredClientCapability = -32021
+	CodeUnsupportedProtocolVersion      = -32022
 )
 
 // NotificationInitialized is the method name sent after the initialize handshake.

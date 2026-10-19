@@ -16,7 +16,10 @@ func (c *HTTPConnection) ListTools(ctx context.Context) ([]ToolDefinition, error
 	return paginateToolsList(ctx, c.callToolsPage)
 }
 
-func (c *HTTPConnection) ensureInitialized(ctx context.Context) error {
+func (c *HTTPConnection) ensureReady(ctx context.Context) error {
+	if err := c.probeOnce(ctx); err != nil {
+		return err
+	}
 	renewed, err := c.initializeOnce(ctx)
 	if renewed {
 		// mini keeps a copy of this upstream's tool list and refreshes it when the upstream
