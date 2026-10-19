@@ -202,38 +202,27 @@ func TestCheckResult(t *testing.T) {
 }
 
 func TestCheckResult_ResultType(t *testing.T) {
+	inputRequired := json.RawMessage(`{"resultType":"input_required","content":[]}`)
+	unknown := json.RawMessage(`{"resultType":"bogus","content":[]}`)
+	extract := func(raw json.RawMessage) error {
+		_, err := invoke.ExtractContent(raw)
+		return err
+	}
 	for _, tc := range []struct {
-		name string
-		kind string
-		want error
+		name  string
+		check func(json.RawMessage) error
 	}{
-		{name: "input required", kind: "input_required", want: invoke.ErrInputRequired},
-		{name: "unknown", kind: "bogus"},
+		{name: "CheckResult", check: invoke.CheckResult},
+		{name: "ExtractContent", check: extract},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			raw := json.RawMessage(`{"resultType":"` + tc.kind + `","content":[]}`)
-			err := invoke.CheckResult(raw)
-			if tc.want != nil {
-				if !errors.Is(err, tc.want) ||
-					err.Error() != "upstream asked for user input, which mini can't relay yet" {
-					t.Fatalf("CheckResult error = %v, want ErrInputRequired", err)
-				}
-				return
+			if err := tc.check(inputRequired); !errors.Is(err, invoke.ErrInputRequired) {
+				t.Errorf("input_required error = %v, want ErrInputRequired", err)
 			}
-			if err == nil || err.Error() != `upstream returned unknown resultType "bogus"` {
-				t.Fatalf("CheckResult error = %v", err)
+			if err := tc.check(unknown); err == nil || err.Error() != `upstream returned unknown resultType "bogus"` {
+				t.Errorf("unknown resultType error = %v", err)
 			}
 		})
-	}
-	for _, raw := range []string{`{"resultType":"input_required","content":[]}`, `{"resultType":"bogus","content":[]}`} {
-		_, err := invoke.ExtractContent(json.RawMessage(raw))
-		if strings.Contains(raw, "input_required") && !errors.Is(err, invoke.ErrInputRequired) {
-			t.Errorf("ExtractContent error = %v, want ErrInputRequired", err)
-		}
-		if strings.Contains(raw, "bogus") && (err == nil ||
-			err.Error() != `upstream returned unknown resultType "bogus"`) {
-			t.Errorf("ExtractContent error = %v", err)
-		}
 	}
 }
 

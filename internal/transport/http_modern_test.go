@@ -202,21 +202,29 @@ func TestModernArgumentAtPathKeepsLevelsSeparate(t *testing.T) {
 	}{
 		{name: "missing nested value ignores parent key", args: `{"region":"outer","scope":{}}`, path: []string{"scope", "region"}},
 		{name: "nested value", args: `{"region":"outer","scope":{"region":"inner"}}`, path: []string{"scope", "region"}, want: "inner"},
-		{name: "root value after nested lookup", args: `{"scope":{"region":"inner"},"region":"outer"}`, path: []string{"region"}, want: "outer"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var args map[string]json.RawMessage
 			if err := json.Unmarshal([]byte(tc.args), &args); err != nil {
 				t.Fatal(err)
 			}
-			_, _ = argumentAtPath(
-				args,
-				[]string{"scope", "region"},
-			)
 			got, ok := argumentAtPath(args, tc.path)
 			if ok != (tc.want != "") || got != tc.want {
 				t.Fatalf("argumentAtPath(%v) = %q, %v; want %q", tc.path, got, ok, tc.want)
 			}
 		})
+	}
+}
+
+func TestModernArgumentAtPathNestedLookupLeavesRootIntact(t *testing.T) {
+	var args map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(`{"scope":{"region":"inner"},"region":"outer"}`), &args); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := argumentAtPath(args, []string{"scope", "region"}); !ok || got != "inner" {
+		t.Fatalf("nested lookup = %q, %v; want inner", got, ok)
+	}
+	if got, ok := argumentAtPath(args, []string{"region"}); !ok || got != "outer" {
+		t.Fatalf("root lookup after nested lookup = %q, %v; want outer", got, ok)
 	}
 }

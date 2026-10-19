@@ -41,7 +41,7 @@ func (c *HTTPConnection) rebuildToolHeaders(tools []ToolDefinition) []ToolDefini
 	return valid
 }
 
-func (c *HTTPConnection) ensureToolHeaders(ctx context.Context, params json.RawMessage) error {
+func (c *HTTPConnection) ensureToolHeaders(ctx context.Context) error {
 	c.modernListMu.Lock()
 	defer c.modernListMu.Unlock()
 	c.modernMu.RLock()
@@ -75,7 +75,7 @@ func (c *HTTPConnection) callModern(
 		return nil, err
 	}
 	if method == "tools/call" {
-		if err = c.ensureToolHeaders(ctx, prepared); err != nil {
+		if err = c.ensureToolHeaders(ctx); err != nil {
 			return nil, err
 		}
 	}

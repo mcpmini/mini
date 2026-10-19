@@ -5,7 +5,6 @@ package transport
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 	"sync/atomic"
@@ -161,71 +160,77 @@ func TestModernLegacyAnnotatedToolsKeepLegacyWireShape(t *testing.T) {
 	}
 }
 
-func TestModernCachedClientErrorsResetDiscovery(t *testing.T) {
-	for _, code := range []int{-32022, -32602} {
-		t.Run(fmt.Sprint(code), func(t *testing.T) {
-			var probes atomic.Int32
-			srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
-				req := decodeRequest(t, r)
-				switch req.Method {
-				case "server/discover":
-					probes.Add(1)
-					writeRPCResult(t, w, req.ID, DiscoverResult{SupportedVersions: ModernVersions})
-				case "ping":
-					if probes.Load() == 1 {
-						writeHTTPRPCError(t, w, httpRPCErrorParams{id: req.ID, code: code})
-					} else {
-						writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
-					}
-				}
-			})
-			conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Clock: clock.NewFake()})
-			_, firstErr := conn.Call(t.Context(), "ping", nil)
-			if code == -32602 {
-				var rpcErr *RPCError
-				if !errors.As(firstErr, &rpcErr) || rpcErr.Code != code || probes.Load() != 1 {
-					t.Fatalf("first error/probes = %v/%d", firstErr, probes.Load())
-				}
+func rpcErrorUntilReprobe(t *testing.T, code int) (*HTTPConnection, *atomic.Int32) {
+	t.Helper()
+	var probes atomic.Int32
+	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+		req := decodeRequest(t, r)
+		switch req.Method {
+		case "server/discover":
+			probes.Add(1)
+			writeRPCResult(t, w, req.ID, DiscoverResult{SupportedVersions: ModernVersions})
+		case "ping":
+			if probes.Load() == 1 {
+				writeHTTPRPCError(t, w, httpRPCErrorParams{id: req.ID, code: code})
 			} else {
-				var rpcErr *RPCError
-				if !errors.As(firstErr, &rpcErr) || rpcErr.Code != code {
-					t.Fatalf("first error = %v", firstErr)
-				}
-				if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
-					t.Fatalf("call after reset: %v", err)
-				}
-				if probes.Load() != 2 {
-					t.Fatalf("probes = %d, want 2", probes.Load())
-				}
-			}
-		})
-	}
-	t.Run("4xx without RPC", func(t *testing.T) {
-		var probes atomic.Int32
-		srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
-			req := decodeRequest(t, r)
-			switch req.Method {
-			case "server/discover":
-				probes.Add(1)
-				writeRPCResult(t, w, req.ID, DiscoverResult{SupportedVersions: ModernVersions})
-			case "ping":
-				if probes.Load() == 1 {
-					w.WriteHeader(http.StatusNotFound)
-					if _, writeErr := w.Write([]byte("<html>missing</html>")); writeErr != nil {
-						t.Errorf("write HTML error body: %v", writeErr)
-					}
-					return
-				}
 				writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
 			}
-		})
-		conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Clock: clock.NewFake()})
-		_, err := conn.Call(t.Context(), "ping", nil)
-		if !IsConnectionError(err) {
-			t.Fatalf("404 error = %T %v, want ConnectionError", err, err)
-		}
-		if _, err := conn.Call(t.Context(), "ping", nil); err != nil || probes.Load() != 2 {
-			t.Fatalf("call after 404 reset: %v, probes=%d", err, probes.Load())
 		}
 	})
+	return mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Clock: clock.NewFake()}), &probes
+}
+
+func TestModernUnsupportedVersionErrorResetsDiscovery(t *testing.T) {
+	conn, probes := rpcErrorUntilReprobe(t, CodeUnsupportedProtocolVersion)
+	_, err := conn.Call(t.Context(), "ping", nil)
+	var rpcErr *RPCError
+	if !errors.As(err, &rpcErr) || rpcErr.Code != CodeUnsupportedProtocolVersion {
+		t.Fatalf("first error = %v", err)
+	}
+	if _, err := conn.Call(t.Context(), "ping", nil); err != nil || probes.Load() != 2 {
+		t.Fatalf("call after reset: %v, probes=%d, want 2", err, probes.Load())
+	}
+}
+
+func TestModernOtherRPCErrorKeepsDiscovery(t *testing.T) {
+	conn, probes := rpcErrorUntilReprobe(t, CodeInvalidParams)
+	for range 2 {
+		_, err := conn.Call(t.Context(), "ping", nil)
+		var rpcErr *RPCError
+		if !errors.As(err, &rpcErr) || rpcErr.Code != CodeInvalidParams {
+			t.Fatalf("ping error = %v, want the upstream's -32602", err)
+		}
+	}
+	if probes.Load() != 1 {
+		t.Fatalf("probes = %d after two -32602 errors, want 1", probes.Load())
+	}
+}
+
+func TestModern4xxWithoutRPCResetsDiscovery(t *testing.T) {
+	var probes atomic.Int32
+	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+		req := decodeRequest(t, r)
+		switch req.Method {
+		case "server/discover":
+			probes.Add(1)
+			writeRPCResult(t, w, req.ID, DiscoverResult{SupportedVersions: ModernVersions})
+		case "ping":
+			if probes.Load() == 1 {
+				w.WriteHeader(http.StatusNotFound)
+				if _, writeErr := w.Write([]byte("<html>missing</html>")); writeErr != nil {
+					t.Errorf("write HTML error body: %v", writeErr)
+				}
+				return
+			}
+			writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
+		}
+	})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Clock: clock.NewFake()})
+	_, err := conn.Call(t.Context(), "ping", nil)
+	if !IsConnectionError(err) {
+		t.Fatalf("404 error = %T %v, want ConnectionError", err, err)
+	}
+	if _, err := conn.Call(t.Context(), "ping", nil); err != nil || probes.Load() != 2 {
+		t.Fatalf("call after 404 reset: %v, probes=%d", err, probes.Load())
+	}
 }
