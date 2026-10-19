@@ -201,6 +201,42 @@ func TestCheckResult(t *testing.T) {
 	})
 }
 
+func TestCheckResult_ResultType(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		kind string
+		want error
+	}{
+		{name: "input required", kind: "input_required", want: invoke.ErrInputRequired},
+		{name: "unknown", kind: "bogus"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := json.RawMessage(`{"resultType":"` + tc.kind + `","content":[]}`)
+			err := invoke.CheckResult(raw)
+			if tc.want != nil {
+				if !errors.Is(err, tc.want) ||
+					err.Error() != "upstream asked for user input, which mini can't relay yet" {
+					t.Fatalf("CheckResult error = %v, want ErrInputRequired", err)
+				}
+				return
+			}
+			if err == nil || err.Error() != `upstream returned unknown resultType "bogus"` {
+				t.Fatalf("CheckResult error = %v", err)
+			}
+		})
+	}
+	for _, raw := range []string{`{"resultType":"input_required","content":[]}`, `{"resultType":"bogus","content":[]}`} {
+		_, err := invoke.ExtractContent(json.RawMessage(raw))
+		if strings.Contains(raw, "input_required") && !errors.Is(err, invoke.ErrInputRequired) {
+			t.Errorf("ExtractContent error = %v, want ErrInputRequired", err)
+		}
+		if strings.Contains(raw, "bogus") && (err == nil ||
+			err.Error() != `upstream returned unknown resultType "bogus"`) {
+			t.Errorf("ExtractContent error = %v", err)
+		}
+	}
+}
+
 // TestExtractContent_StructuredContent verifies that structuredContent (added in
 // MCP spec 2025-06-18) is used when a server omits the text content fallback.
 // Spec: servers SHOULD include a text representation for backwards compatibility,

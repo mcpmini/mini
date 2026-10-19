@@ -75,7 +75,7 @@ func TestHTTPConnection_ProbeWithoutAnAnswerFallsBackToLegacy(t *testing.T) {
 	}
 }
 
-func TestHTTPConnection_ProbeModernStillInitializes(t *testing.T) {
+func TestHTTPConnection_ProbeModernUsesModernRequests(t *testing.T) {
 	var methods []string
 	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		req := decodeRequest(t, r)
@@ -96,11 +96,11 @@ func TestHTTPConnection_ProbeModernStillInitializes(t *testing.T) {
 	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
 		t.Fatalf("Call: %v", err)
 	}
-	if !slices.Equal(methods, []string{"server/discover", "initialize", NotificationInitialized, "ping"}) {
+	if !slices.Equal(methods, []string{"server/discover", "ping"}) {
 		t.Fatalf("methods = %v", methods)
 	}
-	if conn.era != EraModern || conn.modernVersion != ModernVersions[0] {
-		t.Errorf("stored era/version = %v/%q", conn.era, conn.modernVersion)
+	if conn.era != EraModern || conn.currentModernVersion() != ModernVersions[0] || !conn.isModern() {
+		t.Errorf("stored era/version = %v/%q", conn.era, conn.currentModernVersion())
 	}
 }
 

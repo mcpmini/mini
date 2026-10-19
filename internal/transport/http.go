@@ -38,14 +38,19 @@ type HTTPConnection struct {
 	initMu                  sync.Mutex
 	era                     Era
 	eraKnown                bool
-	modernVersion           string
-	initialized             bool
-	initializedBefore       bool
-	listener                *sessionListener
-	listenerCtx             context.Context
-	listenerCancel          context.CancelFunc
-	listenerWG              sync.WaitGroup
-	toolsChanged            toolsChangedNotifier
+	// The negotiated modern version, nil while the connection isn't using the modern path.
+	// Atomic because request building reads it while a probe may hold initMu.
+	modernVersion     atomic.Pointer[string]
+	modernMu          sync.RWMutex
+	modernListMu      sync.Mutex
+	modernHeaders     map[string][]headerParameter
+	initialized       bool
+	initializedBefore bool
+	listener          *sessionListener
+	listenerCtx       context.Context
+	listenerCancel    context.CancelFunc
+	listenerWG        sync.WaitGroup
+	toolsChanged      toolsChangedNotifier
 }
 
 // defaultHTTPClientTimeout is the hard network-level backstop. Set to 2× the default
@@ -165,6 +170,9 @@ func (c *HTTPConnection) Call(ctx context.Context, method string, params json.Ra
 	if err := c.ensureReady(ctx); err != nil {
 		return nil, err
 	}
+	if c.isModern() {
+		return c.callModern(ctx, method, params)
+	}
 	return c.withSessionRecovery(ctx, func() (json.RawMessage, error) {
 		return c.rpc(ctx, method, params)
 	})
@@ -273,6 +281,9 @@ func (c *HTTPConnection) doPost(ctx context.Context, rpcReq Request) (postResult
 }
 
 func (c *HTTPConnection) buildHTTPRequest(ctx context.Context, rpcReq Request) (*http.Request, string, error) {
+	if c.isModern() {
+		return c.buildModernHTTPRequest(ctx, rpcReq)
+	}
 	reqBody, err := json.Marshal(rpcReq)
 	if err != nil {
 		return nil, "", err

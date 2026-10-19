@@ -111,13 +111,29 @@ func buildResponseParams(p BuildEnvelopeParams, result projection.Result) respon
 // ErrToolReturnedError marks a result with isError set, so callers can tell an upstream tool failure from a malformed result.
 var ErrToolReturnedError = errors.New("tool returned error")
 
+var ErrInputRequired = errors.New("upstream asked for user input, which mini can't relay yet")
+
 // CheckResult reports decoding failures and upstream tool errors.
 func CheckResult(raw json.RawMessage) error {
+	if err := checkResultType(raw); err != nil {
+		return err
+	}
 	result, err := parseToolResult(raw)
 	if err != nil {
 		return err
 	}
 	return checkToolResult(result)
+}
+
+func checkResultType(raw json.RawMessage) error {
+	resultType, err := transport.ResultTypeOf(raw)
+	if err != nil {
+		return err
+	}
+	if resultType == transport.ResultInputRequired {
+		return ErrInputRequired
+	}
+	return nil
 }
 
 func parseToolResult(raw json.RawMessage) (transport.ToolCallResult, error) {
@@ -136,6 +152,9 @@ func checkToolResult(result transport.ToolCallResult) error {
 }
 
 func ExtractContent(raw json.RawMessage) (json.RawMessage, error) {
+	if err := checkResultType(raw); err != nil {
+		return nil, err
+	}
 	result, err := parseToolResult(raw)
 	if err != nil {
 		return nil, err
