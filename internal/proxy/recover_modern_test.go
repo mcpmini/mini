@@ -5,6 +5,7 @@ package proxy
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -143,5 +144,54 @@ func TestRun_modernAgentRecoversAfterDaemonRestart(t *testing.T) {
 	}
 	if resolves.Load() != 1 || daemon.initializes != 1 || !strings.Contains(out.String(), `"name":"call"`) {
 		t.Fatalf("resolves=%d initializes=%d output=%q", resolves.Load(), daemon.initializes, out.String())
+	}
+}
+
+const modernListenFirstLine = `{"jsonrpc":"2.0","id":1,"method":"subscriptions/listen","params":{"_meta":` +
+	`{"io.modelcontextprotocol/protocolVersion":"2026-07-28"},"notifications":{"toolsListChanged":true}}}` + "\n"
+
+func TestRun_modernListenFirstRecoversDaemonBeforeAcknowledging(t *testing.T) {
+	var resolves atomic.Int32
+	daemon := &restartingDaemonTransport{resolved: &resolves}
+	fakeClock := clock.NewFake()
+	var out bytes.Buffer
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(RunParams{
+			Client: &http.Client{Transport: daemon}, SessionID: "sess", In: strings.NewReader(modernListenFirstLine),
+			Out: &out, ToolMode: transport.ToolModeCompact, Clock: fakeClock,
+			Resolver: NewDaemonResolver(func() (string, error) {
+				resolves.Add(1)
+				return "restarted", nil
+			}),
+		})
+	}()
+	if err := fakeClock.BlockUntilContext(t.Context(), 1); err != nil {
+		t.Fatal(err)
+	}
+	fakeClock.Advance(recoveryBackoff)
+	if err := <-done; err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if resolves.Load() != 1 || daemon.initializes != 1 ||
+		!strings.Contains(out.String(), "notifications/subscriptions/acknowledged") {
+		t.Fatalf("resolves=%d initializes=%d output=%q", resolves.Load(), daemon.initializes, out.String())
+	}
+}
+
+func TestRun_modernListenFirstWithUnreachableDaemonIsNotAcknowledged(t *testing.T) {
+	var resolves atomic.Int32
+	daemon := &restartingDaemonTransport{resolved: &resolves}
+	var out bytes.Buffer
+	err := Run(RunParams{
+		Client: &http.Client{Transport: daemon}, SessionID: "sess", In: strings.NewReader(modernListenFirstLine),
+		Out: &out, ToolMode: transport.ToolModeCompact, Clock: clock.NewFake(),
+		Resolver: NewDaemonResolver(func() (string, error) { return "", errors.New("no daemon") }),
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if strings.Contains(out.String(), "acknowledged") || !strings.Contains(out.String(), `"error"`) {
+		t.Fatalf("listen with unreachable daemon output = %q, want an error and no acknowledgement", out.String())
 	}
 }

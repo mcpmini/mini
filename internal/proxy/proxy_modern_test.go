@@ -129,6 +129,7 @@ func TestProxySession_modernListenAcknowledgesAndCancelsLocally(t *testing.T) {
 	)
 	defer session.close()
 	session.modern.Store(true)
+	session.clientReady.Store(true)
 	listen := []byte(
 		`{"jsonrpc":"2.0","id":5,"method":"subscriptions/listen","params":{"_meta":` +
 			`{"io.modelcontextprotocol/protocolVersion":"2026-07-28"},"notifications":` +
@@ -185,6 +186,7 @@ func TestProxySession_modernListenCompactAcknowledgesEmptyFilter(t *testing.T) {
 	)
 	defer session.close()
 	session.modern.Store(true)
+	session.clientReady.Store(true)
 	line := []byte(
 		`{"jsonrpc":"2.0","id":"listen","method":"subscriptions/listen","params":{"_meta":` +
 			`{"io.modelcontextprotocol/protocolVersion":"2026-07-28"},"notifications":` +

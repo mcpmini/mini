@@ -36,13 +36,14 @@ func isModernLine(line []byte) bool {
 }
 
 func (s *proxySession) ensureModernReady() {
-	if s.modern.Swap(true) {
+	s.modern.Store(true)
+	if s.clientReady.Load() {
 		return
 	}
-	s.daemonAt(s.link.snapshot()).Handshake(s.toolMode)
-	s.initialized.Store(true)
-	s.clientReady.Store(true)
-	s.bindNotifications(s.link.snapshot())
+	initialize, initialized := handshakeLines(s.toolMode)
+	// forward recovers a stale or restarted daemon, which must happen before a listen is acknowledged locally.
+	s.forward(forwardedMessage{line: initialize, kind: forwardedMessageInitialize})
+	s.forward(forwardedMessage{line: initialized, kind: forwardedMessageInitialized})
 }
 
 func (s *proxySession) handleModernInput(line []byte) (bool, error) {
@@ -59,7 +60,8 @@ func (s *proxySession) handleLocalModernLine(line []byte) (bool, error) {
 	}
 	switch message.Method {
 	case "subscriptions/listen":
-		if message.JSONRPC != "2.0" || !isModernLine(line) || len(message.ID) == 0 || string(message.ID) == "null" {
+		if message.JSONRPC != "2.0" || !isModernLine(line) || len(message.ID) == 0 || string(message.ID) == "null" ||
+			!s.clientReady.Load() {
 			return false, nil
 		}
 		var params listenRequestParams
