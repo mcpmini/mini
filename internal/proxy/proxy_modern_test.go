@@ -182,6 +182,22 @@ func TestProxySession_modernListenCompactAcknowledgesEmptyFilter(t *testing.T) {
 	}
 }
 
+func TestProxySession_modernListenWithMalformedParamsIsRejectedLocally(t *testing.T) {
+	session, out := newModernReadyProxySession(t, transport.ToolModeProxy)
+	listen := transporttest.ModernRequest(
+		7,
+		transport.MethodSubscriptionsListen,
+		map[string]any{"notifications": "all"},
+	)
+	if handled, err := session.handleLocalModernLine(listen); err != nil || !handled {
+		t.Fatalf("listen handled=%t error=%v", handled, err)
+	}
+	response := decodeLine[transport.Response](t, out.Bytes())
+	if response.Error == nil || response.Error.Code != transport.CodeInvalidParams || proxyListenCount(session) != 0 {
+		t.Fatalf("malformed listen output = %s, listens = %d", out.Bytes(), proxyListenCount(session))
+	}
+}
+
 func TestNotificationStream_modernTaggingAndLegacyForwarding(t *testing.T) {
 	session, out := newTestProxySession(t, transport.ToolModeProxy)
 	notification := json.RawMessage(
