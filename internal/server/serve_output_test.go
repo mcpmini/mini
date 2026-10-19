@@ -8,10 +8,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/mcpmini/mini/internal/clock"
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 func TestSerializedWriterKeepsFirstErrorAcrossResponsesAndNotifications(t *testing.T) {
@@ -95,5 +98,40 @@ func TestServeReturnsPendingNotificationFailureAtEOF(t *testing.T) {
 	err := (&Server{}).serveLoop(context.Background(), strings.NewReader(""), out, session)
 	if !errors.Is(err, want) {
 		t.Fatalf("Serve error = %v, want pending notification failure %v", err, want)
+	}
+}
+
+func TestToolChangeDuringListenAcknowledgementReachesTheListen(t *testing.T) {
+	session := newSession(clock.System())
+	session.modern.Store(true)
+	var mu sync.Mutex
+	var written []any
+	record := func(message any) { mu.Lock(); written = append(written, message); mu.Unlock() }
+	forwarded := make(chan struct{})
+	writeAck := func(message any) {
+		record(message)
+		go func() {
+			session.forwardToolsChanged(json.RawMessage(`{}`), record)
+			close(forwarded)
+		}()
+		// Give a forwarder that is not held back by the acknowledgement time to run first.
+		select {
+		case <-forwarded:
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	listen := listenSubscription{
+		id:            json.RawMessage(`7`),
+		notifications: transport.ListenNotifications{ToolsListChanged: true},
+	}
+	session.acknowledgeListen(listen, func() {}, writeAck)
+	<-forwarded
+	mu.Lock()
+	defer mu.Unlock()
+	if len(written) != 2 {
+		t.Fatalf("written = %+v, want the acknowledgement then one tagged tool change", written)
+	}
+	if _, tagged := written[1].(transport.ToolsListChangedNotification); !tagged {
+		t.Fatalf("second message = %+v, want a tagged tool change", written[1])
 	}
 }

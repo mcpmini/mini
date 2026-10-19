@@ -31,7 +31,6 @@ func (s *Server) startListen(ctx context.Context, p handleScannedLineParams, lin
 		return
 	}
 	acknowledged := transport.ListenNotifications{ToolsListChanged: req.Params.Notifications.ToolsListChanged}
-	p.writeOut(transport.NewSubscriptionAck(req.ID, acknowledged))
 	s.waitOnListen(ctx, p, listenSubscription{id: req.ID, notifications: acknowledged})
 }
 
@@ -48,7 +47,7 @@ func (s *Server) waitOnListen(ctx context.Context, p handleScannedLineParams, li
 	id := listen.id
 	ctx, cancel := context.WithCancel(ctx)
 	p.session.registerInFlight(id, cancel)
-	p.session.addListen(listen, cancel)
+	p.session.acknowledgeListen(listen, cancel, p.writeOut)
 	if listen.notifications.ToolsListChanged {
 		p.session.markClientReady()
 	}
