@@ -33,6 +33,7 @@ type HTTPConnection struct {
 	clock                   clock.Clock
 	nextID                  atomic.Int64
 	sessionID               string
+	protocolVersion         string
 	mu                      sync.Mutex
 	initMu                  sync.Mutex
 	initialized             bool
@@ -281,6 +282,12 @@ func (c *HTTPConnection) buildHTTPRequest(ctx context.Context, rpcReq Request) (
 	if err != nil {
 		return nil, "", err
 	}
+	// A strict legacy server can reject an unsupported version header before initialize
+	// negotiates a version both sides support:
+	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/ab3a39c13bd23be691c2760e1c6c5c15a64582e1/docs/specification/2025-11-25/basic/transports.mdx#L279-L280
+	if rpcReq.Method == "initialize" {
+		httpReq.Header.Del("MCP-Protocol-Version")
+	}
 	// The stored ID may belong to the session being replaced, and a new session must start
 	// with an InitializeRequest that carries no session ID:
 	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/ab3a39c13bd23be691c2760e1c6c5c15a64582e1/docs/specification/2025-11-25/basic/transports.mdx#L213-L215
@@ -403,13 +410,17 @@ func parseRetryAfter(h string, now time.Time) time.Duration {
 func (c *HTTPConnection) setRequestHeaders(ctx context.Context, req *http.Request) (string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
-	// Spec (Streamable HTTP): client MUST include MCP-Protocol-Version on all
-	// post-initialize requests so the server can reject version mismatches.
-	req.Header.Set("MCP-Protocol-Version", ProtocolVersion)
+	protocolVersion := LatestLegacyVersion
+	c.mu.Lock()
+	if c.protocolVersion != "" {
+		protocolVersion = c.protocolVersion
+	}
+	c.mu.Unlock()
 	req.Header.Set("X-Mini-Version", version.Version)
 	for k, v := range c.headers {
 		req.Header.Set(k, v)
 	}
+	req.Header.Set("MCP-Protocol-Version", protocolVersion)
 	sentAuth, err := c.applyAuthProvider(ctx, req)
 	if err != nil {
 		return "", err

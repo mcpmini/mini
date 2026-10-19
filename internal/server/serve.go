@@ -167,13 +167,12 @@ func (s *Server) handleRequest(
 	return buildDispatchResponse(req.ID, result, err)
 }
 
-// awaitInitialization blocks non-initialize, non-ping requests until initialize
-// completes or the connection closes. Spec: "The initialization phase MUST be
-// the first interaction between client and server"; ping is explicitly allowed
-// before initialization.
-// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/lifecycle.mdx#L118
 func (s *Server) awaitInitialization(ctx context.Context, req transport.Request, session *Session) bool {
-	if req.Method == "initialize" || req.Method == "ping" {
+	// Initialization comes first, but ping is allowed before it:
+	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/lifecycle.mdx#L118
+	// A client that supports both eras probes with server/discover before it falls back to initialize:
+	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/8e12bf3c8f01f374146acfa19b8ece0018bfc86c/docs/specification/2026-07-28/basic/versioning.mdx#L132-L146
+	if req.Method == "initialize" || req.Method == "ping" || req.Method == "server/discover" {
 		return true
 	}
 	// Cap the wait so stale sessions (e.g. post daemon-restart or eviction) fail fast
@@ -245,7 +244,15 @@ const compactInitInstructions = "mini is an MCP proxy. Use `list` to discover to
 const proxyInitInstructions = "Results are the upstream server's own, trimmed where large: a trimmed result carries `__mini` (a key in the result object, or a final text block) with a `file` and the paths that were cut. To get cut data, call `read` with that `file` and a listed path as `filter`, or a jq filter built on it. Pass `__mini: {\"projection\": \"raw\"}` only from a script that must process the whole result without a second call. Tool arguments are the upstream server's own; `__mini` is reserved."
 
 type initializeClientParams struct {
-	ToolMode string `json:"_mini_tool_mode"`
+	ProtocolVersion string `json:"protocolVersion"`
+	ToolMode        string `json:"_mini_tool_mode"`
+}
+
+func negotiatedLegacyVersion(requested string) string {
+	if transport.IsLegacyVersion(requested) {
+		return requested
+	}
+	return transport.LatestLegacyVersion
 }
 
 // Fall back to the server-level default when the client sends no wire signal, so
@@ -266,14 +273,15 @@ func (s *Server) resolveToolMode(signal string) transport.ToolMode {
 
 func (s *Server) handleInitialize(params json.RawMessage, session *Session) (any, error) {
 	var p initializeClientParams
-	json.Unmarshal(params, &p) //nolint:errcheck // best-effort; standard clients omit this field
+	//nolint:errcheck // malformed params fall back to the default tool mode and the newest legacy version.
+	json.Unmarshal(params, &p)
 	session.setToolModeOnce(s.resolveToolMode(p.ToolMode))
 	instructions := compactInitInstructions
 	if session.toolMode() == transport.ToolModeProxy {
 		instructions = proxyInitInstructions
 	}
 	return transport.InitializeResult{
-		ProtocolVersion: transport.ProtocolVersion,
+		ProtocolVersion: negotiatedLegacyVersion(p.ProtocolVersion),
 		Capabilities:    map[string]any{"tools": map[string]any{"listChanged": true}},
 		ServerInfo:      transport.ServerInfo{Name: "mini", Version: version.Version},
 		Instructions:    instructions,

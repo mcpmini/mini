@@ -101,7 +101,7 @@ func TestUnknownMethod(t *testing.T) {
 func TestInitializedNotification_noResponse(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	initMsg := rpc("initialize", map[string]any{
-		"protocolVersion": transport.ProtocolVersion,
+		"protocolVersion": transport.LatestLegacyVersion,
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "test", "version": "0"},
 	})
@@ -246,6 +246,25 @@ func TestRequestBeforeInitialize_rejected(t *testing.T) {
 	}
 }
 
+func TestServerDiscoverBeforeInitialize_methodNotFound(t *testing.T) {
+	srv := newTestServer(t, server.Params{})
+	lines := rawServe(t, srv, rpc("server/discover", nil))
+	if len(lines) == 0 {
+		t.Fatal("expected a response")
+	}
+	resp := parseRPCResponse(t, lines[0])
+	errObj, ok := resp["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected JSON-RPC error, got: %v", resp)
+	}
+	if code := int(errObj["code"].(float64)); code != transport.CodeMethodNotFound {
+		t.Errorf("error code = %d, want %d", code, transport.CodeMethodNotFound)
+	}
+	if got, _ := errObj["message"].(string); got == transport.NotInitializedMessage {
+		t.Errorf("got initialization gate error %q", got)
+	}
+}
+
 // TestPingBeforeInitialize_allowed verifies that ping is accepted before initialize.
 // The spec explicitly permits ping before initialization as a liveness check.
 // https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/lifecycle.mdx#L118
@@ -295,7 +314,7 @@ func TestRPCEnvelope_jsonrpc20(t *testing.T) {
 		input []byte
 	}{
 		{"initialize", rpc("initialize", map[string]any{
-			"protocolVersion": transport.ProtocolVersion,
+			"protocolVersion": transport.LatestLegacyVersion,
 			"capabilities":    map[string]any{},
 			"clientInfo":      map[string]any{"name": "t", "version": "0"},
 		})},

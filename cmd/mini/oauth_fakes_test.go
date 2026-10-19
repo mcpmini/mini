@@ -76,7 +76,7 @@ func (u *testMCPUpstream) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	switch method {
 	case "initialize":
 		json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, //nolint:errcheck
-			"result": map[string]any{"protocolVersion": transport.ProtocolVersion}})
+			"result": map[string]any{"protocolVersion": transport.LegacyVersions[0]}})
 	case "tools/list":
 		json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, //nolint:errcheck
 			"result": map[string]any{"tools": []any{map[string]any{"name": "t1", "inputSchema": map[string]any{}}}}})
@@ -147,7 +147,7 @@ func awaitConnected(t *testing.T, srv *server.Server, name string) {
 func serveSingleProxyCall(t *testing.T, srv *server.Server, toolName string) map[string]any {
 	t.Helper()
 	initRaw, _ := json.Marshal(map[string]any{
-		"protocolVersion": transport.ProtocolVersion, "capabilities": map[string]any{},
+		"protocolVersion": transport.LegacyVersions[0], "capabilities": map[string]any{},
 		"clientInfo": map[string]any{"name": "test", "version": "0"},
 	})
 	initReq, _ := json.Marshal(map[string]any{

@@ -20,23 +20,25 @@ import (
 type sessionServer struct {
 	gets chan string
 
-	mu          sync.Mutex
-	seq         int
-	current     string
-	expired     map[string]bool
-	expireAll   bool
-	getNotFound bool
-	sessionless bool
-	requests    []sessionReq
+	mu              sync.Mutex
+	seq             int
+	current         string
+	expired         map[string]bool
+	expireAll       bool
+	getNotFound     bool
+	sessionless     bool
+	protocolVersion string
+	requests        []sessionReq
 }
 
 type sessionReq struct {
-	method    string
-	sessionID string
+	method          string
+	sessionID       string
+	protocolVersion string
 }
 
 func newSessionFake() *sessionServer {
-	return &sessionServer{gets: make(chan string, 64), expired: map[string]bool{}}
+	return &sessionServer{gets: make(chan string, 64), expired: map[string]bool{}, protocolVersion: LegacyVersions[0]}
 }
 
 func newSessionServer(t *testing.T) (*sessionServer, *httptest.Server) {
@@ -54,17 +56,17 @@ func (m *sessionServer) handle(w http.ResponseWriter, r *http.Request) {
 	var req map[string]any
 	json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
 	method, _ := req["method"].(string)
-	if status := m.admit(method, sid); status != http.StatusOK {
+	if status := m.admit(method, sid, r.Header.Get("MCP-Protocol-Version")); status != http.StatusOK {
 		w.WriteHeader(status)
 		return
 	}
 	m.serveRPC(w, method, req["id"])
 }
 
-func (m *sessionServer) admit(method, sid string) int {
+func (m *sessionServer) admit(method, sid, protocolVersion string) int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.requests = append(m.requests, sessionReq{method: method, sessionID: sid})
+	m.requests = append(m.requests, sessionReq{method: method, sessionID: sid, protocolVersion: protocolVersion})
 	switch {
 	case method == "initialize":
 		return http.StatusOK
@@ -81,13 +83,16 @@ func (m *sessionServer) admit(method, sid string) int {
 func (m *sessionServer) serveRPC(w http.ResponseWriter, method string, id any) {
 	switch method {
 	case "initialize":
+		m.mu.Lock()
+		protocolVersion := m.protocolVersion
+		m.mu.Unlock()
 		if sid := m.issueSession(); sid != "" {
 			w.Header().Set("Mcp-Session-Id", sid)
 		}
 		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
 			"jsonrpc": "2.0", "id": id,
 			"result": map[string]any{
-				"protocolVersion": ProtocolVersion,
+				"protocolVersion": protocolVersion,
 				"capabilities":    map[string]any{"tools": map[string]any{"listChanged": true}},
 			},
 		})
@@ -135,6 +140,12 @@ func (m *sessionServer) expireSession(sid string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.expired[sid] = true
+}
+
+func (m *sessionServer) setProtocolVersion(version string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.protocolVersion = version
 }
 
 func (m *sessionServer) rejectEverySessionAfterHandshake() {
