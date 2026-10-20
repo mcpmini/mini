@@ -122,7 +122,7 @@ func classifyDiscoverResult(result json.RawMessage) probeVerdict {
 }
 
 func classifyDiscoverRPC(err *RPCError) (probeVerdict, error) {
-	if err.Code == CodeHeaderMismatch || err.Code == CodeMissingRequiredClientCapability {
+	if isModernRejection(err.Code) {
 		return probeVerdict{}, err
 	}
 	if err.Code != CodeUnsupportedProtocolVersion {
@@ -135,6 +135,12 @@ func classifyDiscoverRPC(err *RPCError) (probeVerdict, error) {
 	// The spec says not to fall back after -32022, but servers that list only legacy versions here
 	// (Atlassian v2) still accept initialize.
 	return modernVersionVerdict(data.Supported), nil
+}
+
+// isModernRejection reports a discovery error only a modern server sends that a different protocol
+// version can't fix, so the client must surface it rather than fall back to initialize.
+func isModernRejection(code int) bool {
+	return code == CodeHeaderMismatch || code == CodeMissingRequiredClientCapability
 }
 
 func decodeUnsupportedVersionData(raw json.RawMessage) (UnsupportedVersionData, bool) {

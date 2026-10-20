@@ -20,10 +20,12 @@ func (p *pendingMap) register(id int64) chan *Response {
 	return ch
 }
 
-func (p *pendingMap) remove(id int64) {
+func (p *pendingMap) remove(id int64) bool {
 	p.mu.Lock()
+	_, ok := p.m[id]
 	delete(p.m, id)
 	p.mu.Unlock()
+	return ok
 }
 
 // deliver routes an inbound response to its waiting caller.
