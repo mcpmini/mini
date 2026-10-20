@@ -200,7 +200,7 @@ func (s *modernSession) readChangesUntilResponse(id, wantChanges int) map[string
 	for responded := false; !responded || total < wantChanges; {
 		message := s.mustNext()
 		responded = responded || message.isResponseTo(id)
-		if countChange(s.t, changes, message) {
+		if countToolsChanged(s.t, changes, message) {
 			total++
 		}
 	}
@@ -210,12 +210,11 @@ func (s *modernSession) readChangesUntilResponse(id, wantChanges int) map[string
 func addChanges(t *testing.T, changes map[string]int, messages []modernMessage) {
 	t.Helper()
 	for _, message := range messages {
-		countChange(t, changes, message)
+		countToolsChanged(t, changes, message)
 	}
 }
 
-// countChange counts message under its subscription ID if it is a tools-changed notification.
-func countChange(t *testing.T, changes map[string]int, message modernMessage) bool {
+func countToolsChanged(t *testing.T, changes map[string]int, message modernMessage) bool {
 	t.Helper()
 	if message.Method != transport.NotificationToolsChanged {
 		return false

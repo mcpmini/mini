@@ -10,9 +10,8 @@ import (
 	"github.com/mcpmini/mini/internal/version"
 )
 
-// Acknowledging and registering under the lock writeTaggedToolsChanged holds means every tool change
-// written after the acknowledgement reaches this listen.
 func (s *Session) acknowledgeListen(listen listenSubscription, cancel context.CancelFunc, writeOut func(any)) {
+	// Held across the write: a tool change written after the acknowledgement must find this listen.
 	s.listensMu.Lock()
 	defer s.listensMu.Unlock()
 	writeOut(transport.NewSubscriptionAck(listen.id, listen.notifications))
@@ -30,8 +29,8 @@ func (s *Session) removeListen(id json.RawMessage) {
 func (s *Session) writeTaggedToolsChanged(writeOut func(any)) {
 	s.listensMu.Lock()
 	defer s.listensMu.Unlock()
-	for id, tools := range s.listenTools {
-		if tools {
+	for id, wantsToolChanges := range s.listenTools {
+		if wantsToolChanges {
 			writeOut(transport.NewToolsListChangedNotification(json.RawMessage(id)))
 		}
 	}

@@ -139,8 +139,6 @@ func (l *messageLog) messages() []any {
 	return slices.Clone(l.written)
 }
 
-// forwardToolChangeDuringAck returns an acknowledgement writer that records the acknowledgement and
-// then forwards a tool change concurrently, the race a listen must not lose.
 func forwardToolChangeDuringAck(session *Session, record func(any)) (func(any), <-chan struct{}) {
 	forwarded := make(chan struct{})
 	return func(message any) {
