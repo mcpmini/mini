@@ -253,6 +253,14 @@ func startResettingUpstream(t *testing.T) *resettingUpstream {
 		listing: make(chan struct{}), releaseList: make(chan struct{}), callHeaders: make(chan http.Header, 1),
 	}
 	u.url = newModernServer(t, modernUpstream{Handle: u.handle(t)}).URL
+	// Lets the server's Close finish when a failed test never released tools/list.
+	t.Cleanup(func() {
+		select {
+		case <-u.releaseList:
+		default:
+			close(u.releaseList)
+		}
+	})
 	return u
 }
 

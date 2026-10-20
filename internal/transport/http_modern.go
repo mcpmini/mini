@@ -48,13 +48,6 @@ func (c *HTTPConnection) ensureToolHeaders(ctx context.Context) error {
 	return err
 }
 
-func (c *HTTPConnection) currentModernVersion() string {
-	if v := c.modernVersion.Load(); v != nil {
-		return *v
-	}
-	return ModernVersions[0]
-}
-
 // modernEraVersion returns the modern version the upstream speaks, or "" while it is legacy or unprobed.
 func (c *HTTPConnection) modernEraVersion() string {
 	if v := c.modernVersion.Load(); v != nil {

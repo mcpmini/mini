@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -49,7 +50,7 @@ func (c *HTTPConnection) buildModernListenRequest() (
 	if err != nil {
 		return nil, fmt.Errorf("encode subscriptions/listen params: %w", err)
 	}
-	protocolVersion := c.currentModernVersion()
+	protocolVersion := cmp.Or(c.modernEraVersion(), ModernVersions[0])
 	prepared, err := c.prepareModernParams(params, protocolVersion)
 	if err != nil {
 		return nil, err
