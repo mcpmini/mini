@@ -63,7 +63,9 @@ func (s *Server) serveGet(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	s.writeNotificationStream(r, w, flusher, session)
+	s.writeNotificationStream(notificationStreamParams{
+		Request: r, Writer: w, Flusher: flusher, Session: session,
+	})
 }
 
 func (s *Server) streamSession(w http.ResponseWriter, r *http.Request) (*Session, bool) {
@@ -93,20 +95,24 @@ func streamFlusher(w http.ResponseWriter) (http.Flusher, bool) {
 	return flusher, true
 }
 
-func (s *Server) writeNotificationStream(
-	r *http.Request,
-	w http.ResponseWriter,
-	flusher http.Flusher,
-	session *Session,
-) {
-	stream, ok := session.openToolsChangedStream()
+type notificationStreamParams struct {
+	Request *http.Request
+	Writer  http.ResponseWriter
+	Flusher http.Flusher
+	Session *Session
+}
+
+func (s *Server) writeNotificationStream(p notificationStreamParams) {
+	stream, ok := p.Session.openToolsChangedStream()
 	if !ok {
-		w.WriteHeader(http.StatusNoContent)
+		p.Writer.WriteHeader(http.StatusNoContent)
 		return
 	}
-	defer session.closeToolsChangedStream(stream)
-	startEventStream(w, flusher)
-	s.writeNotifications(r, w, flusher, stream)
+	defer p.Session.closeToolsChangedStream(stream)
+	startEventStream(p.Writer, p.Flusher)
+	s.writeNotifications(notificationParams{
+		Request: p.Request, Writer: p.Writer, Flusher: p.Flusher, Stream: stream,
+	})
 }
 
 func startEventStream(w http.ResponseWriter, flusher http.Flusher) {
@@ -117,24 +123,26 @@ func startEventStream(w http.ResponseWriter, flusher http.Flusher) {
 	flusher.Flush()
 }
 
-func (s *Server) writeNotifications(
-	r *http.Request,
-	w http.ResponseWriter,
-	flusher http.Flusher,
-	stream chan json.RawMessage,
-) {
+type notificationParams struct {
+	Request *http.Request
+	Writer  http.ResponseWriter
+	Flusher http.Flusher
+	Stream  chan json.RawMessage
+}
+
+func (s *Server) writeNotifications(p notificationParams) {
 	for {
 		select {
-		case <-r.Context().Done():
+		case <-p.Request.Context().Done():
 			return
-		case notification, open := <-stream:
+		case notification, open := <-p.Stream:
 			if !open {
 				return
 			}
-			if _, err := fmt.Fprintf(w, "event: message\ndata: %s\n\n", notification); err != nil {
+			if _, err := fmt.Fprintf(p.Writer, "event: message\ndata: %s\n\n", notification); err != nil {
 				return
 			}
-			flusher.Flush()
+			p.Flusher.Flush()
 		}
 	}
 }

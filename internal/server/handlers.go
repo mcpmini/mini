@@ -13,15 +13,22 @@ import (
 	"github.com/mcpmini/mini/internal/response"
 )
 
-func (s *Server) logToolError(server, tool string, latencyMs int64, err error) {
-	if errors.Is(err, context.Canceled) {
+type toolErrorLogParams struct {
+	Server    string
+	Tool      string
+	LatencyMs int64
+	Err       error
+}
+
+func (s *Server) logToolError(p toolErrorLogParams) {
+	if errors.Is(p.Err, context.Canceled) {
 		return
 	}
-	if isConnError(err) || errors.Is(err, context.DeadlineExceeded) {
-		s.logger.Warn("tool call failed", "server", server, "tool", tool, "latency_ms", latencyMs, "err", err)
+	if isConnError(p.Err) || errors.Is(p.Err, context.DeadlineExceeded) {
+		s.logger.Warn("tool call failed", "server", p.Server, "tool", p.Tool, "latency_ms", p.LatencyMs, "err", p.Err)
 		return
 	}
-	s.logger.Debug("tool error", "server", server, "tool", tool, "latency_ms", latencyMs, "err", err)
+	s.logger.Debug("tool error", "server", p.Server, "tool", p.Tool, "latency_ms", p.LatencyMs, "err", p.Err)
 }
 
 type listParams struct {
@@ -114,7 +121,7 @@ func (s *Server) handleExecute(ctx context.Context, raw json.RawMessage, session
 			entry.FullName,
 		)
 	}
-	return s.callUpstream(ctx, p, entry, session)
+	return s.callUpstream(ctx, callUpstreamParams{Execute: p, Entry: entry, Session: session})
 }
 
 func (s *Server) resolveExecute(raw json.RawMessage) (executeParams, *registry.ToolEntry, error) {
@@ -155,7 +162,7 @@ func (s *Server) toolNotFoundError(err error, server, tool string) (any, error) 
 	default:
 		return nil, err
 	}
-	return s.formatEnvelope(server, tool, env, nil)
+	return s.formatEnvelope(formatEnvelopeParams{Server: server, Tool: tool, Envelope: env})
 }
 
 func (s *Server) handleExecuteProtected(ctx context.Context, raw json.RawMessage, session *Session) (any, error) {
@@ -167,7 +174,7 @@ func (s *Server) handleExecuteProtected(ctx context.Context, raw json.RawMessage
 	if entry.Permission != config.PermProtected && s.hasProjectionCoverage(p.Server, p.Tool, session) {
 		return nil, fmt.Errorf("tool %q is not protected — use call instead", entry.FullName)
 	}
-	return s.callUpstream(ctx, p, entry, session)
+	return s.callUpstream(ctx, callUpstreamParams{Execute: p, Entry: entry, Session: session})
 }
 
 // hasProjectionCoverage reports whether a tool has an explicit projection entry or a
@@ -183,29 +190,34 @@ func (s *Server) hasProjectionCoverage(server, tool string, session *Session) bo
 	return len(toolMap) == 0 || toolMap[tool] != nil || toolMap["*"] != nil
 }
 
-func (s *Server) callUpstream(
-	ctx context.Context,
-	p executeParams,
-	entry *registry.ToolEntry,
-	session *Session,
-) (any, error) {
-	upstream, err := s.getUpstream(p.Server)
+type callUpstreamParams struct {
+	Execute executeParams
+	Entry   *registry.ToolEntry
+	Session *Session
+}
+
+func (s *Server) callUpstream(ctx context.Context, p callUpstreamParams) (any, error) {
+	upstream, err := s.getUpstream(p.Execute.Server)
 	if err != nil {
 		return nil, err
 	}
 	raw, latencyMs, toolErr := s.dispatchRaw(
 		ctx,
-		dispatchParams{Upstream: upstream, Tool: p.Tool, Params: p.Params, Session: session},
+		dispatchParams{Upstream: upstream, Tool: p.Execute.Tool, Params: p.Execute.Params, Session: p.Session},
 	)
 	upstream.totalLatencyMs.Add(latencyMs)
 	if toolErr != nil {
 		return s.handleToolErr(
-			toolErrParams{Server: p.Server, Tool: p.Tool, LatencyMs: latencyMs, Err: toolErr, Session: session},
+			toolErrParams{
+				Server: p.Execute.Server, Tool: p.Execute.Tool, LatencyMs: latencyMs,
+				Err: toolErr, Session: p.Session,
+			},
 		)
 	}
 	return s.buildUpstreamEnvelope(
 		envelopeParams{
-			Entry: entry, Tool: p.Tool, Raw: raw, Session: session, Upstream: upstream, LatencyMs: latencyMs,
+			Entry: p.Entry, Tool: p.Execute.Tool, Raw: raw, Session: p.Session,
+			Upstream: upstream, LatencyMs: latencyMs,
 		},
 	)
 }
@@ -229,10 +241,10 @@ type toolErrParams struct {
 
 func (s *Server) handleToolErr(p toolErrParams) (any, error) {
 	p.Session.recordCall(p.LatencyMs, 0, true)
-	s.logToolError(p.Server, p.Tool, p.LatencyMs, p.Err)
+	s.logToolError(toolErrorLogParams{Server: p.Server, Tool: p.Tool, LatencyMs: p.LatencyMs, Err: p.Err})
 	env := response.BuildError("tool_error", p.Err.Error(), false, "")
 	projCfg := s.resolveProjection(p.Server, p.Tool, p.Session)
-	return s.formatEnvelope(p.Server, p.Tool, env, projCfg)
+	return s.formatEnvelope(formatEnvelopeParams{Server: p.Server, Tool: p.Tool, Envelope: env, Projection: projCfg})
 }
 
 type envelopeParams struct {
@@ -256,7 +268,9 @@ func (s *Server) buildEnvelope(p envelopeParams) (any, error) {
 	saved := int64(stats.RawTokens - stats.SummaryTokens)
 	p.Upstream.recordSaved(p.Session, p.LatencyMs, saved)
 	s.logProjection(p, stats, s.clock.Since(projStart).Milliseconds())
-	return s.formatEnvelope(p.Entry.Server, p.Entry.ToolName.Name(), env, projCfg)
+	return s.formatEnvelope(formatEnvelopeParams{
+		Server: p.Entry.Server, Tool: p.Entry.ToolName.Name(), Envelope: env, Projection: projCfg,
+	})
 }
 
 type projectedEnvelopeParams struct {
@@ -282,20 +296,23 @@ type formattedEnvelope struct {
 	isError bool
 }
 
-func (s *Server) formatEnvelope(
-	server, displayTool string,
-	env *response.Envelope,
-	projCfg *config.ProjectionConfig,
-) (any, error) {
-	projFormat := config.ProjectionFormat(projCfg)
+type formatEnvelopeParams struct {
+	Server     string
+	Tool       string
+	Envelope   *response.Envelope
+	Projection *config.ProjectionConfig
+}
+
+func (s *Server) formatEnvelope(p formatEnvelopeParams) (any, error) {
+	projFormat := config.ProjectionFormat(p.Projection)
 	if config.EffectiveFormat("", projFormat, s.cfg.ResponseFormat) == config.FormatToon {
-		text, err := EncodeToon(s.logger.With("server", server, "tool", displayTool), env)
+		text, err := EncodeToon(s.logger.With("server", p.Server, "tool", p.Tool), p.Envelope)
 		if err != nil {
 			return nil, fmt.Errorf("encode TOON response: %w", err)
 		}
-		return formattedEnvelope{text: text, isError: env.Error != ""}, nil
+		return formattedEnvelope{text: text, isError: p.Envelope.Error != ""}, nil
 	}
-	return env, nil
+	return p.Envelope, nil
 }
 
 func (s *Server) resolveProjection(server, tool string, session *Session) *config.ProjectionConfig {

@@ -42,7 +42,7 @@ func cliAllowedTools(extraBuiltins string) string {
 	return "Bash"
 }
 
-func rawMCPConfig(env *Env, r *Runner, servers map[string]string, callLogDir string) (string, error) {
+func (r *Runner) rawMCPConfig(env *Env, servers map[string]string, callLogDir string) (string, error) {
 	mcpServers := make(map[string]any, len(servers))
 	for name, fixtureDir := range servers {
 		mcpServers[name] = map[string]any{
@@ -53,12 +53,19 @@ func rawMCPConfig(env *Env, r *Runner, servers map[string]string, callLogDir str
 	return writeMCPConfig(env, map[string]any{"mcpServers": mcpServers})
 }
 
-func (r *Runner) miniMCPConfig(env *Env, servers map[string]string, callLogDir string, format format) (string, error) {
-	configDir, err := r.buildMiniConfigDir(env, servers, callLogDir, format)
+type miniConfigParams struct {
+	env        *Env
+	servers    map[string]string
+	callLogDir string
+	format     format
+}
+
+func (r *Runner) miniMCPConfig(p miniConfigParams) (string, error) {
+	configDir, err := r.buildMiniConfigDir(p)
 	if err != nil {
 		return "", err
 	}
-	return writeMCPConfig(env, map[string]any{
+	return writeMCPConfig(p.env, map[string]any{
 		"mcpServers": map[string]any{
 			"mini": map[string]any{
 				"command": r.MiniBin,
@@ -77,30 +84,22 @@ func (r *Runner) miniMCPConfig(env *Env, servers map[string]string, callLogDir s
 	})
 }
 
-func (r *Runner) miniCLIConfigDir(
-	env *Env,
-	servers map[string]string,
-	callLogDir string,
-	format format,
-) (string, error) {
-	return r.buildMiniConfigDir(env, servers, callLogDir, format)
+func (r *Runner) miniCLIConfigDir(p miniConfigParams) (string, error) {
+	return r.buildMiniConfigDir(p)
 }
 
-func (r *Runner) buildMiniConfigDir(
-	env *Env,
-	servers map[string]string,
-	callLogDir string,
-	format format,
-) (string, error) {
-	configDir := env.TempDir()
-	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(miniConfigYAML(format)), 0o600); err != nil {
+func (r *Runner) buildMiniConfigDir(p miniConfigParams) (string, error) {
+	configDir := p.env.TempDir()
+	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(miniConfigYAML(p.format)), 0o600); err != nil {
 		return "", err
 	}
-	if err := writeServersYAML(configDir, r.FakemcpBin, servers, callLogDir); err != nil {
+	if err := writeServersYAML(writeServersYAMLParams{
+		configDir: configDir, fakemcpBin: r.FakemcpBin, servers: p.servers, callLogDir: p.callLogDir,
+	}); err != nil {
 		return "", err
 	}
-	if format != fmtPassthrough {
-		if err := writeBundledProjections(configDir, r, servers); err != nil {
+	if p.format != fmtPassthrough {
+		if err := writeBundledProjections(configDir, r, p.servers); err != nil {
 			return "", err
 		}
 	}
@@ -118,13 +117,22 @@ func miniConfigYAML(format format) string {
 	}
 }
 
-func writeServersYAML(configDir, fakemcpBin string, servers map[string]string, callLogDir string) error {
-	serverDir := filepath.Join(configDir, "servers")
+type writeServersYAMLParams struct {
+	configDir  string
+	fakemcpBin string
+	servers    map[string]string
+	callLogDir string
+}
+
+func writeServersYAML(p writeServersYAMLParams) error {
+	serverDir := filepath.Join(p.configDir, "servers")
 	if err := os.MkdirAll(serverDir, 0o700); err != nil {
 		return err
 	}
-	for name, fixtureDir := range servers {
-		yaml := buildServerYAML(fakemcpBin, name, fixtureDir, callLogDir)
+	for name, fixtureDir := range p.servers {
+		yaml := buildServerYAML(buildServerYAMLParams{
+			fakemcpBin: p.fakemcpBin, name: name, fixtureDir: fixtureDir, callLogDir: p.callLogDir,
+		})
 		if err := os.WriteFile(filepath.Join(serverDir, name+".yaml"), []byte(yaml), 0o600); err != nil {
 			return err
 		}
@@ -132,10 +140,17 @@ func writeServersYAML(configDir, fakemcpBin string, servers map[string]string, c
 	return nil
 }
 
-func buildServerYAML(fakemcpBin, name, fixtureDir, callLogDir string) string {
-	y := "command: " + fakemcpBin + "\nargs:\n  - --fixtures\n  - " + fixtureDir + "\n"
-	if callLogDir != "" {
-		y += "  - --call-log\n  - " + filepath.Join(callLogDir, name+".log") + "\n"
+type buildServerYAMLParams struct {
+	fakemcpBin string
+	name       string
+	fixtureDir string
+	callLogDir string
+}
+
+func buildServerYAML(p buildServerYAMLParams) string {
+	y := "command: " + p.fakemcpBin + "\nargs:\n  - --fixtures\n  - " + p.fixtureDir + "\n"
+	if p.callLogDir != "" {
+		y += "  - --call-log\n  - " + filepath.Join(p.callLogDir, p.name+".log") + "\n"
 	}
 	return y
 }
@@ -180,31 +195,28 @@ func inlineProjections(bundled []byte) []byte {
 	return []byte("projections:\n" + strings.Join(lines, "\n") + "\n")
 }
 
-func (r *Runner) proxyMCPConfig(env *Env, servers map[string]string, callLogDir string, format format) (string, error) {
-	configDir, err := r.writeMiniProxyConfig(env, servers, callLogDir, format)
+func (r *Runner) proxyMCPConfig(p miniConfigParams) (string, error) {
+	configDir, err := r.writeMiniProxyConfig(p)
 	if err != nil {
 		return "", err
 	}
-	return writeMCPConfig(env, miniServerConfig(r.MiniBin, configDir, "connect", "--log-level", "error"))
+	return writeMCPConfig(p.env, miniServerConfig(r.MiniBin, configDir, "connect", "--log-level", "error"))
 }
 
-func (r *Runner) writeMiniProxyConfig(
-	env *Env,
-	servers map[string]string,
-	callLogDir string,
-	format format,
-) (string, error) {
-	configDir := env.TempDir()
-	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(miniConfigYAML(format)), 0o600); err != nil {
+func (r *Runner) writeMiniProxyConfig(p miniConfigParams) (string, error) {
+	configDir := p.env.TempDir()
+	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(miniConfigYAML(p.format)), 0o600); err != nil {
 		return "", err
 	}
-	if err := writeServersYAML(configDir, r.FakemcpBin, servers, callLogDir); err != nil {
+	if err := writeServersYAML(writeServersYAMLParams{
+		configDir: configDir, fakemcpBin: r.FakemcpBin, servers: p.servers, callLogDir: p.callLogDir,
+	}); err != nil {
 		return "", err
 	}
-	if format == fmtPassthrough {
+	if p.format == fmtPassthrough {
 		return configDir, nil
 	}
-	if err := writeBundledProjections(configDir, r, servers); err != nil {
+	if err := writeBundledProjections(configDir, r, p.servers); err != nil {
 		return "", err
 	}
 	return configDir, nil
