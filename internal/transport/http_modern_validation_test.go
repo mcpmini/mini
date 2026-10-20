@@ -220,42 +220,67 @@ func TestModern4xxWithoutRPCResetsDiscovery(t *testing.T) {
 }
 
 func TestModernCallKeepsItsEraThroughAConcurrentReset(t *testing.T) {
-	listing := make(chan struct{})
-	release := make(chan struct{})
-	callHeaders := make(chan http.Header, 1)
-	srv := newModernServer(t, modernUpstream{Handle: func(w http.ResponseWriter, r *http.Request, req Request) {
-		switch req.Method {
-		case "tools/list":
-			close(listing)
-			<-release
-			writeRPCResult(t, w, req.ID, ToolsListResult{Tools: []ToolDefinition{modernTool("x", ownerHeaderSchema)}})
-		case "ping":
-			writeHTTPRPCError(t, w, httpRPCErrorParams{id: req.ID, code: CodeUnsupportedProtocolVersion})
-		case "tools/call":
-			callHeaders <- r.Header.Clone()
-			writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
-		}
-	}})
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
-	called := make(chan error, 1)
-	go func() {
-		_, err := conn.Call(t.Context(), "tools/call", json.RawMessage(`{"name":"x","arguments":{"owner":"octo"}}`))
-		called <- err
-	}()
-	<-listing
+	upstream := startResettingUpstream(t)
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: upstream.url})
+	called := callInBackground(t, conn, "tools/call", `{"name":"x","arguments":{"owner":"octo"}}`)
+	<-upstream.listing
 	if _, err := conn.Call(t.Context(), "ping", nil); err == nil {
 		t.Fatal("ping succeeded, want the unsupported-version error that resets the era")
 	}
-	close(release)
+	close(upstream.releaseList)
 	if err := <-called; err != nil {
 		t.Fatal(err)
 	}
-	headers := <-callHeaders
+	headers := <-upstream.callHeaders
 	if headers.Get("MCP-Protocol-Version") != ModernVersions[0] || headers.Get("Mcp-Method") != "tools/call" ||
 		headers.Get("Mcp-Param-Owner") != "octo" {
 		t.Fatalf("tools/call sent with protocol %q, method %q, owner %q after a concurrent reset, want modern headers",
 			headers.Get("MCP-Protocol-Version"), headers.Get("Mcp-Method"), headers.Get("Mcp-Param-Owner"))
 	}
+}
+
+// resettingUpstream holds tools/list until releaseList closes, answers ping with -32022 so a
+// caller can reset the era mid-call, and reports the headers of each tools/call.
+type resettingUpstream struct {
+	url         string
+	listing     chan struct{}
+	releaseList chan struct{}
+	callHeaders chan http.Header
+}
+
+func startResettingUpstream(t *testing.T) *resettingUpstream {
+	t.Helper()
+	u := &resettingUpstream{
+		listing: make(chan struct{}), releaseList: make(chan struct{}), callHeaders: make(chan http.Header, 1),
+	}
+	u.url = newModernServer(t, modernUpstream{Handle: u.handle(t)}).URL
+	return u
+}
+
+func (u *resettingUpstream) handle(t *testing.T) func(http.ResponseWriter, *http.Request, Request) {
+	return func(w http.ResponseWriter, r *http.Request, req Request) {
+		switch req.Method {
+		case "tools/list":
+			close(u.listing)
+			<-u.releaseList
+			writeRPCResult(t, w, req.ID, ToolsListResult{Tools: []ToolDefinition{modernTool("x", ownerHeaderSchema)}})
+		case "ping":
+			writeHTTPRPCError(t, w, httpRPCErrorParams{id: req.ID, code: CodeUnsupportedProtocolVersion})
+		case "tools/call":
+			u.callHeaders <- r.Header.Clone()
+			writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
+		}
+	}
+}
+
+func callInBackground(t *testing.T, conn *HTTPConnection, method, params string) <-chan error {
+	t.Helper()
+	called := make(chan error, 1)
+	go func() {
+		_, err := conn.Call(t.Context(), method, json.RawMessage(params))
+		called <- err
+	}()
+	return called
 }
 
 const ownerHeaderSchema = `{"type":"object","properties":{"owner":{"type":"string","x-mcp-header":"Owner"}}}`
