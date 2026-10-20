@@ -47,7 +47,9 @@ func newCallCommand(opts *rootOptions, protected bool) *cobra.Command {
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			runCallCmd(opts.configDir, args, f, protected)
+			runCallCmd(runCallParams{
+				configDir: opts.configDir, args: args, flags: f, protected: protected,
+			})
 			return nil
 		},
 	}
@@ -83,6 +85,27 @@ type callFlags struct {
 	raw  bool
 }
 
+type runCallParams struct {
+	configDir string
+	args      []string
+	flags     callFlags
+	protected bool
+}
+
+type executeProjectedParams struct {
+	ctx  context.Context
+	conn transport.Connection
+	call callContext
+	mode callOutput
+}
+
+type printCallOutputParams struct {
+	serverName string
+	toolName   string
+	env        *response.Envelope
+	mode       callOutput
+}
+
 func (f callFlags) enabledCount() int {
 	count := 0
 	for _, enabled := range []bool{f.json, f.toon, f.raw} {
@@ -103,25 +126,25 @@ type callContext struct {
 	clock      clock.Clock
 }
 
-func runCallCmd(configDir string, args []string, f callFlags, protected bool) {
-	cc := parseCallContext(configDir, args)
+func runCallCmd(p runCallParams) {
+	cc := parseCallContext(p.configDir, p.args)
 	cc.clock = clock.System()
-	checkCallPermission(cc.sc, cc.toolName, protected)
+	checkCallPermission(cc.sc, cc.toolName, p.protected)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	conn := mustDialCall(ctx, configDir, cc)
+	conn := mustDialCall(ctx, p.configDir, cc)
 	defer conn.Close() //nolint:errcheck // The call result is authoritative; closing a killed stdio process may report its exit status.
 
 	projCfg := resolveCallProjection(cc.sc, cc.toolName)
 	projFormat := config.ProjectionFormat(projCfg)
-	mode := resolveCallOutput(f, projFormat, cc.cfg.ResponseFormat)
+	mode := resolveCallOutput(p.flags, projFormat, cc.cfg.ResponseFormat)
 	if mode == callOutputRaw {
 		executeRaw(ctx, conn, cc)
 		return
 	}
-	executeProjected(ctx, conn, cc, mode)
+	executeProjected(executeProjectedParams{ctx: ctx, conn: conn, call: cc, mode: mode})
 }
 
 func parseCallContext(configDir string, args []string) callContext {
@@ -198,10 +221,10 @@ func executeRaw(ctx context.Context, conn transport.Connection, cc callContext) 
 	fmt.Println(string(raw))
 }
 
-func executeProjected(ctx context.Context, conn transport.Connection, cc callContext, mode callOutput) {
-	store, err := openCallStore(cc.cfg, cc.configDir, cc.clock)
+func executeProjected(p executeProjectedParams) {
+	store, err := openCallStore(p.call.cfg, p.call.configDir, p.call.clock)
 	if err != nil {
-		if closeErr := conn.Close(); closeErr != nil {
+		if closeErr := p.conn.Close(); closeErr != nil {
 			err = fmt.Errorf("%w (close upstream: %w)", err, closeErr)
 		}
 		exitOnCallError(err)
@@ -209,10 +232,12 @@ func executeProjected(ctx context.Context, conn transport.Connection, cc callCon
 	}
 	defer store.Close()
 
-	result, err := invoke.Invoke(ctx, buildInvokeParams(conn, cc, store))
+	result, err := invoke.Invoke(p.ctx, buildInvokeParams(p.conn, p.call, store))
 	exitOnCallError(err)
 	exitOnEnvelopeError(result.Envelope)
-	exitOnCallError(printCallOutput(cc.serverName, cc.toolName, result.Envelope, mode))
+	exitOnCallError(printCallOutput(printCallOutputParams{
+		serverName: p.call.serverName, toolName: p.call.toolName, env: result.Envelope, mode: p.mode,
+	}))
 }
 
 func openCallStore(cfg *config.Config, configDir string, clock clock.Clock) (*response.Store, error) {
@@ -304,18 +329,18 @@ func resolveCallProjection(sc *config.ServerConfig, toolName string) *config.Pro
 	return sc.Projections["*"]
 }
 
-func printCallOutput(serverName, toolName string, env *response.Envelope, mode callOutput) error {
-	if mode == callOutputToon {
+func printCallOutput(p printCallOutputParams) error {
+	if p.mode == callOutputToon {
 		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})).
-			With("server", serverName, "tool", toolName)
-		text, err := server.EncodeToon(logger, env)
+			With("server", p.serverName, "tool", p.toolName)
+		text, err := server.EncodeToon(logger, p.env)
 		if err != nil {
 			return fmt.Errorf("encode TOON response: %w", err)
 		}
 		fmt.Println(text)
 		return nil
 	}
-	b, err := json.MarshalIndent(env, "", "  ")
+	b, err := json.MarshalIndent(p.env, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode JSON response: %w", err)
 	}

@@ -20,7 +20,10 @@ func makePipeConn(t *testing.T) (conn *StdioConnection, serverW *io.PipeWriter, 
 	t.Helper()
 	srvOutR, srvOutW := io.Pipe()
 	connOutR, connOutW := io.Pipe()
-	conn = newConn(new(exec.Cmd), connOutW, srvOutR, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	conn = newConn(newStdioConnParams{
+		cmd: new(exec.Cmd), stdin: connOutW, stdout: srvOutR,
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
 	go conn.readLoop()
 	t.Cleanup(func() {
 		conn.closeDone()

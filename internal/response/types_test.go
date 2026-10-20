@@ -21,7 +21,7 @@ func TestEnvelope_NullSuccessDataStillSerializesDataKey(t *testing.T) {
 }
 
 func TestEnvelope_ErrorNeverIncludesDataKey(t *testing.T) {
-	env := response.BuildError("tool_error", "boom", false, "")
+	env := response.BuildError(response.BuildErrorParams{Code: "tool_error", Message: "boom"})
 	b, err := json.Marshal(env)
 	if err != nil {
 		t.Fatal(err)

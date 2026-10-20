@@ -34,7 +34,9 @@ func editCodexServers(data []byte, disable []string, mini *codexServer) ([]byte,
 	}
 	doc.lines = plan.apply(scanned, miniLines, doc.eol)
 	edited := doc.join()
-	if err := verifyCodexEdit(data, edited, disable, miniLines); err != nil {
+	if err := verifyCodexEdit(verifyCodexEditParams{
+		original: data, edited: edited, disable: disable, miniLines: miniLines,
+	}); err != nil {
 		return nil, err
 	}
 	return edited, nil
@@ -216,12 +218,19 @@ func codexMiniTable(before map[string]any, mini *codexServer) ([]string, error) 
 	return append([]string{"[mcp_servers." + MiniKey + "]"}, lines...), nil
 }
 
-func verifyCodexEdit(original, edited []byte, disable []string, miniLines []string) error {
-	want, err := expectedCodexConfig(original, disable, miniLines)
+type verifyCodexEditParams struct {
+	original  []byte
+	edited    []byte
+	disable   []string
+	miniLines []string
+}
+
+func verifyCodexEdit(p verifyCodexEditParams) error {
+	want, err := expectedCodexConfig(p.original, p.disable, p.miniLines)
 	if err != nil {
 		return err
 	}
-	got, err := decodeCodexConfig(edited)
+	got, err := decodeCodexConfig(p.edited)
 	if err != nil {
 		return fmt.Errorf("codex config edit would not parse: %w", err)
 	}

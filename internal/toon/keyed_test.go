@@ -137,7 +137,9 @@ func TestWriteKeyedTabularDepthError(t *testing.T) {
 	if !ok {
 		t.Fatal("keyedTabularCols returned false")
 	}
-	if err := writeKeyedTabular(&sb, "k", obj, cols, maxEncodeDepth+1); err == nil {
+	if err := writeKeyedTabular(keyedTabularParams{
+		builder: &sb, key: "k", object: obj, columns: cols, entryDepth: maxEncodeDepth + 1,
+	}); err == nil {
 		t.Fatal("expected depth error, got nil")
 	}
 }

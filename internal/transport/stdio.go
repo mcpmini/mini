@@ -80,7 +80,7 @@ func startSubprocess(ctx context.Context, p StdioCommand) (*StdioConnection, err
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start %s: %w", p.Command, err)
 	}
-	c := newConn(cmd, stdin, stdout, p.Logger)
+	c := newConn(newStdioConnParams{cmd: cmd, stdin: stdin, stdout: stdout, logger: p.Logger})
 	c.command = p
 	if p.Clock != nil {
 		c.clock = p.Clock
@@ -101,16 +101,23 @@ func cmdPipes(cmd *exec.Cmd) (io.WriteCloser, io.ReadCloser, error) {
 	return stdin, stdout, nil
 }
 
-func newConn(cmd *exec.Cmd, stdin io.WriteCloser, stdout io.ReadCloser, logger *slog.Logger) *StdioConnection {
+type newStdioConnParams struct {
+	cmd    *exec.Cmd
+	stdin  io.WriteCloser
+	stdout io.ReadCloser
+	logger *slog.Logger
+}
+
+func newConn(p newStdioConnParams) *StdioConnection {
 	writeGate := make(chan struct{}, 1)
 	writeGate <- struct{}{}
 	return &StdioConnection{
-		cmd:       cmd,
-		stdin:     stdin,
-		scanner:   NewScanner(stdout),
+		cmd:       p.cmd,
+		stdin:     p.stdin,
+		scanner:   NewScanner(p.stdout),
 		pending:   newPendingMap(),
 		done:      make(chan struct{}),
-		logger:    logger,
+		logger:    p.logger,
 		clock:     clock.System(),
 		writeGate: writeGate,
 	}

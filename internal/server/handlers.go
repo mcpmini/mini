@@ -158,7 +158,7 @@ func (s *Server) toolNotFoundError(err error, server, tool string) (any, error) 
 	case errors.As(err, &notReady):
 		env = notReady.env
 	case errors.As(err, &le):
-		env = response.BuildError("not_found", err.Error(), false, "")
+		env = response.BuildError(response.BuildErrorParams{Code: "not_found", Message: err.Error()})
 	default:
 		return nil, err
 	}
@@ -242,7 +242,7 @@ type toolErrParams struct {
 func (s *Server) handleToolErr(p toolErrParams) (any, error) {
 	p.Session.recordCall(p.LatencyMs, 0, true)
 	s.logToolError(toolErrorLogParams{Server: p.Server, Tool: p.Tool, LatencyMs: p.LatencyMs, Err: p.Err})
-	env := response.BuildError("tool_error", p.Err.Error(), false, "")
+	env := response.BuildError(response.BuildErrorParams{Code: "tool_error", Message: p.Err.Error()})
 	projCfg := s.resolveProjection(p.Server, p.Tool, p.Session)
 	return s.formatEnvelope(formatEnvelopeParams{Server: p.Server, Tool: p.Tool, Envelope: env, Projection: projCfg})
 }

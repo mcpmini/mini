@@ -34,7 +34,9 @@ func (s *Server) serverNotReadyError(server string) (*response.Envelope, bool) {
 	if state.phase() == phaseConnected {
 		return nil, false
 	}
-	return response.BuildError(state.errorCode(), state.reason(server), state.retryable(), state.action()), true
+	return response.BuildError(response.BuildErrorParams{
+		Code: state.errorCode(), Message: state.reason(server), Retryable: state.retryable(), Action: state.action(),
+	}), true
 }
 
 func (st startupState) errorCode() string {

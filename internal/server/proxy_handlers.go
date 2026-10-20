@@ -200,7 +200,7 @@ func proxyToolFailure(raw json.RawMessage, toolErr error) any {
 	if errors.Is(toolErr, invoke.ErrToolReturnedError) {
 		return upstreamResult(raw)
 	}
-	return response.BuildError("tool_error", toolErr.Error(), false, "")
+	return response.BuildError(response.BuildErrorParams{Code: "tool_error", Message: toolErr.Error()})
 }
 
 func (s *Server) proxyProjectionConfig(p proxyCallParams) *config.ProjectionConfig {
