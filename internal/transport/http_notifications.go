@@ -13,22 +13,26 @@ import (
 )
 
 func (c *HTTPConnection) ListTools(ctx context.Context) ([]ToolDefinition, error) {
-	tools, err := paginateToolsList(ctx, c.callToolsPage)
+	// Judged by how each page was sent, not the shared era, which a concurrent reset can change mid-listing.
+	anyLegacyPage := false
+	tools, err := paginateToolsList(ctx, func(ctx context.Context, cursor string) (ToolsListResult, error) {
+		page, modernVersion, err := c.callToolsPage(ctx, cursor)
+		anyLegacyPage = anyLegacyPage || (err == nil && modernVersion == "")
+		return page, err
+	})
 	if err != nil {
 		return nil, err
 	}
-	if c.isModern() {
-		return c.rebuildToolHeaders(tools), nil
+	if anyLegacyPage {
+		return tools, nil
 	}
-	return tools, nil
+	return c.rebuildToolHeaders(tools), nil
 }
 
-func (c *HTTPConnection) ensureReady(ctx context.Context) error {
-	if err := c.probeOnce(ctx); err != nil {
-		return err
-	}
-	if c.isModern() {
-		return nil
+func (c *HTTPConnection) ensureReady(ctx context.Context) (modernVersion string, err error) {
+	modernVersion, err = c.probeOnce(ctx)
+	if err != nil || modernVersion != "" {
+		return modernVersion, err
 	}
 	renewed, err := c.initializeOnce(ctx)
 	if renewed {
@@ -41,7 +45,7 @@ func (c *HTTPConnection) ensureReady(ctx context.Context) error {
 		// Without this notification, mini would keep serving the tool list from s1.
 		c.toolsChanged.NotifyToolsChanged()
 	}
-	return err
+	return "", err
 }
 
 func (c *HTTPConnection) initializeOnce(ctx context.Context) (renewed bool, err error) {
@@ -58,21 +62,21 @@ func (c *HTTPConnection) initializeOnce(ctx context.Context) (renewed bool, err 
 	return renewed, nil
 }
 
-func (c *HTTPConnection) callToolsPage(ctx context.Context, cursor string) (ToolsListResult, error) {
+func (c *HTTPConnection) callToolsPage(ctx context.Context, cursor string) (ToolsListResult, string, error) {
 	var params json.RawMessage
 	if cursor != "" {
 		//nolint:errcheck // cursor map contains only strings.
 		params, _ = json.Marshal(map[string]string{"cursor": cursor})
 	}
-	raw, err := c.Call(ctx, "tools/list", params)
+	raw, modernVersion, err := c.callAndReportVersion(ctx, "tools/list", params)
 	if err != nil {
-		return ToolsListResult{}, err
+		return ToolsListResult{}, "", err
 	}
 	var r ToolsListResult
 	if err := json.Unmarshal(raw, &r); err != nil {
-		return ToolsListResult{}, fmt.Errorf("parse tools/list: %w", err)
+		return ToolsListResult{}, "", fmt.Errorf("parse tools/list: %w", err)
 	}
-	return r, nil
+	return r, modernVersion, nil
 }
 
 func (c *HTTPConnection) initHandshake(ctx context.Context) error {

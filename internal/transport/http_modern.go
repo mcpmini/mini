@@ -48,39 +48,36 @@ func (c *HTTPConnection) ensureToolHeaders(ctx context.Context) error {
 	return err
 }
 
-func (c *HTTPConnection) currentModernVersion() string {
+func (c *HTTPConnection) negotiatedModernVersion() string {
 	if v := c.modernVersion.Load(); v != nil {
 		return *v
 	}
-	return ModernVersions[0]
+	return ""
 }
 
 func (c *HTTPConnection) isModern() bool {
-	return c.modernVersion.Load() != nil
+	return c.negotiatedModernVersion() != ""
 }
 
-func (c *HTTPConnection) callModern(
-	ctx context.Context,
-	method string,
-	params json.RawMessage,
-) (json.RawMessage, error) {
-	prepared, err := c.prepareModernParams(params)
+func (c *HTTPConnection) callModern(ctx context.Context, call httpCall) (json.RawMessage, error) {
+	prepared, err := c.prepareModernParams(call.Params, call.modernVersion)
 	if err != nil {
 		return nil, err
 	}
-	if method == "tools/call" {
+	call.Params = prepared
+	if call.Method == "tools/call" {
 		if err = c.ensureToolHeaders(ctx); err != nil {
 			return nil, err
 		}
 	}
-	result, err := c.rpc(ctx, method, prepared)
-	if method != "tools/call" || !isHeaderMismatch(err) {
+	result, err := c.send(ctx, call)
+	if call.Method != "tools/call" || !isHeaderMismatch(err) {
 		return result, c.modernError(err)
 	}
 	if _, err = c.ListTools(ctx); err != nil {
 		return nil, err
 	}
-	result, err = c.rpc(ctx, method, prepared)
+	result, err = c.send(ctx, call)
 	return result, c.modernError(err)
 }
 
@@ -128,7 +125,8 @@ func (c *HTTPConnection) resetModernEra() {
 	c.initMu.Unlock()
 }
 
-func (c *HTTPConnection) buildModernHTTPRequest(ctx context.Context, req Request) (*http.Request, string, error) {
+func (c *HTTPConnection) buildModernHTTPRequest(ctx context.Context, call httpCall) (*http.Request, string, error) {
+	req := call.Request
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, "", err
@@ -141,7 +139,7 @@ func (c *HTTPConnection) buildModernHTTPRequest(ctx context.Context, req Request
 	if err != nil {
 		return nil, "", err
 	}
-	httpReq.Header.Set("MCP-Protocol-Version", c.currentModernVersion())
+	httpReq.Header.Set("MCP-Protocol-Version", call.modernVersion)
 	httpReq.Header.Set("Mcp-Method", req.Method)
 	if req.Method == "tools/call" {
 		c.addToolCallHeaders(httpReq, req.Params)

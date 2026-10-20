@@ -99,8 +99,8 @@ func TestHTTPConnection_ProbeModernUsesModernRequests(t *testing.T) {
 	if !slices.Equal(methods, []string{"server/discover", "ping"}) {
 		t.Fatalf("methods = %v", methods)
 	}
-	if !conn.isModern() || conn.currentModernVersion() != ModernVersions[0] {
-		t.Errorf("modern = %v, version = %q", conn.isModern(), conn.currentModernVersion())
+	if !conn.isModern() || conn.negotiatedModernVersion() != ModernVersions[0] {
+		t.Errorf("modern = %v, version = %q", conn.isModern(), conn.negotiatedModernVersion())
 	}
 }
 

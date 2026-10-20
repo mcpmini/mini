@@ -12,7 +12,7 @@ import (
 	"github.com/mcpmini/mini/internal/version"
 )
 
-func (c *HTTPConnection) prepareModernParams(params json.RawMessage) (json.RawMessage, error) {
+func (c *HTTPConnection) prepareModernParams(params json.RawMessage, modernVersion string) (json.RawMessage, error) {
 	fields, err := decodeObjectParams(params)
 	if err != nil {
 		return nil, err
@@ -23,7 +23,7 @@ func (c *HTTPConnection) prepareModernParams(params json.RawMessage) (json.RawMe
 			return nil, fmt.Errorf("modern request _meta must be a JSON object")
 		}
 	}
-	if err = c.addDefaultMeta(meta); err != nil {
+	if err = addDefaultMeta(meta, modernVersion); err != nil {
 		return nil, err
 	}
 	if fields["_meta"], err = json.Marshal(meta); err != nil {
@@ -32,9 +32,9 @@ func (c *HTTPConnection) prepareModernParams(params json.RawMessage) (json.RawMe
 	return json.Marshal(fields)
 }
 
-func (c *HTTPConnection) addDefaultMeta(meta map[string]json.RawMessage) error {
+func addDefaultMeta(meta map[string]json.RawMessage, modernVersion string) error {
 	encoded, err := json.Marshal(RequestMeta{
-		ProtocolVersion:    c.currentModernVersion(),
+		ProtocolVersion:    modernVersion,
 		ClientInfo:         &ClientInfo{Name: "mini", Version: version.Version},
 		ClientCapabilities: &ClientCapabilities{},
 	})
