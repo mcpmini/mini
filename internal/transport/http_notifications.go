@@ -149,7 +149,7 @@ func toolsListChanged(capabilities map[string]any) bool {
 
 func (c *HTTPConnection) sendInitializedNotification(ctx context.Context) error {
 	//nolint:errcheck // fixed notification fields are JSON-serializable.
-	notif, _ := json.Marshal(Notification{JSONRPC: "2.0", Method: NotificationInitialized})
+	notif, _ := json.Marshal(Notification{JsonRPC: JsonRPCVersion, Method: NotificationInitialized})
 	resp, err := c.sendOneWithAuthRetry(ctx, c.client, c.buildInitializedNotifRequest(notif))
 	if err != nil {
 		return fmt.Errorf("notifications/initialized: %w", err)

@@ -38,9 +38,11 @@ func (d *compactRecoveryTransport) RoundTrip(req *http.Request) (*http.Response,
 	case "tools/call":
 		d.calls++
 		if d.calls == 1 {
-			return daemonResponse(transport.Response{JSONRPC: "2.0", ID: request.ID, Error: &transport.RPCError{
-				Code: transport.CodeInvalidRequest, Message: transport.NotInitializedMessage,
-			}})
+			return daemonResponse(
+				transport.Response{JsonRPC: transport.JsonRPCVersion, ID: request.ID, Error: &transport.RPCError{
+					Code: transport.CodeInvalidRequest, Message: transport.NotInitializedMessage,
+				}},
+			)
 		}
 	}
 	return daemonResult(request.ID, json.RawMessage(`{"data":{"answer":"ok"}}`))

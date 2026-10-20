@@ -8,7 +8,7 @@ import (
 )
 
 type modernLine struct {
-	JSONRPC string          `json:"jsonrpc"`
+	JsonRPC string          `json:"jsonrpc"`
 	ID      json.RawMessage `json:"id"`
 	Method  string          `json:"method"`
 	Params  json.RawMessage `json:"params"`
@@ -44,7 +44,8 @@ func (s *proxySession) handleModernInput(line []byte) (bool, error) {
 func (s *proxySession) handleLocalModernLine(message modernLine) (bool, error) {
 	switch message.Method {
 	case transport.MethodSubscriptionsListen:
-		if message.JSONRPC != "2.0" || !message.isModern() || len(message.ID) == 0 || string(message.ID) == "null" ||
+		if message.JsonRPC != transport.JsonRPCVersion || !message.isModern() || len(message.ID) == 0 ||
+			string(message.ID) == "null" ||
 			!s.clientReady.Load() {
 			return false, nil
 		}
@@ -78,7 +79,7 @@ func (s *proxySession) acknowledgeListen(id json.RawMessage, params transport.Li
 }
 
 func (s *proxySession) writeInvalidListenParams(id json.RawMessage) error {
-	line, err := json.Marshal(transport.Response{JSONRPC: "2.0", ID: id, Error: &transport.RPCError{
+	line, err := json.Marshal(transport.Response{JsonRPC: transport.JsonRPCVersion, ID: id, Error: &transport.RPCError{
 		Code: transport.CodeInvalidParams, Message: transport.InvalidListenParamsMessage,
 	}})
 	if err != nil {

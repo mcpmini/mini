@@ -38,7 +38,7 @@ func mcpPost(t *testing.T, ts *httptest.Server, body []byte, sessionID string) *
 
 func initRequest() []byte {
 	b, _ := json.Marshal(map[string]any{
-		"jsonrpc": "2.0",
+		"jsonrpc": transport.JsonRPCVersion,
 		"id":      1,
 		"method":  "initialize",
 		"params": map[string]any{
@@ -125,7 +125,7 @@ func initSession(t *testing.T, ts *httptest.Server) string {
 
 func initCompactRequest() []byte {
 	b, _ := json.Marshal(map[string]any{
-		"jsonrpc": "2.0",
+		"jsonrpc": transport.JsonRPCVersion,
 		"id":      1,
 		"method":  "initialize",
 		"params": map[string]any{
@@ -165,7 +165,7 @@ type sessionProjectionParams struct {
 func setSessionProjection(t *testing.T, p sessionProjectionParams) {
 	t.Helper()
 	body, _ := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+		"jsonrpc": transport.JsonRPCVersion, "id": 2, "method": "tools/call",
 		"params": map[string]any{"name": "config", "arguments": map[string]any{
 			"action": "set_projection", "server": p.SrvName, "tool": p.Tool,
 			"projection": p.Proj, "session_only": true,
@@ -177,7 +177,7 @@ func setSessionProjection(t *testing.T, p sessionProjectionParams) {
 func httpExecToolText(t *testing.T, ts *httptest.Server, sessionID, srvName, tool string) string {
 	t.Helper()
 	body, _ := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+		"jsonrpc": transport.JsonRPCVersion, "id": 3, "method": "tools/call",
 		"params": map[string]any{"name": "call", "arguments": map[string]any{"server": srvName, "tool": tool}},
 	})
 	resp := mcpPost(t, ts, body, sessionID)
@@ -227,7 +227,7 @@ func requestToolsList(t *testing.T, ts *httptest.Server, accept string) *http.Re
 	t.Helper()
 	sessionID := initSession(t, ts)
 	body, _ := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "id": 1, "method": "tools/list",
+		"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "tools/list",
 	})
 	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -312,7 +312,7 @@ func httpExecOne(t *testing.T, ts *httptest.Server, id int, errs chan<- string) 
 	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/lifecycle.mdx#L38
 	sessionID := initCompactSession(t, ts)
 	body, _ := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "id": id + 1, "method": "tools/call",
+		"jsonrpc": transport.JsonRPCVersion, "id": id + 1, "method": "tools/call",
 		"params": map[string]any{"name": "call", "arguments": map[string]any{"server": "svc", "tool": "ping"}},
 	})
 	resp := mcpPost(t, ts, body, sessionID)
@@ -370,7 +370,7 @@ func TestHTTPServer_notFound(t *testing.T) {
 func sseProxyToolCall(t *testing.T, ts *httptest.Server, sessionID, toolName string) *http.Response {
 	t.Helper()
 	body, _ := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "tools/call",
 		"params": map[string]any{"name": toolName, "arguments": map[string]any{}},
 	})
 	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", bytes.NewReader(body))
@@ -452,7 +452,7 @@ func TestHTTPServer_staleSessionFails(t *testing.T) {
 
 	_, ts2 := newHTTPTestServer(t, server.Params{})
 	body, _ := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "tools/call",
 		"params": map[string]any{"name": "list", "arguments": map[string]any{}},
 	})
 

@@ -17,7 +17,7 @@ import (
 
 func TestHTTPConnection_ProbeRunsBeforeInitialize(t *testing.T) {
 	var methods []string
-	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		req := decodeRequest(t, r)
 		methods = append(methods, req.Method)
 		if req.Method == "server/discover" {
@@ -51,7 +51,7 @@ func TestHTTPConnection_ProbeWithoutAnAnswerFallsBackToLegacy(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var methods []string
-			srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+			srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 				req := decodeRequest(t, r)
 				methods = append(methods, req.Method)
 				if req.Method == "server/discover" {
@@ -77,7 +77,7 @@ func TestHTTPConnection_ProbeWithoutAnAnswerFallsBackToLegacy(t *testing.T) {
 
 func TestHTTPConnection_ProbeModernUsesModernRequests(t *testing.T) {
 	var methods []string
-	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		req := decodeRequest(t, r)
 		methods = append(methods, req.Method)
 		if req.Method == "server/discover" {
@@ -106,7 +106,7 @@ func TestHTTPConnection_ProbeModernUsesModernRequests(t *testing.T) {
 
 func TestHTTPConnection_failedProbeRetriesNextCall(t *testing.T) {
 	var probes atomic.Int32
-	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		req := decodeRequest(t, r)
 		if req.Method == "server/discover" && probes.Add(1) <= maxRetries {
 			w.WriteHeader(http.StatusServiceUnavailable)
@@ -170,7 +170,7 @@ func TestHTTPConnection_ProbeRefreshesAuthorization(t *testing.T) {
 
 func TestHTTPConnection_ProbeSessionRenewalDoesNotReprobe(t *testing.T) {
 	var probes, calls atomic.Int32
-	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		req := decodeRequest(t, r)
 		switch req.Method {
 		case "server/discover":
@@ -201,7 +201,7 @@ func TestHTTPConnection_ProbeSessionRenewalDoesNotReprobe(t *testing.T) {
 func TestHTTPConnection_concurrentFirstCallsProbeOnce(t *testing.T) {
 	var probes atomic.Int32
 	entered, release := make(chan struct{}), make(chan struct{})
-	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		req := decodeRequest(t, r)
 		if req.Method == "server/discover" {
 			probes.Add(1)

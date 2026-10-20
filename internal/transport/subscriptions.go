@@ -17,7 +17,7 @@ type ListenParams struct {
 }
 
 type ListenRequest struct {
-	JSONRPC string          `json:"jsonrpc"`
+	JsonRPC string          `json:"jsonrpc"`
 	ID      json.RawMessage `json:"id"`
 	Params  ListenParams    `json:"params"`
 }
@@ -27,7 +27,7 @@ type SubscriptionMeta struct {
 }
 
 type SubscriptionAck struct {
-	JSONRPC string                `json:"jsonrpc"`
+	JsonRPC string                `json:"jsonrpc"`
 	Method  string                `json:"method"`
 	Params  SubscriptionAckParams `json:"params"`
 }
@@ -39,14 +39,14 @@ type SubscriptionAckParams struct {
 
 func NewSubscriptionAck(id json.RawMessage, notifications ListenNotifications) SubscriptionAck {
 	return SubscriptionAck{
-		JSONRPC: "2.0",
+		JsonRPC: JsonRPCVersion,
 		Method:  NotificationSubscriptionsAcknowledged,
 		Params:  SubscriptionAckParams{Meta: SubscriptionMeta{SubscriptionID: id}, Notifications: notifications},
 	}
 }
 
 type ToolsListChangedNotification struct {
-	JSONRPC string                         `json:"jsonrpc"`
+	JsonRPC string                         `json:"jsonrpc"`
 	Method  string                         `json:"method"`
 	Params  SubscriptionNotificationParams `json:"params"`
 }
@@ -57,7 +57,7 @@ type SubscriptionNotificationParams struct {
 
 func NewToolsListChangedNotification(subscriptionID json.RawMessage) ToolsListChangedNotification {
 	return ToolsListChangedNotification{
-		JSONRPC: "2.0",
+		JsonRPC: JsonRPCVersion,
 		Method:  NotificationToolsChanged,
 		Params:  SubscriptionNotificationParams{Meta: SubscriptionMeta{SubscriptionID: subscriptionID}},
 	}

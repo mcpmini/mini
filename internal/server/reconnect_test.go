@@ -165,12 +165,12 @@ func TestReconnect_successAfterFailure(t *testing.T) {
 func writeToolsCallResp(w http.ResponseWriter, id any, callsSeen int, rpcErrOnCall *int) {
 	if *rpcErrOnCall > 0 && callsSeen == *rpcErrOnCall {
 		json.NewEncoder(w).
-			Encode(map[string]any{"jsonrpc": "2.0", "id": id, "error": map[string]any{"code": -32602, "message": "bad args"}})
+			Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, "error": map[string]any{"code": -32602, "message": "bad args"}})
 
 			//nolint:errcheck
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, //nolint:errcheck
+	json.NewEncoder(w).Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, //nolint:errcheck
 		"result": map[string]any{"content": []map[string]any{{"type": "text", "text": "ok"}}}})
 }
 
@@ -183,7 +183,7 @@ func perSessionUpstreamHandler(dialCount *int, rpcErrOnCall *int) http.HandlerFu
 		switch req["method"] {
 		case "initialize":
 			*dialCount++
-			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, //nolint:errcheck
+			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, //nolint:errcheck
 				"result": map[string]any{
 					"protocolVersion": "2024-11-05",
 					"capabilities":    map[string]any{"tools": map[string]any{}},
@@ -194,7 +194,7 @@ func perSessionUpstreamHandler(dialCount *int, rpcErrOnCall *int) http.HandlerFu
 				{"name": "ping", "description": "ping", "inputSchema": map[string]any{"type": "object"}},
 			}
 			json.NewEncoder(w).
-				Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"tools": tools}})
+				Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, "result": map[string]any{"tools": tools}})
 		//nolint:errcheck
 		case "tools/call":
 			callsSeen++
@@ -243,7 +243,7 @@ func TestPerSession_rpcErrorKeepsConn(t *testing.T) {
 	sid := "aabbccdd11223344aabbccdd11223344"
 
 	init, _ := json.Marshal(map[string]any{
-		"jsonrpc": "2.0",
+		"jsonrpc": transport.JsonRPCVersion,
 		"id":      0,
 		"method":  "initialize",
 		"params": map[string]any{
@@ -254,7 +254,7 @@ func TestPerSession_rpcErrorKeepsConn(t *testing.T) {
 		},
 	})
 	exec, _ := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "tools/call",
 		"params": map[string]any{"name": "call", "arguments": map[string]any{"server": "svc", "tool": "ping"}},
 	})
 	postToMiniHTTP(t, ts, sid, init)
@@ -279,7 +279,7 @@ func TestPerSession_transportErrorRedialsConn(t *testing.T) {
 		switch req["method"] {
 		case "initialize":
 			dialCount.Add(1)
-			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, //nolint:errcheck
+			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, //nolint:errcheck
 				"result": map[string]any{
 					"protocolVersion": "2024-11-05",
 					"capabilities":    map[string]any{"tools": map[string]any{}},
@@ -290,7 +290,7 @@ func TestPerSession_transportErrorRedialsConn(t *testing.T) {
 				{"name": "ping", "description": "ping", "inputSchema": map[string]any{"type": "object"}},
 			}
 			json.NewEncoder(w).
-				Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"tools": tools}})
+				Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, "result": map[string]any{"tools": tools}})
 		//nolint:errcheck
 		case "tools/call":
 			n := callsSeen.Add(1)
@@ -304,7 +304,7 @@ func TestPerSession_transportErrorRedialsConn(t *testing.T) {
 				conn.Close() // abrupt transport close
 				return
 			}
-			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, //nolint:errcheck
+			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, //nolint:errcheck
 				"result": map[string]any{"content": []map[string]any{{"type": "text", "text": "pong"}}}})
 		}
 	})
@@ -315,7 +315,7 @@ func TestPerSession_transportErrorRedialsConn(t *testing.T) {
 
 	sid := "aabbccdd11223344aabbccdd11223344"
 	init, _ := json.Marshal(map[string]any{
-		"jsonrpc": "2.0",
+		"jsonrpc": transport.JsonRPCVersion,
 		"id":      0,
 		"method":  "initialize",
 		"params": map[string]any{
@@ -326,7 +326,7 @@ func TestPerSession_transportErrorRedialsConn(t *testing.T) {
 		},
 	})
 	exec, _ := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "tools/call",
 		"params": map[string]any{"name": "call", "arguments": map[string]any{"server": "svc", "tool": "ping"}},
 	})
 

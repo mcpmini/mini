@@ -20,6 +20,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mcpmini/mini/internal/transport"
+
 	"gopkg.in/yaml.v3"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -427,7 +429,7 @@ func (c *mcpClient) readLoop(scanner *bufio.Scanner) {
 func (c *mcpClient) sendNotification(method string, params any) {
 	c.t.Helper()
 	p, _ := json.Marshal(params)
-	req := map[string]any{"jsonrpc": "2.0", "method": method, "params": json.RawMessage(p)}
+	req := map[string]any{"jsonrpc": transport.JsonRPCVersion, "method": method, "params": json.RawMessage(p)}
 	b, _ := json.Marshal(req)
 	fmt.Fprintf(c.stdin, "%s\n", b)
 }
@@ -464,7 +466,7 @@ func (c *mcpClient) call(method string, params any) (json.RawMessage, error) {
 	c.pending.Store(id, ch)
 
 	p, _ := json.Marshal(params)
-	req := map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": json.RawMessage(p)}
+	req := map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, "method": method, "params": json.RawMessage(p)}
 	b, _ := json.Marshal(req)
 	fmt.Fprintf(c.stdin, "%s\n", b)
 

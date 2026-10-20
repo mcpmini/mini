@@ -27,7 +27,7 @@ func ModernRequestVersion(version string, id any, method string, params any) []b
 		mustUnmarshal(raw, &meta)
 	}
 	fields["_meta"] = mustMarshal(meta)
-	request := transport.Request{JSONRPC: "2.0", ID: id, Method: method, Params: mustMarshal(fields)}
+	request := transport.Request{JsonRPC: transport.JsonRPCVersion, ID: id, Method: method, Params: mustMarshal(fields)}
 	return append(mustMarshal(request), '\n')
 }
 

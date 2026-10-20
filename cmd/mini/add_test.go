@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mcpmini/mini/internal/transport"
+
 	"gopkg.in/yaml.v3"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -26,17 +28,19 @@ func fakeUnauthenticatedMCPServer(t *testing.T) *httptest.Server {
 		id := req["id"]
 		switch req["method"] {
 		case "initialize":
-			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, //nolint:errcheck
+			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, //nolint:errcheck
 				"result": map[string]any{
 					"protocolVersion": "2024-11-05",
 					"capabilities":    map[string]any{"tools": map[string]any{}},
 					"serverInfo":      map[string]any{"name": "fake", "version": "0"},
 				}})
 		case "tools/list":
-			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, //nolint:errcheck
+			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, //nolint:errcheck
 				"result": map[string]any{"tools": []map[string]any{}}})
 		default:
-			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": nil}) //nolint:errcheck
+			json.NewEncoder(w).
+				Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, "result": nil})
+			//nolint:errcheck
 		}
 	}))
 	t.Cleanup(srv.Close)

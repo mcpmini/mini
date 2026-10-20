@@ -422,7 +422,7 @@ func TestProxy_Call_SessionFormatToon_RendersToon(t *testing.T) {
 	postMCP(t, srv, sessionID, initMsg(false))
 
 	postMCP(t, srv, sessionID, map[string]any{
-		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "tools/call",
 		"params": map[string]any{
 			"name": "config",
 			"arguments": map[string]any{
@@ -433,7 +433,7 @@ func TestProxy_Call_SessionFormatToon_RendersToon(t *testing.T) {
 	})
 
 	resp := postMCP(t, srv, sessionID, map[string]any{
-		"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+		"jsonrpc": transport.JsonRPCVersion, "id": 2, "method": "tools/call",
 		"params": map[string]any{"name": "svc__list_items", "arguments": map[string]any{}},
 	})
 

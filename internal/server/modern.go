@@ -99,7 +99,7 @@ func unsupportedVersionResponse(id any, requested string) (transport.Response, e
 	if err != nil {
 		return transport.Response{}, err
 	}
-	return transport.Response{JSONRPC: "2.0", ID: id, Error: &transport.RPCError{
+	return transport.Response{JsonRPC: transport.JsonRPCVersion, ID: id, Error: &transport.RPCError{
 		Code: transport.CodeUnsupportedProtocolVersion, Message: "Unsupported protocol version", Data: data,
 	}}, nil
 }

@@ -34,7 +34,7 @@ func daemonResult(id json.RawMessage, result any) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	return daemonResponse(transport.Response{JSONRPC: "2.0", ID: id, Result: encoded})
+	return daemonResponse(transport.Response{JsonRPC: transport.JsonRPCVersion, ID: id, Result: encoded})
 }
 
 func daemonResponse(response transport.Response) (*http.Response, error) {

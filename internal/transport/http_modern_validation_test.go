@@ -113,7 +113,7 @@ func TestModernHeaderMismatchStopsAfterRetry(t *testing.T) {
 
 func TestModernLegacyAnnotatedToolsKeepLegacyWireShape(t *testing.T) {
 	var sawAnnotated bool
-	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		req := decodeRequest(t, r)
 		switch req.Method {
 		case "server/discover":

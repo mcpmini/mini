@@ -42,7 +42,7 @@ func makePipeConn(t *testing.T) (conn *StdioConnection, serverW *io.PipeWriter, 
 func sendResponse(w io.Writer, id any, result any) {
 	raw, _ := json.Marshal(result)
 	line, _ := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "id": id, "result": json.RawMessage(raw),
+		"jsonrpc": JsonRPCVersion, "id": id, "result": json.RawMessage(raw),
 	})
 	fmt.Fprintf(w, "%s\n", line)
 }
@@ -66,7 +66,7 @@ func TestDispatch_ignoresNotification(t *testing.T) {
 	conn, serverW, _ := makePipeConn(t)
 
 	notif, _ := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "method": "notifications/initialized",
+		"jsonrpc": JsonRPCVersion, "method": "notifications/initialized",
 	})
 	fmt.Fprintf(serverW, "%s\n", notif)
 
@@ -141,7 +141,7 @@ func TestDispatch_rpcError_deliveredToWaiter(t *testing.T) {
 	ch := conn.pending.register(int64(5))
 
 	line, _ := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "id": 5,
+		"jsonrpc": JsonRPCVersion, "id": 5,
 		"error": map[string]any{"code": -32601, "message": "method not found"},
 	})
 	fmt.Fprintf(serverW, "%s\n", line)

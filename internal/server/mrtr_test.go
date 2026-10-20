@@ -183,7 +183,8 @@ func writeUpstreamResult(t *testing.T, w http.ResponseWriter, id json.RawMessage
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(transport.Response{JSONRPC: "2.0", ID: id, Result: encoded}); err != nil {
+	if err := json.NewEncoder(w).
+		Encode(transport.Response{JsonRPC: transport.JsonRPCVersion, ID: id, Result: encoded}); err != nil {
 		t.Errorf("write upstream result: %v", err)
 	}
 }

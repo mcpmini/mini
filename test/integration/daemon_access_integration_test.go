@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 func initHTTPSession(t *testing.T, cfg, token string) string {
@@ -135,7 +137,7 @@ func daemonPost(t *testing.T, cfg string, opts daemonPostOpts) *http.Response {
 		params["_mini_tool_mode"] = opts.ToolMode
 	}
 	body, _ := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": params,
+		"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "initialize", "params": params,
 	})
 	req, _ := http.NewRequest(http.MethodPost, "http://localhost/mcp", strings.NewReader(string(body)))
 	req.Header.Set("Content-Type", "application/json")
@@ -176,7 +178,9 @@ type daemonSession struct {
 
 func postDaemonToolsCall(t *testing.T, s daemonSession, params map[string]any) *http.Response {
 	t.Helper()
-	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": params})
+	body, _ := json.Marshal(
+		map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": 2, "method": "tools/call", "params": params},
+	)
 	req, _ := http.NewRequest(http.MethodPost, "http://localhost/mcp", strings.NewReader(string(body)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Mcp-Session-Id", s.id)

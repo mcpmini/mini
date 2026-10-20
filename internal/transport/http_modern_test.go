@@ -25,7 +25,7 @@ func TestModernRequestCarriesMetadataAndParameterHeaders(t *testing.T) {
 		"enabled":{"type":"boolean","x-mcp-header":"Enabled"},
 		"a":{"type":"object","properties":{"b":{"type":"integer","x-mcp-header":"Nested"}}}}}`
 	tool := modernTool("tool name", schema)
-	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		req := decodeRequest(t, r)
 		methods = append(methods, req.Method)
 		assertModernHeader(t, r, "Mcp-Method", req.Method)
@@ -200,7 +200,7 @@ type modernUpstream struct {
 
 func newModernServer(t *testing.T, u modernUpstream) *httptest.Server {
 	t.Helper()
-	return newJSONRPCServer(t, modernHandler(t, u))
+	return newJsonRPCServer(t, modernHandler(t, u))
 }
 
 func modernHandler(t *testing.T, u modernUpstream) http.HandlerFunc {

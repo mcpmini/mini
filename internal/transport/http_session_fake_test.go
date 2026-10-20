@@ -44,7 +44,7 @@ func newSessionFake() *sessionServer {
 func newSessionServer(t *testing.T) (*sessionServer, *httptest.Server) {
 	t.Helper()
 	m := newSessionFake()
-	return m, newJSONRPCServer(t, m.handle)
+	return m, newJsonRPCServer(t, m.handle)
 }
 
 func (m *sessionServer) handle(w http.ResponseWriter, r *http.Request) {
@@ -90,7 +90,7 @@ func (m *sessionServer) serveRPC(w http.ResponseWriter, method string, id any) {
 			w.Header().Set("Mcp-Session-Id", sid)
 		}
 		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-			"jsonrpc": "2.0", "id": id,
+			"jsonrpc": JsonRPCVersion, "id": id,
 			"result": map[string]any{
 				"protocolVersion": protocolVersion,
 				"capabilities":    map[string]any{"tools": map[string]any{"listChanged": true}},

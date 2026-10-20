@@ -109,7 +109,7 @@ func (s *Server) handleLine(ctx context.Context, line []byte, session *Session) 
 	if err := json.Unmarshal(line, &req); err != nil {
 		return errorResponse(nil, transport.CodeParseError, "parse error"), true
 	}
-	if req.JSONRPC != "2.0" {
+	if req.JsonRPC != transport.JsonRPCVersion {
 		return errorResponse(req.ID, transport.CodeInvalidRequest, "jsonrpc must be \"2.0\""), true
 	}
 	if req.ID == nil {
@@ -385,12 +385,12 @@ func okResponse(id any, result any) (transport.Response, error) {
 	if err != nil {
 		return transport.Response{}, err
 	}
-	return transport.Response{JSONRPC: "2.0", ID: id, Result: raw}, nil
+	return transport.Response{JsonRPC: transport.JsonRPCVersion, ID: id, Result: raw}, nil
 }
 
 func errorResponse(id any, code int, msg string) transport.Response {
 	return transport.Response{
-		JSONRPC: "2.0",
+		JsonRPC: transport.JsonRPCVersion,
 		ID:      id,
 		Error:   &transport.RPCError{Code: code, Message: msg},
 	}

@@ -70,7 +70,7 @@ func TestNewToolCallParamsCarriesOnlyElicitation(t *testing.T) {
 
 func TestLegacyHTTPToolCallDropsModernFields(t *testing.T) {
 	var got json.RawMessage
-	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		req := decodeRequest(t, r)
 		switch req.Method {
 		case "initialize":

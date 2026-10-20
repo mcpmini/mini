@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mcpmini/mini/internal/transport"
+
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/server"
@@ -23,7 +25,7 @@ type projectionReport struct {
 
 func configCall(id int, args map[string]any) map[string]any {
 	return map[string]any{
-		"jsonrpc": "2.0",
+		"jsonrpc": transport.JsonRPCVersion,
 		"id":      id,
 		"method":  "tools/call",
 		"params":  map[string]any{"name": "config", "arguments": args},

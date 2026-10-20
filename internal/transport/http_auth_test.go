@@ -111,7 +111,7 @@ func TestNewHTTPConnection_authProviderWithoutHeaderName_isError(t *testing.T) {
 
 func TestCall_authProvider_setsConfiguredHeader(t *testing.T) {
 	var got string
-	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		got = r.Header.Get("X-Custom-Auth")
 		w.Write(okRPCResponse(1)) //nolint:errcheck
 	})
@@ -128,7 +128,7 @@ func TestCall_authProvider_setsConfiguredHeader(t *testing.T) {
 
 func TestHealth_authProvider_sendsProviderValue(t *testing.T) {
 	var gotAuth, gotContentType, gotAccept, gotSession string
-	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
 		gotContentType = r.Header.Get("Content-Type")
 		gotAccept = r.Header.Get("Accept")
@@ -159,7 +159,7 @@ func TestHealth_authProvider_sendsProviderValue(t *testing.T) {
 
 func TestCall_authProviderError_failsWithoutContactingUpstream(t *testing.T) {
 	var calls int
-	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		w.Write(okRPCResponse(1)) //nolint:errcheck
 	})
@@ -312,7 +312,7 @@ func TestNotificationRequests_authProvider_sendHeader(t *testing.T) {
 		switch req["method"] {
 		case "initialize":
 			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-				"jsonrpc": "2.0", "id": req["id"],
+				"jsonrpc": JsonRPCVersion, "id": req["id"],
 				"result": map[string]any{
 					"protocolVersion": LegacyVersions[0],
 					"capabilities":    map[string]any{"tools": map[string]any{"listChanged": true}},
@@ -322,7 +322,7 @@ func TestNotificationRequests_authProvider_sendHeader(t *testing.T) {
 			initializedAuth = r.Header.Get("Authorization")
 		case "tools/list":
 			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-				"jsonrpc": "2.0", "id": req["id"],
+				"jsonrpc": JsonRPCVersion, "id": req["id"],
 				"result": map[string]any{"tools": []any{}},
 			})
 		}
@@ -354,7 +354,7 @@ func TestNotificationRequests_authProvider_sendHeader(t *testing.T) {
 
 func TestCall_staticAndProviderHeader_providerValueWins(t *testing.T) {
 	var got string
-	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		got = r.Header.Get("Authorization")
 		w.Write(okRPCResponse(1)) //nolint:errcheck
 	})

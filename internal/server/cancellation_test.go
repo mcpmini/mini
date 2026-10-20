@@ -118,7 +118,7 @@ func TestCancellation_UnknownMethodReturnsError(t *testing.T) {
 func notification(method string, params any) []byte {
 	p, _ := json.Marshal(params)
 	msg := map[string]any{
-		"jsonrpc": "2.0",
+		"jsonrpc": transport.JsonRPCVersion,
 		"method":  method,
 		"params":  json.RawMessage(p),
 	}
@@ -130,7 +130,7 @@ func callToolWithID(id int, name string, args any) []byte {
 	a, _ := json.Marshal(args)
 	p, _ := json.Marshal(map[string]any{"name": name, "arguments": json.RawMessage(a)})
 	msg := map[string]any{
-		"jsonrpc": "2.0",
+		"jsonrpc": transport.JsonRPCVersion,
 		"id":      id,
 		"method":  "tools/call",
 		"params":  json.RawMessage(p),

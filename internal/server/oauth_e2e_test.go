@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mcpmini/mini/internal/transport"
+
 	"golang.org/x/oauth2"
 	"gopkg.in/yaml.v3"
 
@@ -38,7 +40,7 @@ func oauthMCPHandler(validToken string, tools []map[string]any) http.HandlerFunc
 		switch req["method"] {
 		case "initialize":
 			json.NewEncoder(w).Encode(map[string]any{
-				"jsonrpc": "2.0", "id": id,
+				"jsonrpc": transport.JsonRPCVersion, "id": id,
 				"result": map[string]any{
 					"protocolVersion": "2024-11-05",
 					"capabilities":    map[string]any{"tools": map[string]any{}},
@@ -47,11 +49,11 @@ func oauthMCPHandler(validToken string, tools []map[string]any) http.HandlerFunc
 			})
 		case "tools/list":
 			json.NewEncoder(w).Encode(map[string]any{
-				"jsonrpc": "2.0", "id": id,
+				"jsonrpc": transport.JsonRPCVersion, "id": id,
 				"result": map[string]any{"tools": tools},
 			})
 		default:
-			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": nil})
+			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, "result": nil})
 		}
 	}
 }
@@ -263,19 +265,21 @@ func TestStartAuth_e2e_withStaleToken_browserTokenUsedOnFirstRequest(t *testing.
 		id := req["id"]
 		switch req["method"] {
 		case "initialize":
-			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, //nolint:errcheck
+			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, //nolint:errcheck
 				"result": map[string]any{
 					"protocolVersion": "2024-11-05",
 					"capabilities":    map[string]any{"tools": map[string]any{}},
 					"serverInfo":      map[string]any{"name": "srv", "version": "0"},
 				}})
 		case "tools/list":
-			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, //nolint:errcheck
+			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, //nolint:errcheck
 				"result": map[string]any{"tools": []map[string]any{
 					{"name": "getData", "description": "get data", "inputSchema": map[string]any{"type": "object"}},
 				}}})
 		default:
-			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": nil}) //nolint:errcheck
+			json.NewEncoder(w).
+				Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, "result": nil})
+			//nolint:errcheck
 		}
 	}))
 	defer mcpSrv.Close()

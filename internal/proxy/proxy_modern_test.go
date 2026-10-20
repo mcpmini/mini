@@ -68,7 +68,7 @@ func cancelLine(t *testing.T, id int) []byte {
 		t.Fatal(err)
 	}
 	line, err := json.Marshal(transport.Notification{
-		JSONRPC: "2.0", Method: transport.NotificationCancelled, Params: params,
+		JsonRPC: transport.JsonRPCVersion, Method: transport.NotificationCancelled, Params: params,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -272,7 +272,9 @@ func handleLocal(t *testing.T, session *proxySession, line []byte) (bool, error)
 
 func toolsChangedLine(t *testing.T) json.RawMessage {
 	t.Helper()
-	line, err := json.Marshal(transport.Notification{JSONRPC: "2.0", Method: transport.NotificationToolsChanged})
+	line, err := json.Marshal(
+		transport.Notification{JsonRPC: transport.JsonRPCVersion, Method: transport.NotificationToolsChanged},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

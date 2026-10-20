@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mcpmini/mini/internal/transport"
+
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/testutil"
@@ -237,7 +239,7 @@ func startMiniForSignal(t *testing.T, configDir string) *standaloneMini {
 func doMiniHandshake(t *testing.T, p *standaloneMini) {
 	t.Helper()
 	req := map[string]any{
-		"jsonrpc": "2.0", "id": 1, "method": "initialize",
+		"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "initialize",
 		"params": map[string]any{
 			"protocolVersion": "2024-11-05",
 			"capabilities":    map[string]any{},
@@ -256,7 +258,11 @@ func doMiniHandshake(t *testing.T, p *standaloneMini) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for initialize response from mini")
 	}
-	notif := map[string]any{"jsonrpc": "2.0", "method": "notifications/initialized", "params": map[string]any{}}
+	notif := map[string]any{
+		"jsonrpc": transport.JsonRPCVersion,
+		"method":  "notifications/initialized",
+		"params":  map[string]any{},
+	}
 	b, _ = json.Marshal(notif)
 	fmt.Fprintf(p.Stdin, "%s\n", b) //nolint:errcheck
 }

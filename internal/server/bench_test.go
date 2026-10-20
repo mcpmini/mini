@@ -14,6 +14,8 @@ import (
 	"log/slog"
 	"testing"
 
+	"github.com/mcpmini/mini/internal/transport"
+
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
 )
@@ -34,7 +36,7 @@ func buildBenchInput(call []byte) []byte {
 		"clientInfo":      map[string]any{"name": "bench", "version": "0"},
 	})
 	init, _ := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "id": 0, "method": "initialize",
+		"jsonrpc": transport.JsonRPCVersion, "id": 0, "method": "initialize",
 		"params": json.RawMessage(p),
 	})
 	return append(append(init, '\n'), call...)

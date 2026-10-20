@@ -91,7 +91,7 @@ func (c *HTTPConnection) parseHTTPMessage(message []byte, requestID any) (parsed
 		return parsedHTTPMessage{}, unusableResponseError{err}
 	}
 	if len(rpc.ID) == 0 && rpc.Method != "" {
-		c.dispatchNotification(Notification{JSONRPC: "2.0", Method: rpc.Method, Params: rpc.Params})
+		c.dispatchNotification(Notification{JsonRPC: JsonRPCVersion, Method: rpc.Method, Params: rpc.Params})
 		return parsedHTTPMessage{}, nil
 	}
 	return parsedHTTPMessage{
@@ -123,7 +123,7 @@ func parseHTTPStatusRPC(body []byte) *RPCError {
 }
 
 type httpStatusRPCResponse struct {
-	JSONRPC string          `json:"jsonrpc"`
+	JsonRPC string          `json:"jsonrpc"`
 	ID      json.RawMessage `json:"id"`
 	Error   *RPCError       `json:"error"`
 }
@@ -131,6 +131,6 @@ type httpStatusRPCResponse struct {
 func decodeHTTPStatusRPC(body []byte) (httpStatusRPCResponse, bool) {
 	var response httpStatusRPCResponse
 	err := json.Unmarshal(body, &response)
-	valid := err == nil && response.JSONRPC == "2.0" && len(response.ID) > 0 && response.Error != nil
+	valid := err == nil && response.JsonRPC == JsonRPCVersion && len(response.ID) > 0 && response.Error != nil
 	return response, valid
 }

@@ -211,7 +211,7 @@ func (c *HTTPConnection) compareAndResetSession(expiredID string) {
 
 func (c *HTTPConnection) rpc(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
 	id := c.nextID.Add(1)
-	req := Request{JSONRPC: "2.0", ID: id, Method: method, Params: params}
+	req := Request{JsonRPC: JsonRPCVersion, ID: id, Method: method, Params: params}
 	return c.postWithAuthRetry(ctx, req)
 }
 

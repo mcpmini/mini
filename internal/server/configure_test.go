@@ -437,18 +437,28 @@ func serverFileText(t *testing.T, path string) string {
 }
 
 func setGetDataProjection(id int, sessionOnly bool) map[string]any {
-	return map[string]any{"jsonrpc": "2.0", "id": id, "method": "tools/call", "params": map[string]any{
-		"name": "config", "arguments": map[string]any{
-			"action": "set_projection", "server": "svc", "tool": "getData", "session_only": sessionOnly,
-			"projection": map[string]any{"include_only": []string{"b"}},
+	return map[string]any{
+		"jsonrpc": transport.JsonRPCVersion,
+		"id":      id,
+		"method":  "tools/call",
+		"params": map[string]any{
+			"name": "config", "arguments": map[string]any{
+				"action": "set_projection", "server": "svc", "tool": "getData", "session_only": sessionOnly,
+				"projection": map[string]any{"include_only": []string{"b"}},
+			},
 		},
-	}}
+	}
 }
 
 func callGetData(id int) map[string]any {
-	return map[string]any{"jsonrpc": "2.0", "id": id, "method": "tools/call", "params": map[string]any{
-		"name": "call", "arguments": map[string]any{"server": "svc", "tool": "getData", "params": map[string]any{}},
-	}}
+	return map[string]any{
+		"jsonrpc": transport.JsonRPCVersion,
+		"id":      id,
+		"method":  "tools/call",
+		"params": map[string]any{
+			"name": "call", "arguments": map[string]any{"server": "svc", "tool": "getData", "params": map[string]any{}},
+		},
+	}
 }
 
 func assertProjectedFields(t *testing.T, text string, present, absent []string) {

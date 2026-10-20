@@ -35,9 +35,16 @@ func handshakeLines(mode transport.ToolMode) (initialize, initialized []byte) {
 	})
 	//nolint:errcheck // fixed request fields contain the serialized handshake params.
 	initMsg, _ := json.Marshal(
-		transport.Request{JSONRPC: "2.0", ID: -1, Method: "initialize", Params: json.RawMessage(params)},
+		transport.Request{
+			JsonRPC: transport.JsonRPCVersion,
+			ID:      -1,
+			Method:  "initialize",
+			Params:  json.RawMessage(params),
+		},
 	)
 	//nolint:errcheck // fixed notification fields are JSON-serializable.
-	notif, _ := json.Marshal(transport.Notification{JSONRPC: "2.0", Method: transport.NotificationInitialized})
+	notif, _ := json.Marshal(
+		transport.Notification{JsonRPC: transport.JsonRPCVersion, Method: transport.NotificationInitialized},
+	)
 	return maybeInjectToolMode(initMsg, mode), notif
 }
