@@ -80,6 +80,8 @@ func (c *StdioConnection) abandonAfterFailedWrite(ctx context.Context, err error
 	c.abandon() // a partial line would break the framing of every later message
 }
 
+// abandon ends the connection without Close's listener join, so the listener goroutine can call it.
 func (c *StdioConnection) abandon() {
-	_ = c.Close() //nolint:errcheck // the caller reports why the connection ended
+	c.closeDone()
+	_ = c.shutdownProcess() //nolint:errcheck // the caller reports why the connection ended
 }
