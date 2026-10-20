@@ -18,33 +18,26 @@ import (
 	"github.com/mcpmini/mini/internal/transport/transporttest"
 )
 
-func TestModernListenFilterAndNoListenSuppressNotifications(t *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		listen bool
-	}{
-		{name: "empty filter", listen: true},
-		{name: "no listen"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			srv := newServerWithRemovableUpstream(t)
-			var lines [][]byte
-			if tc.listen {
-				lines = append(lines, listenRequest(21, transport.ListenNotifications{}))
-			}
-			messages := serveModern(t, srv, append(lines, removeServerRequest(22))...)
-			for _, message := range messages {
-				switch message.Method {
-				case transport.NotificationSubscriptionsAcknowledged:
-					ack := decodeParams[transport.SubscriptionAckParams](t, message)
-					if ack.Notifications.ToolsListChanged {
-						t.Errorf("empty filter acknowledged tools-list changes: %s", message.Params)
-					}
-				case transport.NotificationToolsChanged:
-					t.Errorf("unexpected tools changed notification: %s", message.Params)
-				}
-			}
-		})
+func TestModernNoListenSuppressesNotifications(t *testing.T) {
+	for _, message := range serveModern(t, newServerWithRemovableUpstream(t), removeServerRequest(22)) {
+		if message.Method == transport.NotificationToolsChanged {
+			t.Errorf("tool change sent with no listen open: %s", message.Params)
+		}
+	}
+}
+
+func TestModernListenWithEmptyFilterGetsNoToolChanges(t *testing.T) {
+	session := startModernSession(t, newServerWithRemovableUpstream(t))
+	session.send(listenRequest(21, transport.ListenNotifications{}))
+	if ack := decodeParams[transport.SubscriptionAckParams](t, session.mustNext()); ack.Notifications.ToolsListChanged {
+		t.Fatalf("empty filter acknowledged tools-list changes: %+v", ack)
+	}
+	session.listen(22)
+	session.send(removeServerRequest(23))
+	changes := session.readChangesUntilResponse(23, 1)
+	addChanges(t, changes, session.close())
+	if changes["21"] != 0 || changes["22"] != 1 {
+		t.Fatalf("tagged notifications per subscription = %v, want only the tools listen", changes)
 	}
 }
 
@@ -60,17 +53,21 @@ func TestModernConcurrentListensEachReceiveTaggedCopy(t *testing.T) {
 	}
 }
 
-func TestModernListenTaggedAndCancellation(t *testing.T) {
+func TestModernCancelledListenGetsNoFurtherToolChanges(t *testing.T) {
 	session := startModernSession(t, newServerWithRemovableUpstream(t))
 	session.listen(41)
-	session.send(removeServerRequest(42))
-	if changes := session.readChangesUntilResponse(42, 1); changes["41"] != 1 || len(changes) != 1 {
-		t.Fatalf("tagged notifications per subscription = %v", changes)
-	}
+	session.listen(43)
 	session.send(notification(transport.NotificationCancelled, map[string]any{"requestId": 41}))
-	for _, message := range session.close() {
-		if message.isResponseTo(41) || message.Method == transport.NotificationToolsChanged {
-			t.Fatalf("message followed cancellation: %+v", message)
+	session.send(removeServerRequest(44))
+	changes := session.readChangesUntilResponse(44, 1)
+	rest := session.close()
+	addChanges(t, changes, rest)
+	if changes["41"] != 0 || changes["43"] != 1 {
+		t.Fatalf("tagged notifications per subscription = %v, want only the open listen", changes)
+	}
+	for _, message := range rest {
+		if message.isResponseTo(41) {
+			t.Fatalf("cancelled listen got a response: %+v", message)
 		}
 	}
 }
@@ -203,13 +200,28 @@ func (s *modernSession) readChangesUntilResponse(id, wantChanges int) map[string
 	for responded := false; !responded || total < wantChanges; {
 		message := s.mustNext()
 		responded = responded || message.isResponseTo(id)
-		if message.Method == transport.NotificationToolsChanged {
-			params := decodeParams[transport.SubscriptionNotificationParams](s.t, message)
-			changes[string(params.Meta.SubscriptionID)]++
+		if countToolsChanged(s.t, changes, message) {
 			total++
 		}
 	}
 	return changes
+}
+
+func addChanges(t *testing.T, changes map[string]int, messages []modernMessage) {
+	t.Helper()
+	for _, message := range messages {
+		countToolsChanged(t, changes, message)
+	}
+}
+
+func countToolsChanged(t *testing.T, changes map[string]int, message modernMessage) bool {
+	t.Helper()
+	if message.Method != transport.NotificationToolsChanged {
+		return false
+	}
+	params := decodeParams[transport.SubscriptionNotificationParams](t, message)
+	changes[string(params.Meta.SubscriptionID)]++
+	return true
 }
 
 // close ends the input, waits for Serve to return, and returns every message written after the last read.

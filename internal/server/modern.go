@@ -10,11 +10,13 @@ import (
 	"github.com/mcpmini/mini/internal/version"
 )
 
-func (s *Session) addListen(listen listenSubscription, cancel context.CancelFunc) {
+func (s *Session) acknowledgeListen(listen listenSubscription, cancel context.CancelFunc, writeOut func(any)) {
+	// Held across the write: a tool change written after the acknowledgement must find this listen.
 	s.listensMu.Lock()
+	defer s.listensMu.Unlock()
+	writeOut(transport.NewSubscriptionAck(listen.id, listen.notifications))
 	s.listens[string(listen.id)] = cancel
 	s.listenTools[string(listen.id)] = listen.notifications.ToolsListChanged
-	s.listensMu.Unlock()
 }
 
 func (s *Session) removeListen(id json.RawMessage) {
@@ -24,16 +26,14 @@ func (s *Session) removeListen(id json.RawMessage) {
 	s.listensMu.Unlock()
 }
 
-func (s *Session) listenIDs() []json.RawMessage {
+func (s *Session) writeTaggedToolsChanged(writeOut func(any)) {
 	s.listensMu.Lock()
 	defer s.listensMu.Unlock()
-	ids := make([]json.RawMessage, 0, len(s.listens))
-	for id, tools := range s.listenTools {
-		if tools {
-			ids = append(ids, json.RawMessage(id))
+	for id, wantsToolChanges := range s.listenTools {
+		if wantsToolChanges {
+			writeOut(transport.NewToolsListChangedNotification(json.RawMessage(id)))
 		}
 	}
-	return ids
 }
 
 func (s *Session) cancelListens() {

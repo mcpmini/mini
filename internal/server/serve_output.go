@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"io"
 	"sync"
-
-	"github.com/mcpmini/mini/internal/transport"
 )
 
 type serializedWriter struct {
@@ -73,9 +71,7 @@ func (s *Session) forwardToolsChanged(raw json.RawMessage, writeOut func(any)) {
 		writeOut(raw)
 		return
 	}
-	for _, id := range s.listenIDs() {
-		writeOut(transport.NewToolsListChangedNotification(id))
-	}
+	s.writeTaggedToolsChanged(writeOut)
 }
 
 func writeJSON(w io.Writer, v any) error {
