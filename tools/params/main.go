@@ -1,5 +1,3 @@
-// params checks that no function or method has >= 6 parameters.
-// Functions with that many parameters should use a params struct instead.
 // Functions annotated with //nolint or //nolint:params on their declaration
 // line are skipped.
 // Exit code 1 when any violations are found.
@@ -17,7 +15,7 @@ import (
 	"strings"
 )
 
-const maxParams = 6
+const maxParams = 4
 
 type issue struct {
 	path  string
