@@ -67,6 +67,27 @@ func TestStdioSubscriptionEndedBeforeItsAckStopsWithoutARefresh(t *testing.T) {
 	}
 }
 
+func TestStdioSubscriptionWhoseListenWriteFailsStopsWithoutBlockingClose(t *testing.T) {
+	conn, _, serverR := makePipeConn(t)
+	if err := serverR.(io.Closer).Close(); err != nil {
+		t.Fatal(err)
+	}
+	conn.setModern(ModernVersions[0])
+	conn.startSubscriptionListener(context.Background())
+	select {
+	case <-conn.listenDone:
+	case <-time.After(time.Second):
+		t.Fatal("the listener did not stop after its listen write failed")
+	}
+	closed := make(chan error, 1)
+	go func() { closed <- conn.Close() }()
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatal("Close blocked after the listener ended the connection")
+	}
+}
+
 func TestStdioSubscriptionIgnoresAnUnrelatedCancellation(t *testing.T) {
 	h := startAcknowledgedListen(t)
 	h.serverCancels(json.RawMessage(`"unrelated"`))
@@ -154,11 +175,9 @@ func (h *listenHarness) expectChange() {
 	}
 }
 
-// The reader handles messages in order, so once the barrier call returns, any change written
-// before it has already reached the handler.
 func (h *listenHarness) expectNoChange() {
 	h.t.Helper()
-	barrierCall(h.t, h.conn, h.serverW, h.scanner)
+	waitForReaderToCatchUp(h.t, h.conn, h.serverW, h.scanner)
 	select {
 	case got := <-h.changes:
 		h.t.Fatalf("unexpected %s reached the handler", got.Method)
@@ -177,7 +196,7 @@ func (h *listenHarness) expectStopped() {
 
 func (h *listenHarness) expectRunning() {
 	h.t.Helper()
-	barrierCall(h.t, h.conn, h.serverW, h.scanner)
+	waitForReaderToCatchUp(h.t, h.conn, h.serverW, h.scanner)
 	select {
 	case <-h.conn.listenDone:
 		h.t.Fatal("the listener stopped")
@@ -193,7 +212,7 @@ func ackListen(t *testing.T, w interface{ Write([]byte) (int, error) }, id any) 
 	}))
 }
 
-func barrierCall(
+func waitForReaderToCatchUp(
 	t *testing.T,
 	conn *StdioConnection,
 	serverW interface{ Write([]byte) (int, error) },
@@ -208,7 +227,7 @@ func barrierCall(
 	ping := readScannerRequest(t, scanner)
 	sendResponse(serverW, ping.ID, json.RawMessage(`{}`))
 	if err := <-done; err != nil {
-		t.Fatalf("barrier ping: %v", err)
+		t.Fatalf("ping behind earlier messages: %v", err)
 	}
 }
 

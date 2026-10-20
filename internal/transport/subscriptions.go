@@ -1,6 +1,9 @@
 package transport
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 const (
 	MethodSubscriptionsListen             = "subscriptions/listen"
@@ -61,4 +64,12 @@ func NewToolsListChangedNotification(subscriptionID json.RawMessage) ToolsListCh
 		Method:  NotificationToolsChanged,
 		Params:  SubscriptionNotificationParams{Meta: SubscriptionMeta{SubscriptionID: subscriptionID}},
 	}
+}
+
+func modernListenParams(modernVersion string) (json.RawMessage, error) {
+	params, err := json.Marshal(ListenParams{Notifications: ListenNotifications{ToolsListChanged: true}})
+	if err != nil {
+		return nil, fmt.Errorf("encode subscriptions/listen params: %w", err)
+	}
+	return prepareModernParams(params, modernVersion)
 }

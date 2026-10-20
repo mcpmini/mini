@@ -46,12 +46,8 @@ func (c *HTTPConnection) consumeNotificationStream(ctx context.Context, state *l
 func (c *HTTPConnection) buildModernListenRequest() (
 	func(context.Context) (*http.Request, string, error), error,
 ) {
-	params, err := json.Marshal(ListenParams{Notifications: ListenNotifications{ToolsListChanged: true}})
-	if err != nil {
-		return nil, fmt.Errorf("encode subscriptions/listen params: %w", err)
-	}
 	modernVersion := cmp.Or(c.negotiatedModernVersion(), ModernVersions[0])
-	prepared, err := prepareModernParams(params, modernVersion)
+	prepared, err := modernListenParams(modernVersion)
 	if err != nil {
 		return nil, err
 	}

@@ -3,7 +3,6 @@ package transport
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"time"
 )
 
@@ -18,12 +17,11 @@ const (
 )
 
 type stdioSubscription struct {
-	requestID      int64
-	response       chan *Response
-	acknowledged   chan struct{}
-	ended          chan struct{}
-	subscriptionID json.RawMessage
-	state          listenState // guarded by listenMu
+	requestID    int64
+	response     chan *Response
+	acknowledged chan struct{}
+	ended        chan struct{}
+	state        listenState // guarded by listenMu
 }
 
 func (c *StdioConnection) startSubscriptionListener(parent context.Context) {
@@ -48,7 +46,7 @@ func (c *StdioConnection) listenForToolChanges(ctx context.Context) {
 }
 
 func (c *StdioConnection) beginSubscription(ctx context.Context) (*stdioSubscription, error) {
-	params, err := c.listenParams()
+	params, err := modernListenParams(c.negotiatedModernVersion())
 	if err != nil {
 		return nil, err
 	}
@@ -70,14 +68,6 @@ func (c *StdioConnection) beginSubscription(ctx context.Context) (*stdioSubscrip
 		return nil, err
 	}
 	return subscription, nil
-}
-
-func (c *StdioConnection) listenParams() (json.RawMessage, error) {
-	params, err := json.Marshal(ListenParams{Notifications: ListenNotifications{ToolsListChanged: true}})
-	if err != nil {
-		return nil, fmt.Errorf("encode subscriptions/listen params: %w", err)
-	}
-	return prepareModernParams(params, c.negotiatedModernVersion())
 }
 
 func (c *StdioConnection) awaitSubscription(ctx context.Context, subscription *stdioSubscription) {
@@ -135,18 +125,16 @@ func (c *StdioConnection) dispatchModernSubscriptionNotification(notification No
 
 func (c *StdioConnection) acknowledgeSubscription(raw json.RawMessage) bool {
 	var ack SubscriptionAckParams
-	if json.Unmarshal(raw, &ack) != nil || !ack.Notifications.ToolsListChanged ||
-		!validJSONID(ack.Meta.SubscriptionID) {
+	if json.Unmarshal(raw, &ack) != nil || !ack.Notifications.ToolsListChanged {
 		return true
 	}
 	c.listenMu.Lock()
 	subscription := c.listen
 	if subscription == nil || subscription.state != listenAwaitingAck ||
-		!sameJSONID(ack.Meta.SubscriptionID, subscription.requestID) {
+		!subscription.namedBy(ack.Meta.SubscriptionID) {
 		c.listenMu.Unlock()
 		return true
 	}
-	subscription.subscriptionID = append(json.RawMessage(nil), ack.Meta.SubscriptionID...)
 	subscription.state = listenActive
 	close(subscription.acknowledged)
 	c.listenMu.Unlock()
@@ -157,13 +145,13 @@ func (c *StdioConnection) acknowledgeSubscription(raw json.RawMessage) bool {
 
 func (c *StdioConnection) forwardSubscriptionChange(raw json.RawMessage) bool {
 	var changed SubscriptionNotificationParams
-	if json.Unmarshal(raw, &changed) != nil || !validJSONID(changed.Meta.SubscriptionID) {
+	if json.Unmarshal(raw, &changed) != nil {
 		return true
 	}
 	c.listenMu.Lock()
 	subscription := c.listen
 	accepted := subscription != nil && subscription.state == listenActive &&
-		subscriptionIDsEqual(subscription.subscriptionID, changed.Meta.SubscriptionID)
+		subscription.namedBy(changed.Meta.SubscriptionID)
 	c.listenMu.Unlock()
 	if accepted {
 		c.toolsChanged.NotifyToolsChanged()
@@ -173,13 +161,12 @@ func (c *StdioConnection) forwardSubscriptionChange(raw json.RawMessage) bool {
 
 func (c *StdioConnection) cancelSubscription(raw json.RawMessage) bool {
 	var params CancelledParams
-	if json.Unmarshal(raw, &params) != nil || !validJSONID(params.RequestID) {
+	if json.Unmarshal(raw, &params) != nil {
 		return true
 	}
 	c.listenMu.Lock()
 	subscription := c.listen
-	if subscription == nil || subscription.state == listenEnded ||
-		!sameJSONID(params.RequestID, subscription.requestID) {
+	if subscription == nil || subscription.state == listenEnded || !subscription.namedBy(params.RequestID) {
 		c.listenMu.Unlock()
 		return true
 	}
@@ -205,14 +192,17 @@ func (c *StdioConnection) noteSubscriptionResponse(response *Response) {
 	}
 }
 
+func (s *stdioSubscription) namedBy(id json.RawMessage) bool {
+	return sameJSONID(id, s.requestID)
+}
+
 func (s *stdioSubscription) endLocked() (wasActive bool) {
 	wasActive = s.state == listenActive
 	s.state = listenEnded
 	return wasActive
 }
 
-// A server typically ends a subscription because it is shutting down, so this one isn't renewed;
-// one refresh picks up any change made before it ended.
+// A server ends a subscription when it shuts down, so this one isn't renewed.
 func (c *StdioConnection) refreshAfterServerEndedSubscription() {
 	c.logger.Info("upstream ended its tool-change subscription")
 	c.toolsChanged.NotifyToolsChanged()
@@ -229,25 +219,4 @@ func (c *StdioConnection) clearSubscription(subscription *stdioSubscription) {
 		c.listen = nil
 	}
 	c.listenMu.Unlock()
-}
-
-func subscriptionIDsEqual(a, b json.RawMessage) bool {
-	var expected any
-	if !validJSONID(a) || !validJSONID(b) || json.Unmarshal(b, &expected) != nil {
-		return false
-	}
-	return sameJSONID(a, normalizeID(expected))
-}
-
-func validJSONID(raw json.RawMessage) bool {
-	var value any
-	if json.Unmarshal(raw, &value) != nil {
-		return false
-	}
-	switch value.(type) {
-	case string, float64:
-		return true
-	default:
-		return false
-	}
 }

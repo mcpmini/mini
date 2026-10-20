@@ -134,7 +134,7 @@ func writeModernStdioServer(t *testing.T, configDir string) {
 }
 
 func TestIntegrationModernStdioHelper(t *testing.T) {
-	if !integrationArg("modern-stdio-helper") {
+	if !hasModernHelperArg("modern-stdio-helper") {
 		return
 	}
 	helper := &modernStdioHelper{}
@@ -188,7 +188,7 @@ func (h *modernStdioHelper) write(value any) {
 }
 
 func (h *modernStdioHelper) discover(req transport.Request) {
-	h.write(response(req.ID, transport.DiscoverResult{
+	h.write(modernHelperResponse(req.ID, transport.DiscoverResult{
 		SupportedVersions: transport.ModernVersions,
 		Capabilities:      transport.ServerCapabilities{Tools: &transport.ToolsCapability{ListChanged: true}},
 	}))
@@ -205,7 +205,7 @@ func (h *modernStdioHelper) listTools(req transport.Request) {
 	if h.listChanged {
 		tools = append(tools, transport.ToolDefinition{Name: "dynamic_tool"})
 	}
-	h.write(response(req.ID, transport.ToolsListResult{Tools: tools}))
+	h.write(modernHelperResponse(req.ID, transport.ToolsListResult{Tools: tools}))
 }
 
 func (h *modernStdioHelper) callTool(req transport.Request) {
@@ -219,7 +219,7 @@ func (h *modernStdioHelper) callTool(req transport.Request) {
 	case "update_tools":
 		h.updateTools(req)
 	default:
-		h.write(response(req.ID, json.RawMessage(`{"content":[]}`)))
+		h.write(modernHelperResponse(req.ID, json.RawMessage(`{"content":[]}`)))
 	}
 }
 
@@ -235,7 +235,7 @@ func (h *modernStdioHelper) confirm(req transport.Request, call modernHelperCall
 		return
 	}
 	h.write(
-		response(
+		modernHelperResponse(
 			req.ID,
 			json.RawMessage(`{"resultType":"complete","structuredContent":{"accepted":true}}`),
 		),
@@ -244,7 +244,7 @@ func (h *modernStdioHelper) confirm(req transport.Request, call modernHelperCall
 
 func (h *modernStdioHelper) reportLostRetryFields(req transport.Request) {
 	h.write(
-		response(
+		modernHelperResponse(
 			req.ID,
 			json.RawMessage(`{"isError":true,"content":[{"type":"text","text":"retry fields lost"}]}`),
 		),
@@ -253,7 +253,7 @@ func (h *modernStdioHelper) reportLostRetryFields(req transport.Request) {
 
 func (h *modernStdioHelper) requestConfirmation(req transport.Request) {
 	h.write(
-		response(
+		modernHelperResponse(
 			req.ID,
 			json.RawMessage(
 				`{"resultType":"input_required","inputRequests":{"r1":{"method":"elicitation/create","params":{"message":"Proceed?","requestedSchema":{"type":"object"}}}},"requestState":"opaque-9007199254740993"}`,
@@ -264,7 +264,7 @@ func (h *modernStdioHelper) requestConfirmation(req transport.Request) {
 
 func (h *modernStdioHelper) updateTools(req transport.Request) {
 	h.listChanged = true
-	h.write(response(req.ID, json.RawMessage(`{"content":[{"type":"text","text":"updated"}]}`)))
+	h.write(modernHelperResponse(req.ID, json.RawMessage(`{"content":[{"type":"text","text":"updated"}]}`)))
 	if len(h.listenID) > 0 {
 		h.write(transport.NewToolsListChangedNotification(h.listenID))
 	}
@@ -275,11 +275,15 @@ func (h *modernStdioHelper) listen(req transport.Request) {
 	h.write(transport.NewSubscriptionAck(h.listenID, transport.ListenNotifications{ToolsListChanged: true}))
 }
 
-func response(id any, result any) transport.Response {
-	return transport.Response{JsonRPC: transport.JsonRPCVersion, ID: mustRawJSON(id), Result: mustRawJSON(result)}
+func modernHelperResponse(id any, result any) transport.Response {
+	return transport.Response{
+		JsonRPC: transport.JsonRPCVersion,
+		ID:      modernHelperJSON(id),
+		Result:  modernHelperJSON(result),
+	}
 }
 
-func mustRawJSON(value any) json.RawMessage {
+func modernHelperJSON(value any) json.RawMessage {
 	encoded, err := json.Marshal(value)
 	if err != nil {
 		panic(err)
@@ -287,7 +291,7 @@ func mustRawJSON(value any) json.RawMessage {
 	return encoded
 }
 
-func integrationArg(want string) bool {
+func hasModernHelperArg(want string) bool {
 	for _, arg := range os.Args {
 		if arg == want {
 			return true
