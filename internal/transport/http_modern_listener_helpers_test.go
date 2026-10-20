@@ -96,8 +96,6 @@ func writeComplete(t *testing.T, w http.ResponseWriter, id any) {
 	writeSSEJSON(t, w, Response{JsonRPC: JsonRPCVersion, ID: id, Result: result})
 }
 
-// resetOnFirstPing answers the first ping with -32022, which resets the era, and passes every
-// other request to next.
 func resetOnFirstPing(t *testing.T, next upstreamHandler) upstreamHandler {
 	var pings atomic.Int32
 	return func(w http.ResponseWriter, r *http.Request, req Request) {
@@ -109,8 +107,6 @@ func resetOnFirstPing(t *testing.T, next upstreamHandler) upstreamHandler {
 	}
 }
 
-// refuseFirstListen answers the first listen with 405, which stops the listener for good, then
-// acknowledges each later listen and signals relisten.
 func refuseFirstListen(t *testing.T, relisten chan<- struct{}) upstreamHandler {
 	var listens atomic.Int32
 	return listenOnly(t, func(w http.ResponseWriter, r *http.Request, req Request) {
