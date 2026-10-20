@@ -108,17 +108,13 @@ func (c *StdioConnection) Call(ctx context.Context, method string, params json.R
 	}
 	id := c.nextID.Add(1)
 	ch := c.pending.register(id)
-	if err := c.sendRequest(ctx, id, method, params); err != nil {
+	request := Request{JsonRPC: JsonRPCVersion, ID: id, Method: method, Params: params}
+	if err := c.writeJSONContext(ctx, request); err != nil {
 		c.pending.remove(id)
 		c.abandonAfterFailedWrite(ctx, err)
 		return nil, err
 	}
 	return c.awaitResponse(ctx, id, ch)
-}
-
-func (c *StdioConnection) sendRequest(ctx context.Context, id int64, method string, params json.RawMessage) error {
-	req := Request{JsonRPC: JsonRPCVersion, ID: id, Method: method, Params: params}
-	return c.writeJSONContext(ctx, req)
 }
 
 func (c *StdioConnection) awaitResponse(ctx context.Context, id int64, ch chan *Response) (json.RawMessage, error) {

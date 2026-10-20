@@ -45,7 +45,7 @@ func (c *StdioConnection) interruptWriteOnCancel(ctx context.Context) (stop func
 		err := pipe.SetWriteDeadline(time.Unix(1, 0))
 		interrupted <- err
 		if err != nil {
-			c.abandon() // the blocked write can only end with the process
+			c.abandon() // ending the connection closes stdin, which fails the blocked write
 		}
 	})
 	return func() error {
