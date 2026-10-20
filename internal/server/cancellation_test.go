@@ -90,13 +90,20 @@ func TestCancellation_CancelsInFlightCall_OverHTTP(t *testing.T) {
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "s"}, newSlowBlockingConn(&callStarted, &callCtx))
 
 	sessionID := initCompactSession(t, ts)
-	go drainMCPPost(t, ts, slowCallReq(42), sessionID)
+	go drainMCPPost(mcpPostParams{T: t, HTTPServer: ts, Body: slowCallReq(42), SessionID: sessionID})
 
 	if !waitTimeout(&callStarted, 3*time.Second) {
 		t.Fatal("upstream call did not start within timeout")
 	}
 
-	drainMCPPost(t, ts, notification("notifications/cancelled", map[string]any{"requestId": 42}), sessionID)
+	drainMCPPost(
+		mcpPostParams{
+			T:          t,
+			HTTPServer: ts,
+			Body:       notification("notifications/cancelled", map[string]any{"requestId": 42}),
+			SessionID:  sessionID,
+		},
+	)
 
 	assertContextCanceled(t, callCtx, "over HTTP")
 }

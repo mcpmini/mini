@@ -181,7 +181,7 @@ func TestProjectionExcludeFields(t *testing.T) {
 			"tools/call": json.RawMessage(`{"content":[{"type":"text","text":` + string(payloadJSON) + `}]}`),
 		},
 	}
-	addEdgeConn(t, srv, config.ServerConfig{Name: "fs"}, fake)
+	addEdgeConn(addConnectionParams{T: t, Server: srv, Config: config.ServerConfig{Name: "fs"}, Connection: fake})
 	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "fs", "tool": "get_file_info",
 		"projection": map[string]any{"include_only": []string{"name", "size"}},
@@ -206,7 +206,7 @@ func TestProjectionTruncation_fieldNameAndChars(t *testing.T) {
 			"tools/call": json.RawMessage(`{"content":[{"type":"text","text":` + string(payloadJSON) + `}]}`),
 		},
 	}
-	addEdgeConn(t, srv, config.ServerConfig{Name: "svc"}, fake)
+	addEdgeConn(addConnectionParams{T: t, Server: srv, Config: config.ServerConfig{Name: "svc"}, Connection: fake})
 	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "svc", "tool": "get_doc",
 		"projection": map[string]any{"string_limits": map[string]any{"body": 50}},
@@ -241,24 +241,36 @@ func TestProjectionTruncation_fieldNameAndChars(t *testing.T) {
 	}
 }
 
-func assertHealthStats(t *testing.T, srv *server.Server, svcName string, wantCalls int) {
-	t.Helper()
+type assertHealthStatsParams struct {
+	T          *testing.T
+	Server     *server.Server
+	ServerName string
+	WantCalls  int
+}
+
+func assertHealthStats(params assertHealthStatsParams) {
+	params.T.Helper()
 	var status map[string]any
 	json.Unmarshal(
-		[]byte(toolResultText(t, serve(t, srv, callTool("config", map[string]any{"action": "status"})))),
+		[]byte(
+			toolResultText(
+				params.T,
+				serve(params.T, params.Server, callTool("config", map[string]any{"action": "status"})),
+			),
+		),
 		&status,
 	)
 	servers, _ := status["servers"].(map[string]any)
-	svc, _ := servers[svcName].(map[string]any)
-	if calls, _ := svc["calls"].(float64); int(calls) != wantCalls {
-		t.Errorf("expected %d calls, got %v", wantCalls, calls)
+	svc, _ := servers[params.ServerName].(map[string]any)
+	if calls, _ := svc["calls"].(float64); int(calls) != params.WantCalls {
+		params.T.Errorf("expected %d calls, got %v", params.WantCalls, calls)
 	}
 	if svc["last_call"] == nil {
-		t.Error("expected last_call timestamp")
+		params.T.Error("expected last_call timestamp")
 	}
 	lastCall, _ := svc["last_call"].(string)
 	if _, err := time.Parse(time.RFC3339, lastCall); err != nil {
-		t.Errorf("last_call not RFC3339: %q", lastCall)
+		params.T.Errorf("last_call not RFC3339: %q", lastCall)
 	}
 }
 
@@ -272,11 +284,11 @@ func TestHealthStatsAfterCalls(t *testing.T) {
 			"tools/call": json.RawMessage(`{"content":[{"type":"text","text":"{}"}]}`),
 		},
 	}
-	addEdgeConn(t, srv, config.ServerConfig{Name: "svc"}, fake)
+	addEdgeConn(addConnectionParams{T: t, Server: srv, Config: config.ServerConfig{Name: "svc"}, Connection: fake})
 	for i := 0; i < nCalls; i++ {
 		serve(t, srv, callTool("call", map[string]any{"server": "svc", "tool": "ping", "params": map[string]any{}}))
 	}
-	assertHealthStats(t, srv, "svc", nCalls)
+	assertHealthStats(assertHealthStatsParams{T: t, Server: srv, ServerName: "svc", WantCalls: nCalls})
 }
 
 func TestHealthStats_upstreamToolErrorRecordedInProxyAndCompactMode(t *testing.T) {
@@ -289,40 +301,68 @@ func TestHealthStats_upstreamToolErrorRecordedInProxyAndCompactMode(t *testing.T
 	t.Run("proxy mode", func(t *testing.T) {
 		srv := newTestServer(t, server.Params{})
 		t.Cleanup(srv.Close)
-		addProxyConn(t, srv, "svc", failing())
+		addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: failing()})
 		resp := serveProxy(t, srv, callTool("svc__ping", map[string]any{}))
 		assertIsErrorResult(t, resp)
-		assertFailedCallRecorded(t, srv, "svc", "tool returned error: boom")
+		assertFailedCallRecorded(
+			assertFailedCallRecordedParams{
+				T:             t,
+				Server:        srv,
+				ServerName:    "svc",
+				WantLastError: "tool returned error: boom",
+			},
+		)
 	})
 
 	t.Run("compact mode", func(t *testing.T) {
 		srv := newTestServer(t, server.Params{})
 		t.Cleanup(srv.Close)
-		addEdgeConn(t, srv, config.ServerConfig{Name: "svc"}, failing())
+		addEdgeConn(
+			addConnectionParams{T: t, Server: srv, Config: config.ServerConfig{Name: "svc"}, Connection: failing()},
+		)
 		resp := serve(t, srv, callTool("call", map[string]any{
 			"server": "svc", "tool": "ping", "params": map[string]any{},
 		}))
 		assertIsErrorResult(t, resp)
-		assertFailedCallRecorded(t, srv, "svc", "tool returned error: boom")
+		assertFailedCallRecorded(
+			assertFailedCallRecordedParams{
+				T:             t,
+				Server:        srv,
+				ServerName:    "svc",
+				WantLastError: "tool returned error: boom",
+			},
+		)
 	})
 }
 
-func assertFailedCallRecorded(t *testing.T, srv *server.Server, svcName, wantLastError string) {
-	t.Helper()
+type assertFailedCallRecordedParams struct {
+	T             *testing.T
+	Server        *server.Server
+	ServerName    string
+	WantLastError string
+}
+
+func assertFailedCallRecorded(params assertFailedCallRecordedParams) {
+	params.T.Helper()
 	var status map[string]any
 	if err := json.Unmarshal(
-		[]byte(toolResultText(t, serve(t, srv, callTool("config", map[string]any{"action": "status"})))),
+		[]byte(
+			toolResultText(
+				params.T,
+				serve(params.T, params.Server, callTool("config", map[string]any{"action": "status"})),
+			),
+		),
 		&status,
 	); err != nil {
-		t.Fatalf("status is not JSON: %v", err)
+		params.T.Fatalf("status is not JSON: %v", err)
 	}
 	servers, _ := status["servers"].(map[string]any)
-	svc, _ := servers[svcName].(map[string]any)
+	svc, _ := servers[params.ServerName].(map[string]any)
 	if errs, _ := svc["errors"].(float64); errs != 1 {
-		t.Errorf("errors = %v, want 1", svc["errors"])
+		params.T.Errorf("errors = %v, want 1", svc["errors"])
 	}
-	if svc["last_error"] != wantLastError {
-		t.Errorf("last_error = %v, want %q", svc["last_error"], wantLastError)
+	if svc["last_error"] != params.WantLastError {
+		params.T.Errorf("last_error = %v, want %q", svc["last_error"], params.WantLastError)
 	}
 }
 
@@ -390,36 +430,55 @@ func TestConfigureSetProjection_aFailedSaveKeepsTheLiveRuleAndSessionOnlyStillAp
 	for name, breakFile := range cases {
 		t.Run(name, func(t *testing.T) {
 			srv := newTestServer(t, server.Params{})
-			addEdgeConn(t, srv, config.ServerConfig{Name: "svc", Projections: map[string]*config.ProjectionConfig{
-				"getData": {IncludeOnly: []string{"a"}},
-			}}, fakeGetData())
+			addEdgeConn(addConnectionParams{
+				T:      t,
+				Server: srv,
+				Config: config.ServerConfig{Name: "svc", Projections: map[string]*config.ProjectionConfig{
+					"getData": {IncludeOnly: []string{"a"}},
+				}},
+				Connection: fakeGetData(),
+			})
 			path := config.ServerPath(srv.ConfigDir(), "svc")
 			breakFile(t, path)
 			before := serverFileText(t, path)
 			const sessionID = "cccccccc-cccc-cccc-cccc-000000000004"
-			postMCP(t, srv, sessionID, initMsg(true))
+			postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: initMsg(true)})
 
-			saved := postMCP(t, srv, sessionID, setGetDataProjection(2, false))
+			saved := postMCP(
+				postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: setGetDataProjection(2, false)},
+			)
 			assertIsErrorResult(t, saved)
 			if text := toolResultText(t, saved); !strings.Contains(text, "session_only") {
 				t.Errorf("failed save = %q, want session_only advice", text)
 			}
 			assertProjectedFields(
-				t,
-				toolResultText(t, postMCP(t, srv, sessionID, callGetData(3))),
-				[]string{"a"},
-				[]string{"b"},
+				assertProjectedFieldsParams{
+					T: t,
+					Text: toolResultText(
+						t,
+						postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: callGetData(3)}),
+					),
+					Present: []string{"a"},
+					Absent:  []string{"b"},
+				},
 			)
 
-			sessionOnly := postMCP(t, srv, sessionID, setGetDataProjection(4, true))
+			sessionOnly := postMCP(
+				postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: setGetDataProjection(4, true)},
+			)
 			if text := toolResultText(t, sessionOnly); strings.Contains(text, `"error"`) {
 				t.Fatalf("session_only set_projection = %s", text)
 			}
 			assertProjectedFields(
-				t,
-				toolResultText(t, postMCP(t, srv, sessionID, callGetData(5))),
-				[]string{"b"},
-				[]string{"a"},
+				assertProjectedFieldsParams{
+					T: t,
+					Text: toolResultText(
+						t,
+						postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: callGetData(5)}),
+					),
+					Present: []string{"b"},
+					Absent:  []string{"a"},
+				},
 			)
 			if after := serverFileText(t, path); after != before {
 				t.Errorf("server file = %q, want it untouched (%q)", after, before)
@@ -461,17 +520,24 @@ func callGetData(id int) map[string]any {
 	}
 }
 
-func assertProjectedFields(t *testing.T, text string, present, absent []string) {
-	t.Helper()
-	data := parseProxyEnvelope(t, text).Data
-	for _, key := range present {
+type assertProjectedFieldsParams struct {
+	T       *testing.T
+	Text    string
+	Present []string
+	Absent  []string
+}
+
+func assertProjectedFields(params assertProjectedFieldsParams) {
+	params.T.Helper()
+	data := parseProxyEnvelope(params.T, params.Text).Data
+	for _, key := range params.Present {
 		if data[key] == nil {
-			t.Errorf("field %q missing from projected data %v", key, data)
+			params.T.Errorf("field %q missing from projected data %v", key, data)
 		}
 	}
-	for _, key := range absent {
+	for _, key := range params.Absent {
 		if data[key] != nil {
-			t.Errorf("field %q survived projection in %v", key, data)
+			params.T.Errorf("field %q survived projection in %v", key, data)
 		}
 	}
 }
@@ -532,7 +598,9 @@ func TestConfigureRemoveServerRequiresName(t *testing.T) {
 
 func TestConfigureRemoveServer_clearsDiscover(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
-	addEdgeConn(t, srv, config.ServerConfig{Name: "svc"}, fakeConn("ping"))
+	addEdgeConn(
+		addConnectionParams{T: t, Server: srv, Config: config.ServerConfig{Name: "svc"}, Connection: fakeConn("ping")},
+	)
 	if srv.ToolCount("svc") != 1 {
 		t.Fatalf("expected 1 tool before remove")
 	}
@@ -546,7 +614,9 @@ func TestConfigureRemoveServer_clearsDiscover(t *testing.T) {
 
 func TestSessionScopedProjectionNotPersistedAcrossCalls(t *testing.T) {
 	srv := newSessionServer(t)
-	addEdgeConn(t, srv, config.ServerConfig{Name: "svc"}, fakeGetData())
+	addEdgeConn(
+		addConnectionParams{T: t, Server: srv, Config: config.ServerConfig{Name: "svc"}, Connection: fakeGetData()},
+	)
 
 	serve(t, srv, callTool("config", map[string]any{
 		"action":       "set_projection",

@@ -39,11 +39,18 @@ func parseRPCResponse(t *testing.T, data []byte) map[string]any {
 	return resp
 }
 
-func addEdgeConn(t *testing.T, srv *server.Server, cfg config.ServerConfig, conn *transport.FakeConnection) {
-	t.Helper()
-	writeTestServerConfig(t, srv, cfg)
-	if err := srv.AddConnection(context.Background(), cfg, conn); err != nil {
-		t.Fatalf("AddConnection %s: %v", cfg.Name, err)
+type addConnectionParams struct {
+	T          *testing.T
+	Server     *server.Server
+	Config     config.ServerConfig
+	Connection *transport.FakeConnection
+}
+
+func addEdgeConn(params addConnectionParams) {
+	params.T.Helper()
+	writeTestServerConfig(params.T, params.Server, params.Config)
+	if err := params.Server.AddConnection(context.Background(), params.Config, params.Connection); err != nil {
+		params.T.Fatalf("AddConnection %s: %v", params.Config.Name, err)
 	}
 }
 
@@ -156,7 +163,14 @@ func TestExecWithFakeConnectionError(t *testing.T) {
 
 func TestDiscoverDetail_edgeCases(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
-	addEdgeConn(t, srv, config.ServerConfig{Name: "svc"}, fakeConn("myTool"))
+	addEdgeConn(
+		addConnectionParams{
+			T:          t,
+			Server:     srv,
+			Config:     config.ServerConfig{Name: "svc"},
+			Connection: fakeConn("myTool"),
+		},
+	)
 
 	resp := serve(t, srv, callTool("list", map[string]any{
 		"tool":   "svc.myTool",

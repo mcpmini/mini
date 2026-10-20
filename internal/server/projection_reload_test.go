@@ -146,7 +146,9 @@ func (e *reloadEnv) assertServerDataKeys(server string, present, absent []string
 		e.srv,
 		callTool("call", map[string]any{"server": server, "tool": "getData", "params": map[string]any{}}),
 	)
-	assertProjectedFields(e.t, toolResultText(e.t, resp), present, absent)
+	assertProjectedFields(
+		assertProjectedFieldsParams{T: e.t, Text: toolResultText(e.t, resp), Present: present, Absent: absent},
+	)
 }
 
 func (e *reloadEnv) assertDataKeys(present []string, absent []string) {

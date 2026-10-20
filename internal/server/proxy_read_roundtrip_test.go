@@ -61,7 +61,7 @@ func TestProxy_MiniRead_JQRoundTrip(t *testing.T) {
 			conn.Responses["tools/call"] = json.RawMessage(
 				`{"content":[{"type":"text","text":` + marshalString(upstream) + `}]}`,
 			)
-			addProxyConn(t, srv, "svc", conn)
+			addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
 			serveProxy(t, srv, callTool("config", map[string]any{
 				"action":     "set_projection",

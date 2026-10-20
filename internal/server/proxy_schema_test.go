@@ -76,7 +76,7 @@ func TestProxySchema_InputSchema(t *testing.T) {
 				},
 				Responses: make(map[string]json.RawMessage),
 			}
-			addProxyConn(t, srv, "svc", conn)
+			addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
 			tool := findTool(toolsList(t, srv), "svc__tool")
 			if tool == nil {
@@ -99,7 +99,7 @@ func assertInputSchema(t *testing.T, tool map[string]any, want string) {
 func TestProxySchema_InputControlEnumOffersDefaultAndRaw(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
-	addProxyConn(t, srv, "svc", fakeConn("noop"))
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: fakeConn("noop")})
 
 	tool := findTool(toolsList(t, srv), "svc__noop")
 	inSchema := tool["inputSchema"].(map[string]any)
@@ -161,7 +161,7 @@ func TestProxySchema_OutputSchema(t *testing.T) {
 				},
 				Responses: make(map[string]json.RawMessage),
 			}
-			addProxyConn(t, srv, "svc", conn)
+			addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
 			tool := findTool(toolsList(t, srv), "svc__tool")
 			assertOutputSchema(t, tool, tc.want)
@@ -201,7 +201,7 @@ func TestProxySchema_NullUpstreamSchemaDoesNotPanic(t *testing.T) {
 		},
 		Responses: make(map[string]json.RawMessage),
 	}
-	addProxyConn(t, srv, "svc", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
 	tools := toolsList(t, srv)
 	if findTool(tools, "svc__null_input") == nil {

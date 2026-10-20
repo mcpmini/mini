@@ -148,14 +148,30 @@ func modernElicitingUpstream(t *testing.T, retries chan<- mrtrCallParams) string
 			t.Errorf("decode upstream request: %v", err)
 			return
 		}
-		writeUpstreamResult(t, w, req.ID, elicitingResult(t, req.Method, req.Params, retries))
+		writeUpstreamResult(
+			writeUpstreamResultParams{
+				T:      t,
+				Writer: w,
+				ID:     req.ID,
+				Result: elicitingResult(
+					elicitingResultParams{T: t, Method: req.Method, Params: req.Params, Retries: retries},
+				),
+			},
+		)
 	}))
 	t.Cleanup(upstream.Close)
 	return upstream.URL
 }
 
-func elicitingResult(t *testing.T, method string, params json.RawMessage, retries chan<- mrtrCallParams) any {
-	switch method {
+type elicitingResultParams struct {
+	T       *testing.T
+	Method  string
+	Params  json.RawMessage
+	Retries chan<- mrtrCallParams
+}
+
+func elicitingResult(params elicitingResultParams) any {
+	switch params.Method {
 	case "server/discover":
 		return transport.DiscoverResult{SupportedVersions: transport.ModernVersions}
 	case "tools/list":
@@ -164,28 +180,35 @@ func elicitingResult(t *testing.T, method string, params json.RawMessage, retrie
 		}}
 	case "tools/call":
 		var call mrtrCallParams
-		if err := json.Unmarshal(params, &call); err != nil {
-			t.Errorf("decode tools/call params: %v", err)
+		if err := json.Unmarshal(params.Params, &call); err != nil {
+			params.T.Errorf("decode tools/call params: %v", err)
 		}
 		if len(call.RequestState) == 0 {
 			return json.RawMessage(inputRequiredResult)
 		}
-		retries <- call
+		params.Retries <- call
 		return transport.ToolCallResult{Content: []transport.ContentItem{{Type: "text", Text: "confirmed"}}}
 	}
 	return struct{}{}
 }
 
-func writeUpstreamResult(t *testing.T, w http.ResponseWriter, id json.RawMessage, result any) {
-	encoded, err := json.Marshal(result)
+type writeUpstreamResultParams struct {
+	T      *testing.T
+	Writer http.ResponseWriter
+	ID     json.RawMessage
+	Result any
+}
+
+func writeUpstreamResult(params writeUpstreamResultParams) {
+	encoded, err := json.Marshal(params.Result)
 	if err != nil {
-		t.Errorf("encode upstream result: %v", err)
+		params.T.Errorf("encode upstream result: %v", err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).
-		Encode(transport.Response{JsonRPC: transport.JsonRPCVersion, ID: id, Result: encoded}); err != nil {
-		t.Errorf("write upstream result: %v", err)
+	params.Writer.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(params.Writer).
+		Encode(transport.Response{JsonRPC: transport.JsonRPCVersion, ID: params.ID, Result: encoded}); err != nil {
+		params.T.Errorf("write upstream result: %v", err)
 	}
 }
 

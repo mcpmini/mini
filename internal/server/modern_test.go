@@ -81,8 +81,8 @@ func TestModernRejectedVersionLeavesTheSessionFreeToInitialize(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	responses := responsesByID(serveModern(t, srv,
 		transporttest.ModernRequestVersion("1900-01-01", 1, "server/discover", nil),
-		legacyRequest(t, 2, "initialize", initParams(true)),
-		legacyRequest(t, 3, "tools/list", nil),
+		legacyRequest(legacyRequestParams{T: t, ID: 2, Method: "initialize", Params: initParams(true)}),
+		legacyRequest(legacyRequestParams{T: t, ID: 3, Method: "tools/list", Params: nil}),
 	))
 	if responses[1].Error == nil || responses[1].Error.Code != transport.CodeUnsupportedProtocolVersion {
 		t.Fatalf("discover with an unsupported version = %+v, want -32022", responses[1].Error)
@@ -92,17 +92,24 @@ func TestModernRejectedVersionLeavesTheSessionFreeToInitialize(t *testing.T) {
 	}
 }
 
-func legacyRequest(t *testing.T, id int, method string, params any) []byte {
-	t.Helper()
-	encoded, err := json.Marshal(params)
+type legacyRequestParams struct {
+	T      *testing.T
+	ID     int
+	Method string
+	Params any
+}
+
+func legacyRequest(params legacyRequestParams) []byte {
+	params.T.Helper()
+	encoded, err := json.Marshal(params.Params)
 	if err != nil {
-		t.Fatal(err)
+		params.T.Fatal(err)
 	}
 	line, err := json.Marshal(
-		transport.Request{JsonRPC: transport.JsonRPCVersion, ID: id, Method: method, Params: encoded},
+		transport.Request{JsonRPC: transport.JsonRPCVersion, ID: params.ID, Method: params.Method, Params: encoded},
 	)
 	if err != nil {
-		t.Fatal(err)
+		params.T.Fatal(err)
 	}
 	return append(line, '\n')
 }

@@ -21,7 +21,7 @@ func TestListDirectoryNonEmpty(t *testing.T) {
 	fake := fakeConn("list_directory")
 	fake.RespondWith(map[string]any{"entries": []string{"alpha.txt", "beta.go"}})
 	srv := newTestServer(t, server.Params{})
-	addTestConnection(t, srv, config.ServerConfig{Name: "fs"}, fake)
+	addTestConnection(addConnectionParams{T: t, Server: srv, Config: config.ServerConfig{Name: "fs"}, Connection: fake})
 
 	resp := serve(t, srv, callTool("call", map[string]any{
 		"server": "fs", "tool": "list_directory", "params": map[string]any{"path": "/dir"},
@@ -43,7 +43,7 @@ func TestReadFileTruncation(t *testing.T) {
 	cfg.DefaultStringLimit = 100
 	srv := newTestServer(t, server.Params{Config: cfg})
 	t.Cleanup(srv.Close)
-	addTestConnection(t, srv, config.ServerConfig{Name: "fs"}, fake)
+	addTestConnection(addConnectionParams{T: t, Server: srv, Config: config.ServerConfig{Name: "fs"}, Connection: fake})
 
 	resp := serve(t, srv, callTool("call", map[string]any{
 		"server": "fs", "tool": "read_file", "params": map[string]any{"path": "/big.txt"},
@@ -74,8 +74,12 @@ func TestMultipleServers(t *testing.T) {
 	fake2 := fakeConn("list_directory")
 	fake2.RespondWith(map[string]any{"entries": []string{"from_server2.txt"}})
 	srv := newTestServer(t, server.Params{})
-	addTestConnection(t, srv, config.ServerConfig{Name: "fs1"}, fake1)
-	addTestConnection(t, srv, config.ServerConfig{Name: "fs2"}, fake2)
+	addTestConnection(
+		addConnectionParams{T: t, Server: srv, Config: config.ServerConfig{Name: "fs1"}, Connection: fake1},
+	)
+	addTestConnection(
+		addConnectionParams{T: t, Server: srv, Config: config.ServerConfig{Name: "fs2"}, Connection: fake2},
+	)
 
 	var tools []map[string]any
 	json.Unmarshal(

@@ -27,7 +27,7 @@ func newProxyServerWithSecretTool(t *testing.T, stringLimit int) *server.Server 
 			80,
 		) + `\"}"}]}`,
 	)
-	addProxyConn(t, srv, "svc", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 	return srv
 }
 
@@ -117,7 +117,7 @@ func TestProxy_InvalidProjectionControl_RejectedAsToolError(t *testing.T) {
 		srv,
 		callTool("svc__get_item", map[string]any{"__mini": map[string]any{"projection": "bogus"}}),
 	)
-	requireRPCError(t, resp, -32602, "projection")
+	requireRPCError(requireRPCErrorParams{T: t, Resp: resp, WantCode: -32602, WantSubstr: "projection"})
 }
 
 func TestProxy_ConcurrentRawAndDefaultCalls_DoNotCrossContaminate(t *testing.T) {
@@ -169,7 +169,7 @@ func TestProxy_ToonFormat_RendersToonOutput(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(
 		`{"content":[{"type":"text","text":"[{\"id\":1,\"name\":\"alice\"},{\"id\":2,\"name\":\"bob\"}]"}]}`,
 	)
-	addProxyConn(t, srv, "svc", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
 	resp := serveProxy(t, srv, callTool("svc__list_items", map[string]any{}))
 	text := toolResultText(t, resp)
@@ -188,7 +188,7 @@ func TestProxy_DefaultProjection_PreservesLargeIntegers(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(
 		`{"content":[{"type":"text","text":"{\"id\":9007199254740993,\"secret\":\"hidden\"}"}]}`,
 	)
-	addProxyConn(t, srv, "svc", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
 	serveProxy(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "svc", "tool": "get_item",
@@ -213,10 +213,17 @@ func newProxyToonServer(t *testing.T, logs *syncBuffer) *server.Server {
 	return newTestServer(t, params)
 }
 
-func setProxyExclude(t *testing.T, srv *server.Server, tool string, projection map[string]any) {
-	t.Helper()
-	serveProxy(t, srv, callTool("config", map[string]any{
-		"action": "set_projection", "server": "svc", "tool": tool, "projection": projection,
+type setProxyExcludeParams struct {
+	T          *testing.T
+	Server     *server.Server
+	Tool       string
+	Projection map[string]any
+}
+
+func setProxyExclude(params setProxyExcludeParams) {
+	params.T.Helper()
+	serveProxy(params.T, params.Server, callTool("config", map[string]any{
+		"action": "set_projection", "server": "svc", "tool": params.Tool, "projection": params.Projection,
 	}))
 }
 
@@ -246,7 +253,7 @@ func TestProxy_ToonFormat_UntrimmedObjectTextBecomesOneToonBlock(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(
 		`{"content":[{"type":"text","text":"{\"id\":1,\"name\":\"alice\"}"}]}`,
 	)
-	addProxyConn(t, srv, "svc", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
 	result := proxyResultOf(t, serveProxy(t, srv, callTool("svc__get_user", map[string]any{})))
 	if _, ok := result["structuredContent"]; ok {
@@ -265,8 +272,15 @@ func TestProxy_ToonFormat_TrimmedArrayKeepsJSONNoticeBlock(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(
 		`{"content":[{"type":"text","text":"[{\"id\":1,\"secret\":\"x\"},{\"id\":2,\"secret\":\"y\"}]"}]}`,
 	)
-	addProxyConn(t, srv, "svc", conn)
-	setProxyExclude(t, srv, "list_users", map[string]any{"array_limits": map[string]int{"default": 1}})
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
+	setProxyExclude(
+		setProxyExcludeParams{
+			T:          t,
+			Server:     srv,
+			Tool:       "list_users",
+			Projection: map[string]any{"array_limits": map[string]int{"default": 1}},
+		},
+	)
 
 	texts := contentTexts(proxyResultOf(t, serveProxy(t, srv, callTool("svc__list_users", map[string]any{}))))
 	if len(texts) != 2 {
@@ -287,7 +301,7 @@ func TestProxy_ToonFormat_KeepsUpstreamKeyOrder(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(
 		`{"content":[{"type":"text","text":"{\"name\":\"alice\",\"id\":1}"}]}`,
 	)
-	addProxyConn(t, srv, "svc", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
 	texts := contentTexts(proxyResultOf(t, serveProxy(t, srv, callTool("svc__get_user", map[string]any{}))))
 	if len(texts) != 1 || texts[0] != "name: alice\nid: 1" {
@@ -300,7 +314,7 @@ func TestProxy_ToonFormat_EmptyObjectKeepsJSONText(t *testing.T) {
 	defer srv.Close()
 	conn := fakeConn("delete_user")
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{}"}]}`)
-	addProxyConn(t, srv, "svc", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
 	texts := contentTexts(proxyResultOf(t, serveProxy(t, srv, callTool("svc__delete_user", map[string]any{}))))
 	if len(texts) != 1 || texts[0] != "{}" {
@@ -313,8 +327,15 @@ func TestProxy_ToonFormat_TrimmedObjectCarriesNoticeInToon(t *testing.T) {
 	defer srv.Close()
 	conn := fakeConn("get_user")
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"x\"}"}]}`)
-	addProxyConn(t, srv, "svc", conn)
-	setProxyExclude(t, srv, "get_user", map[string]any{"exclude": []string{"secret"}})
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
+	setProxyExclude(
+		setProxyExcludeParams{
+			T:          t,
+			Server:     srv,
+			Tool:       "get_user",
+			Projection: map[string]any{"exclude": []string{"secret"}},
+		},
+	)
 
 	texts := contentTexts(proxyResultOf(t, serveProxy(t, srv, callTool("svc__get_user", map[string]any{}))))
 	if len(texts) != 1 {
@@ -333,8 +354,15 @@ func TestProxy_ToonFormat_MirrorTextIsToonAndStructuredKeepsNotice(t *testing.T)
 	conn.Responses["tools/call"] = json.RawMessage(
 		`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"x\"}"}],"structuredContent":{"id":1,"secret":"x"}}`,
 	)
-	addProxyConn(t, srv, "svc", conn)
-	setProxyExclude(t, srv, "get_user", map[string]any{"exclude": []string{"secret"}})
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
+	setProxyExclude(
+		setProxyExcludeParams{
+			T:          t,
+			Server:     srv,
+			Tool:       "get_user",
+			Projection: map[string]any{"exclude": []string{"secret"}},
+		},
+	)
 
 	result := proxyResultOf(t, serveProxy(t, srv, callTool("svc__get_user", map[string]any{})))
 	structured, _ := result["structuredContent"].(map[string]any)
@@ -352,7 +380,7 @@ func TestProxy_ToonFormat_ProseTextIsUnchanged(t *testing.T) {
 	defer srv.Close()
 	conn := fakeConn("describe")
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"hello, world"}]}`)
-	addProxyConn(t, srv, "svc", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
 	texts := contentTexts(proxyResultOf(t, serveProxy(t, srv, callTool("svc__describe", map[string]any{}))))
 	if len(texts) != 1 || texts[0] != "hello, world" {
@@ -366,7 +394,7 @@ func TestProxy_ToonFormat_UnencodableJSONKeepsJSONAndLogsWarning(t *testing.T) {
 	defer srv.Close()
 	conn := fakeConn("get_blob")
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":` + deepPayload(t) + `}]}`)
-	addProxyConn(t, srv, "svc", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
 	texts := contentTexts(proxyResultOf(t, serveProxy(t, srv, callTool("svc__get_blob", map[string]any{}))))
 	if len(texts) != 1 || !strings.Contains(texts[0], "depth-sentinel") {
@@ -385,7 +413,7 @@ func TestProxy_ToonFormat_RawAndErrorResultsStayJSON(t *testing.T) {
 		conn.Responses["tools/call"] = json.RawMessage(
 			`{"content":[{"type":"text","text":"{\"id\":1,\"name\":\"alice\"}"}]}`,
 		)
-		addProxyConn(t, srv, "svc", conn)
+		addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
 		resp := serveProxy(t, srv, callTool(
 			"svc__get_user",
@@ -402,7 +430,7 @@ func TestProxy_ToonFormat_RawAndErrorResultsStayJSON(t *testing.T) {
 		conn.Responses["tools/call"] = json.RawMessage(
 			`{"content":[{"type":"text","text":"{\"code\":7}"}],"isError":true}`,
 		)
-		addProxyConn(t, srv, "svc", conn)
+		addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
 		text := toolResultText(t, serveProxy(t, srv, callTool("svc__fail", map[string]any{})))
 		if text != `{"code":7}` {
@@ -418,7 +446,7 @@ func TestProxy_ToonFormat_PerToolOverrideOnlyAffectsThatTool(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(
 		`{"content":[{"type":"text","text":"{\"id\":1,\"name\":\"alice\"}"}]}`,
 	)
-	addProxyConn(t, srv, "svc", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 	serveProxy(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "svc", "tool": "toon_tool",
 		"projection": map[string]any{"format": "toon"},
@@ -441,8 +469,15 @@ func TestProxy_ArrayItemExclusion_TrimsEachEntryAndKeepsRecovery(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(
 		`{"content":[{"type":"text","text":"[{\"sha\":\"a\",\"author\":{\"login\":\"x\",\"avatar_url\":\"u1\"}},{\"sha\":\"b\",\"author\":{\"login\":\"y\",\"avatar_url\":\"u2\"}}]"}]}`,
 	)
-	addProxyConn(t, srv, "svc", conn)
-	setProxyExclude(t, srv, "list_commits", map[string]any{"exclude": []string{"[].author.avatar_url"}})
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
+	setProxyExclude(
+		setProxyExcludeParams{
+			T:          t,
+			Server:     srv,
+			Tool:       "list_commits",
+			Projection: map[string]any{"exclude": []string{"[].author.avatar_url"}},
+		},
+	)
 
 	texts := contentTexts(proxyResultOf(t, serveProxy(t, srv, callTool("svc__list_commits", map[string]any{}))))
 	if len(texts) != 2 || texts[0] != `[{"author":{"login":"x"},"sha":"a"},{"author":{"login":"y"},"sha":"b"}]` {

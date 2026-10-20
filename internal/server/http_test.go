@@ -19,19 +19,26 @@ import (
 	"github.com/mcpmini/mini/internal/transport/transporttest"
 )
 
-func mcpPost(t *testing.T, ts *httptest.Server, body []byte, sessionID string) *http.Response {
-	t.Helper()
-	req, err := http.NewRequest(http.MethodPost, ts.URL+"/mcp", bytes.NewReader(body))
+type mcpPostParams struct {
+	T          *testing.T
+	HTTPServer *httptest.Server
+	Body       []byte
+	SessionID  string
+}
+
+func mcpPost(params mcpPostParams) *http.Response {
+	params.T.Helper()
+	req, err := http.NewRequest(http.MethodPost, params.HTTPServer.URL+"/mcp", bytes.NewReader(params.Body))
 	if err != nil {
-		t.Fatal(err)
+		params.T.Fatal(err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if sessionID != "" {
-		req.Header.Set("Mcp-Session-Id", sessionID)
+	if params.SessionID != "" {
+		req.Header.Set("Mcp-Session-Id", params.SessionID)
 	}
-	resp, err := ts.Client().Do(req)
+	resp, err := params.HTTPServer.Client().Do(req)
 	if err != nil {
-		t.Fatal(err)
+		params.T.Fatal(err)
 	}
 	return resp
 }
@@ -52,7 +59,7 @@ func initRequest() []byte {
 
 func TestHTTPServer_initializeCreatesSession(t *testing.T) {
 	_, ts := newHTTPTestServer(t, server.Params{})
-	resp := mcpPost(t, ts, initRequest(), "")
+	resp := mcpPost(mcpPostParams{T: t, HTTPServer: ts, Body: initRequest(), SessionID: ""})
 	defer resp.Body.Close()
 	mustStatus(t, resp, http.StatusOK)
 	if resp.Header.Get("Mcp-Session-Id") == "" {
@@ -116,7 +123,7 @@ func decodeRecorderMessage(t *testing.T, response *httptest.ResponseRecorder) mo
 
 func initSession(t *testing.T, ts *httptest.Server) string {
 	t.Helper()
-	resp := mcpPost(t, ts, initRequest(), "")
+	resp := mcpPost(mcpPostParams{T: t, HTTPServer: ts, Body: initRequest(), SessionID: ""})
 	sessionID := resp.Header.Get("Mcp-Session-Id")
 	io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
@@ -140,16 +147,18 @@ func initCompactRequest() []byte {
 
 func initCompactSession(t *testing.T, ts *httptest.Server) string {
 	t.Helper()
-	resp := mcpPost(t, ts, initCompactRequest(), "")
+	resp := mcpPost(mcpPostParams{T: t, HTTPServer: ts, Body: initCompactRequest(), SessionID: ""})
 	sessionID := resp.Header.Get("Mcp-Session-Id")
 	io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
 	return sessionID
 }
 
-func drainMCPPost(t *testing.T, ts *httptest.Server, body []byte, sessionID string) {
-	t.Helper()
-	resp := mcpPost(t, ts, body, sessionID)
+func drainMCPPost(params mcpPostParams) {
+	params.T.Helper()
+	resp := mcpPost(
+		mcpPostParams{T: params.T, HTTPServer: params.HTTPServer, Body: params.Body, SessionID: params.SessionID},
+	)
 	io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
 }
@@ -171,16 +180,29 @@ func setSessionProjection(t *testing.T, p sessionProjectionParams) {
 			"projection": p.Proj, "session_only": true,
 		}},
 	})
-	drainMCPPost(t, p.TS, body, p.SessionID)
+	drainMCPPost(mcpPostParams{T: t, HTTPServer: p.TS, Body: body, SessionID: p.SessionID})
 }
 
-func httpExecToolText(t *testing.T, ts *httptest.Server, sessionID, srvName, tool string) string {
-	t.Helper()
+type httpExecToolTextParams struct {
+	T          *testing.T
+	HTTPServer *httptest.Server
+	SessionID  string
+	ServerName string
+	Tool       string
+}
+
+func httpExecToolText(params httpExecToolTextParams) string {
+	params.T.Helper()
 	body, _ := json.Marshal(map[string]any{
-		"jsonrpc": transport.JsonRPCVersion, "id": 3, "method": "tools/call",
-		"params": map[string]any{"name": "call", "arguments": map[string]any{"server": srvName, "tool": tool}},
+		"jsonrpc": transport.JsonRPCVersion,
+		"id":      3,
+		"method":  "tools/call",
+		"params": map[string]any{
+			"name":      "call",
+			"arguments": map[string]any{"server": params.ServerName, "tool": params.Tool},
+		},
 	})
-	resp := mcpPost(t, ts, body, sessionID)
+	resp := mcpPost(mcpPostParams{T: params.T, HTTPServer: params.HTTPServer, Body: body, SessionID: params.SessionID})
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
 	var rpc struct {
@@ -263,7 +285,9 @@ func TestHTTPServer_sessionPersistsProjection(t *testing.T) {
 			Proj:      map[string]any{"include_only": []string{"id"}},
 		},
 	)
-	text := httpExecToolText(t, ts, sessionID, "svc", "get_item")
+	text := httpExecToolText(
+		httpExecToolTextParams{T: t, HTTPServer: ts, SessionID: sessionID, ServerName: "svc", Tool: "get_item"},
+	)
 	if text == "" {
 		t.Fatal("no tool result — the projection assertion below would pass vacuously")
 	}
@@ -305,24 +329,31 @@ func TestHTTPServer_healthz(t *testing.T) {
 	}
 }
 
-func httpExecOne(t *testing.T, ts *httptest.Server, id int, errs chan<- string) {
-	t.Helper()
+type httpExecOneParams struct {
+	T          *testing.T
+	HTTPServer *httptest.Server
+	ID         int
+	Errs       chan<- string
+}
+
+func httpExecOne(params httpExecOneParams) {
+	params.T.Helper()
 	// Each goroutine gets its own session, which requires initialize first.
 	// Spec: "The initialization phase MUST be the first interaction between client and server."
 	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/lifecycle.mdx#L38
-	sessionID := initCompactSession(t, ts)
+	sessionID := initCompactSession(params.T, params.HTTPServer)
 	body, _ := json.Marshal(map[string]any{
-		"jsonrpc": transport.JsonRPCVersion, "id": id + 1, "method": "tools/call",
+		"jsonrpc": transport.JsonRPCVersion, "id": params.ID + 1, "method": "tools/call",
 		"params": map[string]any{"name": "call", "arguments": map[string]any{"server": "svc", "tool": "ping"}},
 	})
-	resp := mcpPost(t, ts, body, sessionID)
+	resp := mcpPost(mcpPostParams{T: params.T, HTTPServer: params.HTTPServer, Body: body, SessionID: sessionID})
 	if resp.StatusCode != http.StatusOK {
-		errs <- "unexpected status"
+		params.Errs <- "unexpected status"
 	}
 	b, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if !bytes.Contains(b, []byte("pong")) {
-		errs <- "missing tool result: " + string(b)
+		params.Errs <- "missing tool result: " + string(b)
 	}
 }
 
@@ -332,7 +363,7 @@ func assertConcurrentExecs(t *testing.T, ts *httptest.Server, n int) {
 	errs := make(chan string, n)
 	for i := range n {
 		wg.Add(1)
-		go func(i int) { defer wg.Done(); httpExecOne(t, ts, i, errs) }(i)
+		go func(i int) { defer wg.Done(); httpExecOne(httpExecOneParams{T: t, HTTPServer: ts, ID: i, Errs: errs}) }(i)
 	}
 	wg.Wait()
 	close(errs)
@@ -367,19 +398,26 @@ func TestHTTPServer_notFound(t *testing.T) {
 	}
 }
 
-func sseProxyToolCall(t *testing.T, ts *httptest.Server, sessionID, toolName string) *http.Response {
-	t.Helper()
+type sseProxyToolCallParams struct {
+	T          *testing.T
+	HTTPServer *httptest.Server
+	SessionID  string
+	ToolName   string
+}
+
+func sseProxyToolCall(params sseProxyToolCallParams) *http.Response {
+	params.T.Helper()
 	body, _ := json.Marshal(map[string]any{
 		"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "tools/call",
-		"params": map[string]any{"name": toolName, "arguments": map[string]any{}},
+		"params": map[string]any{"name": params.ToolName, "arguments": map[string]any{}},
 	})
-	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", bytes.NewReader(body))
+	req, _ := http.NewRequest(http.MethodPost, params.HTTPServer.URL+"/mcp", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
-	req.Header.Set("Mcp-Session-Id", sessionID)
-	resp, err := ts.Client().Do(req)
+	req.Header.Set("Mcp-Session-Id", params.SessionID)
+	resp, err := params.HTTPServer.Client().Do(req)
 	if err != nil {
-		t.Fatal(err)
+		params.T.Fatal(err)
 	}
 	return resp
 }
@@ -390,7 +428,9 @@ func TestHTTPServer_SSEResponse(t *testing.T) {
 	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"ok"}]}`)
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fake) //nolint:errcheck
 	sessionID := initSession(t, ts)
-	resp := sseProxyToolCall(t, ts, sessionID, "svc__myTool")
+	resp := sseProxyToolCall(
+		sseProxyToolCallParams{T: t, HTTPServer: ts, SessionID: sessionID, ToolName: "svc__myTool"},
+	)
 	defer resp.Body.Close()
 	if ct := resp.Header.Get("Content-Type"); ct != "text/event-stream" {
 		t.Errorf("expected Content-Type: text/event-stream, got: %q", ct)
@@ -458,7 +498,7 @@ func TestHTTPServer_staleSessionFails(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		resp := mcpPost(t, ts2, body, sessionID)
+		resp := mcpPost(mcpPostParams{T: t, HTTPServer: ts2, Body: body, SessionID: sessionID})
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		var rpc map[string]any

@@ -42,7 +42,14 @@ func TestAlias_listShowsAliasName(t *testing.T) {
 	proj := map[string]*config.ProjectionConfig{
 		"list_pull_requests": {Alias: "list_prs"},
 	}
-	addTestConnection(t, srv, config.ServerConfig{Name: "gh", Projections: proj}, fake)
+	addTestConnection(
+		addConnectionParams{
+			T:          t,
+			Server:     srv,
+			Config:     config.ServerConfig{Name: "gh", Projections: proj},
+			Connection: fake,
+		},
+	)
 
 	names := listNames(t, srv)
 	if names["gh.list_pull_requests"] {
@@ -64,7 +71,14 @@ func TestAlias_callRoutesToRealTool(t *testing.T) {
 	proj := map[string]*config.ProjectionConfig{
 		"list_pull_requests": {Alias: "list_prs"},
 	}
-	addTestConnection(t, srv, config.ServerConfig{Name: "gh", Projections: proj}, fake)
+	addTestConnection(
+		addConnectionParams{
+			T:          t,
+			Server:     srv,
+			Config:     config.ServerConfig{Name: "gh", Projections: proj},
+			Connection: fake,
+		},
+	)
 
 	resp := serve(t, srv, callTool("call", map[string]any{
 		"server": "gh",
@@ -87,7 +101,14 @@ func TestAlias_callByRealNameFails(t *testing.T) {
 	proj := map[string]*config.ProjectionConfig{
 		"list_pull_requests": {Alias: "list_prs"},
 	}
-	addTestConnection(t, srv, config.ServerConfig{Name: "gh", Projections: proj}, fake)
+	addTestConnection(
+		addConnectionParams{
+			T:          t,
+			Server:     srv,
+			Config:     config.ServerConfig{Name: "gh", Projections: proj},
+			Connection: fake,
+		},
+	)
 
 	resp := serve(t, srv, callTool("call", map[string]any{
 		"server": "gh",
@@ -113,7 +134,14 @@ func TestAlias_permCallRoutesToRealTool(t *testing.T) {
 	proj := map[string]*config.ProjectionConfig{
 		"delete_repo": {Alias: "rm_repo"},
 	}
-	addTestConnection(t, srv, config.ServerConfig{Name: "gh", Permissions: perm, Projections: proj}, fake)
+	addTestConnection(
+		addConnectionParams{
+			T:          t,
+			Server:     srv,
+			Config:     config.ServerConfig{Name: "gh", Permissions: perm, Projections: proj},
+			Connection: fake,
+		},
+	)
 
 	resp := serve(t, srv, callTool("perm_call", map[string]any{
 		"server": "gh",
@@ -136,7 +164,14 @@ func TestAlias_invalidAliasUsesRealName(t *testing.T) {
 	proj := map[string]*config.ProjectionConfig{
 		"my_tool": {Alias: "bad alias!"},
 	}
-	addTestConnection(t, srv, config.ServerConfig{Name: "svc", Projections: proj}, fake)
+	addTestConnection(
+		addConnectionParams{
+			T:          t,
+			Server:     srv,
+			Config:     config.ServerConfig{Name: "svc", Projections: proj},
+			Connection: fake,
+		},
+	)
 
 	names := listNames(t, srv)
 	if !names["svc.my_tool"] {
@@ -148,7 +183,7 @@ func TestAlias_noProjectionAlias(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 
 	fake := fakeConn("get_issue")
-	addTestConnection(t, srv, config.ServerConfig{Name: "gh"}, fake)
+	addTestConnection(addConnectionParams{T: t, Server: srv, Config: config.ServerConfig{Name: "gh"}, Connection: fake})
 
 	names := listNames(t, srv)
 	if !names["gh.get_issue"] {

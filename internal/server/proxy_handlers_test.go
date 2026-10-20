@@ -14,11 +14,22 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-func addProxyConn(t *testing.T, srv *server.Server, name string, conn *transport.FakeConnection) {
-	t.Helper()
-	writeTestServerConfig(t, srv, config.ServerConfig{Name: name})
-	if err := srv.AddConnection(context.Background(), config.ServerConfig{Name: name}, conn); err != nil {
-		t.Fatalf("AddConnection %s: %v", name, err)
+type addProxyConnParams struct {
+	T          *testing.T
+	Server     *server.Server
+	Name       string
+	Connection *transport.FakeConnection
+}
+
+func addProxyConn(params addProxyConnParams) {
+	params.T.Helper()
+	writeTestServerConfig(params.T, params.Server, config.ServerConfig{Name: params.Name})
+	if err := params.Server.AddConnection(
+		context.Background(),
+		config.ServerConfig{Name: params.Name},
+		params.Connection,
+	); err != nil {
+		params.T.Fatalf("AddConnection %s: %v", params.Name, err)
 	}
 }
 
@@ -61,7 +72,7 @@ func TestProxy_ToolsList_ContainsMiniTools(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := fakeConn("list_issues", "create_issue")
-	addProxyConn(t, srv, "github", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "github", Connection: conn})
 
 	tools := toolsList(t, srv)
 	names := toolNames(tools)
@@ -130,7 +141,7 @@ func TestProxy_Call_NoProjection_PassesRawJSON(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(
 		`{"content":[{"type":"text","text":"{\"id\":1,\"name\":\"alice\"}"}]}`,
 	)
-	addProxyConn(t, srv, "svc", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
 	resp := serveProxy(t, srv, callTool("svc__get_user", map[string]any{}))
 	text := toolResultText(t, resp)
@@ -155,7 +166,7 @@ func TestProxy_Call_NoProjection_DefaultStringLimitApplies(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(
 		`{"content":[{"type":"text","text":"{\"id\":1,\"body\":\"` + longVal + `\"}"}]}`,
 	)
-	addProxyConn(t, srv, "svc", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
 	resp := serveProxy(t, srv, callTool("svc__get_item", map[string]any{}))
 	text := toolResultText(t, resp)
@@ -172,7 +183,7 @@ func TestProxy_Call_WithProjection_ElisionInlinesPlusFile(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(
 		`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"hidden\"}"}]}`,
 	)
-	addProxyConn(t, srv, "gh", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "gh", Connection: conn})
 
 	serveProxy(t, srv, callTool("config", map[string]any{
 		"action":     "set_projection",
@@ -214,7 +225,7 @@ func TestProxy_NestedExclusion_ReportsExactLeafPath(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(
 		`{"content":[{"type":"text","text":"{\"item\":{\"id\":1,\"body\":\"long body text here\"}}"}]}`,
 	)
-	addProxyConn(t, srv, "gh", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "gh", Connection: conn})
 
 	serveProxy(t, srv, callTool("config", map[string]any{
 		"action":     "set_projection",
@@ -249,7 +260,7 @@ func TestProxy_IncludeFilter_PassthroughWhenAllFieldsIncluded(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(
 		`{"content":[{"type":"text","text":"{\"id\":1,\"value\":\"data\"}"}]}`,
 	)
-	addProxyConn(t, srv, "svc", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
 	serveProxy(t, srv, callTool("config", map[string]any{
 		"action":     "set_projection",
@@ -281,7 +292,7 @@ func TestProxy_Call_WithTruncation_ProjectionNote(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(
 		`{"content":[{"type":"text","text":"{\"id\":1,\"body\":\"this is a very long body that will be truncated\"}"}]}`,
 	)
-	addProxyConn(t, srv, "gh", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "gh", Connection: conn})
 
 	serveProxy(t, srv, callTool("config", map[string]any{
 		"action": "set_projection",
@@ -327,7 +338,7 @@ func TestProxy_Call_WithExclusionAndTruncation(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(
 		`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"hidden\",\"body\":\"this is a very long body that will be truncated by the limit\"}"}]}`,
 	)
-	addProxyConn(t, srv, "gh", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "gh", Connection: conn})
 
 	serveProxy(t, srv, callTool("config", map[string]any{
 		"action": "set_projection",
@@ -370,7 +381,7 @@ func TestProxy_Call_ToolFormatToon_RendersToon(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(
 		`{"content":[{"type":"text","text":"{\"id\":1,\"name\":\"alice\"}"}]}`,
 	)
-	addProxyConn(t, srv, "svc", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
 	serveProxy(t, srv, callTool("config", map[string]any{
 		"action":     "set_projection",
@@ -399,7 +410,7 @@ func TestProxy_Call_GlobalFormatToon_RendersToon(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(
 		`{"content":[{"type":"text","text":"{\"id\":1,\"name\":\"alice\"}"}]}`,
 	)
-	addProxyConn(t, srv, "svc", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
 	resp := serveProxy(t, srv, callTool("svc__get_user", map[string]any{}))
 	text := toolResultText(t, resp)
@@ -416,25 +427,29 @@ func TestProxy_Call_SessionFormatToon_RendersToon(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(
 		`{"content":[{"type":"text","text":"[{\"id\":1,\"name\":\"foo\"},{\"id\":2,\"name\":\"bar\"}]"}]}`,
 	)
-	addProxyConn(t, srv, "svc", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
 	const sessionID = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
-	postMCP(t, srv, sessionID, initMsg(false))
+	postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: initMsg(false)})
 
-	postMCP(t, srv, sessionID, map[string]any{
-		"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "tools/call",
-		"params": map[string]any{
-			"name": "config",
-			"arguments": map[string]any{
-				"action": "set_projection", "server": "svc", "tool": "list_items",
-				"projection": map[string]any{"format": "toon"}, "session_only": true,
+	postMCP(postMCPParams{
+		T: t, Server: srv, SessionID: sessionID, Msg: map[string]any{
+			"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "tools/call",
+			"params": map[string]any{
+				"name": "config",
+				"arguments": map[string]any{
+					"action": "set_projection", "server": "svc", "tool": "list_items",
+					"projection": map[string]any{"format": "toon"}, "session_only": true,
+				},
 			},
 		},
 	})
 
-	resp := postMCP(t, srv, sessionID, map[string]any{
-		"jsonrpc": transport.JsonRPCVersion, "id": 2, "method": "tools/call",
-		"params": map[string]any{"name": "svc__list_items", "arguments": map[string]any{}},
+	resp := postMCP(postMCPParams{
+		T: t, Server: srv, SessionID: sessionID, Msg: map[string]any{
+			"jsonrpc": transport.JsonRPCVersion, "id": 2, "method": "tools/call",
+			"params": map[string]any{"name": "svc__list_items", "arguments": map[string]any{}},
+		},
 	})
 
 	result, _ := resp["result"].(map[string]any)
@@ -473,7 +488,7 @@ func TestProxy_MiniConfig_Status_Works(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := fakeConn("list_issues")
-	addProxyConn(t, srv, "github", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "github", Connection: conn})
 
 	resp := serveProxy(t, srv, callTool("config", map[string]any{"action": "status"}))
 	text := toolResultText(t, resp)
@@ -492,7 +507,7 @@ func TestProxy_NotifyAll_OnRemoveServer(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := fakeConn("list_issues")
-	addProxyConn(t, srv, "removeme", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "removeme", Connection: conn})
 
 	msgs := serveAllProxy(t, srv,
 		notification(transport.NotificationInitialized, nil),
@@ -566,7 +581,7 @@ func TestProxy_ToolsList_AnnotationsPassthrough(t *testing.T) {
 		}},
 		Responses: make(map[string]json.RawMessage),
 	}
-	addProxyConn(t, srv, "fs", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "fs", Connection: conn})
 
 	tools := toolsList(t, srv)
 	tool := findTool(tools, "fs__get_file")
@@ -588,7 +603,7 @@ func TestProxy_ToolsList_MultiKeyAnnotationsPassthrough(t *testing.T) {
 		`{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false,"title":"Get File","fakeHint":true}`,
 	)
 	conn := fakeConnWithAnnotations("get_file", raw)
-	addProxyConn(t, srv, "fs2", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "fs2", Connection: conn})
 
 	tools := toolsList(t, srv)
 	tool := findTool(tools, "fs2__get_file")
@@ -602,7 +617,7 @@ func TestProxy_ToolsList_AbsentAnnotationsOmitted(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := fakeConn("write_file")
-	addProxyConn(t, srv, "fs", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "fs", Connection: conn})
 
 	tools := toolsList(t, srv)
 	tool := findTool(tools, "fs__write_file")
@@ -621,7 +636,7 @@ func TestProxy_ToolsList_OutputSchemaOmittedWhenUpstreamHasNone(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := fakeConn("write_file")
-	addProxyConn(t, srv, "fs", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "fs", Connection: conn})
 
 	tools := toolsList(t, srv)
 	tool := findTool(tools, "fs__write_file")

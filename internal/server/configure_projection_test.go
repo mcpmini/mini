@@ -32,17 +32,26 @@ func configCall(id int, args map[string]any) map[string]any {
 	}
 }
 
-func getProjection(t *testing.T, srv *server.Server, sessionID, tool string) projectionReport {
-	t.Helper()
+type getProjectionParams struct {
+	T         *testing.T
+	Server    *server.Server
+	SessionID string
+	Tool      string
+}
+
+func getProjection(params getProjectionParams) projectionReport {
+	params.T.Helper()
 	resp := postMCP(
-		t,
-		srv,
-		sessionID,
-		configCall(10, map[string]any{"action": "get_projection", "server": "svc", "tool": tool}),
+		postMCPParams{
+			T:         params.T,
+			Server:    params.Server,
+			SessionID: params.SessionID,
+			Msg:       configCall(10, map[string]any{"action": "get_projection", "server": "svc", "tool": params.Tool}),
+		},
 	)
 	var report projectionReport
-	if err := json.Unmarshal([]byte(toolResultText(t, resp)), &report); err != nil {
-		t.Fatalf("get_projection %s: %v", tool, err)
+	if err := json.Unmarshal([]byte(toolResultText(params.T, resp)), &report); err != nil {
+		params.T.Fatalf("get_projection %s: %v", params.Tool, err)
 	}
 	return report
 }
@@ -54,8 +63,15 @@ func newProjectionServer(
 ) *server.Server {
 	t.Helper()
 	srv := newTestServer(t, server.Params{})
-	addEdgeConn(t, srv, config.ServerConfig{Name: "svc", Projections: projections}, fakeConn("getData", "other"))
-	postMCP(t, srv, sessionID, initMsg(true))
+	addEdgeConn(
+		addConnectionParams{
+			T:          t,
+			Server:     srv,
+			Config:     config.ServerConfig{Name: "svc", Projections: projections},
+			Connection: fakeConn("getData", "other"),
+		},
+	)
+	postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: initMsg(true)})
 	return srv
 }
 
@@ -76,16 +92,16 @@ func TestConfigureGetProjection_reportsTheServerRuleAndThisSessionsOverride(t *t
 
 	assertReport(
 		t,
-		getProjection(t, srv, sessionID, "getData"),
+		getProjection(getProjectionParams{T: t, Server: srv, SessionID: sessionID, Tool: "getData"}),
 		projectionReport{Tool: "svc.getData", Rules: map[string]*config.ProjectionConfig{"server": own}},
 	)
 
-	postMCP(t, srv, sessionID, setGetDataProjection(11, true))
+	postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: setGetDataProjection(11, true)})
 
 	session := &config.ProjectionConfig{IncludeOnly: []string{"b"}}
 	assertReport(
 		t,
-		getProjection(t, srv, sessionID, "getData"),
+		getProjection(getProjectionParams{T: t, Server: srv, SessionID: sessionID, Tool: "getData"}),
 		projectionReport{
 			Tool:  "svc.getData",
 			Rules: map[string]*config.ProjectionConfig{"session": session, "server": own},
@@ -97,7 +113,11 @@ func TestConfigureGetProjection_aToolWithoutRulesReportsNoRules(t *testing.T) {
 	const sessionID = "cccccccc-cccc-cccc-cccc-000000000011"
 	srv := newProjectionServer(t, sessionID, nil)
 
-	assertReport(t, getProjection(t, srv, sessionID, "getData"), projectionReport{Tool: "svc.getData"})
+	assertReport(
+		t,
+		getProjection(getProjectionParams{T: t, Server: srv, SessionID: sessionID, Tool: "getData"}),
+		projectionReport{Tool: "svc.getData"},
+	)
 }
 
 func TestConfigureGetProjection_acceptsTheAliasOrTheUpstreamName(t *testing.T) {
@@ -107,12 +127,12 @@ func TestConfigureGetProjection_acceptsTheAliasOrTheUpstreamName(t *testing.T) {
 
 	assertReport(
 		t,
-		getProjection(t, srv, sessionID, "fetch"),
+		getProjection(getProjectionParams{T: t, Server: srv, SessionID: sessionID, Tool: "fetch"}),
 		projectionReport{Tool: "svc.fetch", Rules: map[string]*config.ProjectionConfig{"server": rule}},
 	)
 	assertReport(
 		t,
-		getProjection(t, srv, sessionID, "getData"),
+		getProjection(getProjectionParams{T: t, Server: srv, SessionID: sessionID, Tool: "getData"}),
 		projectionReport{Tool: "svc.getData", Rules: map[string]*config.ProjectionConfig{"server": rule}},
 	)
 }
@@ -127,16 +147,18 @@ func TestConfigureGetProjection_aRuleReadBackCanBeChangedWithoutLosingTheRest(t 
 		},
 	)
 
-	rule := getProjection(t, srv, sessionID, "getData").Rules["server"]
+	rule := getProjection(getProjectionParams{T: t, Server: srv, SessionID: sessionID, Tool: "getData"}).Rules["server"]
 	rule.StringLimits["body"] = 500
 	saved := postMCP(
-		t,
-		srv,
-		sessionID,
-		configCall(
-			11,
-			map[string]any{"action": "set_projection", "server": "svc", "tool": "getData", "projection": rule},
-		),
+		postMCPParams{
+			T:         t,
+			Server:    srv,
+			SessionID: sessionID,
+			Msg: configCall(
+				11,
+				map[string]any{"action": "set_projection", "server": "svc", "tool": "getData", "projection": rule},
+			),
+		},
 	)
 	if result, _ := saved["result"].(map[string]any); result == nil || result["isError"] == true {
 		t.Fatalf("set_projection = %v", saved)
@@ -145,7 +167,7 @@ func TestConfigureGetProjection_aRuleReadBackCanBeChangedWithoutLosingTheRest(t 
 	want := &config.ProjectionConfig{Exclude: []string{"secret"}, StringLimits: map[string]int{"body": 500}}
 	assertReport(
 		t,
-		getProjection(t, srv, sessionID, "getData"),
+		getProjection(getProjectionParams{T: t, Server: srv, SessionID: sessionID, Tool: "getData"}),
 		projectionReport{Tool: "svc.getData", Rules: map[string]*config.ProjectionConfig{"server": want}},
 	)
 }
@@ -162,33 +184,35 @@ func TestConfigureProjection_anAliasTheServerRejectedNamesTheRealTool(t *testing
 
 	assertReport(
 		t,
-		getProjection(t, srv, sessionID, "other"),
+		getProjection(getProjectionParams{T: t, Server: srv, SessionID: sessionID, Tool: "other"}),
 		projectionReport{Tool: "svc.other", Rules: map[string]*config.ProjectionConfig{"server": other}},
 	)
 
 	postMCP(
-		t,
-		srv,
-		sessionID,
-		configCall(
-			11,
-			map[string]any{
-				"action":     "set_projection",
-				"server":     "svc",
-				"tool":       "other",
-				"projection": map[string]any{"exclude": []string{"c"}},
-			},
-		),
+		postMCPParams{
+			T:         t,
+			Server:    srv,
+			SessionID: sessionID,
+			Msg: configCall(
+				11,
+				map[string]any{
+					"action":     "set_projection",
+					"server":     "svc",
+					"tool":       "other",
+					"projection": map[string]any{"exclude": []string{"c"}},
+				},
+			),
+		},
 	)
 
 	assertReport(
 		t,
-		getProjection(t, srv, sessionID, "getData"),
+		getProjection(getProjectionParams{T: t, Server: srv, SessionID: sessionID, Tool: "getData"}),
 		projectionReport{Tool: "svc.getData", Rules: map[string]*config.ProjectionConfig{"server": aliased}},
 	)
 	assertReport(
 		t,
-		getProjection(t, srv, sessionID, "other"),
+		getProjection(getProjectionParams{T: t, Server: srv, SessionID: sessionID, Tool: "other"}),
 		projectionReport{
 			Tool:  "svc.other",
 			Rules: map[string]*config.ProjectionConfig{"server": {Exclude: []string{"c"}}},
@@ -210,35 +234,39 @@ func TestConfigureProjection_anAliasTwoToolsClaimNamesNoTool(t *testing.T) {
 	assertIsErrorResult(
 		t,
 		postMCP(
-			t,
-			srv,
-			sessionID,
-			configCall(11, map[string]any{"action": "get_projection", "server": "svc", "tool": "dup"}),
+			postMCPParams{
+				T:         t,
+				Server:    srv,
+				SessionID: sessionID,
+				Msg:       configCall(11, map[string]any{"action": "get_projection", "server": "svc", "tool": "dup"}),
+			},
 		),
 	)
 	postMCP(
-		t,
-		srv,
-		sessionID,
-		configCall(
-			12,
-			map[string]any{
-				"action":     "set_projection",
-				"server":     "svc",
-				"tool":       "dup",
-				"projection": map[string]any{"exclude": []string{"c"}},
-			},
-		),
+		postMCPParams{
+			T:         t,
+			Server:    srv,
+			SessionID: sessionID,
+			Msg: configCall(
+				12,
+				map[string]any{
+					"action":     "set_projection",
+					"server":     "svc",
+					"tool":       "dup",
+					"projection": map[string]any{"exclude": []string{"c"}},
+				},
+			),
+		},
 	)
 
 	assertReport(
 		t,
-		getProjection(t, srv, sessionID, "getData"),
+		getProjection(getProjectionParams{T: t, Server: srv, SessionID: sessionID, Tool: "getData"}),
 		projectionReport{Tool: "svc.getData", Rules: map[string]*config.ProjectionConfig{"server": first}},
 	)
 	assertReport(
 		t,
-		getProjection(t, srv, sessionID, "other"),
+		getProjection(getProjectionParams{T: t, Server: srv, SessionID: sessionID, Tool: "other"}),
 		projectionReport{Tool: "svc.other", Rules: map[string]*config.ProjectionConfig{"server": second}},
 	)
 }
@@ -257,7 +285,7 @@ func newServerAwaitingAuthorization(
 	srv := newTestServer(t, server.Params{ConfigDir: dir})
 	srv.ConnectUpstreams(t.Context(), []config.ServerConfig{sc})
 	srv.WaitForStartupConnects()
-	postMCP(t, srv, sessionID, initMsg(true))
+	postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: initMsg(true)})
 	return srv
 }
 
@@ -268,15 +296,19 @@ func TestConfigureGetProjection_readsAServerStillAwaitingAuthorization(t *testin
 
 	assertReport(
 		t,
-		getProjection(t, srv, sessionID, "getData"),
+		getProjection(getProjectionParams{T: t, Server: srv, SessionID: sessionID, Tool: "getData"}),
 		projectionReport{Tool: "svc.getData", Rules: map[string]*config.ProjectionConfig{"server": rule}},
 	)
 	assertReport(
 		t,
-		getProjection(t, srv, sessionID, "fetch"),
+		getProjection(getProjectionParams{T: t, Server: srv, SessionID: sessionID, Tool: "fetch"}),
 		projectionReport{Tool: "svc.fetch", Rules: map[string]*config.ProjectionConfig{"server": rule}},
 	)
-	assertReport(t, getProjection(t, srv, sessionID, "other"), projectionReport{Tool: "svc.other"})
+	assertReport(
+		t,
+		getProjection(getProjectionParams{T: t, Server: srv, SessionID: sessionID, Tool: "other"}),
+		projectionReport{Tool: "svc.other"},
+	)
 }
 
 func TestConfigureProjection_beforeConnectingDropsTheAliasesTheServerWouldReject(t *testing.T) {
@@ -296,31 +328,33 @@ func TestConfigureProjection_beforeConnectingDropsTheAliasesTheServerWouldReject
 
 		assertReport(
 			t,
-			getProjection(t, srv, sessionID, "other"),
+			getProjection(getProjectionParams{T: t, Server: srv, SessionID: sessionID, Tool: "other"}),
 			projectionReport{Tool: "svc.other", Rules: map[string]*config.ProjectionConfig{"server": other}},
 		)
 		postMCP(
-			t,
-			srv,
-			sessionID,
-			configCall(
-				11,
-				map[string]any{
-					"action":     "set_projection",
-					"server":     "svc",
-					"tool":       "other",
-					"projection": map[string]any{"exclude": []string{"c"}},
-				},
-			),
+			postMCPParams{
+				T:         t,
+				Server:    srv,
+				SessionID: sessionID,
+				Msg: configCall(
+					11,
+					map[string]any{
+						"action":     "set_projection",
+						"server":     "svc",
+						"tool":       "other",
+						"projection": map[string]any{"exclude": []string{"c"}},
+					},
+				),
+			},
 		)
 		assertReport(
 			t,
-			getProjection(t, srv, sessionID, "getData"),
+			getProjection(getProjectionParams{T: t, Server: srv, SessionID: sessionID, Tool: "getData"}),
 			projectionReport{Tool: "svc.getData", Rules: map[string]*config.ProjectionConfig{"server": aliased}},
 		)
 		assertReport(
 			t,
-			getProjection(t, srv, sessionID, "other"),
+			getProjection(getProjectionParams{T: t, Server: srv, SessionID: sessionID, Tool: "other"}),
 			projectionReport{
 				Tool:  "svc.other",
 				Rules: map[string]*config.ProjectionConfig{"server": {Exclude: []string{"c"}}},
@@ -342,7 +376,11 @@ func TestConfigureProjection_beforeConnectingDropsTheAliasesTheServerWouldReject
 			map[string]*config.ProjectionConfig{"getData": first, "other": second},
 		)
 
-		assertReport(t, getProjection(t, srv, sessionID, "dup"), projectionReport{Tool: "svc.dup"})
+		assertReport(
+			t,
+			getProjection(getProjectionParams{T: t, Server: srv, SessionID: sessionID, Tool: "dup"}),
+			projectionReport{Tool: "svc.dup"},
+		)
 	})
 }
 
@@ -352,21 +390,27 @@ func TestConfigureGetProjection_readsAHiddenTool(t *testing.T) {
 	hidden := &config.PermissionsConfig{Hidden: []string{"other", "getData"}}
 	rule := &config.ProjectionConfig{Alias: "fetch", Exclude: []string{"secret"}}
 	addEdgeConn(
-		t,
-		srv,
-		config.ServerConfig{
-			Name:        "svc",
-			Permissions: hidden,
-			Projections: map[string]*config.ProjectionConfig{"getData": rule},
+		addConnectionParams{
+			T:      t,
+			Server: srv,
+			Config: config.ServerConfig{
+				Name:        "svc",
+				Permissions: hidden,
+				Projections: map[string]*config.ProjectionConfig{"getData": rule},
+			},
+			Connection: fakeConn("getData", "other"),
 		},
-		fakeConn("getData", "other"),
 	)
-	postMCP(t, srv, sessionID, initMsg(true))
+	postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: initMsg(true)})
 
-	assertReport(t, getProjection(t, srv, sessionID, "other"), projectionReport{Tool: "svc.other"})
 	assertReport(
 		t,
-		getProjection(t, srv, sessionID, "fetch"),
+		getProjection(getProjectionParams{T: t, Server: srv, SessionID: sessionID, Tool: "other"}),
+		projectionReport{Tool: "svc.other"},
+	)
+	assertReport(
+		t,
+		getProjection(getProjectionParams{T: t, Server: srv, SessionID: sessionID, Tool: "fetch"}),
 		projectionReport{Tool: "svc.fetch", Rules: map[string]*config.ProjectionConfig{"server": rule}},
 	)
 }
@@ -381,7 +425,10 @@ func TestConfigureGetProjection_rejectsAMissingToolOrAnUnknownServerOrTool(t *te
 	}
 	for name, args := range cases {
 		t.Run(name, func(t *testing.T) {
-			assertIsErrorResult(t, postMCP(t, srv, sessionID, configCall(12, args)))
+			assertIsErrorResult(
+				t,
+				postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: configCall(12, args)}),
+			)
 		})
 	}
 }
@@ -396,22 +443,26 @@ func TestConfigureProjectionRejectsUnsupportedExcludePathsWithoutPublishing(t *t
 				"action": "set_projection", "server": "svc", "tool": "getData", "session_only": scope == "session",
 				"projection": previous,
 			}
-			resp := postMCP(t, srv, sessionID, configCall(11, args))
+			resp := postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: configCall(11, args)})
 			if text := toolResultText(t, resp); !strings.Contains(text, `"ok":true`) {
 				t.Fatalf("valid projection was rejected: %s", text)
 			}
-			want := getProjection(t, srv, sessionID, "getData")
+			want := getProjection(getProjectionParams{T: t, Server: srv, SessionID: sessionID, Tool: "getData"})
 			file := config.ServerPath(srv.ConfigDir(), "svc")
 			before := string(testutil.ReadFile(t, file))
 			args["projection"] = &config.ProjectionConfig{Exclude: []string{"number", "items[0].desc"}}
-			resp = postMCP(t, srv, sessionID, configCall(12, args))
+			resp = postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: configCall(12, args)})
 			assertIsErrorResult(t, resp)
 			text := toolResultText(t, resp)
 			if !strings.Contains(text, `invalid exclude path "items[0].desc"`) ||
 				!strings.Contains(text, "for example items[].secret") {
 				t.Errorf("rejected path needs actionable error: %s", text)
 			}
-			assertReport(t, getProjection(t, srv, sessionID, "getData"), want)
+			assertReport(
+				t,
+				getProjection(getProjectionParams{T: t, Server: srv, SessionID: sessionID, Tool: "getData"}),
+				want,
+			)
 			if after := string(testutil.ReadFile(t, file)); after != before {
 				t.Errorf("invalid projection changed persisted rule: %s", after)
 			}
