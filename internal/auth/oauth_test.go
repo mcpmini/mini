@@ -28,12 +28,18 @@ func pkceToken(t *testing.T, ac *config.AuthConfig) *oauth2.Token {
 	return token.Token
 }
 
-func saveLogin(t *testing.T, configDir, serverName string, token *oauth2.Token) error {
+type saveLoginParams struct {
+	ConfigDir  string
+	ServerName string
+	Token      *oauth2.Token
+}
+
+func saveLogin(t *testing.T, p saveLoginParams) error {
 	t.Helper()
 	return auth.SaveLogin(
-		configDir,
-		serverName,
-		authtest.LoginFor(t, config.ServerConfig{URL: "https://mcp.example.com/mcp"}, token),
+		p.ConfigDir,
+		p.ServerName,
+		authtest.LoginFor(t, config.ServerConfig{URL: "https://mcp.example.com/mcp"}, p.Token),
 	)
 }
 
@@ -41,7 +47,11 @@ func TestTokenSaveLoad(t *testing.T) {
 	mock := authtest.NewTokenServer(t)
 	dir := t.TempDir()
 	token := pkceToken(t, mock.AuthConfig())
-	if err := saveLogin(t, dir, "myserver", token); err != nil {
+	if err := saveLogin(t, saveLoginParams{
+		ConfigDir:  dir,
+		ServerName: "myserver",
+		Token:      token,
+	}); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	loaded, err := auth.LoadLogin(dir, "myserver")
@@ -66,7 +76,11 @@ func TestIsNotFound(t *testing.T) {
 func TestSave_tokenFilePermissions(t *testing.T) {
 	mock := authtest.NewTokenServer(t)
 	dir := t.TempDir()
-	if err := saveLogin(t, dir, "myserver", pkceToken(t, mock.AuthConfig())); err != nil {
+	if err := saveLogin(t, saveLoginParams{
+		ConfigDir:  dir,
+		ServerName: "myserver",
+		Token:      pkceToken(t, mock.AuthConfig()),
+	}); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	assertTokenFilesPrivate(t, dir+"/internal")
@@ -85,7 +99,11 @@ func TestSaveTightensExistingTokenPermissions(t *testing.T) {
 	); err != nil { //fileiolint:allow loose permissions exercise credential hardening
 		t.Fatal(err)
 	}
-	if err := saveLogin(t, dir, "myserver", &oauth2.Token{AccessToken: "secret"}); err != nil {
+	if err := saveLogin(t, saveLoginParams{
+		ConfigDir:  dir,
+		ServerName: "myserver",
+		Token:      &oauth2.Token{AccessToken: "secret"},
+	}); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	info, err := os.Stat(path)
@@ -109,7 +127,11 @@ func TestSaveReplacesSymlinkInsteadOfFollowingIt(t *testing.T) {
 	if err := os.Symlink(target, path); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
-	if err := saveLogin(t, dir, "myserver", &oauth2.Token{AccessToken: "secret"}); err != nil {
+	if err := saveLogin(t, saveLoginParams{
+		ConfigDir:  dir,
+		ServerName: "myserver",
+		Token:      &oauth2.Token{AccessToken: "secret"},
+	}); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	got := testutil.ReadFile(t, target)
@@ -144,7 +166,11 @@ func assertTokenFilesPrivate(t *testing.T, tokensDir string) {
 
 func TestSave_invalidServerName(t *testing.T) {
 	token := &oauth2.Token{AccessToken: "tok"}
-	err := saveLogin(t, t.TempDir(), "bad name!", token)
+	err := saveLogin(t, saveLoginParams{
+		ConfigDir:  t.TempDir(),
+		ServerName: "bad name!",
+		Token:      token,
+	})
 	if err == nil {
 		t.Error("expected error for invalid server name")
 	}
@@ -188,12 +214,20 @@ func TestBuildAuthURL_extraParamsDoNotOverrideResource(t *testing.T) {
 func TestTokenValidAfterForcedExpiry(t *testing.T) {
 	mock := authtest.NewTokenServer(t)
 	dir := t.TempDir()
-	if err := saveLogin(t, dir, "srv", pkceToken(t, mock.AuthConfig())); err != nil {
+	if err := saveLogin(t, saveLoginParams{
+		ConfigDir:  dir,
+		ServerName: "srv",
+		Token:      pkceToken(t, mock.AuthConfig()),
+	}); err != nil {
 		t.Fatal(err)
 	}
 	loaded, _ := auth.LoadLogin(dir, "srv")
 	loaded.Token.Expiry = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	if err := saveLogin(t, dir, "srv", loaded.Token); err != nil {
+	if err := saveLogin(t, saveLoginParams{
+		ConfigDir:  dir,
+		ServerName: "srv",
+		Token:      loaded.Token,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	reloaded, _ := auth.LoadLogin(dir, "srv")

@@ -15,12 +15,19 @@ type controlServer struct {
 	notify func()
 }
 
-func startControlServer(addr string, faults *FaultRegistry, tools *ToolRegistry, notify func()) (string, error) {
-	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", addr)
+type controlServerParams struct {
+	Addr   string
+	Faults *FaultRegistry
+	Tools  *ToolRegistry
+	Notify func()
+}
+
+func startControlServer(p controlServerParams) (string, error) {
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", p.Addr)
 	if err != nil {
 		return "", err
 	}
-	srv := &controlServer{faults: faults, tools: tools, notify: notify}
+	srv := &controlServer{faults: p.Faults, tools: p.Tools, notify: p.Notify}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/fault", srv.handleFault)
 	mux.HandleFunc("/faults", srv.handleFaults)

@@ -29,7 +29,11 @@ func listenOnly(
 	t.Helper()
 	return func(w http.ResponseWriter, r *http.Request, req Request) {
 		if req.Method != MethodSubscriptionsListen {
-			writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
+			writeRPCResult(t, rpcResultParams{
+				Writer: w,
+				ID:     req.ID,
+				Result: map[string]bool{"ok": true},
+			})
 			return
 		}
 		assertModernListenHeaders(t, r)

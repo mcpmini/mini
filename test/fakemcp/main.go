@@ -92,7 +92,12 @@ func main() {
 		os.Exit(1)
 	}
 	sink := newOutputSink(os.Stdout)
-	addr, err := startControlServer(opts.controlAddr, opts.faults, opts.tools, sink.notifyToolsChanged)
+	addr, err := startControlServer(controlServerParams{
+		Addr:   opts.controlAddr,
+		Faults: opts.faults,
+		Tools:  opts.tools,
+		Notify: sink.notifyToolsChanged,
+	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "fakemcp: control server: %v\n", err)
 		os.Exit(1)

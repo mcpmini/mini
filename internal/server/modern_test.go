@@ -62,7 +62,12 @@ func TestModernCompactModeWithoutInitialize(t *testing.T) {
 
 func TestModernUnsupportedVersion(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
-	response := responsesByID(serveModern(t, srv, transporttest.ModernRequestVersion("1900-01-01", 7, "tools/list", nil)))[7]
+	response := responsesByID(serveModern(t, srv, transporttest.ModernRequestVersion(transporttest.ModernRequestVersionParams{
+		Version: "1900-01-01",
+		ID:      7,
+		Method:  "tools/list",
+		Params:  nil,
+	})))[7]
 	if response.Error == nil || response.Error.Code != transport.CodeUnsupportedProtocolVersion ||
 		response.Error.Message != "Unsupported protocol version" {
 		t.Fatalf("unsupported version error = %+v", response.Error)
@@ -80,7 +85,12 @@ func TestModernUnsupportedVersion(t *testing.T) {
 func TestModernRejectedVersionLeavesTheSessionFreeToInitialize(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	responses := responsesByID(serveModern(t, srv,
-		transporttest.ModernRequestVersion("1900-01-01", 1, "server/discover", nil),
+		transporttest.ModernRequestVersion(transporttest.ModernRequestVersionParams{
+			Version: "1900-01-01",
+			ID:      1,
+			Method:  "server/discover",
+			Params:  nil,
+		}),
 		legacyRequest(legacyRequestParams{T: t, ID: 2, Method: "initialize", Params: initParams(true)}),
 		legacyRequest(legacyRequestParams{T: t, ID: 3, Method: "tools/list", Params: nil}),
 	))

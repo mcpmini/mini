@@ -91,20 +91,26 @@ func startHealthyDaemon(t *testing.T, cfg string) *exec.Cmd {
 	return cmd
 }
 
-func killDaemonProc(t *testing.T, cmd *exec.Cmd, cfg string, sig syscall.Signal) {
+type killDaemonParams struct {
+	Command   *exec.Cmd
+	ConfigDir string
+	Signal    syscall.Signal
+}
+
+func killDaemonProc(t *testing.T, p killDaemonParams) {
 	t.Helper()
-	if err := cmd.Process.Signal(sig); err != nil {
+	if err := p.Command.Process.Signal(p.Signal); err != nil {
 		t.Fatalf("signal daemon: %v", err)
 	}
-	cmd.Wait() //nolint:errcheck
+	p.Command.Wait() //nolint:errcheck
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		if !daemonHealthy(cfg) {
+		if !daemonHealthy(p.ConfigDir) {
 			return
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	t.Fatalf("daemon still healthy after %v", sig)
+	t.Fatalf("daemon still healthy after %v", p.Signal)
 }
 
 func daemonPIDs(t *testing.T, cfg string) []int {
@@ -229,7 +235,12 @@ func TestIntegrationDaemon_sessionIsolation(t *testing.T) {
 	c1 := connectCompact(t, cfg)
 	c2 := connectCompact(t, cfg)
 
-	c1.setProjection("svc", "get_item", map[string]any{"exclude": []string{"secret"}}, true)
+	c1.setProjection(setProjectionParams{
+		Server:      "svc",
+		Tool:        "get_item",
+		Projection:  map[string]any{"exclude": []string{"secret"}},
+		SessionOnly: true,
+	})
 
 	b1, _ := json.Marshal(c1.execEnvelope("svc", "get_item", nil).Data)
 	if strings.Contains(string(b1), "secret") {
@@ -343,7 +354,11 @@ func TestIntegrationDaemon_recoversAfterGracefulKill(t *testing.T) {
 		t.Fatalf("pre-kill call failed: %+v", e)
 	}
 
-	killDaemonProc(t, cmd, cfg, syscall.SIGTERM)
+	killDaemonProc(t, killDaemonParams{
+		Command:   cmd,
+		ConfigDir: cfg,
+		Signal:    syscall.SIGTERM,
+	})
 
 	if e := client.execEnvelopeOnceStarted("svc", "get_item"); e.Error != "" {
 		t.Fatalf("post-kill call did not recover: %+v", e)
@@ -363,7 +378,11 @@ func TestIntegrationDaemon_recoversAfterSIGKILLWithStaleSocket(t *testing.T) {
 		t.Fatalf("pre-kill call failed: %+v", e)
 	}
 
-	killDaemonProc(t, cmd, cfg, syscall.SIGKILL)
+	killDaemonProc(t, killDaemonParams{
+		Command:   cmd,
+		ConfigDir: cfg,
+		Signal:    syscall.SIGKILL,
+	})
 	// SIGKILL has no clean Close to unlink the socket, so the file is left stale; recovery must clear it.
 	if _, err := os.Stat(socketPath(cfg)); err != nil {
 		t.Fatalf("expected stale socket file to remain after SIGKILL, got: %v", err)
@@ -393,7 +412,11 @@ func TestIntegrationDaemon_manyClientsRecoverSingleWinner(t *testing.T) {
 		}
 	}
 
-	killDaemonProc(t, cmd, cfg, syscall.SIGKILL)
+	killDaemonProc(t, killDaemonParams{
+		Command:   cmd,
+		ConfigDir: cfg,
+		Signal:    syscall.SIGKILL,
+	})
 	recoverAllClients(t, clients)
 
 	if got := readDaemonToken(t, cfg); got != tokenBefore {

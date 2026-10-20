@@ -22,7 +22,11 @@ func TestHTTPConnection_ProbeRunsBeforeInitialize(t *testing.T) {
 		methods = append(methods, req.Method)
 		if req.Method == "server/discover" {
 			assertDiscoverRequest(t, r, req)
-			writeRPCResult(t, w, req.ID, DiscoverResult{SupportedVersions: LegacyVersions})
+			writeRPCResult(t, rpcResultParams{
+				Writer: w,
+				ID:     req.ID,
+				Result: DiscoverResult{SupportedVersions: LegacyVersions},
+			})
 			return
 		}
 		serveProbeCall(t, w, req)
@@ -84,9 +88,13 @@ func TestHTTPConnection_ProbeModernUsesModernRequests(t *testing.T) {
 			assertDiscoverRequest(t, r, req)
 			writeRPCResult(
 				t,
-				w,
-				req.ID,
-				DiscoverResult{SupportedVersions: []string{ModernVersions[0], LatestLegacyVersion}},
+				rpcResultParams{
+					Writer: w,
+
+					ID: req.ID,
+
+					Result: DiscoverResult{SupportedVersions: []string{ModernVersions[0], LatestLegacyVersion}},
+				},
 			)
 			return
 		}
@@ -116,7 +124,11 @@ func TestHTTPConnection_failedProbeRetriesNextCall(t *testing.T) {
 			return
 		}
 		if req.Method == "server/discover" {
-			writeRPCResult(t, w, req.ID, DiscoverResult{})
+			writeRPCResult(t, rpcResultParams{
+				Writer: w,
+				ID:     req.ID,
+				Result: DiscoverResult{},
+			})
 			return
 		}
 		serveProbeCall(t, w, req)
@@ -155,7 +167,11 @@ func TestHTTPConnection_ProbeRefreshesAuthorization(t *testing.T) {
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
-			writeRPCResult(t, w, req.ID, DiscoverResult{})
+			writeRPCResult(t, rpcResultParams{
+				Writer: w,
+				ID:     req.ID,
+				Result: DiscoverResult{},
+			})
 			return
 		}
 		serveProbeCall(t, w, req)
@@ -175,7 +191,11 @@ func TestHTTPConnection_ProbeSessionRenewalDoesNotReprobe(t *testing.T) {
 		switch req.Method {
 		case "server/discover":
 			probes.Add(1)
-			writeRPCResult(t, w, req.ID, DiscoverResult{})
+			writeRPCResult(t, rpcResultParams{
+				Writer: w,
+				ID:     req.ID,
+				Result: DiscoverResult{},
+			})
 		case "initialize":
 			w.Header().Set("Mcp-Session-Id", fmt.Sprintf("s%d", calls.Load()+1))
 			serveProbeCall(t, w, req)
@@ -186,7 +206,11 @@ func TestHTTPConnection_ProbeSessionRenewalDoesNotReprobe(t *testing.T) {
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
-			writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
+			writeRPCResult(t, rpcResultParams{
+				Writer: w,
+				ID:     req.ID,
+				Result: map[string]bool{"ok": true},
+			})
 		}
 	})
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
@@ -207,7 +231,11 @@ func TestHTTPConnection_concurrentFirstCallsProbeOnce(t *testing.T) {
 			probes.Add(1)
 			close(entered)
 			<-release
-			writeRPCResult(t, w, req.ID, DiscoverResult{})
+			writeRPCResult(t, rpcResultParams{
+				Writer: w,
+				ID:     req.ID,
+				Result: DiscoverResult{},
+			})
 			return
 		}
 		serveProbeCall(t, w, req)
@@ -289,14 +317,22 @@ func serveProbeCall(t *testing.T, w http.ResponseWriter, req Request) {
 	t.Helper()
 	switch req.Method {
 	case "initialize":
-		writeRPCResult(t, w, req.ID, InitializeResult{
-			ProtocolVersion: LegacyVersions[0],
-			Capabilities:    map[string]any{},
-			ServerInfo:      ServerInfo{Name: "fake", Version: "1"},
+		writeRPCResult(t, rpcResultParams{
+			Writer: w,
+			ID:     req.ID,
+			Result: InitializeResult{
+				ProtocolVersion: LegacyVersions[0],
+				Capabilities:    map[string]any{},
+				ServerInfo:      ServerInfo{Name: "fake", Version: "1"},
+			},
 		})
 	case NotificationInitialized:
 		w.WriteHeader(http.StatusAccepted)
 	default:
-		writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
+		writeRPCResult(t, rpcResultParams{
+			Writer: w,
+			ID:     req.ID,
+			Result: map[string]bool{"ok": true},
+		})
 	}
 }

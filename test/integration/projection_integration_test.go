@@ -199,7 +199,12 @@ func TestIntegrationProjection_sessionOverridesServerLevel(t *testing.T) {
 			},
 		},
 	})
-	client.setProjection("svc", "get_item", map[string]any{"include_only": []string{"id"}}, true)
+	client.setProjection(setProjectionParams{
+		Server:      "svc",
+		Tool:        "get_item",
+		Projection:  map[string]any{"include_only": []string{"id"}},
+		SessionOnly: true,
+	})
 
 	b, _ := json.Marshal(client.execEnvelope("svc", "get_item", nil).Data)
 	if strings.Contains(string(b), "title") {
@@ -210,7 +215,12 @@ func TestIntegrationProjection_sessionOverridesServerLevel(t *testing.T) {
 func TestIntegrationProjection_configurePersistsAcrossCalls(t *testing.T) {
 	t.Parallel()
 	client := quickServer(t, map[string]string{"get_item": `{"id":1,"title":"hello","secret":"hidden"}`})
-	client.setProjection("svc", "get_item", map[string]any{"exclude": []string{"secret"}}, true)
+	client.setProjection(setProjectionParams{
+		Server:      "svc",
+		Tool:        "get_item",
+		Projection:  map[string]any{"exclude": []string{"secret"}},
+		SessionOnly: true,
+	})
 
 	for i := range 2 {
 		b, _ := json.Marshal(client.execEnvelope("svc", "get_item", nil).Data)
@@ -252,7 +262,12 @@ func TestIntegrationProjection_persistToDisk(t *testing.T) {
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
 
 	client1 := startServer(t, cfg)
-	client1.setProjection("svc", "get_item", map[string]any{"exclude": []string{"secret"}}, false)
+	client1.setProjection(setProjectionParams{
+		Server:      "svc",
+		Tool:        "get_item",
+		Projection:  map[string]any{"exclude": []string{"secret"}},
+		SessionOnly: false,
+	})
 
 	client2 := startServer(t, cfg)
 	b, _ := json.Marshal(client2.execEnvelope("svc", "get_item", nil).Data)
@@ -320,11 +335,18 @@ func TestIntegrationProjection_globalDefaultsApply(t *testing.T) {
 	}
 }
 
-func assertToolExcludes(t *testing.T, client *mcpClient, server, tool, field string) {
+type toolExcludesParams struct {
+	Client *mcpClient
+	Server string
+	Tool   string
+	Field  string
+}
+
+func assertToolExcludes(t *testing.T, p toolExcludesParams) {
 	t.Helper()
-	b, _ := json.Marshal(client.execEnvelope(server, tool, nil).Data)
-	if strings.Contains(string(b), field) {
-		t.Errorf("%s.%s should exclude field %q", server, tool, field)
+	b, _ := json.Marshal(p.Client.execEnvelope(p.Server, p.Tool, nil).Data)
+	if strings.Contains(string(b), p.Field) {
+		t.Errorf("%s.%s should exclude field %q", p.Server, p.Tool, p.Field)
 	}
 }
 
@@ -337,12 +359,32 @@ func TestIntegrationProjection_persistMergesWithExistingYAML(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
 	c1 := startServer(t, cfg)
-	c1.setProjection("svc", "tool_a", map[string]any{"exclude": []string{"secret_a"}}, false)
+	c1.setProjection(setProjectionParams{
+		Server:      "svc",
+		Tool:        "tool_a",
+		Projection:  map[string]any{"exclude": []string{"secret_a"}},
+		SessionOnly: false,
+	})
 	c2 := startServer(t, cfg)
-	c2.setProjection("svc", "tool_b", map[string]any{"exclude": []string{"secret_b"}}, false)
+	c2.setProjection(setProjectionParams{
+		Server:      "svc",
+		Tool:        "tool_b",
+		Projection:  map[string]any{"exclude": []string{"secret_b"}},
+		SessionOnly: false,
+	})
 	c3 := startServer(t, cfg)
-	assertToolExcludes(t, c3, "svc", "tool_a", "secret_a")
-	assertToolExcludes(t, c3, "svc", "tool_b", "secret_b")
+	assertToolExcludes(t, toolExcludesParams{
+		Client: c3,
+		Server: "svc",
+		Tool:   "tool_a",
+		Field:  "secret_a",
+	})
+	assertToolExcludes(t, toolExcludesParams{
+		Client: c3,
+		Server: "svc",
+		Tool:   "tool_b",
+		Field:  "secret_b",
+	})
 }
 
 func TestIntegrationProjection_persistDoesNotAffectRunningSession(t *testing.T) {
@@ -356,7 +398,12 @@ func TestIntegrationProjection_persistDoesNotAffectRunningSession(t *testing.T) 
 	if !strings.Contains(string(b2), "secret") {
 		t.Fatal("expected secret field before projection")
 	}
-	c1.setProjection("svc", "get_item", map[string]any{"exclude": []string{"secret"}}, false)
+	c1.setProjection(setProjectionParams{
+		Server:      "svc",
+		Tool:        "get_item",
+		Projection:  map[string]any{"exclude": []string{"secret"}},
+		SessionOnly: false,
+	})
 	assertSessionIsolation(t, cfg, c2)
 }
 

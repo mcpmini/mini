@@ -28,31 +28,75 @@ func TestModernRequestCarriesMetadataAndParameterHeaders(t *testing.T) {
 	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		req := decodeRequest(t, r)
 		methods = append(methods, req.Method)
-		assertModernHeader(t, r, "Mcp-Method", req.Method)
-		assertModernHeader(t, r, "MCP-Protocol-Version", ModernVersions[0])
+		assertModernHeader(t, modernHeaderParams{
+			Request: r,
+			Name:    "Mcp-Method",
+			Want:    req.Method,
+		})
+		assertModernHeader(t, modernHeaderParams{
+			Request: r,
+			Name:    "MCP-Protocol-Version",
+			Want:    ModernVersions[0],
+		})
 		if r.Header.Get("Mcp-Session-Id") != "" {
 			t.Error("modern request carried a session id")
 		}
 		switch req.Method {
 		case "server/discover":
-			writeRPCResult(t, w, req.ID, DiscoverResult{SupportedVersions: ModernVersions})
+			writeRPCResult(t, rpcResultParams{
+				Writer: w,
+				ID:     req.ID,
+				Result: DiscoverResult{SupportedVersions: ModernVersions},
+			})
 		case "tools/list":
-			writeRPCResult(t, w, req.ID, ToolsListResult{Tools: []ToolDefinition{tool}})
+			writeRPCResult(t, rpcResultParams{
+				Writer: w,
+				ID:     req.ID,
+				Result: ToolsListResult{Tools: []ToolDefinition{tool}},
+			})
 		case "tools/call":
 			gotParams = slices.Clone(req.Params)
 			call := callCount.Add(1)
 			if call == 1 {
-				assertModernHeader(t, r, "Mcp-Name", "tool name")
-				assertModernHeader(t, r, "Mcp-Param-Owner", "us-west1")
-				assertModernHeader(t, r, "Mcp-Param-Repo", "=?base64?SGVsbG8sIOS4lueVjA==?=")
-				assertModernHeader(t, r, "Mcp-Param-Enabled", "false")
-				assertModernHeader(t, r, "Mcp-Param-Nested", "42")
+				assertModernHeader(t, modernHeaderParams{
+					Request: r,
+					Name:    "Mcp-Name",
+					Want:    "tool name",
+				})
+				assertModernHeader(t, modernHeaderParams{
+					Request: r,
+					Name:    "Mcp-Param-Owner",
+					Want:    "us-west1",
+				})
+				assertModernHeader(t, modernHeaderParams{
+					Request: r,
+					Name:    "Mcp-Param-Repo",
+					Want:    "=?base64?SGVsbG8sIOS4lueVjA==?=",
+				})
+				assertModernHeader(t, modernHeaderParams{
+					Request: r,
+					Name:    "Mcp-Param-Enabled",
+					Want:    "false",
+				})
+				assertModernHeader(t, modernHeaderParams{
+					Request: r,
+					Name:    "Mcp-Param-Nested",
+					Want:    "42",
+				})
 			} else {
 				for _, key := range []string{"Mcp-Param-Owner", "Mcp-Param-Repo", "Mcp-Param-Enabled", "Mcp-Param-Nested"} {
-					assertModernHeader(t, r, key, "")
+					assertModernHeader(t, modernHeaderParams{
+						Request: r,
+						Name:    key,
+						Want:    "",
+					})
 				}
 			}
-			writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
+			writeRPCResult(t, rpcResultParams{
+				Writer: w,
+				ID:     req.ID,
+				Result: map[string]bool{"ok": true},
+			})
 		}
 	})
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Clock: clock.NewFake()})
@@ -85,12 +129,20 @@ func TestModernRequestRefreshesAuthorizationAndReplays(t *testing.T) {
 		Tools: []ToolDefinition{modernTool("x", `{}`)},
 		Handle: func(w http.ResponseWriter, r *http.Request, req Request) {
 			callAuth = append(callAuth, r.Header.Get("Authorization"))
-			assertModernHeader(t, r, "Mcp-Method", "tools/call")
+			assertModernHeader(t, modernHeaderParams{
+				Request: r,
+				Name:    "Mcp-Method",
+				Want:    "tools/call",
+			})
 			if r.Header.Get("Authorization") == "Bearer old" {
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
-			writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
+			writeRPCResult(t, rpcResultParams{
+				Writer: w,
+				ID:     req.ID,
+				Result: map[string]bool{"ok": true},
+			})
 		},
 	}))
 	if _, err := conn.Call(t.Context(), "tools/call", json.RawMessage(`{"name":"x","arguments":{}}`)); err != nil {
@@ -223,21 +275,39 @@ func modernHandler(t *testing.T, u modernUpstream) http.HandlerFunc {
 			if u.ListChanged {
 				result.Capabilities.Tools = &ToolsCapability{ListChanged: true}
 			}
-			writeRPCResult(t, w, req.ID, result)
+			writeRPCResult(t, rpcResultParams{
+				Writer: w,
+				ID:     req.ID,
+				Result: result,
+			})
 		case req.Method == "tools/list" && u.Tools != nil:
-			writeRPCResult(t, w, req.ID, ToolsListResult{Tools: u.Tools})
+			writeRPCResult(t, rpcResultParams{
+				Writer: w,
+				ID:     req.ID,
+				Result: ToolsListResult{Tools: u.Tools},
+			})
 		case u.Handle != nil:
 			u.Handle(w, r, req)
 		default:
-			writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
+			writeRPCResult(t, rpcResultParams{
+				Writer: w,
+				ID:     req.ID,
+				Result: map[string]bool{"ok": true},
+			})
 		}
 	}
 }
 
-func assertModernHeader(t *testing.T, r *http.Request, name, want string) {
+type modernHeaderParams struct {
+	Request *http.Request
+	Name    string
+	Want    string
+}
+
+func assertModernHeader(t *testing.T, p modernHeaderParams) {
 	t.Helper()
-	if got := r.Header.Get(name); got != want {
-		t.Errorf("%s = %q, want %q", name, got, want)
+	if got := p.Request.Header.Get(p.Name); got != p.Want {
+		t.Errorf("%s = %q, want %q", p.Name, got, p.Want)
 	}
 }
 

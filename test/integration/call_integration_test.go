@@ -327,7 +327,10 @@ func TestIntegrationCLICall_RejectsMiniFormatInConfig(t *testing.T) {
 func TestIntegrationCLICall_StdinParams(t *testing.T) {
 	t.Parallel()
 	cfg := callSetup(t, map[string]string{"get_item": `{"id":42,"name":"widget"}`})
-	stdout, _, code := runCLIWithStdin(t, `{"id":42}`, cfg, "call", "svc", "get_item", "-")
+	stdout, _, code := runCLIWithStdin(t, cliStdinParams{
+		Stdin:     `{"id":42}`,
+		ConfigDir: cfg,
+	}, "call", "svc", "get_item", "-")
 	if code != 0 {
 		t.Fatalf("call with stdin params should exit 0, got %d", code)
 	}

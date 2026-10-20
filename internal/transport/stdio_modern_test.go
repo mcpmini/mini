@@ -31,7 +31,11 @@ func TestStdioModernDiscoverySendsModernMetadata(t *testing.T) {
 	if discover.Method != "server/discover" {
 		t.Fatalf("first request = %q, want server/discover", discover.Method)
 	}
-	assertRequestMeta(t, discover.Params, ModernVersions[0], false)
+	assertRequestMeta(t, requestMetaParams{
+		Params:          discover.Params,
+		ProtocolVersion: ModernVersions[0],
+		Elicitation:     false,
+	})
 }
 
 const modernContinuationCall = `{"name":"confirm","arguments":{},"inputResponses":{"r1":{"accepted":true}},` +
@@ -46,7 +50,11 @@ func TestStdioModernCallKeepsContinuationFieldsAndMetadata(t *testing.T) {
 		t.Fatalf("Call: %v", err)
 	}
 	call := <-seen
-	assertRequestMeta(t, call.Params, ModernVersions[0], true)
+	assertRequestMeta(t, requestMetaParams{
+		Params:          call.Params,
+		ProtocolVersion: ModernVersions[0],
+		Elicitation:     true,
+	})
 	kept := []string{
 		`"inputResponses":{"r1":{"accepted":true}}`,
 		`"requestState":9007199254740993`,
@@ -279,7 +287,15 @@ func replyResult(serverW io.Writer, result any) func(Request) {
 }
 
 func replyError(serverW io.Writer, code int, data json.RawMessage) func(Request) {
-	return func(req Request) { writeRPCError(serverW, req.ID, code, "rejected", data) }
+	return func(req Request) {
+		writeRPCError(rpcErrorParams{
+			Writer:  serverW,
+			ID:      req.ID,
+			Code:    code,
+			Message: "rejected",
+			Data:    data,
+		})
+	}
 }
 
 func noReply(Request) {}
@@ -292,10 +308,16 @@ func receiveMethods(seen <-chan Request, n int) []string {
 	return methods
 }
 
-func assertRequestMeta(t *testing.T, params json.RawMessage, protocolVersion string, elicitation bool) {
+type requestMetaParams struct {
+	Params          json.RawMessage
+	ProtocolVersion string
+	Elicitation     bool
+}
+
+func assertRequestMeta(t *testing.T, p requestMetaParams) {
 	t.Helper()
 	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(params, &fields); err != nil {
+	if err := json.Unmarshal(p.Params, &fields); err != nil {
 		t.Fatal(err)
 	}
 	var meta map[string]json.RawMessage
@@ -306,22 +328,30 @@ func assertRequestMeta(t *testing.T, params json.RawMessage, protocolVersion str
 	if err := json.Unmarshal(fields["_meta"], &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.ProtocolVersion != protocolVersion || got.ClientInfo == nil || got.ClientInfo.Name != "mini" ||
+	if got.ProtocolVersion != p.ProtocolVersion || got.ClientInfo == nil || got.ClientInfo.Name != "mini" ||
 		got.ClientCapabilities == nil {
 		t.Fatalf("request metadata = %+v", got)
 	}
-	if !elicitation && string(got.ClientCapabilities.Elicitation) != "" {
+	if !p.Elicitation && string(got.ClientCapabilities.Elicitation) != "" {
 		t.Fatalf("discovery unexpectedly advertises elicitation: %s", fields["_meta"])
 	}
-	if elicitation && !strings.Contains(string(meta[clientCapabilitiesMeta]), "elicitation") {
+	if p.Elicitation && !strings.Contains(string(meta[clientCapabilitiesMeta]), "elicitation") {
 		t.Fatalf("call metadata lost elicitation: %s", meta[clientCapabilitiesMeta])
 	}
 }
 
-func writeRPCError(w io.Writer, id any, code int, message string, data json.RawMessage) {
-	errorBody, _ := json.Marshal(RPCError{Code: code, Message: message, Data: data})
-	line, _ := json.Marshal(map[string]any{"jsonrpc": JsonRPCVersion, "id": id, "error": json.RawMessage(errorBody)})
-	fmt.Fprintf(w, "%s\n", line)
+type rpcErrorParams struct {
+	Writer  io.Writer
+	ID      any
+	Code    int
+	Message string
+	Data    json.RawMessage
+}
+
+func writeRPCError(p rpcErrorParams) {
+	errorBody, _ := json.Marshal(RPCError{Code: p.Code, Message: p.Message, Data: p.Data})
+	line, _ := json.Marshal(map[string]any{"jsonrpc": JsonRPCVersion, "id": p.ID, "error": json.RawMessage(errorBody)})
+	fmt.Fprintf(p.Writer, "%s\n", line)
 }
 
 func readScannerRequest(t *testing.T, scanner *bufio.Scanner) Request {

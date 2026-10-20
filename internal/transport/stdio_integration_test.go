@@ -320,7 +320,13 @@ func answerProtocolProbe(mode string, firstStart bool, request Request) {
 	if firstStart && mode == helperExitOnProbeOnce {
 		os.Exit(0)
 	}
-	writeRPCError(os.Stdout, request.ID, CodeMethodNotFound, "legacy", nil)
+	writeRPCError(rpcErrorParams{
+		Writer:  os.Stdout,
+		ID:      request.ID,
+		Code:    CodeMethodNotFound,
+		Message: "legacy",
+		Data:    nil,
+	})
 	if firstStart && mode == helperReplyThenExitOnProbeOnce {
 		os.Exit(0)
 	}

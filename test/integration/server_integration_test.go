@@ -320,11 +320,17 @@ func writeGitHubServer(t *testing.T, cfg string, permissions *config.Permissions
 	})
 }
 
-func execGitHubToolIsError(t *testing.T, client *mcpClient, execName, tool string) bool {
+type githubToolErrorParams struct {
+	Client   *mcpClient
+	ExecName string
+	Tool     string
+}
+
+func execGitHubToolIsError(t *testing.T, p githubToolErrorParams) bool {
 	t.Helper()
-	raw := client.mustCall("tools/call", map[string]any{
-		"name":      execName,
-		"arguments": map[string]any{"server": "github", "tool": tool, "args": map[string]any{}},
+	raw := p.Client.mustCall("tools/call", map[string]any{
+		"name":      p.ExecName,
+		"arguments": map[string]any{"server": "github", "tool": p.Tool, "args": map[string]any{}},
 	})
 	var r struct {
 		IsError bool `json:"isError"`
@@ -338,10 +344,18 @@ func TestIntegrationServer_protectedToolRequiresExecProtected(t *testing.T) {
 	cfg := t.TempDir()
 	writeGitHubServer(t, cfg, &config.PermissionsConfig{Protected: []string{"list_pull_requests"}})
 	client := startServer(t, cfg)
-	if !execGitHubToolIsError(t, client, "call", "list_pull_requests") {
+	if !execGitHubToolIsError(t, githubToolErrorParams{
+		Client:   client,
+		ExecName: "call",
+		Tool:     "list_pull_requests",
+	}) {
 		t.Error("expected call to fail for protected tool")
 	}
-	if execGitHubToolIsError(t, client, "perm_call", "list_pull_requests") {
+	if execGitHubToolIsError(t, githubToolErrorParams{
+		Client:   client,
+		ExecName: "perm_call",
+		Tool:     "list_pull_requests",
+	}) {
 		t.Error("expected perm_call to succeed for protected tool")
 	}
 }
@@ -371,10 +385,15 @@ func TestIntegrationServer_configureProjectionOverride(t *testing.T) {
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "github", Fixtures: filepath.Join(fixturesDir, "github")})
 	client := startServer(t, cfg)
 	client.setProjection(
-		"github",
-		"list_pull_requests",
-		map[string]any{"include_only": []string{"number"}, "depth_limit": 1},
-		true,
+		setProjectionParams{
+			Server: "github",
+
+			Tool: "list_pull_requests",
+
+			Projection: map[string]any{"include_only": []string{"number"}, "depth_limit": 1},
+
+			SessionOnly: true,
+		},
 	)
 
 	rawFixture := testutil.ReadFile(t, filepath.Join(fixturesDir, "github", "list_pull_requests.json"))

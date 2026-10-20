@@ -9,17 +9,29 @@ import (
 // ModernRequest encodes one newline-terminated 2026-07-28 request whose params carry the
 // per-request metadata alongside the given typed params. Metadata keys the params already set win.
 func ModernRequest(id any, method string, params any) []byte {
-	return ModernRequestVersion(transport.ModernVersions[0], id, method, params)
+	return ModernRequestVersion(ModernRequestVersionParams{
+		Version: transport.ModernVersions[0],
+		ID:      id,
+		Method:  method,
+		Params:  params,
+	})
 }
 
-func ModernRequestVersion(version string, id any, method string, params any) []byte {
+type ModernRequestVersionParams struct {
+	Version string
+	ID      any
+	Method  string
+	Params  any
+}
+
+func ModernRequestVersion(p ModernRequestVersionParams) []byte {
 	fields := map[string]json.RawMessage{}
-	if params != nil {
-		mustUnmarshal(mustMarshal(params), &fields)
+	if p.Params != nil {
+		mustUnmarshal(mustMarshal(p.Params), &fields)
 	}
 	meta := map[string]json.RawMessage{}
 	mustUnmarshal(mustMarshal(transport.RequestMeta{
-		ProtocolVersion:    version,
+		ProtocolVersion:    p.Version,
 		ClientInfo:         &transport.ClientInfo{Name: "test", Version: "0"},
 		ClientCapabilities: &transport.ClientCapabilities{},
 	}), &meta)
@@ -27,7 +39,12 @@ func ModernRequestVersion(version string, id any, method string, params any) []b
 		mustUnmarshal(raw, &meta)
 	}
 	fields["_meta"] = mustMarshal(meta)
-	request := transport.Request{JsonRPC: transport.JsonRPCVersion, ID: id, Method: method, Params: mustMarshal(fields)}
+	request := transport.Request{
+		JsonRPC: transport.JsonRPCVersion,
+		ID:      p.ID,
+		Method:  p.Method,
+		Params:  mustMarshal(fields),
+	}
 	return append(mustMarshal(request), '\n')
 }
 

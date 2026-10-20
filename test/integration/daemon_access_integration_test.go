@@ -167,7 +167,12 @@ type httpToolCall struct {
 func postHTTPToolCall(t *testing.T, cfg string, c httpToolCall) *http.Response {
 	t.Helper()
 	session := daemonSession{cfg: cfg, id: c.sessionID, token: c.token}
-	return postDaemonToolsCall(t, session, toolCallRaw("call", c.server, c.tool, map[string]any{}))
+	return postDaemonToolsCall(t, session, toolCallRaw(toolCallParams{
+		ServerTool: "call",
+		Server:     c.server,
+		Tool:       c.tool,
+		Args:       map[string]any{},
+	}))
 }
 
 type daemonSession struct {

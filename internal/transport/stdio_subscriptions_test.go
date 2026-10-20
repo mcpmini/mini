@@ -113,7 +113,13 @@ func TestStdioSubscriptionWithoutAckCancelsTheListenAndStops(t *testing.T) {
 
 func TestStdioSubscriptionRejectionStopsTheListener(t *testing.T) {
 	h := startAcknowledgedListen(t)
-	writeRPCError(h.serverW, h.listen.ID, CodeInternalError, "listen rejected", nil)
+	writeRPCError(rpcErrorParams{
+		Writer:  h.serverW,
+		ID:      h.listen.ID,
+		Code:    CodeInternalError,
+		Message: "listen rejected",
+		Data:    nil,
+	})
 	h.expectStopped()
 	h.expectNoChange()
 }
@@ -161,11 +167,19 @@ func (h *listenHarness) ack(id any) { ackListen(h.t, h.serverW, id) }
 
 func (h *listenHarness) toolsChanged(subscriptionID json.RawMessage) {
 	params := SubscriptionNotificationParams{Meta: SubscriptionMeta{SubscriptionID: subscriptionID}}
-	writeNotification(h.t, h.serverW, NotificationToolsChanged, mustJSON(h.t, params))
+	writeNotification(h.t, notificationParams{
+		Writer: h.serverW,
+		Method: NotificationToolsChanged,
+		Params: mustJSON(h.t, params),
+	})
 }
 
 func (h *listenHarness) serverCancels(requestID json.RawMessage) {
-	writeNotification(h.t, h.serverW, NotificationCancelled, mustJSON(h.t, CancelledParams{RequestID: requestID}))
+	writeNotification(h.t, notificationParams{
+		Writer: h.serverW,
+		Method: NotificationCancelled,
+		Params: mustJSON(h.t, CancelledParams{RequestID: requestID}),
+	})
 }
 
 func (h *listenHarness) expectChange() {
@@ -177,7 +191,11 @@ func (h *listenHarness) expectChange() {
 
 func (h *listenHarness) expectNoChange() {
 	h.t.Helper()
-	waitForReaderToCatchUp(h.t, h.conn, h.serverW, h.scanner)
+	waitForReaderToCatchUp(h.t, readerCatchUpParams{
+		Connection: h.conn,
+		Writer:     h.serverW,
+		Scanner:    h.scanner,
+	})
 	select {
 	case got := <-h.changes:
 		h.t.Fatalf("unexpected %s reached the handler", got.Method)
@@ -196,7 +214,11 @@ func (h *listenHarness) expectStopped() {
 
 func (h *listenHarness) expectRunning() {
 	h.t.Helper()
-	waitForReaderToCatchUp(h.t, h.conn, h.serverW, h.scanner)
+	waitForReaderToCatchUp(h.t, readerCatchUpParams{
+		Connection: h.conn,
+		Writer:     h.serverW,
+		Scanner:    h.scanner,
+	})
 	select {
 	case <-h.conn.listenDone:
 		h.t.Fatal("the listener stopped")
@@ -206,26 +228,31 @@ func (h *listenHarness) expectRunning() {
 
 func ackListen(t *testing.T, w interface{ Write([]byte) (int, error) }, id any) {
 	t.Helper()
-	writeNotification(t, w, NotificationSubscriptionsAcknowledged, mustJSON(t, SubscriptionAckParams{
-		Meta:          SubscriptionMeta{SubscriptionID: mustJSONID(t, id)},
-		Notifications: ListenNotifications{ToolsListChanged: true},
-	}))
+	writeNotification(t, notificationParams{
+		Writer: w,
+		Method: NotificationSubscriptionsAcknowledged,
+		Params: mustJSON(t, SubscriptionAckParams{
+			Meta:          SubscriptionMeta{SubscriptionID: mustJSONID(t, id)},
+			Notifications: ListenNotifications{ToolsListChanged: true},
+		}),
+	})
 }
 
-func waitForReaderToCatchUp(
-	t *testing.T,
-	conn *StdioConnection,
-	serverW interface{ Write([]byte) (int, error) },
-	scanner *bufio.Scanner,
-) {
+type readerCatchUpParams struct {
+	Connection *StdioConnection
+	Writer     interface{ Write([]byte) (int, error) }
+	Scanner    *bufio.Scanner
+}
+
+func waitForReaderToCatchUp(t *testing.T, p readerCatchUpParams) {
 	t.Helper()
 	done := make(chan error, 1)
 	go func() {
-		_, err := conn.Call(context.Background(), "ping", nil)
+		_, err := p.Connection.Call(context.Background(), "ping", nil)
 		done <- err
 	}()
-	ping := readScannerRequest(t, scanner)
-	sendResponse(serverW, ping.ID, json.RawMessage(`{}`))
+	ping := readScannerRequest(t, p.Scanner)
+	sendResponse(p.Writer, ping.ID, json.RawMessage(`{}`))
 	if err := <-done; err != nil {
 		t.Fatalf("ping behind earlier messages: %v", err)
 	}
@@ -282,13 +309,19 @@ func mustJSON(t *testing.T, value any) json.RawMessage {
 	return encoded
 }
 
-func writeNotification(t *testing.T, w interface{ Write([]byte) (int, error) }, method string, params json.RawMessage) {
+type notificationParams struct {
+	Writer interface{ Write([]byte) (int, error) }
+	Method string
+	Params json.RawMessage
+}
+
+func writeNotification(t *testing.T, p notificationParams) {
 	t.Helper()
-	line, err := json.Marshal(Notification{JsonRPC: JsonRPCVersion, Method: method, Params: params})
+	line, err := json.Marshal(Notification{JsonRPC: JsonRPCVersion, Method: p.Method, Params: p.Params})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fmt.Fprintf(w, "%s\n", line); err != nil {
+	if _, err := fmt.Fprintf(p.Writer, "%s\n", line); err != nil {
 		t.Fatal(err)
 	}
 }

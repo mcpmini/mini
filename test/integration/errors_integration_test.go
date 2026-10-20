@@ -13,9 +13,18 @@ import (
 func TestIntegrationError_upstreamRPCError(t *testing.T) {
 	t.Parallel()
 	client := faultServer(t,
-		map[string]string{"get_item": `{"id":1}`},
-		map[string]any{"tool": "get_item", "method": "tools/call", "type": "rpc_error", "message": "upstream exploded"},
-		"")
+		faultClientParams{
+			Fixtures: map[string]string{"get_item": `{"id":1}`},
+
+			Fault: map[string]any{
+				"tool":    "get_item",
+				"method":  "tools/call",
+				"type":    "rpc_error",
+				"message": "upstream exploded",
+			},
+
+			ToolTimeout: "",
+		})
 
 	e := client.execEnvelope("svc", "get_item", nil)
 	if e.Error == "" {
@@ -26,9 +35,13 @@ func TestIntegrationError_upstreamRPCError(t *testing.T) {
 func TestIntegrationError_toolTimeout(t *testing.T) {
 	t.Parallel()
 	client := faultServer(t,
-		map[string]string{"get_item": `{"id":1}`},
-		map[string]any{"tool": "get_item", "method": "tools/call", "type": "delay", "delay_ms": 2000},
-		"300ms")
+		faultClientParams{
+			Fixtures: map[string]string{"get_item": `{"id":1}`},
+
+			Fault: map[string]any{"tool": "get_item", "method": "tools/call", "type": "delay", "delay_ms": 2000},
+
+			ToolTimeout: "300ms",
+		})
 
 	e := client.execEnvelope("svc", "get_item", nil)
 	if e.Error == "" {

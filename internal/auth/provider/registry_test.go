@@ -80,7 +80,11 @@ func TestProviderRegistry_redialAfterBrowserLogin_reusesProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 	tok := &oauth2.Token{AccessToken: "browser-access", RefreshToken: "browser-refresh"}
-	if commitErr := reg.CommitAuthorizedToken(params, registeredLogin(t, params, tok, "discovered")); commitErr != nil {
+	if commitErr := reg.CommitAuthorizedToken(params, registeredLogin(t, registeredLoginParams{
+		Params:   params,
+		Token:    tok,
+		ClientID: "discovered",
+	})); commitErr != nil {
 		t.Fatalf("CommitAuthorizedToken: %v", commitErr)
 	}
 	second, err := reg.GetOrCreate(params)

@@ -17,7 +17,11 @@ func noSSRFClient(t *testing.T) *mcpClient {
 
 func TestIntegrationSecurity_SSRFBlocks0000(t *testing.T) {
 	t.Parallel()
-	isErr, _ := addServerViaRPC(t, noSSRFClient(t), "x", "http://0.0.0.0/mcp")
+	isErr, _ := addServerViaRPC(t, addServerParams{
+		Client: noSSRFClient(t),
+		Name:   "x",
+		URL:    "http://0.0.0.0/mcp",
+	})
 	if !isErr {
 		t.Error("expected SSRF error for 0.0.0.0")
 	}
@@ -25,7 +29,11 @@ func TestIntegrationSecurity_SSRFBlocks0000(t *testing.T) {
 
 func TestIntegrationSecurity_SSRFBlocksIPv6Mapped(t *testing.T) {
 	t.Parallel()
-	isErr, _ := addServerViaRPC(t, noSSRFClient(t), "x", "http://[::ffff:127.0.0.1]/mcp")
+	isErr, _ := addServerViaRPC(t, addServerParams{
+		Client: noSSRFClient(t),
+		Name:   "x",
+		URL:    "http://[::ffff:127.0.0.1]/mcp",
+	})
 	if !isErr {
 		t.Error("expected SSRF error for IPv4-mapped IPv6")
 	}
@@ -44,9 +52,13 @@ func TestIntegrationSecurity_timeoutNoReconnect(t *testing.T) {
 	// A tool_timeout that fires should return an error but NOT trigger a reconnect
 	// (reconnect is only for connection errors, not context cancellations)
 	client := faultServer(t,
-		map[string]string{"get_item": `{"id":1}`},
-		map[string]any{"tool": "get_item", "method": "tools/call", "type": "delay", "delay_ms": 2000},
-		"200ms")
+		faultClientParams{
+			Fixtures: map[string]string{"get_item": `{"id":1}`},
+
+			Fault: map[string]any{"tool": "get_item", "method": "tools/call", "type": "delay", "delay_ms": 2000},
+
+			ToolTimeout: "200ms",
+		})
 
 	// First call should timeout (ok=false)
 	text, isErr := client.execToolAllowError("svc", "get_item", nil)

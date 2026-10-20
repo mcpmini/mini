@@ -73,7 +73,11 @@ func TestRefreshAuthorization_registeredClient_refreshesAtItsEndpointWithItsSecr
 		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2},
 		ConfigDir:  dir, ServerName: "srv", ServerURL: testServerURL, Clock: clock.NewFake(),
 	}
-	login := registeredLogin(t, params, storedToken(time.Time{}), "login-client")
+	login := registeredLogin(t, registeredLoginParams{
+		Params:   params,
+		Token:    storedToken(time.Time{}),
+		ClientID: "login-client",
+	})
 	login.TokenURL = endpoint.Srv.URL + "/token"
 	if err := auth.SaveLogin(dir, "srv", login); err != nil {
 		t.Fatal(err)

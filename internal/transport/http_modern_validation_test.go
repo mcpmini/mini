@@ -65,7 +65,11 @@ func TestModernHeaderMismatchRelistsAndRetriesOnce(t *testing.T) {
 				name = "New"
 			}
 			tool := modernTool("x", `{"type":"object","properties":{"p":{"type":"string","x-mcp-header":"`+name+`"}}}`)
-			writeRPCResult(t, w, req.ID, ToolsListResult{Tools: []ToolDefinition{tool}})
+			writeRPCResult(t, rpcResultParams{
+				Writer: w,
+				ID:     req.ID,
+				Result: ToolsListResult{Tools: []ToolDefinition{tool}},
+			})
 		case "tools/call":
 			call := calls.Add(1)
 			want := "Old"
@@ -79,7 +83,11 @@ func TestModernHeaderMismatchRelistsAndRetriesOnce(t *testing.T) {
 				writeHeaderMismatch(t, w, req.ID)
 				return
 			}
-			writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
+			writeRPCResult(t, rpcResultParams{
+				Writer: w,
+				ID:     req.ID,
+				Result: map[string]bool{"ok": true},
+			})
 		}
 	}})
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
@@ -118,14 +126,22 @@ func TestModernLegacyAnnotatedToolsKeepLegacyWireShape(t *testing.T) {
 		req := decodeRequest(t, r)
 		switch req.Method {
 		case "server/discover":
-			writeRPCResult(t, w, req.ID, DiscoverResult{SupportedVersions: LegacyVersions})
+			writeRPCResult(t, rpcResultParams{
+				Writer: w,
+				ID:     req.ID,
+				Result: DiscoverResult{SupportedVersions: LegacyVersions},
+			})
 		case "initialize":
 			serveProbeCall(t, w, req)
 		case NotificationInitialized:
 			w.WriteHeader(http.StatusAccepted)
 		case "tools/list":
 			tool := modernTool("x", `{"type":"object","properties":{"p":{"type":"string","x-mcp-header":"P"}}}`)
-			writeRPCResult(t, w, req.ID, ToolsListResult{Tools: []ToolDefinition{tool}})
+			writeRPCResult(t, rpcResultParams{
+				Writer: w,
+				ID:     req.ID,
+				Result: ToolsListResult{Tools: []ToolDefinition{tool}},
+			})
 		case "tools/call":
 			sawAnnotated = true
 			if strings.Contains(string(req.Params), `"_meta"`) {
@@ -136,7 +152,11 @@ func TestModernLegacyAnnotatedToolsKeepLegacyWireShape(t *testing.T) {
 					t.Errorf("legacy request included %s", key)
 				}
 			}
-			writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
+			writeRPCResult(t, rpcResultParams{
+				Writer: w,
+				ID:     req.ID,
+				Result: map[string]bool{"ok": true},
+			})
 		}
 	})
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Clock: clock.NewFake()})
@@ -163,7 +183,11 @@ func rpcErrorUntilReprobe(t *testing.T, code int) (*HTTPConnection, *atomic.Int3
 				writeHTTPRPCError(t, w, httpRPCErrorParams{id: req.ID, code: code})
 				return
 			}
-			writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
+			writeRPCResult(t, rpcResultParams{
+				Writer: w,
+				ID:     req.ID,
+				Result: map[string]bool{"ok": true},
+			})
 		}},
 	)
 	return mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL}), &probes
@@ -207,7 +231,11 @@ func TestModern4xxWithoutRPCResetsDiscovery(t *testing.T) {
 				}
 				return
 			}
-			writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
+			writeRPCResult(t, rpcResultParams{
+				Writer: w,
+				ID:     req.ID,
+				Result: map[string]bool{"ok": true},
+			})
 		}},
 	)
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
@@ -223,7 +251,11 @@ func TestModern4xxWithoutRPCResetsDiscovery(t *testing.T) {
 func TestModernCallKeepsItsEraThroughAConcurrentReset(t *testing.T) {
 	upstream := startResettingUpstream(t)
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: upstream.url})
-	called := callInBackground(t, conn, "tools/call", `{"name":"x","arguments":{"owner":"octo"}}`)
+	called := callInBackground(t, backgroundCallParams{
+		Connection: conn,
+		Method:     "tools/call",
+		Params:     `{"name":"x","arguments":{"owner":"octo"}}`,
+	})
 	<-upstream.listing
 	if _, err := conn.Call(t.Context(), "ping", nil); err == nil {
 		t.Fatal("ping succeeded, want the unsupported-version error that resets the era")
@@ -270,21 +302,35 @@ func (u *resettingUpstream) handle(t *testing.T) upstreamHandler {
 		case "tools/list":
 			close(u.listing)
 			<-u.releaseList
-			writeRPCResult(t, w, req.ID, ToolsListResult{Tools: []ToolDefinition{modernTool("x", ownerHeaderSchema)}})
+			writeRPCResult(t, rpcResultParams{
+				Writer: w,
+				ID:     req.ID,
+				Result: ToolsListResult{Tools: []ToolDefinition{modernTool("x", ownerHeaderSchema)}},
+			})
 		case "ping":
 			writeHTTPRPCError(t, w, httpRPCErrorParams{id: req.ID, code: CodeUnsupportedProtocolVersion})
 		case "tools/call":
 			u.callHeaders <- r.Header.Clone()
-			writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
+			writeRPCResult(t, rpcResultParams{
+				Writer: w,
+				ID:     req.ID,
+				Result: map[string]bool{"ok": true},
+			})
 		}
 	}
 }
 
-func callInBackground(t *testing.T, conn *HTTPConnection, method, params string) <-chan error {
+type backgroundCallParams struct {
+	Connection *HTTPConnection
+	Method     string
+	Params     string
+}
+
+func callInBackground(t *testing.T, p backgroundCallParams) <-chan error {
 	t.Helper()
 	called := make(chan error, 1)
 	go func() {
-		_, err := conn.Call(t.Context(), method, json.RawMessage(params))
+		_, err := p.Connection.Call(t.Context(), p.Method, json.RawMessage(p.Params))
 		called <- err
 	}()
 	return called
@@ -316,12 +362,20 @@ func failSecondToolsPage(t *testing.T, callHeaders chan<- http.Header) upstreamH
 		switch {
 		case req.Method == "tools/list" && !bytes.Contains(req.Params, []byte(`"cursor"`)):
 			page := ToolsListResult{Tools: []ToolDefinition{modernTool("x", ownerHeaderSchema)}, NextCursor: "2"}
-			writeRPCResult(t, w, req.ID, page)
+			writeRPCResult(t, rpcResultParams{
+				Writer: w,
+				ID:     req.ID,
+				Result: page,
+			})
 		case req.Method == "tools/list":
 			writeHTTPRPCError(t, w, httpRPCErrorParams{id: req.ID, code: CodeInvalidParams})
 		case req.Method == "tools/call":
 			callHeaders <- r.Header.Clone()
-			writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
+			writeRPCResult(t, rpcResultParams{
+				Writer: w,
+				ID:     req.ID,
+				Result: map[string]bool{"ok": true},
+			})
 		}
 	}
 }

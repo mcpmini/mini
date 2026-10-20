@@ -74,12 +74,20 @@ func TestLegacyHTTPToolCallDropsModernFields(t *testing.T) {
 		req := decodeRequest(t, r)
 		switch req.Method {
 		case "initialize":
-			writeRPCResult(t, w, req.ID, InitializeResult{ProtocolVersion: LegacyVersions[0]})
+			writeRPCResult(t, rpcResultParams{
+				Writer: w,
+				ID:     req.ID,
+				Result: InitializeResult{ProtocolVersion: LegacyVersions[0]},
+			})
 		case NotificationInitialized:
 			w.WriteHeader(http.StatusAccepted)
 		case "tools/call":
 			got = req.Params
-			writeRPCResult(t, w, req.ID, map[string]any{"content": []any{}})
+			writeRPCResult(t, rpcResultParams{
+				Writer: w,
+				ID:     req.ID,
+				Result: map[string]any{"content": []any{}},
+			})
 		}
 	})
 	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})

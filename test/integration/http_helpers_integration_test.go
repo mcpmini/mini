@@ -92,9 +92,15 @@ func httpServer(t *testing.T, onCall func(int) (int, []byte)) (*fakeHTTPMCP, *mc
 }
 
 // envelopeOK returns true when call succeeds and the envelope ok field is true.
-func envelopeOK(t *testing.T, client *mcpClient, server, tool string) bool {
+type envelopeCallParams struct {
+	Client *mcpClient
+	Server string
+	Tool   string
+}
+
+func envelopeOK(t *testing.T, p envelopeCallParams) bool {
 	t.Helper()
-	text, isRPCErr := client.execToolAllowError(server, tool, nil)
+	text, isRPCErr := p.Client.execToolAllowError(p.Server, p.Tool, nil)
 	if isRPCErr {
 		return false
 	}
