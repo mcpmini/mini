@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"slices"
 
 	"github.com/mcpmini/mini/internal/transport"
 )
@@ -25,8 +24,8 @@ func (s *Server) startListen(ctx context.Context, p handleScannedLineParams, lin
 		p.writeOut(errorResponse(req.ID, transport.CodeInvalidRequest, "jsonrpc must be \"2.0\""))
 		return
 	}
-	version, modern := modernRequestVersion(line)
-	if !modern || !slices.Contains(transport.ModernVersions, version) {
+	version, _ := modernRequestVersion(line)
+	if !transport.IsModernVersion(version) {
 		s.rejectListenVersion(p, req.ID, version)
 		return
 	}

@@ -2,7 +2,6 @@ package proxy
 
 import (
 	"encoding/json"
-	"slices"
 
 	"github.com/mcpmini/mini/internal/transport"
 )
@@ -15,8 +14,8 @@ type modernLine struct {
 }
 
 func (m modernLine) isModern() bool {
-	version, modern := transport.ProtocolVersionFromParams(m.Params)
-	return modern && slices.Contains(transport.ModernVersions, version)
+	version, _ := transport.ProtocolVersionFromParams(m.Params)
+	return transport.IsModernVersion(version)
 }
 
 func (s *proxySession) ensureModernReady() {

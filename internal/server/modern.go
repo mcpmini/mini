@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"slices"
 
 	"github.com/mcpmini/mini/internal/transport"
 	"github.com/mcpmini/mini/internal/version"
@@ -52,7 +51,7 @@ func (s *Server) handleModernLine(p handleScannedLineParams, line []byte) bool {
 	}
 	version, modern := modernRequestVersion(line)
 	// A rejected version must leave the session as it was, so the client can still fall back to initialize.
-	if modern && slices.Contains(transport.ModernVersions, version) {
+	if transport.IsModernVersion(version) {
 		s.activateModern(p.session)
 	}
 	if modern && peekMethod(line) == transport.MethodSubscriptionsListen {
@@ -83,7 +82,7 @@ func (s *Server) activateModern(session *Session) {
 
 func modernVersionError(req transport.Request, session *Session) *transport.Response {
 	version, modern := transport.ProtocolVersionFromParams(req.Params)
-	if !modern || slices.Contains(transport.ModernVersions, version) {
+	if !modern || transport.IsModernVersion(version) {
 		return nil
 	}
 	response, err := unsupportedVersionResponse(req.ID, version)
@@ -95,8 +94,9 @@ func modernVersionError(req transport.Request, session *Session) *transport.Resp
 }
 
 func unsupportedVersionResponse(id any, requested string) (transport.Response, error) {
-	supported := append(append([]string{}, transport.ModernVersions...), transport.LegacyVersions...)
-	data, err := json.Marshal(transport.UnsupportedVersionData{Supported: supported, Requested: requested})
+	data, err := json.Marshal(
+		transport.UnsupportedVersionData{Supported: transport.SupportedVersions(), Requested: requested},
+	)
 	if err != nil {
 		return transport.Response{}, err
 	}
@@ -136,10 +136,9 @@ func addMissingField(fields map[string]json.RawMessage, key string, value json.R
 }
 
 func (s *Server) handleDiscover(session *Session) transport.DiscoverResult {
-	supported := append(append([]string{}, transport.ModernVersions...), transport.LegacyVersions...)
 	return transport.DiscoverResult{
 		ResultType:        string(transport.ResultComplete),
-		SupportedVersions: supported,
+		SupportedVersions: transport.SupportedVersions(),
 		Capabilities:      transport.ServerCapabilities{Tools: &transport.ToolsCapability{ListChanged: true}},
 		Instructions:      s.initInstructions(session),
 		Meta: &transport.DiscoverMeta{
