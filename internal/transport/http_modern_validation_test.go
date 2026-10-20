@@ -311,7 +311,6 @@ func TestModernPartialListingStillSendsToolHeaders(t *testing.T) {
 	}
 }
 
-// failSecondToolsPage lists tool x on the first page and rejects the second, so listing ends partial.
 func failSecondToolsPage(t *testing.T, callHeaders chan<- http.Header,
 ) func(http.ResponseWriter, *http.Request, Request) {
 	return func(w http.ResponseWriter, r *http.Request, req Request) {

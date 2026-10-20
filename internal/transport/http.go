@@ -168,11 +168,11 @@ const maxRetries = 3
 
 // Call sends an MCP request, probing the server's era and completing the initialize handshake first if needed.
 func (c *HTTPConnection) Call(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
-	result, _, err := c.callInEra(ctx, method, params)
+	result, _, err := c.callAndReportVersion(ctx, method, params)
 	return result, err
 }
 
-func (c *HTTPConnection) callInEra(
+func (c *HTTPConnection) callAndReportVersion(
 	ctx context.Context,
 	method string,
 	params json.RawMessage,
@@ -181,17 +181,26 @@ func (c *HTTPConnection) callInEra(
 	if err != nil {
 		return nil, "", err
 	}
-	if modernVersion != "" {
-		result, err = c.callModern(ctx, modernVersion, method, params)
-		return result, modernVersion, err
+	if modernVersion == "" {
+		result, err = c.callLegacy(ctx, method, params)
+		return result, "", err
 	}
+	call := httpCall{Request: Request{Method: method, Params: params}, modernVersion: modernVersion}
+	result, err = c.callModern(ctx, call)
+	return result, modernVersion, err
+}
+
+func (c *HTTPConnection) callLegacy(
+	ctx context.Context,
+	method string,
+	params json.RawMessage,
+) (json.RawMessage, error) {
 	if method == "tools/call" {
 		params = stripModernToolCallFields(params)
 	}
-	result, err = c.withSessionRecovery(ctx, func() (json.RawMessage, error) {
+	return c.withSessionRecovery(ctx, func() (json.RawMessage, error) {
 		return c.rpc(ctx, method, params)
 	})
-	return result, "", err
 }
 
 func (c *HTTPConnection) withSessionRecovery(
@@ -228,16 +237,12 @@ type httpCall struct {
 }
 
 func (c *HTTPConnection) rpc(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
-	return c.rpcAs(ctx, "", method, params)
+	return c.send(ctx, httpCall{Request: Request{Method: method, Params: params}})
 }
 
-func (c *HTTPConnection) rpcAs(
-	ctx context.Context,
-	modernVersion, method string,
-	params json.RawMessage,
-) (json.RawMessage, error) {
-	req := Request{JsonRPC: JsonRPCVersion, ID: c.nextID.Add(1), Method: method, Params: params}
-	return c.postWithAuthRetry(ctx, httpCall{Request: req, modernVersion: modernVersion})
+func (c *HTTPConnection) send(ctx context.Context, call httpCall) (json.RawMessage, error) {
+	call.JsonRPC, call.ID = JsonRPCVersion, c.nextID.Add(1)
+	return c.postWithAuthRetry(ctx, call)
 }
 
 type postResult struct {
@@ -311,7 +316,7 @@ func (c *HTTPConnection) doPost(ctx context.Context, call httpCall) (postResult,
 
 func (c *HTTPConnection) buildHTTPRequest(ctx context.Context, call httpCall) (*http.Request, string, error) {
 	if call.modernVersion != "" {
-		return c.buildModernHTTPRequest(ctx, call.Request, call.modernVersion)
+		return c.buildModernHTTPRequest(ctx, call)
 	}
 	reqBody, err := json.Marshal(call.Request)
 	if err != nil {

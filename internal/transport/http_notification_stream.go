@@ -50,8 +50,8 @@ func (c *HTTPConnection) buildModernListenRequest() (
 	if err != nil {
 		return nil, fmt.Errorf("encode subscriptions/listen params: %w", err)
 	}
-	protocolVersion := cmp.Or(c.modernEraVersion(), ModernVersions[0])
-	prepared, err := c.prepareModernParams(params, protocolVersion)
+	modernVersion := cmp.Or(c.negotiatedModernVersion(), ModernVersions[0])
+	prepared, err := c.prepareModernParams(params, modernVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +62,7 @@ func (c *HTTPConnection) buildModernListenRequest() (
 		Params:  prepared,
 	}
 	return func(ctx context.Context) (*http.Request, string, error) {
-		return c.buildModernHTTPRequest(ctx, request, protocolVersion)
+		return c.buildModernHTTPRequest(ctx, httpCall{Request: request, modernVersion: modernVersion})
 	}, nil
 }
 

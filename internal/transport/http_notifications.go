@@ -13,22 +13,20 @@ import (
 )
 
 func (c *HTTPConnection) ListTools(ctx context.Context) ([]ToolDefinition, error) {
-	// Decided by the pages listed, not the shared era, which a concurrent reset can change mid-listing.
-	listedModern := true
+	// Judged by how each page was sent, not the shared era, which a concurrent reset can change mid-listing.
+	anyLegacyPage := false
 	tools, err := paginateToolsList(ctx, func(ctx context.Context, cursor string) (ToolsListResult, error) {
 		page, modernVersion, err := c.callToolsPage(ctx, cursor)
-		if err == nil && modernVersion == "" {
-			listedModern = false
-		}
+		anyLegacyPage = anyLegacyPage || (err == nil && modernVersion == "")
 		return page, err
 	})
 	if err != nil {
 		return nil, err
 	}
-	if listedModern {
-		return c.rebuildToolHeaders(tools), nil
+	if anyLegacyPage {
+		return tools, nil
 	}
-	return tools, nil
+	return c.rebuildToolHeaders(tools), nil
 }
 
 func (c *HTTPConnection) ensureReady(ctx context.Context) (modernVersion string, err error) {
@@ -70,7 +68,7 @@ func (c *HTTPConnection) callToolsPage(ctx context.Context, cursor string) (Tool
 		//nolint:errcheck // cursor map contains only strings.
 		params, _ = json.Marshal(map[string]string{"cursor": cursor})
 	}
-	raw, modernVersion, err := c.callInEra(ctx, "tools/list", params)
+	raw, modernVersion, err := c.callAndReportVersion(ctx, "tools/list", params)
 	if err != nil {
 		return ToolsListResult{}, "", err
 	}

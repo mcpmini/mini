@@ -55,7 +55,7 @@ func (c *HTTPConnection) probeOnce(ctx context.Context) (modernVersion string, e
 	c.initMu.Lock()
 	defer c.initMu.Unlock()
 	if c.eraKnown {
-		return c.modernEraVersion(), nil
+		return c.negotiatedModernVersion(), nil
 	}
 	result, err := c.probe(ctx)
 	verdict, err := classifyDiscover(result, err)
