@@ -211,7 +211,7 @@ projections:
 
 The bar for exclusion is high: keep fields that could reasonably help during a typical month of development, including fork descriptions, identities, revision references and useful links. When in doubt, keep the field. See [docs/default-config-philosophy.md](docs/default-config-philosophy.md) for full guidance.
 
-`exclude` matches exact dotted object paths relative to the response document root. `user.avatar_url` removes only that user's avatar; `description` removes only a root-level field. In proxy mode, each parsed JSON text block or structured-content value is its own document root. Exclusions do not traverse arrays: exclude the whole array by its property path if needed. Array indexes, wildcards and jq expressions are unsupported.
+`exclude` matches exact dotted object paths relative to the response document root. `user.avatar_url` removes only that user's avatar; `description` removes only a root-level field. In proxy mode, each parsed JSON text block or structured-content value is its own document root. A path never crosses an array on its own: `[]` steps into every item, as in `"[].author.avatar_url"` for a list of commits or `"items[].author.avatar_url"` for one wrapped in `items`. Quote any path containing `[]`, or the YAML won't parse. Array indexes, wildcards and jq expressions are rejected. See [docs/default-config-philosophy.md](docs/default-config-philosophy.md#exclude-paths) for the full rules.
 
 Config directory layout:
 
