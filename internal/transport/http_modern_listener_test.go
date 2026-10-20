@@ -238,7 +238,11 @@ func TestHTTPModernListener_noListenForUnsupportedVersionError(t *testing.T) {
 			}
 			return
 		}
-		writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
+		writeRPCResult(t, rpcResultParams{
+			Writer: w,
+			ID:     req.ID,
+			Result: map[string]bool{"ok": true},
+		})
 	})
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
@@ -350,13 +354,21 @@ func TestHTTPModernListener_probeFinishingAfterCloseStartsNoListener(t *testing.
 		if req.Method == "server/discover" {
 			close(probing)
 			<-releaseProbe
-			writeRPCResult(t, w, req.ID, DiscoverResult{
-				SupportedVersions: ModernVersions,
-				Capabilities:      ServerCapabilities{Tools: &ToolsCapability{ListChanged: true}},
+			writeRPCResult(t, rpcResultParams{
+				Writer: w,
+				ID:     req.ID,
+				Result: DiscoverResult{
+					SupportedVersions: ModernVersions,
+					Capabilities:      ServerCapabilities{Tools: &ToolsCapability{ListChanged: true}},
+				},
 			})
 			return
 		}
-		writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
+		writeRPCResult(t, rpcResultParams{
+			Writer: w,
+			ID:     req.ID,
+			Result: map[string]bool{"ok": true},
+		})
 	})
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: server.URL})
 	called := make(chan struct{})

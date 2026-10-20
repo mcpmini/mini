@@ -108,16 +108,24 @@ func TestIntegrationFakeMCPDispatchEffects(t *testing.T) {
 
 func TestIntegrationFakeMCPContentFaultPayloads(t *testing.T) {
 	t.Run("tool error message", func(t *testing.T) {
-		client := faultServer(t, map[string]string{"get_item": `{}`},
-			map[string]any{"method": "tools/call", "type": "error_response", "message": "injected marker"}, "")
+		client := faultServer(t, faultClientParams{
+			Fixtures: map[string]string{"get_item": `{}`},
+
+			Fault:       map[string]any{"method": "tools/call", "type": "error_response", "message": "injected marker"},
+			ToolTimeout: "",
+		})
 		got := client.execEnvelope("svc", "get_item", nil)
 		if got.Error == "" || !strings.Contains(got.Message, "injected marker") {
 			t.Fatalf("fault response = %+v, want injected tool error", got)
 		}
 	})
 	t.Run("oversized response length", func(t *testing.T) {
-		client := faultServer(t, map[string]string{"get_item": `{}`},
-			map[string]any{"method": "tools/call", "type": "oversized_response", "size_bytes": 64}, "")
+		client := faultServer(t, faultClientParams{
+			Fixtures: map[string]string{"get_item": `{}`},
+
+			Fault:       map[string]any{"method": "tools/call", "type": "oversized_response", "size_bytes": 64},
+			ToolTimeout: "",
+		})
 		got := client.execTool("svc", "get_item", nil)
 		if !strings.Contains(got, strings.Repeat("x", 64)) {
 			t.Fatalf("response = %q, want 64-byte fault payload", got)

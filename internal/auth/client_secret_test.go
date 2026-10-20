@@ -71,32 +71,36 @@ func withTokenURL(reg *auth.Registration, tokenURL string) *auth.Registration {
 	return reg
 }
 
-func hydrateFromSavedRegistration(
-	t *testing.T,
-	reg *auth.Registration,
-	tokenURL string,
-	clk clock.Clock,
-) *config.AuthConfig {
+type savedRegistrationParams struct {
+	Registration *auth.Registration
+	TokenURL     string
+	Clock        clock.Clock
+}
+
+func hydrateFromSavedRegistration(t *testing.T, p savedRegistrationParams) *config.AuthConfig {
 	t.Helper()
-	if reg.TokenURL == "" {
-		reg.TokenURL = tokenURL
+	if p.Registration.TokenURL == "" {
+		p.Registration.TokenURL = p.TokenURL
 	}
-	ac, err := resolveWithSavedRegistration(t, reg, tokenURL, clk)
+	ac, err := resolveWithSavedRegistration(t, savedRegistrationParams{
+		Registration: p.Registration,
+		TokenURL:     p.TokenURL,
+		Clock:        p.Clock,
+	})
 	if err != nil {
 		t.Fatalf("ResolveEndpoints: %v", err)
 	}
 	return ac
 }
 
-func resolveWithSavedRegistration(
-	t *testing.T,
-	reg *auth.Registration,
-	tokenURL string,
-	clk clock.Clock,
-) (*config.AuthConfig, error) {
+func resolveWithSavedRegistration(t *testing.T, p savedRegistrationParams) (*config.AuthConfig, error) {
 	t.Helper()
 	dir := t.TempDir()
-	authtest.SaveRegistration(t, authtest.RegistrationFile{ConfigDir: dir, ServerName: "srv", Registration: reg})
+	authtest.SaveRegistration(t, authtest.RegistrationFile{
+		ConfigDir:    dir,
+		ServerName:   "srv",
+		Registration: p.Registration,
+	})
 	asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":           "https://as.example.com/authorize",
 		"token_endpoint":                   "https://as.example.com/token",
@@ -111,10 +115,10 @@ func resolveWithSavedRegistration(
 		Auth: &config.AuthConfig{
 			Type:     "oauth2",
 			AuthURL:  "https://as.example.com/authorize",
-			TokenURL: tokenURL,
+			TokenURL: p.TokenURL,
 		},
 	}
-	params := auth.ResolveEndpointsParams{ConfigDir: dir, ServerName: "srv", Clock: clk}
+	params := auth.ResolveEndpointsParams{ConfigDir: dir, ServerName: "srv", Clock: p.Clock}
 	_, err := auth.ResolveEndpoints(context.Background(), sc, params)
 	return sc.Auth, err
 }
@@ -129,14 +133,21 @@ func exchangeAndRefresh(t *testing.T, ac *config.AuthConfig) {
 	}
 }
 
-func assertBasicAuth(t *testing.T, label string, obs authObservation, clientID, clientSecret string) {
+type authAssertionParams struct {
+	Label        string
+	Observation  authObservation
+	ClientID     string
+	ClientSecret string
+}
+
+func assertBasicAuth(t *testing.T, p authAssertionParams) {
 	t.Helper()
-	want := "Basic " + basicAuthValue(clientID, clientSecret)
-	if obs.authorizationHeader != want {
-		t.Errorf("%s: Authorization header = %q, want %q", label, obs.authorizationHeader, want)
+	want := "Basic " + basicAuthValue(p.ClientID, p.ClientSecret)
+	if p.Observation.authorizationHeader != want {
+		t.Errorf("%s: Authorization header = %q, want %q", p.Label, p.Observation.authorizationHeader, want)
 	}
-	if obs.formClientSecret != "" {
-		t.Errorf("%s: client_secret leaked into form body: %q", label, obs.formClientSecret)
+	if p.Observation.formClientSecret != "" {
+		t.Errorf("%s: client_secret leaked into form body: %q", p.Label, p.Observation.formClientSecret)
 	}
 }
 
@@ -146,16 +157,20 @@ func basicAuthValue(clientID, clientSecret string) string {
 	return strings.TrimPrefix(req.Header.Get("Authorization"), "Basic ")
 }
 
-func assertPostAuth(t *testing.T, label string, obs authObservation, clientID, clientSecret string) {
+func assertPostAuth(t *testing.T, p authAssertionParams) {
 	t.Helper()
-	if obs.formClientSecret != clientSecret {
-		t.Errorf("%s: form client_secret = %q, want %q", label, obs.formClientSecret, clientSecret)
+	if p.Observation.formClientSecret != p.ClientSecret {
+		t.Errorf("%s: form client_secret = %q, want %q", p.Label, p.Observation.formClientSecret, p.ClientSecret)
 	}
-	if obs.formClientID != clientID {
-		t.Errorf("%s: form client_id = %q, want %q", label, obs.formClientID, clientID)
+	if p.Observation.formClientID != p.ClientID {
+		t.Errorf("%s: form client_id = %q, want %q", p.Label, p.Observation.formClientID, p.ClientID)
 	}
-	if obs.authorizationHeader != "" {
-		t.Errorf("%s: unexpected Authorization header for client_secret_post: %q", label, obs.authorizationHeader)
+	if p.Observation.authorizationHeader != "" {
+		t.Errorf(
+			"%s: unexpected Authorization header for client_secret_post: %q",
+			p.Label,
+			p.Observation.authorizationHeader,
+		)
 	}
 }
 
@@ -164,7 +179,7 @@ func TestHydratedRegistration_authStyleOnExchangeAndRefresh(t *testing.T) {
 		name       string
 		reg        *auth.Registration
 		wantMethod string
-		assertFn   func(t *testing.T, label string, obs authObservation, clientID, clientSecret string)
+		assertFn   func(t *testing.T, p authAssertionParams)
 	}{
 		{
 			name: "client_secret_basic",
@@ -196,15 +211,29 @@ func TestHydratedRegistration_authStyleOnExchangeAndRefresh(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			tokenSrv := newCapturingTokenServer(t)
-			ac := hydrateFromSavedRegistration(t, tc.reg, tokenSrv.srv.URL, clock.System())
+			ac := hydrateFromSavedRegistration(t, savedRegistrationParams{
+				Registration: tc.reg,
+				TokenURL:     tokenSrv.srv.URL,
+				Clock:        clock.System(),
+			})
 			if ac.TokenEndpointAuthMethod != tc.wantMethod {
 				t.Fatalf("TokenEndpointAuthMethod = %q, want %q", ac.TokenEndpointAuthMethod, tc.wantMethod)
 			}
 
 			exchangeAndRefresh(t, ac)
 
-			tc.assertFn(t, "exchange", tokenSrv.exchange, tc.reg.ClientID, tc.reg.ClientSecret)
-			tc.assertFn(t, "refresh", tokenSrv.refresh, tc.reg.ClientID, tc.reg.ClientSecret)
+			tc.assertFn(t, authAssertionParams{
+				Label:        "exchange",
+				Observation:  tokenSrv.exchange,
+				ClientID:     tc.reg.ClientID,
+				ClientSecret: tc.reg.ClientSecret,
+			})
+			tc.assertFn(t, authAssertionParams{
+				Label:        "refresh",
+				Observation:  tokenSrv.refresh,
+				ClientID:     tc.reg.ClientID,
+				ClientSecret: tc.reg.ClientSecret,
+			})
 		})
 	}
 }
@@ -212,7 +241,11 @@ func TestHydratedRegistration_authStyleOnExchangeAndRefresh(t *testing.T) {
 func TestHydratedRegistration_noSecretLeavesPublicClientUnchanged(t *testing.T) {
 	tokenSrv := newCapturingTokenServer(t)
 	reg := &auth.Registration{ClientID: "public-client"}
-	ac := hydrateFromSavedRegistration(t, reg, tokenSrv.srv.URL, clock.System())
+	ac := hydrateFromSavedRegistration(t, savedRegistrationParams{
+		Registration: reg,
+		TokenURL:     tokenSrv.srv.URL,
+		Clock:        clock.System(),
+	})
 
 	if ac.ClientSecret != "" || ac.TokenEndpointAuthMethod != "" {
 		t.Fatalf(
@@ -259,7 +292,11 @@ func TestSavedRegistration_reusedOnlyForItsTokenEndpointWhileItsSecretLasts(t *t
 				ClientSecretExpiresAt:   tc.expiresAt,
 				TokenURL:                tc.registered,
 			}
-			ac, err := resolveWithSavedRegistration(t, reg, tokenURL, clock.NewFakeAt(base))
+			ac, err := resolveWithSavedRegistration(t, savedRegistrationParams{
+				Registration: reg,
+				TokenURL:     tokenURL,
+				Clock:        clock.NewFakeAt(base),
+			})
 			if reused := err == nil && ac.ClientID == reg.ClientID; reused != tc.wantReused {
 				t.Errorf("reused = %v (client %q, err %v), want %v", reused, ac.ClientID, err, tc.wantReused)
 			}
@@ -417,7 +454,7 @@ func TestFreshDCR_exchangeUsesCorrectAuthStyle(t *testing.T) {
 	cases := []struct {
 		name     string
 		dcr      map[string]any
-		assertFn func(t *testing.T, label string, obs authObservation, clientID, clientSecret string)
+		assertFn func(t *testing.T, p authAssertionParams)
 	}{
 		{
 			name: "explicit client_secret_post",
@@ -444,8 +481,18 @@ func TestFreshDCR_exchangeUsesCorrectAuthStyle(t *testing.T) {
 
 			clientID := tc.dcr["client_id"].(string)
 			clientSecret := tc.dcr["client_secret"].(string)
-			tc.assertFn(t, "exchange", tokenSrv.exchange, clientID, clientSecret)
-			tc.assertFn(t, "refresh", tokenSrv.refresh, clientID, clientSecret)
+			tc.assertFn(t, authAssertionParams{
+				Label:        "exchange",
+				Observation:  tokenSrv.exchange,
+				ClientID:     clientID,
+				ClientSecret: clientSecret,
+			})
+			tc.assertFn(t, authAssertionParams{
+				Label:        "refresh",
+				Observation:  tokenSrv.refresh,
+				ClientID:     clientID,
+				ClientSecret: clientSecret,
+			})
 		})
 	}
 }
@@ -464,7 +511,11 @@ func TestClientSecretNeverAppearsInResolutionOrExchangeErrors(t *testing.T) {
 	}))
 	defer rejectingTokenSrv.Close()
 
-	ac := hydrateFromSavedRegistration(t, reg, rejectingTokenSrv.URL, clock.System())
+	ac := hydrateFromSavedRegistration(t, savedRegistrationParams{
+		Registration: reg,
+		TokenURL:     rejectingTokenSrv.URL,
+		Clock:        clock.System(),
+	})
 
 	login := authtest.StartLogin(t, ac)
 	authtest.CompleteAuthorization(t, login.AuthURL(), "test-auth-code")

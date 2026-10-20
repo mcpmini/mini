@@ -21,7 +21,11 @@ func TestRefresh_expiredToken_returnsNewTokenAndSendsResource(t *testing.T) {
 	mock := authtest.NewTokenServer(t)
 	dir := t.TempDir()
 	token := pkceToken(t, mock.AuthConfig())
-	if err := saveLogin(t, dir, "srv", token); err != nil {
+	if err := saveLogin(t, saveLoginParams{
+		ConfigDir:  dir,
+		ServerName: "srv",
+		Token:      token,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	saved, _ := auth.LoadLogin(dir, "srv")

@@ -94,7 +94,12 @@ func TestHTTPServer_modernDiscoverWaitsForInitialize(t *testing.T) {
 func TestHTTPServer_modernUnsupportedVersionIsRejected(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	sessionID := serveHTTPPost(srv, initRequest(), "").Header().Get("Mcp-Session-Id")
-	request := transporttest.ModernRequestVersion("1900-01-01", 2, "tools/list", nil)
+	request := transporttest.ModernRequestVersion(transporttest.ModernRequestVersionParams{
+		Version: "1900-01-01",
+		ID:      2,
+		Method:  "tools/list",
+		Params:  nil,
+	})
 	message := decodeRecorderMessage(t, serveHTTPPost(srv, request, sessionID))
 	if message.Error == nil || message.Error.Code != transport.CodeUnsupportedProtocolVersion {
 		t.Fatalf(

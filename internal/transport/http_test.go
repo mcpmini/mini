@@ -187,11 +187,19 @@ func TestHTTPConnection_sessionIDPersisted(t *testing.T) {
 		}
 		if req.Method == "initialize" {
 			w.Header().Set("Mcp-Session-Id", "sess-abc")
-			writeRPCResult(t, w, req.ID, InitializeResult{ProtocolVersion: LegacyVersions[0]})
+			writeRPCResult(t, rpcResultParams{
+				Writer: w,
+				ID:     req.ID,
+				Result: InitializeResult{ProtocolVersion: LegacyVersions[0]},
+			})
 			return
 		}
 		receivedSessionID = r.Header.Get("Mcp-Session-Id")
-		writeRPCResult(t, w, req.ID, map[string]any{})
+		writeRPCResult(t, rpcResultParams{
+			Writer: w,
+			ID:     req.ID,
+			Result: map[string]any{},
+		})
 	})
 	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 	if _, err := conn.Call(t.Context(), "first", nil); err != nil {

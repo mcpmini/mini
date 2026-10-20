@@ -49,12 +49,20 @@ func TestHTTPConnection_usesNegotiatedLegacyVersion(t *testing.T) {
 				return
 			}
 			offered = params.ProtocolVersion
-			writeRPCResult(t, w, req.ID, InitializeResult{ProtocolVersion: "2025-06-18"})
+			writeRPCResult(t, rpcResultParams{
+				Writer: w,
+				ID:     req.ID,
+				Result: InitializeResult{ProtocolVersion: "2025-06-18"},
+			})
 		case NotificationInitialized:
 			w.WriteHeader(http.StatusAccepted)
 		case "tools/list":
 			toolsHeader = r.Header.Get("MCP-Protocol-Version")
-			writeRPCResult(t, w, req.ID, ToolsListResult{Tools: []ToolDefinition{}})
+			writeRPCResult(t, rpcResultParams{
+				Writer: w,
+				ID:     req.ID,
+				Result: ToolsListResult{Tools: []ToolDefinition{}},
+			})
 		}
 	})
 	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{
@@ -81,7 +89,11 @@ func TestHTTPConnection_rejectsUnsupportedNegotiatedVersion(t *testing.T) {
 					t.Errorf("decode request: %v", err)
 					return
 				}
-				writeRPCResult(t, w, req.ID, InitializeResult{ProtocolVersion: version})
+				writeRPCResult(t, rpcResultParams{
+					Writer: w,
+					ID:     req.ID,
+					Result: InitializeResult{ProtocolVersion: version},
+				})
 			})
 			conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 			_, err := conn.Call(t.Context(), "ping", nil)
@@ -93,14 +105,20 @@ func TestHTTPConnection_rejectsUnsupportedNegotiatedVersion(t *testing.T) {
 	}
 }
 
-func writeRPCResult(t *testing.T, w http.ResponseWriter, id any, result any) {
+type rpcResultParams struct {
+	Writer http.ResponseWriter
+	ID     any
+	Result any
+}
+
+func writeRPCResult(t *testing.T, p rpcResultParams) {
 	t.Helper()
-	raw, err := json.Marshal(result)
+	raw, err := json.Marshal(p.Result)
 	if err != nil {
 		t.Errorf("marshal result: %v", err)
 		return
 	}
-	if err := json.NewEncoder(w).Encode(Response{JsonRPC: JsonRPCVersion, ID: id, Result: raw}); err != nil {
+	if err := json.NewEncoder(p.Writer).Encode(Response{JsonRPC: JsonRPCVersion, ID: p.ID, Result: raw}); err != nil {
 		t.Errorf("write result: %v", err)
 	}
 }

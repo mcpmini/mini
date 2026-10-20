@@ -150,7 +150,11 @@ func TestCommitAuthorizedToken_refreshUsesTheClientEachLoginWasIssuedTo(t *testi
 			ClientID: "dcr-unrelated", ClientSecret: "secret-unrelated", TokenEndpointAuthMethod: "client_secret_basic",
 		}},
 	)
-	first := registeredLogin(t, params, storedToken(time.Time{}), "dcr-v1")
+	first := registeredLogin(t, registeredLoginParams{
+		Params:   params,
+		Token:    storedToken(time.Time{}),
+		ClientID: "dcr-v1",
+	})
 	if err := auth.SaveLogin(f.dir, "srv", first); err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +168,11 @@ func TestCommitAuthorizedToken_refreshUsesTheClientEachLoginWasIssuedTo(t *testi
 	assertRefreshedAs(t, f.endpoint, "dcr-v1")
 
 	browserTok := &oauth2.Token{AccessToken: "browser-access", RefreshToken: "browser-refresh"}
-	if err := f.registry.CommitAuthorizedToken(params, registeredLogin(t, params, browserTok, "dcr-v2")); err != nil {
+	if err := f.registry.CommitAuthorizedToken(params, registeredLogin(t, registeredLoginParams{
+		Params:   params,
+		Token:    browserTok,
+		ClientID: "dcr-v2",
+	})); err != nil {
 		t.Fatalf("CommitAuthorizedToken: %v", err)
 	}
 	if _, err := p.RefreshAuthorization(context.Background(), "Bearer browser-access"); err != nil {
@@ -173,10 +181,16 @@ func TestCommitAuthorizedToken_refreshUsesTheClientEachLoginWasIssuedTo(t *testi
 	assertRefreshedAs(t, f.endpoint, "dcr-v2")
 }
 
-func registeredLogin(t *testing.T, params provider.Params, token *oauth2.Token, clientID string) *auth.Login {
+type registeredLoginParams struct {
+	Params   provider.Params
+	Token    *oauth2.Token
+	ClientID string
+}
+
+func registeredLogin(t *testing.T, p registeredLoginParams) *auth.Login {
 	t.Helper()
-	login := loginFor(t, params, token)
-	login.Client = auth.LoginClient{ID: clientID, Secret: "secret-" + clientID, AuthMethod: "client_secret_basic"}
+	login := loginFor(t, p.Params, p.Token)
+	login.Client = auth.LoginClient{ID: p.ClientID, Secret: "secret-" + p.ClientID, AuthMethod: "client_secret_basic"}
 	return login
 }
 
@@ -309,7 +323,11 @@ func TestCommitAuthorizedToken_loginAfterEditingClientID_isSavedAndUsed(t *testi
 func TestRefreshAuthorization_adoptsAnotherProcesssLoginWithItsClient(t *testing.T) {
 	f := newCommitFixture(t)
 	params := f.paramsFor(&config.AuthConfig{Type: config.AuthTypeOAuth2})
-	saveRegisteredLogin(t, params, &oauth2.Token{AccessToken: "first-access", RefreshToken: "first-refresh"}, "dcr-v1")
+	saveRegisteredLogin(t, registeredLoginParams{
+		Params:   params,
+		Token:    &oauth2.Token{AccessToken: "first-access", RefreshToken: "first-refresh"},
+		ClientID: "dcr-v1",
+	})
 	p, err := f.registry.GetOrCreate(params)
 	if err != nil {
 		t.Fatal(err)
@@ -318,7 +336,11 @@ func TestRefreshAuthorization_adoptsAnotherProcesssLoginWithItsClient(t *testing
 		t.Fatal(authErr)
 	}
 	external := &oauth2.Token{AccessToken: "external-access", RefreshToken: "external-refresh"}
-	saveRegisteredLogin(t, params, external, "dcr-v2")
+	saveRegisteredLogin(t, registeredLoginParams{
+		Params:   params,
+		Token:    external,
+		ClientID: "dcr-v2",
+	})
 
 	got, err := p.RefreshAuthorization(context.Background(), "Bearer first-access")
 	if err != nil || got != "Bearer external-access" {
@@ -357,12 +379,16 @@ func TestRefreshAuthorization_loginSavedForOtherSettings_isNeitherUsedNorOverwri
 	}
 }
 
-func saveRegisteredLogin(t *testing.T, params provider.Params, token *oauth2.Token, clientID string) {
+func saveRegisteredLogin(t *testing.T, p registeredLoginParams) {
 	t.Helper()
 	if err := auth.SaveLogin(
-		params.ConfigDir,
-		params.ServerName,
-		registeredLogin(t, params, token, clientID),
+		p.Params.ConfigDir,
+		p.Params.ServerName,
+		registeredLogin(t, registeredLoginParams{
+			Params:   p.Params,
+			Token:    p.Token,
+			ClientID: p.ClientID,
+		}),
 	); err != nil {
 		t.Fatal(err)
 	}

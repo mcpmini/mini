@@ -82,13 +82,20 @@ func fakeServerConfig(p fakeServerParams) config.ServerConfig {
 	}
 }
 
-func toolCallRaw(serverTool string, server, tool string, args map[string]any) map[string]any {
+type toolCallParams struct {
+	ServerTool string
+	Server     string
+	Tool       string
+	Args       map[string]any
+}
+
+func toolCallRaw(p toolCallParams) map[string]any {
 	return map[string]any{
-		"name": serverTool,
+		"name": p.ServerTool,
 		"arguments": map[string]any{
-			"server": server,
-			"tool":   tool,
-			"args":   args,
+			"server": p.Server,
+			"tool":   p.Tool,
+			"args":   p.Args,
 		},
 	}
 }
@@ -124,15 +131,15 @@ func runCLI(t *testing.T, configDir string, args ...string) (stdout, stderr stri
 	return outBuf.String(), errBuf.String(), exitCode
 }
 
-func runCLIWithStdin(
-	t *testing.T,
-	stdin string,
-	configDir string,
-	args ...string,
-) (stdout, stderr string, exitCode int) {
+type cliStdinParams struct {
+	Stdin     string
+	ConfigDir string
+}
+
+func runCLIWithStdin(t *testing.T, p cliStdinParams, args ...string) (stdout, stderr string, exitCode int) {
 	t.Helper()
-	cmd := exec.Command(miniBin, cliArgs(configDir, args)...)
-	cmd.Stdin = strings.NewReader(stdin)
+	cmd := exec.Command(miniBin, cliArgs(p.ConfigDir, args)...)
+	cmd.Stdin = strings.NewReader(p.Stdin)
 	var outBuf, errBuf strings.Builder
 	cmd.Stdout = &outBuf
 	cmd.Stderr = &errBuf
@@ -175,10 +182,16 @@ func startFakeMCPProcess(t *testing.T, fixtures string) io.Reader {
 	return stderrPipe
 }
 
-func startFakeMCP(t *testing.T, configDir, serverName, fixtures string) *FakeMCPControl {
+type startFakeMCPParams struct {
+	ConfigDir  string
+	ServerName string
+	Fixtures   string
+}
+
+func startFakeMCP(t *testing.T, p startFakeMCPParams) *FakeMCPControl {
 	t.Helper()
-	addr := readControlAddr(t, startFakeMCPProcess(t, fixtures))
-	writeFakeServer(t, configDir, fakeServerParams{ServerName: serverName, Fixtures: fixtures})
+	addr := readControlAddr(t, startFakeMCPProcess(t, p.Fixtures))
+	writeFakeServer(t, p.ConfigDir, fakeServerParams{ServerName: p.ServerName, Fixtures: p.Fixtures})
 	return &FakeMCPControl{addr: addr, t: t}
 }
 
@@ -478,16 +491,23 @@ func (c *mcpClient) call(method string, params any) (json.RawMessage, error) {
 	}
 }
 
-func (c *mcpClient) setProjection(server, tool string, proj map[string]any, sessionOnly bool) {
+type setProjectionParams struct {
+	Server      string
+	Tool        string
+	Projection  map[string]any
+	SessionOnly bool
+}
+
+func (c *mcpClient) setProjection(p setProjectionParams) {
 	c.t.Helper()
 	c.mustCall("tools/call", map[string]any{
 		"name": "config",
 		"arguments": map[string]any{
 			"action":       "set_projection",
-			"server":       server,
-			"tool":         tool,
-			"session_only": sessionOnly,
-			"projection":   proj,
+			"server":       p.Server,
+			"tool":         p.Tool,
+			"session_only": p.SessionOnly,
+			"projection":   p.Projection,
 		},
 	})
 }
@@ -603,7 +623,12 @@ func (c *mcpClient) execEnvelope(server, tool string, args map[string]any) envel
 	if args == nil {
 		args = map[string]any{}
 	}
-	raw := c.mustCall("tools/call", toolCallRaw("call", server, tool, args))
+	raw := c.mustCall("tools/call", toolCallRaw(toolCallParams{
+		ServerTool: "call",
+		Server:     server,
+		Tool:       tool,
+		Args:       args,
+	}))
 	// Use parseToolCallResult (not toolCallText) so we get the content even when
 	// mini returns isError=true — error envelopes are still valid JSON in the content.
 	text, _ := parseToolCallResult(raw)
@@ -674,7 +699,12 @@ func (c *mcpClient) execProtectedAllowError(server, tool string, args map[string
 	if args == nil {
 		args = map[string]any{}
 	}
-	raw := c.mustCall("tools/call", toolCallRaw("perm_call", server, tool, args))
+	raw := c.mustCall("tools/call", toolCallRaw(toolCallParams{
+		ServerTool: "perm_call",
+		Server:     server,
+		Tool:       tool,
+		Args:       args,
+	}))
 	return parseToolCallResult(raw)
 }
 
@@ -683,7 +713,12 @@ func (c *mcpClient) execToolAllowError(server, tool string, args map[string]any)
 	if args == nil {
 		args = map[string]any{}
 	}
-	raw := c.mustCall("tools/call", toolCallRaw("call", server, tool, args))
+	raw := c.mustCall("tools/call", toolCallRaw(toolCallParams{
+		ServerTool: "call",
+		Server:     server,
+		Tool:       tool,
+		Args:       args,
+	}))
 	return parseToolCallResult(raw)
 }
 
@@ -721,11 +756,17 @@ func startQuickServer(t *testing.T, cfg string, projections map[string]*config.P
 	return startServer(t, cfg)
 }
 
-func faultServer(t *testing.T, fixtures map[string]string, fault map[string]any, toolTimeout string) *mcpClient {
+type faultClientParams struct {
+	Fixtures    map[string]string
+	Fault       map[string]any
+	ToolTimeout string
+}
+
+func faultServer(t *testing.T, p faultClientParams) *mcpClient {
 	t.Helper()
-	dir := mockFixtureDir(t, fixtures)
+	dir := mockFixtureDir(t, p.Fixtures)
 	cfg := t.TempDir()
-	faultJSON, _ := json.Marshal(fault)
+	faultJSON, _ := json.Marshal(p.Fault)
 	writeFaultServer(
 		t,
 		faultServerParams{
@@ -733,7 +774,7 @@ func faultServer(t *testing.T, fixtures map[string]string, fault map[string]any,
 			ServerName:  "svc",
 			Fixtures:    dir,
 			FaultJSON:   string(faultJSON),
-			ToolTimeout: toolTimeout,
+			ToolTimeout: p.ToolTimeout,
 		},
 	)
 	return startServer(t, cfg)
@@ -799,13 +840,19 @@ func mustUnmarshal(t *testing.T, data []byte, v any) {
 	}
 }
 
-func addServerViaRPC(t *testing.T, client *mcpClient, name, url string) (isErr bool, text string) {
+type addServerParams struct {
+	Client *mcpClient
+	Name   string
+	URL    string
+}
+
+func addServerViaRPC(t *testing.T, p addServerParams) (isErr bool, text string) {
 	t.Helper()
-	raw := client.mustCall("tools/call", map[string]any{
+	raw := p.Client.mustCall("tools/call", map[string]any{
 		"name": "config",
 		"arguments": map[string]any{
 			"action": "add_server",
-			"config": map[string]any{"name": name, "transport": "sse", "url": url},
+			"config": map[string]any{"name": p.Name, "transport": "sse", "url": p.URL},
 		},
 	})
 	txt, isErr := parseToolCallResult(raw)
