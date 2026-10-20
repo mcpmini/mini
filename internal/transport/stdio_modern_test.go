@@ -60,19 +60,33 @@ func TestStdioModernCallKeepsContinuationFieldsAndMetadata(t *testing.T) {
 	}
 }
 
-func TestStdioDiscoveryGenericRPCErrorFallsBackToLegacy(t *testing.T) {
-	conn, serverW, serverR := makePipeConn(t)
-	seen := scriptStdioUpstream(serverW, serverR,
-		replyError(serverW, CodeMethodNotFound, nil),
-		replyResult(serverW, InitializeResult{ProtocolVersion: LatestLegacyVersion}),
-		noReply,
-	)
-	if _, err := conn.negotiate(context.Background()); err != nil {
-		t.Fatalf("negotiate legacy server: %v", err)
-	}
-	want := []string{"server/discover", "initialize", NotificationInitialized}
-	if got := receiveMethods(seen, len(want)); !slices.Equal(got, want) {
-		t.Fatalf("requests = %v, want %v", got, want)
+func TestStdioDiscoveryFallsBackToLegacy(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		reply func(io.Writer) func(Request)
+	}{
+		{name: "generic RPC error", reply: func(w io.Writer) func(Request) {
+			return replyError(w, CodeMethodNotFound, nil)
+		}},
+		{name: "result without supported versions", reply: func(w io.Writer) func(Request) {
+			return replyResult(w, json.RawMessage(`{}`))
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conn, serverW, serverR := makePipeConn(t)
+			seen := scriptStdioUpstream(serverW, serverR,
+				tc.reply(serverW),
+				replyResult(serverW, InitializeResult{ProtocolVersion: LatestLegacyVersion}),
+				noReply,
+			)
+			if _, err := conn.negotiate(context.Background()); err != nil {
+				t.Fatalf("negotiate legacy server: %v", err)
+			}
+			want := []string{"server/discover", "initialize", NotificationInitialized}
+			if got := receiveMethods(seen, len(want)); !slices.Equal(got, want) {
+				t.Fatalf("requests = %v, want %v", got, want)
+			}
+		})
 	}
 }
 
@@ -89,23 +103,58 @@ func TestStdioDiscoveryRejectsValidDisjointModernVersions(t *testing.T) {
 	}
 }
 
-func TestStdioDiscoveryDoesNotReplaceChildAfterExplicitIncompatibility(t *testing.T) {
-	conn, serverW, serverR := makePipeConn(t)
-	result := make(chan error, 1)
-	go func() {
-		_, err := conn.negotiate(context.Background())
-		result <- err
-	}()
-	probe := readStdioRequest(t, serverR)
-	sendResponse(serverW, probe.ID, DiscoverResult{SupportedVersions: LegacyVersions})
-	serverW.Close()
-	<-conn.done
-	err := <-result
-	if err == nil || !strings.Contains(err.Error(), "does not support requested modern protocol") {
-		t.Fatalf("negotiate error = %v, want explicit modern incompatibility", err)
+func TestStdioOnlyAnUnexplainedExitBeforeSetupGetsAReplacement(t *testing.T) {
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	explicit := explicitModernProbeError{errors.New("modern discovery rejected")}
+	for _, tc := range []struct {
+		name   string
+		ctx    context.Context
+		err    error
+		exited bool
+		want   bool
+	}{
+		{name: "exit after a generic error", ctx: context.Background(), err: errors.New("closed"), exited: true, want: true},
+		{name: "exit after an explicit rejection", ctx: context.Background(), err: explicit, exited: true},
+		{name: "failure while still running", ctx: context.Background(), err: errors.New("bad result")},
+		{name: "caller cancelled", ctx: cancelled, err: context.Canceled, exited: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conn := newWriteOnlyConn(discardWriteCloser{Writer: io.Discard})
+			if tc.exited {
+				conn.closeDone()
+			}
+			if got := conn.exitedBeforeSetup(tc.ctx, tc.err); got != tc.want {
+				t.Fatalf("exitedBeforeSetup = %v, want %v", got, tc.want)
+			}
+		})
 	}
-	if got := conn.nextID.Load(); got != 1 {
-		t.Fatalf("requests sent = %d, want no legacy initialization after incompatibility", got)
+}
+
+func TestStdioDiscoveryExplicitRejectionFailsWithoutInitialize(t *testing.T) {
+	noMutualVersion := json.RawMessage(`{"requested":"2026-07-28","supported":["2025-06-18"]}`)
+	for _, tc := range []struct {
+		name string
+		code int
+		data json.RawMessage
+		want string
+	}{
+		{name: "header mismatch", code: CodeHeaderMismatch, want: "modern discovery rejected"},
+		{name: "missing client capability", code: CodeMissingRequiredClientCapability, want: "modern discovery rejected"},
+		{
+			name: "no mutual version", code: CodeUnsupportedProtocolVersion, data: noMutualVersion,
+			want: "does not support requested modern protocol",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conn, serverW, serverR := makePipeConn(t)
+			scriptStdioUpstream(serverW, serverR, replyError(serverW, tc.code, tc.data), noReply)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if _, err := conn.negotiate(ctx); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("negotiate error = %v, want %q and no legacy initialize", err, tc.want)
+			}
+		})
 	}
 }
 
@@ -192,8 +241,6 @@ func TestStdioModernCancellationTargetsSentRequest(t *testing.T) {
 	}
 }
 
-// scriptStdioUpstream answers the connection's requests in order, one reply per request, and
-// passes each request it read to the returned channel.
 func scriptStdioUpstream(serverW io.Writer, serverR io.Reader, replies ...func(Request)) <-chan Request {
 	seen := make(chan Request, len(replies))
 	scanner := bufio.NewScanner(serverR)

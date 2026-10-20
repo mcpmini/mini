@@ -135,7 +135,7 @@ func TestIntegrationStdioModernProcessNegotiatesListsAndCalls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn, err := NewStdioConnection(context.Background(), protocolHelperCommand(bin, "modern"))
+	conn, err := NewStdioConnection(context.Background(), protocolHelperCommand(bin, helperModern))
 	if err != nil {
 		t.Fatalf("connect modern helper: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestIntegrationStdioModernProcessNegotiatesListsAndCalls(t *testing.T) {
 }
 
 func TestIntegrationStdioProbeExitGetsOneLegacyReplacement(t *testing.T) {
-	for _, mode := range []string{"exit-once", "reply-then-exit-once"} {
+	for _, mode := range []string{helperExitOnProbeOnce, helperReplyThenExitOnProbeOnce} {
 		t.Run(mode, func(t *testing.T) {
 			command, starts := countedProtocolHelper(t, mode)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -208,7 +208,7 @@ func TestIntegrationStdioCallReturnsAtItsDeadlineWhenTheServerStopsReadingStdin(
 }
 
 func TestIntegrationStdioStartupCrashFailsOnceWithTheOriginalExit(t *testing.T) {
-	command, starts := countedProtocolHelper(t, "crash")
+	command, starts := countedProtocolHelper(t, helperCrash)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_, err := NewStdioConnection(ctx, command)
@@ -249,6 +249,13 @@ func protocolHelperCommand(bin, mode string) StdioCommand {
 	}
 }
 
+const (
+	helperModern                   = "modern"
+	helperExitOnProbeOnce          = "exit-on-probe-once"
+	helperReplyThenExitOnProbeOnce = "reply-then-exit-on-probe-once"
+	helperCrash                    = "crash"
+)
+
 func TestIntegrationStdioProtocolHelper(t *testing.T) {
 	mode := integrationHelperMode("stdio-protocol-helper")
 	if mode == "" {
@@ -258,7 +265,7 @@ func TestIntegrationStdioProtocolHelper(t *testing.T) {
 	if starts != "" {
 		appendHelperStart(starts)
 	}
-	if mode == "crash" {
+	if mode == helperCrash {
 		os.Exit(1)
 	}
 	firstStart := starts != "" && helperStartCount(starts) == 1
@@ -273,8 +280,6 @@ func TestIntegrationStdioProtocolHelper(t *testing.T) {
 	os.Exit(0)
 }
 
-// answerProtocolRequest plays a modern server ("modern"), or a legacy server that dies on
-// its first probe: silently ("exit-once") or after answering it ("reply-then-exit-once").
 func answerProtocolRequest(mode string, firstStart bool, request Request) {
 	switch request.Method {
 	case "server/discover":
@@ -295,15 +300,15 @@ func answerProtocolRequest(mode string, firstStart bool, request Request) {
 }
 
 func answerProtocolProbe(mode string, firstStart bool, request Request) {
-	if mode == "modern" {
+	if mode == helperModern {
 		sendResponse(os.Stdout, request.ID, DiscoverResult{SupportedVersions: ModernVersions})
 		return
 	}
-	if firstStart && mode == "exit-once" {
+	if firstStart && mode == helperExitOnProbeOnce {
 		os.Exit(0)
 	}
 	writeRPCError(os.Stdout, request.ID, CodeMethodNotFound, "legacy", nil)
-	if firstStart && mode == "reply-then-exit-once" {
+	if firstStart && mode == helperReplyThenExitOnProbeOnce {
 		os.Exit(0)
 	}
 }

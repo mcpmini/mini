@@ -23,6 +23,7 @@ func (c *StdioConnection) negotiate(ctx context.Context) (*StdioConnection, erro
 		return c, nil
 	}
 	if c.exitedBeforeSetup(ctx, err) {
+		// Some legacy servers exit on an unknown method, before or after answering it.
 		return c.replaceExitedProbe(ctx)
 	}
 	_ = c.Close() //nolint:errcheck // cleanup must not mask the setup error
@@ -45,8 +46,6 @@ func (c *StdioConnection) setUpEra(ctx context.Context) error {
 	return nil
 }
 
-// A legacy server can exit on the probe, either silently or right after answering it with an error,
-// so an exit anywhere before setup finishes gets one replacement that skips the probe.
 func (c *StdioConnection) exitedBeforeSetup(ctx context.Context, err error) bool {
 	var explicit explicitModernProbeError
 	return ctx.Err() == nil && !errors.As(err, &explicit) && c.isClosed()

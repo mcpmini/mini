@@ -280,7 +280,7 @@ func (c *StdioConnection) SetNotificationHandler(handler func(Notification)) {
 	c.toolsChanged.SetHandler(handler)
 }
 
-// The caller has already given up, so a cancellation that can't be written quickly is dropped.
+// The caller has already given up, so its cancellation waits only briefly for a turn to write.
 const stdioCancelWriteTimeout = 250 * time.Millisecond
 
 func (c *StdioConnection) cancelUpstreamRequest(parent context.Context, id int64) {

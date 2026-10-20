@@ -137,8 +137,7 @@ func classifyDiscoverRPC(err *RPCError) (probeVerdict, error) {
 	return modernVersionVerdict(data.Supported), nil
 }
 
-// isModernRejection reports a discovery error only a modern server sends that a different protocol
-// version can't fix, so the client must surface it rather than fall back to initialize.
+// A different protocol version can't fix these, so falling back to initialize would only hide them.
 func isModernRejection(code int) bool {
 	return code == CodeHeaderMismatch || code == CodeMissingRequiredClientCapability
 }
