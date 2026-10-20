@@ -169,7 +169,6 @@ func (c *StdioConnection) discoverCorrected(ctx context.Context, protocolVersion
 	}
 	verdict, err := classifyStdioDiscover(result, protocolVersion)
 	if err == nil && verdict.era != EraModern {
-		// The first reply already showed a modern server, so the spec rules out falling back now.
 		return probeVerdict{}, explicitModernProbeError{
 			fmt.Errorf("modern discovery retry for %q returned no supported versions", protocolVersion),
 		}
@@ -191,6 +190,8 @@ func classifyStdioDiscover(result json.RawMessage, requested string) (probeVerdi
 	}
 	verdict := modernVersionVerdict(discovered.SupportedVersions)
 	if verdict.era != EraModern {
+		// Unlike HTTP, don't fall back: a server that answers discover is modern, so initialize would
+		// fail too, and naming the versions it does support tells the user what to change.
 		return probeVerdict{}, explicitModernProbeError{unsupportedStdioVersion(
 			UnsupportedVersionData{Supported: discovered.SupportedVersions}, requested,
 		)}
@@ -227,7 +228,6 @@ func (c *StdioConnection) replaceExitedProbe(ctx context.Context) (*StdioConnect
 		}
 	}
 	if err != nil {
-		// When a server crashes at startup, its first exit is what explains the failure.
 		return nil, fmt.Errorf(
 			"upstream exited during setup (%s); restarting it without the modern probe failed too: %w",
 			exitStatus(exit),

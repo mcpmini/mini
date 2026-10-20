@@ -26,6 +26,7 @@ type StdioConnection struct {
 	done          chan struct{}
 	closeOnce     sync.Once // guards close(done)
 	shutdownOnce  sync.Once // guards stdin.Close, Kill, Wait
+	waitErr       error     // set once by shutdownOnce
 	logger        *slog.Logger
 	command       StdioCommand
 	clock         clock.Clock
@@ -185,16 +186,15 @@ func (c *StdioConnection) Health(_ context.Context) error {
 
 func (c *StdioConnection) Close() error {
 	c.closeDone()
-	var closeErr error
 	c.shutdownOnce.Do(func() {
 		c.stdin.Close() //nolint:errcheck // child termination and Wait below own subprocess cleanup
 		if c.cmd.Process != nil {
 			//nolint:errcheck // an exited child may reject Kill; Wait observes its exit status.
 			c.cmd.Process.Kill()
 		}
-		closeErr = c.cmd.Wait()
+		c.waitErr = c.cmd.Wait()
 	})
-	return closeErr
+	return c.waitErr
 }
 
 // closeDone signals the done channel once, unblocking readLoop and any pending Call.
@@ -280,7 +280,7 @@ func (c *StdioConnection) SetNotificationHandler(handler func(Notification)) {
 	c.toolsChanged.SetHandler(handler)
 }
 
-// The caller has already given up, so its cancellation waits only briefly for a turn to write.
+// A best-effort notice for a caller that has already given up, so it gets only a short bound.
 const stdioCancelWriteTimeout = 250 * time.Millisecond
 
 func (c *StdioConnection) cancelUpstreamRequest(parent context.Context, id int64) {

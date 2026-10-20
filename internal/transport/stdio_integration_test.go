@@ -131,15 +131,10 @@ func TestIntegrationStdioConnection_aFailedHandshakeReturnsWhenAChildOfTheServer
 }
 
 func TestIntegrationStdioModernProcessNegotiatesListsAndCalls(t *testing.T) {
-	bin, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
+	conn := connectProtocolHelper(t, helperModern)
+	if got := conn.negotiatedModernVersion(); got != ModernVersions[0] {
+		t.Fatalf("negotiated version = %q, want modern %q", got, ModernVersions[0])
 	}
-	conn, err := NewStdioConnection(context.Background(), protocolHelperCommand(bin, helperModern))
-	if err != nil {
-		t.Fatalf("connect modern helper: %v", err)
-	}
-	defer func() { _ = conn.Close() }()
 	tools, err := conn.ListTools(context.Background())
 	if err != nil {
 		t.Fatalf("tools/list: %v", err)
@@ -232,13 +227,27 @@ func countedProtocolHelper(t *testing.T, mode string) (command StdioCommand, sta
 	return command, starts
 }
 
-func helperStarts(t *testing.T, path string) int {
+func connectProtocolHelper(t *testing.T, mode string) *StdioConnection {
 	t.Helper()
-	raw, err := readHelperStarts(path)
+	bin, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
-	return strings.Count(string(raw), "start\n")
+	conn, err := NewStdioConnection(context.Background(), protocolHelperCommand(bin, mode))
+	if err != nil {
+		t.Fatalf("connect %s helper: %v", mode, err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	return conn
+}
+
+func helperStarts(t *testing.T, path string) int {
+	t.Helper()
+	starts, err := countHelperStarts(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return starts
 }
 
 func protocolHelperCommand(bin, mode string) StdioCommand {
@@ -268,7 +277,11 @@ func TestIntegrationStdioProtocolHelper(t *testing.T) {
 	if mode == helperCrash {
 		os.Exit(1)
 	}
-	firstStart := starts != "" && helperStartCount(starts) == 1
+	firstStart := false
+	if starts != "" {
+		count, err := countHelperStarts(starts)
+		firstStart = err == nil && count == 1
+	}
 	scanner := NewScanner(os.Stdin)
 	for scanner.Scan() {
 		var request Request
@@ -331,19 +344,12 @@ func appendHelperStart(path string) {
 	file.Close()
 }
 
-func helperStartCount(path string) int {
-	contents, err := readHelperStarts(path)
-	if err != nil {
-		return 0
-	}
-	return strings.Count(string(contents), "start\n")
-}
-
-func readHelperStarts(path string) ([]byte, error) {
+func countHelperStarts(path string) (int, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 	defer func() { _ = file.Close() }()
-	return io.ReadAll(file)
+	contents, err := io.ReadAll(file)
+	return strings.Count(string(contents), "start\n"), err
 }
