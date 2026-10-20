@@ -127,7 +127,7 @@ func (s *Server) handleRequest(
 	if unsupported := modernVersionError(req, session); unsupported != nil {
 		return *unsupported, true
 	}
-	if _, modern := transport.ProtocolVersionFromParams(req.Params); modern {
+	if transport.IsModernVersion(transport.ProtocolVersionFromParams(req.Params)) {
 		s.activateModern(session)
 	}
 	if !s.awaitInitialization(ctx, req, session) {

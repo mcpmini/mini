@@ -77,6 +77,36 @@ func TestModernUnsupportedVersion(t *testing.T) {
 	}
 }
 
+func TestModernRejectedVersionLeavesTheSessionFreeToInitialize(t *testing.T) {
+	srv := newTestServer(t, server.Params{})
+	responses := responsesByID(serveModern(t, srv,
+		transporttest.ModernRequestVersion("1900-01-01", 1, "server/discover", nil),
+		legacyRequest(t, 2, "initialize", initParams(true)),
+		legacyRequest(t, 3, "tools/list", nil),
+	))
+	if responses[1].Error == nil || responses[1].Error.Code != transport.CodeUnsupportedProtocolVersion {
+		t.Fatalf("discover with an unsupported version = %+v, want -32022", responses[1].Error)
+	}
+	if tools := decodeResult[transport.ToolsListResult](t, responses[3]).Tools; len(tools) != 4 {
+		t.Fatalf("compact initialize after the rejected probe listed %d tools, want the 4 compact tools", len(tools))
+	}
+}
+
+func legacyRequest(t *testing.T, id int, method string, params any) []byte {
+	t.Helper()
+	encoded, err := json.Marshal(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	line, err := json.Marshal(
+		transport.Request{JsonRPC: transport.JsonRPCVersion, ID: id, Method: method, Params: encoded},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return append(line, '\n')
+}
+
 func TestModernLegacyDiscoverRemainsMethodNotFound(t *testing.T) {
 	msgs := serveAll(t, newTestServer(t, server.Params{}), rpc("server/discover", nil))
 	if got := rpcErrorCode(msgs[len(msgs)-1]); got != transport.CodeMethodNotFound {
