@@ -13,11 +13,17 @@ import (
 )
 
 func (c *HTTPConnection) ListTools(ctx context.Context) ([]ToolDefinition, error) {
-	tools, err := paginateToolsList(ctx, c.callToolsPage)
+	// Decided per page, not from the shared era, which a concurrent reset can change mid-listing.
+	listedModern := true
+	tools, err := paginateToolsList(ctx, func(ctx context.Context, cursor string) (ToolsListResult, error) {
+		page, modernVersion, err := c.callToolsPage(ctx, cursor)
+		listedModern = listedModern && modernVersion != ""
+		return page, err
+	})
 	if err != nil {
 		return nil, err
 	}
-	if c.isModern() {
+	if listedModern {
 		return c.rebuildToolHeaders(tools), nil
 	}
 	return tools, nil
@@ -57,21 +63,21 @@ func (c *HTTPConnection) initializeOnce(ctx context.Context) (renewed bool, err 
 	return renewed, nil
 }
 
-func (c *HTTPConnection) callToolsPage(ctx context.Context, cursor string) (ToolsListResult, error) {
+func (c *HTTPConnection) callToolsPage(ctx context.Context, cursor string) (ToolsListResult, string, error) {
 	var params json.RawMessage
 	if cursor != "" {
 		//nolint:errcheck // cursor map contains only strings.
 		params, _ = json.Marshal(map[string]string{"cursor": cursor})
 	}
-	raw, err := c.Call(ctx, "tools/list", params)
+	raw, modernVersion, err := c.callInEra(ctx, "tools/list", params)
 	if err != nil {
-		return ToolsListResult{}, err
+		return ToolsListResult{}, "", err
 	}
 	var r ToolsListResult
 	if err := json.Unmarshal(raw, &r); err != nil {
-		return ToolsListResult{}, fmt.Errorf("parse tools/list: %w", err)
+		return ToolsListResult{}, "", fmt.Errorf("parse tools/list: %w", err)
 	}
-	return r, nil
+	return r, modernVersion, nil
 }
 
 func (c *HTTPConnection) initHandshake(ctx context.Context) error {

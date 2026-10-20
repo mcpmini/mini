@@ -75,10 +75,7 @@ func (c *HTTPConnection) probeOnce(ctx context.Context) (string, error) {
 		//nolint:contextcheck // Listener lifetime belongs to the connection, not the probe request.
 		c.startListener()
 	}
-	if verdict.era == EraModern {
-		return verdict.version, nil
-	}
-	return "", nil
+	return verdict.version, nil
 }
 
 func (c *HTTPConnection) probe(ctx context.Context) (json.RawMessage, error) {

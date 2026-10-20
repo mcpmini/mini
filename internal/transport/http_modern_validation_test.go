@@ -228,7 +228,7 @@ func TestModernCallKeepsItsEraThroughAConcurrentReset(t *testing.T) {
 		case "tools/list":
 			close(listing)
 			<-release
-			writeRPCResult(t, w, req.ID, ToolsListResult{Tools: []ToolDefinition{modernTool("x", `{}`)}})
+			writeRPCResult(t, w, req.ID, ToolsListResult{Tools: []ToolDefinition{modernTool("x", ownerHeaderSchema)}})
 		case "ping":
 			writeHTTPRPCError(t, w, httpRPCErrorParams{id: req.ID, code: CodeUnsupportedProtocolVersion})
 		case "tools/call":
@@ -239,7 +239,7 @@ func TestModernCallKeepsItsEraThroughAConcurrentReset(t *testing.T) {
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 	called := make(chan error, 1)
 	go func() {
-		_, err := conn.Call(t.Context(), "tools/call", json.RawMessage(`{"name":"x","arguments":{}}`))
+		_, err := conn.Call(t.Context(), "tools/call", json.RawMessage(`{"name":"x","arguments":{"owner":"octo"}}`))
 		called <- err
 	}()
 	<-listing
@@ -251,8 +251,11 @@ func TestModernCallKeepsItsEraThroughAConcurrentReset(t *testing.T) {
 		t.Fatal(err)
 	}
 	headers := <-callHeaders
-	if headers.Get("MCP-Protocol-Version") != ModernVersions[0] || headers.Get("Mcp-Method") != "tools/call" {
-		t.Fatalf("tools/call sent with protocol %q and method %q after a concurrent reset, want modern headers",
-			headers.Get("MCP-Protocol-Version"), headers.Get("Mcp-Method"))
+	if headers.Get("MCP-Protocol-Version") != ModernVersions[0] || headers.Get("Mcp-Method") != "tools/call" ||
+		headers.Get("Mcp-Param-Owner") != "octo" {
+		t.Fatalf("tools/call sent with protocol %q, method %q, owner %q after a concurrent reset, want modern headers",
+			headers.Get("MCP-Protocol-Version"), headers.Get("Mcp-Method"), headers.Get("Mcp-Param-Owner"))
 	}
 }
+
+const ownerHeaderSchema = `{"type":"object","properties":{"owner":{"type":"string","x-mcp-header":"Owner"}}}`

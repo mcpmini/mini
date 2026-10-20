@@ -168,19 +168,31 @@ const maxRetries = 3
 
 // Call sends an MCP request, probing the server's era and completing the initialize handshake first if needed.
 func (c *HTTPConnection) Call(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+	result, _, err := c.callInEra(ctx, method, params)
+	return result, err
+}
+
+// callInEra also returns the modern version the call went out under, or "" if it was sent as legacy.
+func (c *HTTPConnection) callInEra(
+	ctx context.Context,
+	method string,
+	params json.RawMessage,
+) (json.RawMessage, string, error) {
 	modernVersion, err := c.ensureReady(ctx)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if modernVersion != "" {
-		return c.callModern(ctx, modernVersion, method, params)
+		result, callErr := c.callModern(ctx, modernVersion, method, params)
+		return result, modernVersion, callErr
 	}
 	if method == "tools/call" {
 		params = stripModernToolCallFields(params)
 	}
-	return c.withSessionRecovery(ctx, func() (json.RawMessage, error) {
+	result, err := c.withSessionRecovery(ctx, func() (json.RawMessage, error) {
 		return c.rpc(ctx, method, params)
 	})
+	return result, "", err
 }
 
 func (c *HTTPConnection) withSessionRecovery(
