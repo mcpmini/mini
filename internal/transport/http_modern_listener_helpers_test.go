@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -93,4 +94,34 @@ func writeComplete(t *testing.T, w http.ResponseWriter, id any) {
 		return
 	}
 	writeSSEJSON(t, w, Response{JsonRPC: JsonRPCVersion, ID: id, Result: result})
+}
+
+type upstreamHandler = func(http.ResponseWriter, *http.Request, Request)
+
+// resetOnFirstPing answers the first ping with -32022, which resets the era, and passes every
+// other request to next.
+func resetOnFirstPing(t *testing.T, next upstreamHandler) upstreamHandler {
+	var pings atomic.Int32
+	return func(w http.ResponseWriter, r *http.Request, req Request) {
+		if req.Method == "ping" && pings.Add(1) == 1 {
+			writeHTTPRPCError(t, w, httpRPCErrorParams{id: req.ID, code: CodeUnsupportedProtocolVersion})
+			return
+		}
+		next(w, r, req)
+	}
+}
+
+// refuseFirstListen answers the first listen with 405, which stops the listener for good, then
+// acknowledges each later listen and signals relisten.
+func refuseFirstListen(t *testing.T, relisten chan<- struct{}) upstreamHandler {
+	var listens atomic.Int32
+	return listenOnly(t, func(w http.ResponseWriter, r *http.Request, req Request) {
+		if listens.Add(1) == 1 {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		writeAck(t, w, req.ID)
+		relisten <- struct{}{}
+		<-r.Context().Done()
+	})
 }
