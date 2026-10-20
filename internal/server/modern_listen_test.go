@@ -200,24 +200,29 @@ func (s *modernSession) readChangesUntilResponse(id, wantChanges int) map[string
 	for responded := false; !responded || total < wantChanges; {
 		message := s.mustNext()
 		responded = responded || message.isResponseTo(id)
-		if message.Method == transport.NotificationToolsChanged {
-			params := decodeParams[transport.SubscriptionNotificationParams](s.t, message)
-			changes[string(params.Meta.SubscriptionID)]++
+		if countChange(s.t, changes, message) {
 			total++
 		}
 	}
 	return changes
 }
 
-// addChanges counts the tools-changed notifications in messages per subscription ID.
 func addChanges(t *testing.T, changes map[string]int, messages []modernMessage) {
 	t.Helper()
 	for _, message := range messages {
-		if message.Method == transport.NotificationToolsChanged {
-			params := decodeParams[transport.SubscriptionNotificationParams](t, message)
-			changes[string(params.Meta.SubscriptionID)]++
-		}
+		countChange(t, changes, message)
 	}
+}
+
+// countChange counts message under its subscription ID if it is a tools-changed notification.
+func countChange(t *testing.T, changes map[string]int, message modernMessage) bool {
+	t.Helper()
+	if message.Method != transport.NotificationToolsChanged {
+		return false
+	}
+	params := decodeParams[transport.SubscriptionNotificationParams](t, message)
+	changes[string(params.Meta.SubscriptionID)]++
+	return true
 }
 
 // close ends the input, waits for Serve to return, and returns every message written after the last read.
