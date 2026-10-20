@@ -5,12 +5,14 @@ package transport
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"maps"
 	"os"
 	"os/exec"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -124,5 +126,35 @@ func TestIntegrationStdioConnection_aFailedHandshakeReturnsWhenAChildOfTheServer
 		}
 	case <-time.After(time.Second + stdioWaitDelay + 5*time.Second):
 		t.Fatal("still waiting for the server's child, which holds its stderr")
+	}
+}
+
+func TestIntegrationStdioCallReturnsAtItsDeadlineWhenTheServerStopsReadingStdin(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("needs sh")
+	}
+	conn, err := startSubprocess(StdioCommand{
+		Command: "sh", Args: []string{"-c", "sleep 60"}, Logger: slog.New(slog.DiscardHandler),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	largerThanThePipeBuffer := json.RawMessage(`"` + strings.Repeat("x", 1<<20) + `"`)
+	returned := make(chan error, 1)
+	go func() { _, err := conn.Call(ctx, "ping", largerThanThePipeBuffer); returned <- err }()
+	select {
+	case err := <-returned:
+		if !errors.Is(err, os.ErrDeadlineExceeded) {
+			t.Fatalf("Call error = %v, want the interrupted write", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Call stayed blocked writing to a server that stopped reading stdin")
+	}
+	if conn.Health(context.Background()) == nil {
+		t.Fatal("a half-written request left the connection usable")
 	}
 }

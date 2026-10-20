@@ -75,7 +75,7 @@ func (c *HTTPConnection) probeOnce(ctx context.Context) (modernVersion string, e
 }
 
 func (c *HTTPConnection) probe(ctx context.Context) (json.RawMessage, error) {
-	params, err := c.prepareModernParams(nil, ModernVersions[0])
+	params, err := prepareModernParams(nil, ModernVersions[0])
 	if err != nil {
 		return nil, err
 	}
