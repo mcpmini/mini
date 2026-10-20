@@ -13,10 +13,17 @@ func writeNotConnected(b *strings.Builder, c AgentConnections, style SummaryStyl
 	writeInactiveMini(b, c)
 	switch {
 	case len(c.NoMini) > 0:
-		writeConnectLater(b, c, c.NoMini, style)
+		writeConnectLater(connectLaterParams{builder: b, connections: c, agents: c.NoMini, style: style})
 	case len(c.MiniServes) == 0 && len(c.MiniInactive) == 0:
 		writeNoAgents(b, c, style)
 	}
+}
+
+type connectLaterParams struct {
+	builder     *strings.Builder
+	connections AgentConnections
+	agents      []agents.Agent
+	style       SummaryStyle
 }
 
 func writeNoAgents(b *strings.Builder, c AgentConnections, style SummaryStyle) {
@@ -26,12 +33,12 @@ func writeNoAgents(b *strings.Builder, c AgentConnections, style SummaryStyle) {
 	fmt.Fprintf(b, "To use mini, add it to your agent as an MCP server with the command: %s\n", style.code(command))
 }
 
-func writeConnectLater(b *strings.Builder, c AgentConnections, list []agents.Agent, style SummaryStyle) {
+func writeConnectLater(p connectLaterParams) {
 	fmt.Fprintf(
-		b,
+		p.builder,
 		"To connect mini to %s later, run: %s\n",
-		JoinAnd(agentNames(list)),
-		style.code(miniCommand(c, "init")),
+		JoinAnd(agentNames(p.agents)),
+		p.style.code(miniCommand(p.connections, "init")),
 	)
 }
 
@@ -58,7 +65,7 @@ func writeConnected(b *strings.Builder, r Report, style SummaryStyle) {
 		fmt.Fprintf(b, "Connected mini to %s. Restart %s to start using mini.\n", JoinAnd(changed), them)
 	}
 	if left := notTried(r); len(left) > 0 {
-		writeConnectLater(b, r.Agents, left, style)
+		writeConnectLater(connectLaterParams{builder: b, connections: r.Agents, agents: left, style: style})
 	}
 }
 

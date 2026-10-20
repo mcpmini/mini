@@ -18,6 +18,13 @@ type checkTarget struct {
 	probe bool
 }
 
+type recordFindingsParams struct {
+	ctx        context.Context
+	configDir  string
+	serverName string
+	probeErr   error
+}
+
 func (s *session) startChecks() {
 	targets := s.checkTargets()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -69,7 +76,9 @@ func (s *session) check(ctx context.Context, t checkTarget) {
 	if t.probe {
 		probeErr = checkOAuth(ctx, probeParams{configDir: t.configDir, server: t.server, clock: s.p.Clock}, s.p.Probe)
 	}
-	s.recordFindings(ctx, t.configDir, t.server.Name, probeErr)
+	s.recordFindings(recordFindingsParams{
+		ctx: ctx, configDir: t.configDir, serverName: t.server.Name, probeErr: probeErr,
+	})
 	s.mu.Lock()
 	delete(s.checking, t.server.Name)
 	// A cancelled check proved nothing, so the next sync runs it again; a timed-out one is done.
@@ -82,25 +91,25 @@ func (s *session) check(ctx context.Context, t checkTarget) {
 
 // Reads the server again after the probe, which may have found that it needs an OAuth login. One
 // that refused the probe without an OAuth challenge needs a credential the user must supply.
-func (s *session) recordFindings(ctx context.Context, configDir, name string, probeErr error) {
-	sc, err := config.LoadServer(configDir, name)
+func (s *session) recordFindings(p recordFindingsParams) {
+	sc, err := config.LoadServer(p.configDir, p.serverName)
 	if err != nil {
 		return
 	}
 	var unauthorized *transport.UnauthorizedError
-	refused := errors.As(probeErr, &unauthorized) && !sc.UsesOAuthLogin()
+	refused := errors.As(p.probeErr, &unauthorized) && !sc.UsesOAuthLogin()
 	s.mu.Lock()
 	if refused {
-		s.findings.NeedsCredential[name] = true
+		s.findings.NeedsCredential[p.serverName] = true
 	} else {
-		delete(s.findings.NeedsCredential, name)
+		delete(s.findings.NeedsCredential, p.serverName)
 	}
 	s.mu.Unlock()
 	if refused {
 		return
 	}
-	if needsRegistrationCheck(configDir, sc) {
-		s.checkRegistration(ctx, sc)
+	if needsRegistrationCheck(p.configDir, sc) {
+		s.checkRegistration(p.ctx, sc)
 	}
 }
 

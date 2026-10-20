@@ -179,15 +179,15 @@ func truncateAtBoundary(s string, runeLimit int) string {
 	if byteLimit >= len(s) {
 		return s
 	}
-	if sentenceCut := scanBackward(
-		s,
-		byteLimit,
-		100,
-		func(b byte) bool { return b == '.' || b == '\n' },
-	); sentenceCut >= 0 {
+	if sentenceCut := scanBackward(backwardScanParams{
+		text: s, limit: byteLimit, window: 100,
+		match: func(b byte) bool { return b == '.' || b == '\n' },
+	}); sentenceCut >= 0 {
 		return s[:sentenceCut+1]
 	}
-	if wordCut := scanBackward(s, byteLimit, 50, func(b byte) bool { return b == ' ' }); wordCut >= 0 {
+	if wordCut := scanBackward(backwardScanParams{
+		text: s, limit: byteLimit, window: 50, match: func(b byte) bool { return b == ' ' },
+	}); wordCut >= 0 {
 		return s[:wordCut]
 	}
 	return s[:byteLimit]
@@ -205,9 +205,16 @@ func runeOffset(s string, n int) int {
 	return i
 }
 
-func scanBackward(s string, limit, window int, match func(byte) bool) int {
-	for i := limit; i > limit-window && i > 0; i-- {
-		if match(s[i]) {
+type backwardScanParams struct {
+	text   string
+	limit  int
+	window int
+	match  func(byte) bool
+}
+
+func scanBackward(p backwardScanParams) int {
+	for i := p.limit; i > p.limit-p.window && i > 0; i-- {
+		if p.match(p.text[i]) {
 			return i
 		}
 	}

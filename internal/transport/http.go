@@ -255,7 +255,9 @@ type postResult struct {
 func (c *HTTPConnection) post(ctx context.Context, call httpCall) (postResult, error) {
 	backoff := time.Second
 	for i := range maxRetries {
-		result, done, err := c.postWithRetryDelay(ctx, call, i, &backoff)
+		result, done, err := c.postWithRetryDelay(postRetryDelayParams{
+			ctx: ctx, call: call, attempt: i, backoff: &backoff,
+		})
 		if done {
 			return result, err
 		}
@@ -263,23 +265,25 @@ func (c *HTTPConnection) post(ctx context.Context, call httpCall) (postResult, e
 	return postResult{}, fmt.Errorf("exceeded max retries for %s", call.Method)
 }
 
-func (c *HTTPConnection) postWithRetryDelay(
-	ctx context.Context,
-	call httpCall,
-	i int,
-	backoff *time.Duration,
-) (postResult, bool, error) {
-	r, err := c.doPost(ctx, call)
+type postRetryDelayParams struct {
+	ctx     context.Context
+	call    httpCall
+	attempt int
+	backoff *time.Duration
+}
+
+func (c *HTTPConnection) postWithRetryDelay(p postRetryDelayParams) (postResult, bool, error) {
+	r, err := c.doPost(p.ctx, p.call)
 	if err == nil {
 		return r, true, nil
 	}
-	if shouldStopRetrying(r, i, c.disableRetryOnRateLimit) {
+	if shouldStopRetrying(r, p.attempt, c.disableRetryOnRateLimit) {
 		return r, true, err
 	}
-	delay := nextRetryDelay(r.delay, backoff)
-	slog.Warn("upstream http request retrying", "method", call.Method, "attempt", i+1, "delay", delay)
-	if !c.sleepCtx(ctx, delay) {
-		return postResult{}, true, ctx.Err()
+	delay := nextRetryDelay(r.delay, p.backoff)
+	slog.Warn("upstream http request retrying", "method", p.call.Method, "attempt", p.attempt+1, "delay", delay)
+	if !c.sleepCtx(p.ctx, delay) {
+		return postResult{}, true, p.ctx.Err()
 	}
 	return postResult{}, false, nil
 }

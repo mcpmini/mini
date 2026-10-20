@@ -148,7 +148,9 @@ func serveStandalone(p ServeParams) error {
 		ToolMode: p.ToolMode, AllowNonLoopbackHost: resolveAllowNonLoopbackHost(p.HTTPAddr),
 	})
 	defer srv.Close()
-	httpSrv := maybeStartHTTP(p.HTTPAddr, srv, p.Logger, p.DangerNonLoopback)
+	httpSrv := maybeStartHTTP(httpServerParams{
+		addr: p.HTTPAddr, handler: srv, logger: p.Logger, dangerNonLoopback: p.DangerNonLoopback,
+	})
 	maybeStartSessionEviction(ctx, httpSrv, srv)
 	p.Logger.Info("mini ready")
 	err := serveUntilCanceled(serveWatchParams{Ctx: ctx, Serve: srv.Serve, In: stdinPipe(os.Stdin), Out: os.Stdout})
@@ -209,11 +211,18 @@ func resolveAllowNonLoopbackHost(httpAddr string) bool {
 	return nonLoopback
 }
 
-func maybeStartHTTP(addr string, handler http.Handler, logger *slog.Logger, dangerNonLoopback bool) *http.Server {
-	if addr == "" {
+type httpServerParams struct {
+	addr              string
+	handler           http.Handler
+	logger            *slog.Logger
+	dangerNonLoopback bool
+}
+
+func maybeStartHTTP(p httpServerParams) *http.Server {
+	if p.addr == "" {
 		return nil
 	}
-	return startHTTPServer(addr, handler, logger, dangerNonLoopback)
+	return startHTTPServer(p)
 }
 
 func maybeStartSessionEviction(ctx context.Context, httpSrv *http.Server, srv sessionEvictor) {
@@ -339,26 +348,26 @@ func checkLoopbackPolicy(p loopbackPolicyParams) {
 	}
 }
 
-func startHTTPServer(addr string, handler http.Handler, logger *slog.Logger, dangerNonLoopback bool) *http.Server {
-	resolved, nonLoopback := resolveHTTPAddr(addr)
+func startHTTPServer(p httpServerParams) *http.Server {
+	resolved, nonLoopback := resolveHTTPAddr(p.addr)
 	checkLoopbackPolicy(
 		loopbackPolicyParams{
-			Addr:              addr,
+			Addr:              p.addr,
 			Resolved:          resolved,
 			NonLoopback:       nonLoopback,
-			DangerNonLoopback: dangerNonLoopback,
-			Logger:            logger,
+			DangerNonLoopback: p.dangerNonLoopback,
+			Logger:            p.logger,
 		},
 	)
 	ln, err := net.Listen("tcp", resolved)
 	if err != nil {
 		fatalf("listen: %v", err)
 	}
-	logger.Info("mini HTTP listening", "addr", resolved)
-	httpSrv := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 64 << 10}
+	p.logger.Info("mini HTTP listening", "addr", resolved)
+	httpSrv := &http.Server{Handler: p.handler, ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 64 << 10}
 	go func() {
 		if err := httpSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
-			logger.Error("HTTP server error", "err", err)
+			p.logger.Error("HTTP server error", "err", err)
 		}
 	}()
 	return httpSrv

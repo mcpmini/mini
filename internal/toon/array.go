@@ -38,7 +38,7 @@ func writeArray(sb *strings.Builder, items []Value, ctx arrayCtx) error {
 		return writeInlineArray(sb, items, ctx.Key)
 	}
 	if cols, ok := tabularFields(items); ok && ctx.AllowTabular {
-		return writeTabularArray(sb, items, cols, ctx)
+		return writeTabularArray(tabularArrayParams{builder: sb, items: items, columns: cols, context: ctx})
 	}
 	if err := appendString(sb, ctx.Key); err != nil {
 		return err
@@ -73,33 +73,49 @@ func writeInlineArray(sb *strings.Builder, items []Value, encodedKey string) err
 	return appendString(sb, "\n")
 }
 
-func writeTabularArray(sb *strings.Builder, items []Value, cols []tabularCol, ctx arrayCtx) error {
-	if err := checkDepth(ctx.ItemDepth); err != nil {
+type tabularArrayParams struct {
+	builder *strings.Builder
+	items   []Value
+	columns []tabularCol
+	context arrayCtx
+}
+
+type tabularHeaderParams struct {
+	builder *strings.Builder
+	key     string
+	count   int
+	columns []tabularCol
+}
+
+func writeTabularArray(p tabularArrayParams) error {
+	if err := checkDepth(p.context.ItemDepth); err != nil {
 		return err
 	}
-	if err := writeTabularHeader(sb, ctx.Key, len(items), cols); err != nil {
+	if err := writeTabularHeader(tabularHeaderParams{
+		builder: p.builder, key: p.context.Key, count: len(p.items), columns: p.columns,
+	}); err != nil {
 		return err
 	}
-	indent := strings.Repeat(indentUnit, ctx.ItemDepth)
-	for _, it := range items {
-		if err := writeTabularRow(sb, indent, leafValues(fieldIndex(it), cols)); err != nil {
+	indent := strings.Repeat(indentUnit, p.context.ItemDepth)
+	for _, it := range p.items {
+		if err := writeTabularRow(p.builder, indent, leafValues(fieldIndex(it), p.columns)); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func writeTabularHeader(sb *strings.Builder, key string, count int, cols []tabularCol) error {
-	if err := appendString(sb, key); err != nil {
+func writeTabularHeader(p tabularHeaderParams) error {
+	if err := appendString(p.builder, p.key); err != nil {
 		return err
 	}
-	if err := appendString(sb, "["+strconv.Itoa(count)+"]{"); err != nil {
+	if err := appendString(p.builder, "["+strconv.Itoa(p.count)+"]{"); err != nil {
 		return err
 	}
-	if err := writeColHeaders(sb, cols); err != nil {
+	if err := writeColHeaders(p.builder, p.columns); err != nil {
 		return err
 	}
-	return appendString(sb, "}:\n")
+	return appendString(p.builder, "}:\n")
 }
 
 func writeColHeaders(sb *strings.Builder, cols []tabularCol) error {

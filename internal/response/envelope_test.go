@@ -146,7 +146,9 @@ func TestCallStatsReduction(t *testing.T) {
 }
 
 func TestBuildError(t *testing.T) {
-	env := response.BuildError("auth_expired", "Token expired", true, "Run: mini auth refresh ci")
+	env := response.BuildError(response.BuildErrorParams{
+		Code: "auth_expired", Message: "Token expired", Retryable: true, Action: "Run: mini auth refresh ci",
+	})
 	if env.Error != "auth_expired" {
 		t.Errorf("unexpected error code: %s", env.Error)
 	}

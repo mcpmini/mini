@@ -107,6 +107,13 @@ type takenNames struct {
 	imported map[string]bool
 }
 
+type addCandidateParams struct {
+	group  *serverGroup
+	name   string
+	taken  takenNames
+	picked bool
+}
+
 func PlanImport(p ImportParams) ImportPlan {
 	plan := ImportPlan{DroppedSettings: map[string][]string{}, StaticHeaders: map[string]map[string]string{}}
 	var groups []*serverGroup
@@ -208,7 +215,7 @@ func (plan *ImportPlan) add(g *serverGroup, taken takenNames) bool {
 		plan.skipAll(g, taken.noFreeNameCause)
 		return false
 	}
-	plan.addCandidate(g, name, taken, true)
+	plan.addCandidate(addCandidateParams{group: g, name: name, taken: taken, picked: true})
 	return true
 }
 
@@ -220,7 +227,7 @@ func (plan *ImportPlan) offer(g *serverGroup, taken takenNames) {
 	if !ok {
 		return
 	}
-	plan.addCandidate(g, name, taken, false)
+	plan.addCandidate(addCandidateParams{group: g, name: name, taken: taken, picked: false})
 	c := &plan.Candidates[len(plan.Candidates)-1]
 	c.InitialDisposition = DuplicateConfig
 	if !g.enabled() {
@@ -228,16 +235,16 @@ func (plan *ImportPlan) offer(g *serverGroup, taken takenNames) {
 	}
 }
 
-func (plan *ImportPlan) addCandidate(g *serverGroup, name string, taken takenNames, picked bool) {
-	taken.imported[name] = true
-	sc := g.config
-	sc.Name = name
-	c := Candidate{Server: sc, Picked: picked, InitialDisposition: SelectedByDefault}
-	for _, e := range g.entries {
+func (plan *ImportPlan) addCandidate(p addCandidateParams) {
+	p.taken.imported[p.name] = true
+	sc := p.group.config
+	sc.Name = p.name
+	c := Candidate{Server: sc, Picked: p.picked, InitialDisposition: SelectedByDefault}
+	for _, e := range p.group.entries {
 		c.From = append(c.From, AgentEntry{Agent: e.agent, Name: e.name})
 	}
 	plan.Candidates = append(plan.Candidates, c)
-	plan.noteCaveats(name, g)
+	plan.noteCaveats(p.name, p.group)
 }
 
 func (t takenNames) firstFree(g *serverGroup) (string, bool) {

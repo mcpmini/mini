@@ -72,12 +72,19 @@ func validatePrivateIP(host string, ip net.IP) error {
 func SSRFSafeDialer() func(context.Context, string, string) (net.Conn, error) {
 	d := &net.Dialer{}
 	return func(ctx context.Context, network, addr string) (net.Conn, error) {
-		return dialSSRFSafe(ctx, d, network, addr)
+		return dialSSRFSafe(ssrfDialParams{ctx: ctx, dialer: d, network: network, address: addr})
 	}
 }
 
-func dialSSRFSafe(ctx context.Context, d *net.Dialer, network, addr string) (net.Conn, error) {
-	host, port, err := net.SplitHostPort(addr)
+type ssrfDialParams struct {
+	ctx     context.Context
+	dialer  *net.Dialer
+	network string
+	address string
+}
+
+func dialSSRFSafe(p ssrfDialParams) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(p.address)
 	if err != nil {
 		return nil, err
 	}
@@ -85,13 +92,13 @@ func dialSSRFSafe(ctx context.Context, d *net.Dialer, network, addr string) (net
 		if validationErr := validatePrivateIP(host, ip); validationErr != nil {
 			return nil, fmt.Errorf("connection blocked: %w", validationErr)
 		}
-		return d.DialContext(ctx, network, addr)
+		return p.dialer.DialContext(p.ctx, p.network, p.address)
 	}
-	safe, err := resolveSSRFSafe(ctx, host, port)
+	safe, err := resolveSSRFSafe(p.ctx, host, port)
 	if err != nil {
 		return nil, err
 	}
-	return d.DialContext(ctx, network, safe)
+	return p.dialer.DialContext(p.ctx, p.network, safe)
 }
 
 // resolveSSRFSafe resolves host, validates all returned IPs are non-private,

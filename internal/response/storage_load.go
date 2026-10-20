@@ -28,17 +28,24 @@ func (s *Store) loadEntry(e os.DirEntry, now time.Time) {
 	if !ok {
 		return
 	}
-	s.storeEntryIfFresh(e, name, created, now)
+	s.storeEntryIfFresh(storeEntryParams{entry: e, name: name, created: created, now: now})
 }
 
-func (s *Store) storeEntryIfFresh(e os.DirEntry, name string, created, now time.Time) {
-	path := filepath.Join(s.dir, name)
-	expires := created.Add(s.ttl)
-	if expires.Before(now) {
+type storeEntryParams struct {
+	entry   os.DirEntry
+	name    string
+	created time.Time
+	now     time.Time
+}
+
+func (s *Store) storeEntryIfFresh(p storeEntryParams) {
+	path := filepath.Join(s.dir, p.name)
+	expires := p.created.Add(s.ttl)
+	if expires.Before(p.now) {
 		warnRemoveErr(os.Remove(path))
 		return
 	}
-	info, err := e.Info()
+	info, err := p.entry.Info()
 	if err != nil {
 		return
 	}

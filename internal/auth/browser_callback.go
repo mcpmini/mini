@@ -93,24 +93,28 @@ func callbackHandler(want callbackExpectation, results chan<- loginCallbackResul
 			http.Error(w, "state mismatch", http.StatusBadRequest)
 			return
 		}
-		completeLoginCallback(w, resp, want.issuer, results)
+		completeLoginCallback(loginCallbackParams{
+			writer: w, response: resp, issuer: want.issuer, results: results,
+		})
 	})
 }
 
-func completeLoginCallback(
-	w http.ResponseWriter,
-	resp authorizationResponse,
-	issuer ExpectedIssuer,
-	results chan<- loginCallbackResult,
-) {
-	result, complete := callbackResult(resp, issuer)
+type loginCallbackParams struct {
+	writer   http.ResponseWriter
+	response authorizationResponse
+	issuer   ExpectedIssuer
+	results  chan<- loginCallbackResult
+}
+
+func completeLoginCallback(p loginCallbackParams) {
+	result, complete := callbackResult(p.response, p.issuer)
 	if !complete {
-		http.Error(w, "missing code", http.StatusBadRequest)
+		http.Error(p.writer, "missing code", http.StatusBadRequest)
 		return
 	}
-	writeLoginResponse(w, loginResponseMessage(result.err))
+	writeLoginResponse(p.writer, loginResponseMessage(result.err))
 	select {
-	case results <- result:
+	case p.results <- result:
 	default:
 	}
 }

@@ -55,12 +55,19 @@ func (b *Builder) writeRawFile(e *Envelope, p BuildParams) error {
 	return nil
 }
 
-func BuildError(errCode, message string, retryable bool, action string) *Envelope {
+type BuildErrorParams struct {
+	Code      string
+	Message   string
+	Retryable bool
+	Action    string
+}
+
+func BuildError(p BuildErrorParams) *Envelope {
 	return &Envelope{
-		Error:     errCode,
-		Message:   message,
-		Retryable: retryable,
-		Action:    action,
+		Error:     p.Code,
+		Message:   p.Message,
+		Retryable: p.Retryable,
+		Action:    p.Action,
 	}
 }
 

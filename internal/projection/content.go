@@ -80,44 +80,53 @@ func StripHTML(s string) string {
 		if tt == html.ErrorToken {
 			return normalizeWhitespace(sb.String())
 		}
-		skipDepth = processHTMLToken(tokenizer, &sb, tt, skipDepth)
+		skipDepth = processHTMLToken(htmlTokenParams{
+			tokenizer: tokenizer, builder: &sb, tokenType: tt, skipDepth: skipDepth,
+		})
 	}
 }
 
-func processHTMLToken(tokenizer *html.Tokenizer, sb *strings.Builder, tt html.TokenType, skipDepth int) int {
-	switch tt {
+type htmlTokenParams struct {
+	tokenizer *html.Tokenizer
+	builder   *strings.Builder
+	tokenType html.TokenType
+	skipDepth int
+}
+
+func processHTMLToken(p htmlTokenParams) int {
+	switch p.tokenType {
 	case html.TextToken:
-		if skipDepth == 0 {
-			sb.Write(tokenizer.Text())
+		if p.skipDepth == 0 {
+			p.builder.Write(p.tokenizer.Text())
 		}
 	case html.StartTagToken, html.SelfClosingTagToken:
-		return processStartTag(tokenizer, sb, tt, skipDepth)
+		return processStartTag(p)
 	case html.EndTagToken:
-		if skipDepth > 0 {
-			return skipDepth - 1
+		if p.skipDepth > 0 {
+			return p.skipDepth - 1
 		}
 	case html.ErrorToken:
 		// EOF and tokenizer errors terminate the outer loop before dispatch.
-		return skipDepth
+		return p.skipDepth
 	case html.CommentToken, html.DoctypeToken:
 		// Neither carries visible text nor changes element nesting.
-		return skipDepth
+		return p.skipDepth
 	}
-	return skipDepth
+	return p.skipDepth
 }
 
-func processStartTag(tokenizer *html.Tokenizer, sb *strings.Builder, tt html.TokenType, skipDepth int) int {
-	rawName, hasAttr := tokenizer.TagName()
+func processStartTag(p htmlTokenParams) int {
+	rawName, hasAttr := p.tokenizer.TagName()
 	name := string(rawName)
-	isSelfClose := tt == html.SelfClosingTagToken
-	if nextDepth, handled := nextSkipDepth(name, isSelfClose, skipDepth); handled {
+	isSelfClose := p.tokenType == html.SelfClosingTagToken
+	if nextDepth, handled := nextSkipDepth(name, isSelfClose, p.skipDepth); handled {
 		return nextDepth
 	}
 	if blockTags[name] {
-		sb.WriteByte('\n')
+		p.builder.WriteByte('\n')
 	}
 	if name == "img" && hasAttr {
-		writeImgAlt(tokenizer, sb)
+		writeImgAlt(p.tokenizer, p.builder)
 	}
 	return 0
 }

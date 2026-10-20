@@ -199,7 +199,10 @@ func (p *noDeadlinePipe) SetWriteDeadline(time.Time) error {
 }
 
 func newWriteOnlyConn(stdin io.WriteCloser) *StdioConnection {
-	return newConn(new(exec.Cmd), stdin, io.NopCloser(strings.NewReader("")), slog.New(slog.DiscardHandler))
+	return newConn(newStdioConnParams{
+		cmd: new(exec.Cmd), stdin: stdin, stdout: io.NopCloser(strings.NewReader("")),
+		logger: slog.New(slog.DiscardHandler),
+	})
 }
 
 type discardWriteCloser struct{ io.Writer }

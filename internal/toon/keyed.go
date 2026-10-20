@@ -38,48 +38,67 @@ func entryValues(v Value) []Value {
 	return vals
 }
 
-func writeKeyedTabular(sb *strings.Builder, key string, obj Value, cols []tabularCol, entryDepth int) error {
-	if err := checkDepth(entryDepth); err != nil {
+type keyedTabularParams struct {
+	builder    *strings.Builder
+	key        string
+	object     Value
+	columns    []tabularCol
+	entryDepth int
+}
+
+type keyedEntryParams struct {
+	builder *strings.Builder
+	indent  string
+	field   Field
+	columns []tabularCol
+}
+
+func writeKeyedTabular(p keyedTabularParams) error {
+	if err := checkDepth(p.entryDepth); err != nil {
 		return err
 	}
-	if err := writeKeyedHeader(sb, key, len(obj.fields()), cols); err != nil {
+	if err := writeKeyedHeader(tabularHeaderParams{
+		builder: p.builder, key: p.key, count: len(p.object.fields()), columns: p.columns,
+	}); err != nil {
 		return err
 	}
-	indent := strings.Repeat(indentUnit, entryDepth)
-	for _, f := range obj.fields() {
-		if err := writeKeyedEntry(sb, indent, f, cols); err != nil {
+	indent := strings.Repeat(indentUnit, p.entryDepth)
+	for _, f := range p.object.fields() {
+		if err := writeKeyedEntry(keyedEntryParams{
+			builder: p.builder, indent: indent, field: f, columns: p.columns,
+		}); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func writeKeyedHeader(sb *strings.Builder, key string, count int, cols []tabularCol) error {
-	if err := appendString(sb, key); err != nil {
+func writeKeyedHeader(p tabularHeaderParams) error {
+	if err := appendString(p.builder, p.key); err != nil {
 		return err
 	}
-	if err := appendString(sb, "["+strconv.Itoa(count)+":]{"); err != nil {
+	if err := appendString(p.builder, "["+strconv.Itoa(p.count)+":]{"); err != nil {
 		return err
 	}
-	if err := writeColHeaders(sb, cols); err != nil {
+	if err := writeColHeaders(p.builder, p.columns); err != nil {
 		return err
 	}
-	return appendString(sb, "}:\n")
+	return appendString(p.builder, "}:\n")
 }
 
-func writeKeyedEntry(sb *strings.Builder, indent string, f Field, cols []tabularCol) error {
-	if err := validateUTF8(f.Key); err != nil {
+func writeKeyedEntry(p keyedEntryParams) error {
+	if err := validateUTF8(p.field.Key); err != nil {
 		return err
 	}
-	cells, err := joinPrimitives(leafValues(fieldIndex(f.Val), cols))
+	cells, err := joinPrimitives(leafValues(fieldIndex(p.field.Val), p.columns))
 	if err != nil {
 		return err
 	}
-	if err := appendString(sb, indent); err != nil {
+	if err := appendString(p.builder, p.indent); err != nil {
 		return err
 	}
-	if err := appendString(sb, encodeKey(f.Key)+": "); err != nil {
+	if err := appendString(p.builder, encodeKey(p.field.Key)+": "); err != nil {
 		return err
 	}
-	return appendString(sb, cells+"\n")
+	return appendString(p.builder, cells+"\n")
 }

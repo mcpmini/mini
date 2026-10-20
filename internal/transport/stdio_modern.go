@@ -82,7 +82,9 @@ func (c *StdioConnection) discover(ctx context.Context) (probeVerdict, error) {
 	version := ModernVersions[0]
 	result, err := c.discoverOnce(probeCtx, version)
 	if err != nil {
-		return c.classifyDiscoveryError(ctx, probeCtx, err, version)
+		return c.classifyDiscoveryError(discoveryErrorParams{
+			ctx: ctx, probeCtx: probeCtx, err: err, version: version,
+		})
 	}
 	if ctx.Err() != nil {
 		return probeVerdict{}, ctx.Err()
@@ -101,22 +103,24 @@ func discoveryBudget(ctx context.Context, clockSource clock.Clock) time.Duration
 	return budget
 }
 
-func (c *StdioConnection) classifyDiscoveryError(
-	ctx context.Context,
-	probeCtx context.Context,
-	err error,
-	version string,
-) (probeVerdict, error) {
-	if ctx.Err() != nil {
-		return probeVerdict{}, ctx.Err()
+type discoveryErrorParams struct {
+	ctx      context.Context
+	probeCtx context.Context
+	err      error
+	version  string
+}
+
+func (c *StdioConnection) classifyDiscoveryError(p discoveryErrorParams) (probeVerdict, error) {
+	if p.ctx.Err() != nil {
+		return probeVerdict{}, p.ctx.Err()
 	}
-	if verdict, handled, retry := c.classifyDiscoveryRPCError(probeCtx, err, version); handled {
+	if verdict, handled, retry := c.classifyDiscoveryRPCError(p.probeCtx, p.err, p.version); handled {
 		return verdict, retry
 	}
-	if probeCtx.Err() != nil {
+	if p.probeCtx.Err() != nil {
 		return legacyProbeVerdict()
 	}
-	return probeVerdict{}, err
+	return probeVerdict{}, p.err
 }
 
 func (c *StdioConnection) classifyDiscoveryRPCError(

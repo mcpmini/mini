@@ -95,7 +95,9 @@ func encodeRootObject(fields []Field) (string, error) {
 	v := Value{payload: objectValue(fields)}
 	if cols, ok := keyedTabularCols(v); ok {
 		var sb strings.Builder
-		if err := writeKeyedTabular(&sb, "", v, cols, 1); err != nil {
+		if err := writeKeyedTabular(keyedTabularParams{
+			builder: &sb, object: v, columns: cols, entryDepth: 1,
+		}); err != nil {
 			return "", err
 		}
 		return strings.TrimSuffix(sb.String(), "\n"), nil
@@ -140,7 +142,9 @@ func writeFieldBody(sb *strings.Builder, f Field, depth int) error {
 	}
 	if f.Val.kind() == KindObject {
 		if cols, ok := keyedTabularCols(f.Val); ok {
-			return writeKeyedTabular(sb, encodeKey(f.Key), f.Val, cols, depth+1)
+			return writeKeyedTabular(keyedTabularParams{
+				builder: sb, key: encodeKey(f.Key), object: f.Val, columns: cols, entryDepth: depth + 1,
+			})
 		}
 	}
 	if err := appendString(sb, encodeKey(f.Key)); err != nil {

@@ -115,7 +115,7 @@ func (p applyParams) edit(agent agents.Agent, mini miniServers) AgentResult {
 	result := AgentResult{Agent: agent}
 	edit := func(config []byte) ([]byte, error) {
 		result = AgentResult{Agent: agent}
-		return p.editedConfig(agent, mini, config, &result)
+		return p.editedConfig(editedConfigParams{agent: agent, mini: mini, config: config, result: &result})
 	}
 	result.Backup, result.Err = agents.EditFile(agent.ConfigPath, edit, p.now)
 	if result.Err != nil {
@@ -124,29 +124,35 @@ func (p applyParams) edit(agent agents.Agent, mini miniServers) AgentResult {
 	return result
 }
 
+type editedConfigParams struct {
+	agent  agents.Agent
+	mini   miniServers
+	config []byte
+	result *AgentResult
+}
+
 // Judges the entries as they are at apply, so an entry edited since Connect's check is judged as it is now.
-func (p applyParams) editedConfig(
-	agent agents.Agent,
-	mini miniServers,
-	config []byte,
-	result *AgentResult,
-) ([]byte, error) {
-	entries, err := agent.Parse(config)
+func (p applyParams) editedConfig(args editedConfigParams) ([]byte, error) {
+	entries, err := args.agent.Parse(args.config)
 	if err != nil {
-		return nil, fmt.Errorf("parse %s: %w", agent.ConfigPath, err)
+		return nil, fmt.Errorf("parse %s: %w", args.agent.ConfigPath, err)
 	}
-	result.ExistingMini = p.rule.entryCheck.existingMini(entries)
-	result.MiniServes = p.rule.servedAfterEdit(result.ExistingMini)
+	args.result.ExistingMini = p.rule.entryCheck.existingMini(entries)
+	args.result.MiniServes = p.rule.servedAfterEdit(args.result.ExistingMini)
 	if p.choice == ConnectAndRemove {
-		result.Removed = p.removals(agent.Name, result.ExistingMini, mini.Duplicates(entries, p.selfPath))
+		args.result.Removed = p.removals(
+			args.agent.Name,
+			args.result.ExistingMini,
+			args.mini.Duplicates(entries, p.selfPath),
+		)
 	}
 	switch {
-	case result.ExistingMini == NoMiniEntry:
-		return agent.Connect(config, result.Removed, &p.rule.miniToAdd)
-	case len(result.Removed) == 0:
-		return config, nil
+	case args.result.ExistingMini == NoMiniEntry:
+		return args.agent.Connect(args.config, args.result.Removed, &p.rule.miniToAdd)
+	case len(args.result.Removed) == 0:
+		return args.config, nil
 	default:
-		return agent.Connect(config, result.Removed, nil)
+		return args.agent.Connect(args.config, args.result.Removed, nil)
 	}
 }
 

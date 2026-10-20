@@ -243,7 +243,9 @@ func TestVerifyCodexEdit_refusesUnintendedChangesAndInvalidTOML(t *testing.T) {
 		"invalid result":            "[mcp_servers.mini\n",
 	} {
 		t.Run(name, func(t *testing.T) {
-			err := verifyCodexEdit([]byte(original), []byte(edited), nil, nil)
+			err := verifyCodexEdit(verifyCodexEditParams{
+				original: []byte(original), edited: []byte(edited),
+			})
 			if err == nil {
 				t.Fatalf("verification accepted %s", edited)
 			}
