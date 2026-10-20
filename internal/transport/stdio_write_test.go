@@ -52,6 +52,21 @@ func TestStdioWriteCancellationDropsAQueuedWrite(t *testing.T) {
 	}
 }
 
+func TestStdioCancelledCallKeepsTheConnection(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	conn := newWriteOnlyConn(failingWriteCloser{})
+	// lockWrite picks between a free gate and the done context at random, so try both outcomes.
+	for range 50 {
+		if _, err := conn.Call(ctx, "ping", nil); !errors.Is(err, context.Canceled) {
+			t.Fatalf("Call error = %v, want context.Canceled before any write", err)
+		}
+	}
+	if conn.Health(context.Background()) != nil {
+		t.Fatal("a call cancelled before its write ended the connection")
+	}
+}
+
 func TestStdioFailedWriteEndsTheConnection(t *testing.T) {
 	conn := newWriteOnlyConn(failingWriteCloser{})
 	if _, err := conn.Call(context.Background(), "ping", nil); err == nil {

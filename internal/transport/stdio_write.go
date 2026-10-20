@@ -33,8 +33,6 @@ func (c *StdioConnection) writeJSONContext(ctx context.Context, v any) error {
 	return nil
 }
 
-// A child that stops reading stdin blocks a write forever once the pipe fills. Moving the pipe's
-// deadline into the past is the only way to unblock it, so a caller that gives up isn't stuck.
 func (c *StdioConnection) interruptWriteOnCancel(ctx context.Context) (stop func() error) {
 	pipe, ok := c.stdin.(deadlineWriter)
 	if !ok {
@@ -42,6 +40,8 @@ func (c *StdioConnection) interruptWriteOnCancel(ctx context.Context) (stop func
 	}
 	interrupted := make(chan error, 1)
 	stopAfter := context.AfterFunc(ctx, func() {
+		// A child that stops reading stdin blocks the write once the pipe fills; a past deadline
+		// unblocks it without killing the child.
 		err := pipe.SetWriteDeadline(time.Unix(1, 0))
 		interrupted <- err
 		if err != nil {
@@ -73,13 +73,11 @@ func (c *StdioConnection) lockWrite(ctx context.Context) error {
 
 func (c *StdioConnection) unlockWrite() { c.writeGate <- struct{}{} }
 
-// abandonAfterFailedWrite keeps the connection when the write never started because the caller
-// gave up; any other failure may have left a partial line on stdin.
 func (c *StdioConnection) abandonAfterFailedWrite(ctx context.Context, err error) {
 	if ctxErr := ctx.Err(); ctxErr != nil && errors.Is(err, ctxErr) {
-		return
+		return // the write never started
 	}
-	c.abandon()
+	c.abandon() // a partial line would break the framing of every later message
 }
 
 func (c *StdioConnection) abandon() {

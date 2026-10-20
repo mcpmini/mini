@@ -25,7 +25,7 @@ type StdioConnection struct {
 	closeOnce    sync.Once // guards close(done)
 	shutdownOnce sync.Once // guards stdin.Close, Kill, Wait
 	logger       *slog.Logger
-	writeGate    chan struct{} // a one-token channel, not a mutex, so a cancelled writer can stop waiting
+	writeGate    chan struct{} // not a mutex, so a cancelled writer can stop waiting
 	toolsChanged toolsChangedNotifier
 }
 
