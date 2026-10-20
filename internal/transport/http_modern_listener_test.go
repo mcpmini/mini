@@ -280,26 +280,10 @@ func TestHTTPModernListener_reprobeKeepsTheRunningListener(t *testing.T) {
 }
 
 func TestHTTPModernListener_reprobeReplacesAStoppedListener(t *testing.T) {
-	var listens, pings atomic.Int32
 	relisten := make(chan struct{}, 1)
-	listen := listenOnly(t, func(w http.ResponseWriter, r *http.Request, req Request) {
-		if listens.Add(1) == 1 {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		writeAck(t, w, req.ID)
-		relisten <- struct{}{}
-		<-r.Context().Done()
-	})
 	server := newModernServer(t, modernUpstream{
 		ListChanged: true,
-		Handle: func(w http.ResponseWriter, r *http.Request, req Request) {
-			if req.Method == "ping" && pings.Add(1) == 1 {
-				writeHTTPRPCError(t, w, httpRPCErrorParams{id: req.ID, code: CodeUnsupportedProtocolVersion})
-				return
-			}
-			listen(w, r, req)
-		},
+		Handle:      resetOnFirstPing(t, refuseFirstListen(t, relisten)),
 	})
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: server.URL})
 	t.Cleanup(func() { conn.Close() })

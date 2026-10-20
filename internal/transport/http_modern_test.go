@@ -195,8 +195,10 @@ type modernUpstream struct {
 	ListChanged bool
 	Probes      *atomic.Int32
 	GetStreams  *atomic.Int32
-	Handle      func(w http.ResponseWriter, r *http.Request, req Request)
+	Handle      upstreamHandler
 }
+
+type upstreamHandler = func(http.ResponseWriter, *http.Request, Request)
 
 func newModernServer(t *testing.T, u modernUpstream) *httptest.Server {
 	t.Helper()

@@ -264,7 +264,7 @@ func startResettingUpstream(t *testing.T) *resettingUpstream {
 	return u
 }
 
-func (u *resettingUpstream) handle(t *testing.T) func(http.ResponseWriter, *http.Request, Request) {
+func (u *resettingUpstream) handle(t *testing.T) upstreamHandler {
 	return func(w http.ResponseWriter, r *http.Request, req Request) {
 		switch req.Method {
 		case "tools/list":
@@ -311,8 +311,7 @@ func TestModernPartialListingStillSendsToolHeaders(t *testing.T) {
 	}
 }
 
-func failSecondToolsPage(t *testing.T, callHeaders chan<- http.Header,
-) func(http.ResponseWriter, *http.Request, Request) {
+func failSecondToolsPage(t *testing.T, callHeaders chan<- http.Header) upstreamHandler {
 	return func(w http.ResponseWriter, r *http.Request, req Request) {
 		switch {
 		case req.Method == "tools/list" && !bytes.Contains(req.Params, []byte(`"cursor"`)):
