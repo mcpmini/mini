@@ -92,7 +92,9 @@ func TestRunListShowsServerWithBrokenProjectionsAsReady(t *testing.T) {
 	dir := t.TempDir()
 	upstream := fakeUnauthenticatedMCPServer(t)
 	configtest.WriteServer(t, dir, config.ServerConfig{Name: "badproj", Transport: "http", URL: upstream.URL})
-	configtest.WriteRawProjections(t, dir, "badproj", `"*": [bad]`)
+	configtest.WriteRawProjections(
+		configtest.WriteRawProjectionsParams{T: t, Dir: dir, ServerName: "badproj", Projections: `"*": [bad]`},
+	)
 	var out bytes.Buffer
 	if err := runList(dir, nil, &out); err != nil {
 		t.Fatal(err)

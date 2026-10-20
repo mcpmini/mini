@@ -23,7 +23,7 @@ func TestLoadServerConfig_withAuth(t *testing.T) {
 	if sc.Auth == nil {
 		t.Fatal("expected auth config to be loaded")
 	}
-	assertAuthConfig(t, sc, "oauth2", "abc123")
+	assertAuthConfig(assertAuthConfigParams{T: t, Server: sc, WantType: "oauth2", WantClientID: "abc123"})
 }
 
 func TestLoadServerConfig_mergesDetectedOAuthMarker(t *testing.T) {
@@ -319,16 +319,16 @@ func TestServerConfig_UsesOAuthLogin(t *testing.T) {
 	}
 }
 
-func assertAuthConfig(t *testing.T, sc config.ServerConfig, wantType config.AuthKind, wantClientID string) {
-	t.Helper()
-	if sc.Auth == nil {
-		t.Fatal("expected auth config to be loaded")
+func assertAuthConfig(params assertAuthConfigParams) {
+	params.T.Helper()
+	if params.Server.Auth == nil {
+		params.T.Fatal("expected auth config to be loaded")
 	}
-	if sc.Auth.Type != wantType {
-		t.Errorf("expected auth type %s, got %q", wantType, sc.Auth.Type)
+	if params.Server.Auth.Type != params.WantType {
+		params.T.Errorf("expected auth type %s, got %q", params.WantType, params.Server.Auth.Type)
 	}
-	if sc.Auth.ClientID != wantClientID {
-		t.Errorf("expected client_id=%s, got %q", wantClientID, sc.Auth.ClientID)
+	if params.Server.Auth.ClientID != params.WantClientID {
+		params.T.Errorf("expected client_id=%s, got %q", params.WantClientID, params.Server.Auth.ClientID)
 	}
 }
 
@@ -435,4 +435,11 @@ func TestConfig_BrowserCommandFor(t *testing.T) {
 			}
 		})
 	}
+}
+
+type assertAuthConfigParams struct {
+	T            *testing.T
+	Server       config.ServerConfig
+	WantType     config.AuthKind
+	WantClientID string
 }

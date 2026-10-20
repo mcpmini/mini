@@ -41,10 +41,10 @@ func (st serverSteps) state(status initcmd.ServerStatus, checking bool) string {
 }
 
 // A file path is the step itself, so a long one wraps under its column instead of being cut at the window's edge.
-func columnLines(name string, nameWidth int, text string, width int) []string {
-	indent := strings.Repeat(" ", 2+nameWidth+2)
-	parts := strings.Split(ansi.Wrap(text, max(width-len(indent), 20), "/"), "\n")
-	lines := []string{fmt.Sprintf("  %-*s  %s", nameWidth, name, dim.Render(parts[0]))}
+func columnLines(params columnLinesParams) []string {
+	indent := strings.Repeat(" ", 2+params.NameWidth+2)
+	parts := strings.Split(ansi.Wrap(params.Text, max(params.Width-len(indent), 20), "/"), "\n")
+	lines := []string{fmt.Sprintf("  %-*s  %s", params.NameWidth, params.Name, dim.Render(parts[0]))}
 	for _, part := range parts[1:] {
 		lines = append(lines, indent+dim.Render(part))
 	}
@@ -60,4 +60,11 @@ func homeRelative(path string) string {
 		return "~/" + rel
 	}
 	return path
+}
+
+type columnLinesParams struct {
+	Name      string
+	NameWidth int
+	Text      string
+	Width     int
 }

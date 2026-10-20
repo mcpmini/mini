@@ -77,16 +77,16 @@ func assertDefaultLoadState(t *testing.T, cfg *config.Config, servers []config.S
 	}
 }
 
-func assertNameValidity(t *testing.T, valid []string, invalid []string, match func(string) bool, label string) {
-	t.Helper()
-	for _, name := range valid {
-		if !match(name) {
-			t.Errorf("expected %q to be a valid %s", name, label)
+func assertNameValidity(params assertNameValidityParams) {
+	params.T.Helper()
+	for _, name := range params.Valid {
+		if !params.Match(name) {
+			params.T.Errorf("expected %q to be a valid %s", name, params.Label)
 		}
 	}
-	for _, name := range invalid {
-		if match(name) {
-			t.Errorf("expected %q to be an invalid %s", name, label)
+	for _, name := range params.Invalid {
+		if params.Match(name) {
+			params.T.Errorf("expected %q to be an invalid %s", name, params.Label)
 		}
 	}
 }
@@ -166,21 +166,25 @@ func TestLoadMissingConfigDir_usesDefaults(t *testing.T) {
 
 func TestValidServerName(t *testing.T) {
 	assertNameValidity(
-		t,
-		[]string{"myserver", "my-server", "my_server", "MyServer123", "a", "A1_B-2"},
-		[]string{"", "my server", "my.server", "my/server", "my@server", "server!", "../etc"},
-		config.ValidServerName.MatchString,
-		"server name",
+		assertNameValidityParams{
+			T:       t,
+			Valid:   []string{"myserver", "my-server", "my_server", "MyServer123", "a", "A1_B-2"},
+			Invalid: []string{"", "my server", "my.server", "my/server", "my@server", "server!", "../etc"},
+			Match:   config.ValidServerName.MatchString,
+			Label:   "server name",
+		},
 	)
 }
 
 func TestValidToolName(t *testing.T) {
 	assertNameValidity(
-		t,
-		[]string{"list_issues", "get-file", "read.resource", "tool123", "a"},
-		[]string{"", "my tool", "tool/name", "tool@name", "tool name!"},
-		config.ValidToolName.MatchString,
-		"tool name",
+		assertNameValidityParams{
+			T:       t,
+			Valid:   []string{"list_issues", "get-file", "read.resource", "tool123", "a"},
+			Invalid: []string{"", "my tool", "tool/name", "tool@name", "tool name!"},
+			Match:   config.ValidToolName.MatchString,
+			Label:   "tool name",
+		},
 	)
 }
 
@@ -215,20 +219,22 @@ func TestLoadServerConfig_withPermissions(t *testing.T) {
 		},
 	})
 	sc := mustLoadOneServer(t, dir)
-	assertPermissions(t, sc, 2, []string{"internalDebug"})
+	assertPermissions(
+		assertPermissionsParams{T: t, Server: sc, WantProtected: 2, WantHidden: []string{"internalDebug"}},
+	)
 }
 
-func assertPermissions(t *testing.T, sc config.ServerConfig, wantProtected int, wantHidden []string) {
-	t.Helper()
-	if sc.Permissions == nil {
-		t.Fatal("expected permissions to be loaded")
+func assertPermissions(params assertPermissionsParams) {
+	params.T.Helper()
+	if params.Server.Permissions == nil {
+		params.T.Fatal("expected permissions to be loaded")
 	}
-	perm := sc.Permissions
-	if len(perm.Protected) != wantProtected {
-		t.Errorf("expected %d protected tools, got %v", wantProtected, perm.Protected)
+	perm := params.Server.Permissions
+	if len(perm.Protected) != params.WantProtected {
+		params.T.Errorf("expected %d protected tools, got %v", params.WantProtected, perm.Protected)
 	}
-	if len(perm.Hidden) != len(wantHidden) || perm.Hidden[0] != wantHidden[0] {
-		t.Errorf("expected hidden=%v, got %v", wantHidden, perm.Hidden)
+	if len(perm.Hidden) != len(params.WantHidden) || perm.Hidden[0] != params.WantHidden[0] {
+		params.T.Errorf("expected hidden=%v, got %v", params.WantHidden, perm.Hidden)
 	}
 }
 
@@ -329,4 +335,19 @@ func TestEffectiveFormat(t *testing.T) {
 			}
 		})
 	}
+}
+
+type assertNameValidityParams struct {
+	T       *testing.T
+	Valid   []string
+	Invalid []string
+	Match   func(string) bool
+	Label   string
+}
+
+type assertPermissionsParams struct {
+	T             *testing.T
+	Server        config.ServerConfig
+	WantProtected int
+	WantHidden    []string
 }

@@ -158,7 +158,14 @@ func TestConnectScreen_theAddedNoteIsNeverCut(t *testing.T) {
 
 func TestConnectScreen_anAgentAlreadyConnectedGetsNoLineUnderTheChoices(t *testing.T) {
 	plan := newFakePlan(map[string][]string{"Codex": {"github"}})
-	s, check := connectScreenFor(t, plan, namedAgents("Claude", "Codex"), map[string]bool{"Claude": true})
+	s, check := connectScreenFor(
+		connectScreenForParams{
+			T:        t,
+			Plan:     plan,
+			Agents:   namedAgents("Claude", "Codex"),
+			WithMini: map[string]bool{"Claude": true},
+		},
+	)
 	plan.checksPass(s, check)
 	if text := linesUnder(
 		s,
@@ -179,7 +186,14 @@ func TestConnectScreen_anAgentAlreadyConnectedGetsNoLineUnderTheChoices(t *testi
 
 func TestConnectScreen_aShortWindowKeepsTheCursorsOptionInView(t *testing.T) {
 	plan := newFakePlan(nil)
-	s, _ := connectScreenFor(t, plan, namedAgents("Claude", "Codex", "Cursor", "Windsurf", "Zed"), nil)
+	s, _ := connectScreenFor(
+		connectScreenForParams{
+			T:        t,
+			Plan:     plan,
+			Agents:   namedAgents("Claude", "Codex", "Cursor", "Windsurf", "Zed"),
+			WithMini: nil,
+		},
+	)
 	a := framed(s, false)
 	send(a, "down")
 	lines := strings.Split(ansi.Strip(a.body(7)), "\n")

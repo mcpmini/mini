@@ -29,7 +29,7 @@ var _ = Quad{
 	C: call(3), D: call(4),
 }`
 	fset, diagnostics := analyzeSource(t, source)
-	fixed := applyFixes(t, source, fset, diagnostics)
+	fixed := applyFixes(applyFixesParams{T: t, Source: source, Fset: fset, Diagnostics: diagnostics})
 	if fixed != formatted(t, want) {
 		t.Fatalf("fixed source:\n%s\nwant:\n%s", fixed, formatted(t, want))
 	}
@@ -54,7 +54,7 @@ var _ = Outer{First: Quad{A: 1, B: 2, C: 3, D: 4}, Second: Quad{}, Third: Quad{}
 	if len(diagnostics) != 3 {
 		t.Fatalf("diagnostics = %v, want three nested fixes", diagnostics)
 	}
-	fixed := applyFixes(t, source, fset, diagnostics)
+	fixed := applyFixes(applyFixesParams{T: t, Source: source, Fset: fset, Diagnostics: diagnostics})
 	if fixed != formatted(t, want) {
 		t.Fatalf("nested fixes:\n%s\nwant:\n%s", fixed, formatted(t, want))
 	}
@@ -68,28 +68,28 @@ func TestImportedFieldsUseTheirDeclaredNames(t *testing.T) {
 	source := "package fixture\nimport pos \"go/token\"\nvar _ = pos.Position{\"fixture\", 0, 1, 2}"
 	want := "package fixture\nimport pos \"go/token\"\nvar _ = pos.Position{Filename: \"fixture\", Offset: 0, Line: 1, Column: 2}"
 	fset, diagnostics := analyzeSource(t, source)
-	fixed := applyFixes(t, source, fset, diagnostics)
+	fixed := applyFixes(applyFixesParams{T: t, Source: source, Fset: fset, Diagnostics: diagnostics})
 	if fixed != formatted(t, want) {
 		t.Fatalf("imported fields:\n%s\nwant:\n%s", fixed, formatted(t, want))
 	}
 	analyzeSource(t, fixed)
 }
 
-func applyFixes(t *testing.T, source string, fset *token.FileSet, diagnostics []analysis.Diagnostic) string {
-	t.Helper()
+func applyFixes(params applyFixesParams) string {
+	params.T.Helper()
 	var edits []analysis.TextEdit
-	for _, diagnostic := range diagnostics {
+	for _, diagnostic := range params.Diagnostics {
 		if len(diagnostic.SuggestedFixes) != 1 {
-			t.Fatalf("expected one fix: %v", diagnostic)
+			params.T.Fatalf("expected one fix: %v", diagnostic)
 		}
 		edits = append(edits, diagnostic.SuggestedFixes[0].TextEdits...)
 	}
 	slices.SortFunc(edits, func(a, b analysis.TextEdit) int { return int(b.Pos - a.Pos) })
 	for _, edit := range edits {
-		pos := fset.Position(edit.Pos).Offset
-		source = source[:pos] + string(edit.NewText) + source[pos:]
+		pos := params.Fset.Position(edit.Pos).Offset
+		params.Source = params.Source[:pos] + string(edit.NewText) + params.Source[pos:]
 	}
-	return formatted(t, source)
+	return formatted(params.T, params.Source)
 }
 
 func formatted(t *testing.T, source string) string {
@@ -99,4 +99,11 @@ func formatted(t *testing.T, source string) string {
 		t.Fatal(err)
 	}
 	return string(result)
+}
+
+type applyFixesParams struct {
+	T           *testing.T
+	Source      string
+	Fset        *token.FileSet
+	Diagnostics []analysis.Diagnostic
 }

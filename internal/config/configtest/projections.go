@@ -24,28 +24,51 @@ func WriteProjections(t testing.TB, dir string, p ProjectionFile) {
 			t.Fatalf("encode projections: %v", err)
 		}
 	}
-	replaceServerProjections(t, dir, p.ServerName, projections)
+	replaceServerProjections(
+		replaceServerProjectionsParams{T: t, Dir: dir, ServerName: p.ServerName, Projections: projections},
+	)
 }
 
 // WriteRawProjections replaces projections: with YAML the typed form can't express, such as a rule of the wrong type.
-func WriteRawProjections(t testing.TB, dir, serverName, projections string) {
-	t.Helper()
+func WriteRawProjections(params WriteRawProjectionsParams) {
+	params.T.Helper()
 	var doc yaml.Node
-	if err := yaml.Unmarshal([]byte(projections), &doc); err != nil || len(doc.Content) != 1 {
-		t.Fatalf("parse raw projections %q: %v", projections, err)
+	if err := yaml.Unmarshal([]byte(params.Projections), &doc); err != nil || len(doc.Content) != 1 {
+		params.T.Fatalf("parse raw projections %q: %v", params.Projections, err)
 	}
-	replaceServerProjections(t, dir, serverName, doc.Content[0])
+	replaceServerProjections(
+		replaceServerProjectionsParams{
+			T:           params.T,
+			Dir:         params.Dir,
+			ServerName:  params.ServerName,
+			Projections: doc.Content[0],
+		},
+	)
 }
 
-func replaceServerProjections(t testing.TB, dir, serverName string, projections *yaml.Node) {
-	t.Helper()
-	if !config.ValidServerName.MatchString(serverName) {
-		t.Fatalf("invalid server name %q", serverName)
+func replaceServerProjections(params replaceServerProjectionsParams) {
+	params.T.Helper()
+	if !config.ValidServerName.MatchString(params.ServerName) {
+		params.T.Fatalf("invalid server name %q", params.ServerName)
 	}
-	path := config.ServerPath(dir, serverName)
-	data, err := config.ReplaceServerKey(testutil.ReadFile(t, path), "projections", projections)
+	path := config.ServerPath(params.Dir, params.ServerName)
+	data, err := config.ReplaceServerKey(testutil.ReadFile(params.T, path), "projections", params.Projections)
 	if err != nil {
-		t.Fatalf("server fixture %s: %v", path, err)
+		params.T.Fatalf("server fixture %s: %v", path, err)
 	}
-	testutil.WriteFileBytes(t, path, data)
+	testutil.WriteFileBytes(params.T, path, data)
+}
+
+type WriteRawProjectionsParams struct {
+	T           testing.TB
+	Dir         string
+	ServerName  string
+	Projections string
+}
+
+type replaceServerProjectionsParams struct {
+	T           testing.TB
+	Dir         string
+	ServerName  string
+	Projections *yaml.Node
 }

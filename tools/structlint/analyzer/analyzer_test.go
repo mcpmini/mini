@@ -73,7 +73,7 @@ func TestFieldNamePolicy(t *testing.T) {
 				t.Fatalf("diagnostics = %v, want %d", diagnostics, tc.want)
 			}
 			if tc.fixable {
-				fixed := applyFixes(t, src, fset, diagnostics)
+				fixed := applyFixes(applyFixesParams{T: t, Source: src, Fset: fset, Diagnostics: diagnostics})
 				_, remaining := analyzeSource(t, fixed)
 				if len(remaining) != 0 {
 					t.Fatalf("fixed source still has diagnostics: %v", remaining)

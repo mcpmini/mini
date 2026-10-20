@@ -146,7 +146,14 @@ func TestIntegrationCLI_aBrokenServerFileOnlyAffectsThatServer(t *testing.T) {
 
 func writeInvalidProjection(t *testing.T, configDir, serverName string) {
 	t.Helper()
-	configtest.WriteRawProjections(t, configDir, serverName, "get_item: {include_only: 5}\n")
+	configtest.WriteRawProjections(
+		configtest.WriteRawProjectionsParams{
+			T:           t,
+			Dir:         configDir,
+			ServerName:  serverName,
+			Projections: "get_item: {include_only: 5}\n",
+		},
+	)
 }
 
 func TestIntegrationCLI_test_reportsEachServerOnceWhateverFailedToLoad(t *testing.T) {

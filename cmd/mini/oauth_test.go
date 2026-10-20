@@ -21,8 +21,17 @@ func TestBuildAndStartConnecting_validAndDisabledOAuthServers_makeNoTokenRequest
 	tokenEp := newTestTokenEndpoint(t)
 	mcp := newTestMCPUpstream(t)
 	servers := []config.ServerConfig{
-		oauthServerConfig("live", mcp.srv.URL, tokenEp.srv.URL, true),
-		oauthServerConfig("idle", "http://localhost:1", tokenEp.srv.URL, false),
+		oauthServerConfig(
+			oauthServerConfigParams{Name: "live", MCPURL: mcp.srv.URL, TokenURL: tokenEp.srv.URL, Enabled: true},
+		),
+		oauthServerConfig(
+			oauthServerConfigParams{
+				Name:     "idle",
+				MCPURL:   "http://localhost:1",
+				TokenURL: tokenEp.srv.URL,
+				Enabled:  false,
+			},
+		),
 	}
 	validTok := &oauth2.Token{AccessToken: "stored-access", RefreshToken: "r1", Expiry: time.Now().Add(time.Hour)}
 	authtest.SaveToken(
@@ -52,7 +61,9 @@ func TestBuildAndStartConnecting_validAndDisabledOAuthServers_makeNoTokenRequest
 
 func TestBuildAndStartConnecting_oauthServerWithHandSetHeaderAndNoToken_usesHandSetHeader(t *testing.T) {
 	mcp := newTestMCPUpstream(t)
-	sc := oauthServerConfig("pat", mcp.srv.URL, "http://localhost:1/token", true)
+	sc := oauthServerConfig(
+		oauthServerConfigParams{Name: "pat", MCPURL: mcp.srv.URL, TokenURL: "http://localhost:1/token", Enabled: true},
+	)
 	sc.Headers = map[string]string{"Authorization": "Bearer pat-123"}
 	srv := startFromConfigDir(t,
 		BuildServerParams{

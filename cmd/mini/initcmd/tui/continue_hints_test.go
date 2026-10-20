@@ -16,21 +16,25 @@ import (
 	"github.com/mcpmini/mini/internal/config/configtest"
 )
 
-func continueAfter(t *testing.T, setup initcmd.Setup, c catalog.Catalog, keys ...string) string {
-	t.Helper()
-	return continueLine(screenAfter(t, setup, fromCatalog(c), keys...))
+func continueAfter(params continueAfterParams) string {
+	params.T.Helper()
+	return continueLine(
+		screenAfter(
+			screenAfterParams{T: params.T, Setup: params.Setup, Load: fromCatalog(params.Catalog), Keys: params.Keys},
+		),
+	)
 }
 
-func screenAfter(t *testing.T, setup initcmd.Setup, load func() (catalog.Catalog, error), keys ...string) string {
-	t.Helper()
+func screenAfter(params screenAfterParams) string {
+	params.T.Helper()
 	var view string
-	_, err := Run(Params{Setup: setup, LoadCatalog: load, Program: func(m tea.Model) error {
-		pressing(keys...)(m)
+	_, err := Run(Params{Setup: params.Setup, LoadCatalog: params.Load, Program: func(m tea.Model) error {
+		pressing(params.Keys...)(m)
 		view = shown(m.(*app))
 		return nil
 	}})
 	if err != nil {
-		t.Fatal(err)
+		params.T.Fatal(err)
 	}
 	return view
 }
@@ -66,7 +70,9 @@ func TestContinueHints_importNamesTheCatalogOnlyWhenItHasServersToOffer(t *testi
 	} {
 		t.Run(name, func(t *testing.T) {
 			setup := setupFor(t.TempDir(), stdioAgent("Codex", "files"))
-			if line := continueAfter(t, setup, catalog.Catalog{Entries: tc.entries}); line != tc.want {
+			if line := continueAfter(
+				continueAfterParams{T: t, Setup: setup, Catalog: catalog.Catalog{Entries: tc.entries}, Keys: nil},
+			); line != tc.want {
 				t.Errorf("Continue line on Import = %q, want %q", line, tc.want)
 			}
 		})
@@ -75,7 +81,9 @@ func TestContinueHints_importNamesTheCatalogOnlyWhenItHasServersToOffer(t *testi
 
 func TestContinueHints_importNamesNoCatalogThatFailedToLoad(t *testing.T) {
 	failing := func() (catalog.Catalog, error) { return catalog.Catalog{}, errors.New("offline") }
-	view := screenAfter(t, setupFor(t.TempDir(), stdioAgent("Codex", "files")), failing)
+	view := screenAfter(
+		screenAfterParams{T: t, Setup: setupFor(t.TempDir(), stdioAgent("Codex", "files")), Load: failing, Keys: nil},
+	)
 	if line := continueLine(view); line != "  Continue" {
 		t.Errorf("Continue line on Import = %q, want no hint: Catalog has only its load error to show", line)
 	}
@@ -88,7 +96,9 @@ func TestContinueHints_catalogNamesNothingItsSaveCouldChange(t *testing.T) {
 		"a configured server to finish": connectingSetup(configWithAServerToFinish(t), stdioAgent("Codex")),
 	} {
 		t.Run(name, func(t *testing.T) {
-			if line := continueAfter(t, setup, c, "space"); line != "  Continue" {
+			if line := continueAfter(
+				continueAfterParams{T: t, Setup: setup, Catalog: c, Keys: []string{"space"}},
+			); line != "  Continue" {
 				t.Errorf(
 					"Continue line on Catalog = %q, want no hint: Logins or Connect follows only after the save",
 					line,
@@ -102,19 +112,44 @@ func TestContinueHints_loginsNamesConnectOnlyWhenContinueOpensIt(t *testing.T) {
 	c := catalog.Catalog{Entries: []catalog.Entry{entryWithAuth("sentry", catalog.AuthNone)}}
 	t.Run("with an agent to connect", func(t *testing.T) {
 		setup := connectingSetup(configWithAServerToFinish(t), stdioAgent("Codex"))
-		if line := continueAfter(t, setup, c, "tab", "enter"); line != "> Continue   add mini to your agents" {
+		if line := continueAfter(
+			continueAfterParams{T: t, Setup: setup, Catalog: c, Keys: []string{"tab", "enter"}},
+		); line != "> Continue   add mini to your agents" {
 			t.Errorf("Continue line on Logins = %q, want add mini to your agents", line)
 		}
-		view := screenAfter(t, setup, fromCatalog(c), "tab", "enter", "tab", "enter")
+		view := screenAfter(
+			screenAfterParams{T: t, Setup: setup, Load: fromCatalog(c), Keys: []string{"tab", "enter", "tab", "enter"}},
+		)
 		if !strings.Contains(view, "Connect mini to Codex") {
 			t.Errorf("after Continue on Logins:\n%s\nwant Connect, which the hint named", view)
 		}
 	})
 	t.Run("with no agent to connect", func(t *testing.T) {
-		view := screenAfter(t, setupFor(configWithAServerToFinish(t)), fromCatalog(c), "tab", "enter")
+		view := screenAfter(
+			screenAfterParams{
+				T:     t,
+				Setup: setupFor(configWithAServerToFinish(t)),
+				Load:  fromCatalog(c),
+				Keys:  []string{"tab", "enter"},
+			},
+		)
 		if !strings.HasPrefix(view, "Finish setting up these MCPs later") ||
 			continueLine(view) != "> Continue   review and finish" {
 			t.Errorf("view:\n%s\nwant Logins naming Review, which ends every run without agents", view)
 		}
 	})
+}
+
+type continueAfterParams struct {
+	T       *testing.T
+	Setup   initcmd.Setup
+	Catalog catalog.Catalog
+	Keys    []string
+}
+
+type screenAfterParams struct {
+	T     *testing.T
+	Setup initcmd.Setup
+	Load  func() (catalog.Catalog, error)
+	Keys  []string
 }

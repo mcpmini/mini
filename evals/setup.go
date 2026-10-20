@@ -90,7 +90,11 @@ func (r *Runner) miniCLIConfigDir(p miniConfigParams) (string, error) {
 
 func (r *Runner) buildMiniConfigDir(p miniConfigParams) (string, error) {
 	configDir := p.env.TempDir()
-	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(miniConfigYAML(p.format)), 0o600); err != nil {
+	if err := os.WriteFile(
+		filepath.Join(configDir, "config.yaml"),
+		[]byte(miniConfigYAML(p.format)),
+		0o600,
+	); err != nil {
 		return "", err
 	}
 	if err := writeServersYAML(writeServersYAMLParams{
@@ -205,7 +209,11 @@ func (r *Runner) proxyMCPConfig(p miniConfigParams) (string, error) {
 
 func (r *Runner) writeMiniProxyConfig(p miniConfigParams) (string, error) {
 	configDir := p.env.TempDir()
-	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(miniConfigYAML(p.format)), 0o600); err != nil {
+	if err := os.WriteFile(
+		filepath.Join(configDir, "config.yaml"),
+		[]byte(miniConfigYAML(p.format)),
+		0o600,
+	); err != nil {
 		return "", err
 	}
 	if err := writeServersYAML(writeServersYAMLParams{

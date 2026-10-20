@@ -94,10 +94,10 @@ func newTestMCPUpstream(t *testing.T) *testMCPUpstream {
 	return u
 }
 
-func oauthServerConfig(name, mcpURL, tokenURL string, enabled bool) config.ServerConfig {
+func oauthServerConfig(params oauthServerConfigParams) config.ServerConfig {
 	return config.ServerConfig{
-		Name: name, Transport: "http", URL: mcpURL, Enabled: &enabled,
-		Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: tokenURL},
+		Name: params.Name, Transport: "http", URL: params.MCPURL, Enabled: &params.Enabled,
+		Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: params.TokenURL},
 	}
 }
 
@@ -111,7 +111,9 @@ type oauthTestSetup struct {
 func newOAuthTestSetup(t *testing.T, tok *oauth2.Token, clk clock.Clock) *oauthTestSetup {
 	t.Helper()
 	configDir, token, upstream := t.TempDir(), newTestTokenEndpoint(t), newTestMCPUpstream(t)
-	sc := oauthServerConfig("live", upstream.srv.URL, token.srv.URL, true)
+	sc := oauthServerConfig(
+		oauthServerConfigParams{Name: "live", MCPURL: upstream.srv.URL, TokenURL: token.srv.URL, Enabled: true},
+	)
 	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: configDir, ServerName: "live", Server: sc, Token: tok})
 	p := BuildServerParams{
 		Cfg: &config.Config{}, ConfigDir: configDir,
@@ -202,4 +204,11 @@ func assertToolCallOK(t *testing.T, resp map[string]any) {
 	if len(text) == 0 {
 		t.Errorf("tools/call returned empty text")
 	}
+}
+
+type oauthServerConfigParams struct {
+	Name     string
+	MCPURL   string
+	TokenURL string
+	Enabled  bool
 }
