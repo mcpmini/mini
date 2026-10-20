@@ -31,9 +31,12 @@ func New(p Params) *Server {
 	if err != nil {
 		p.Logger.Warn("starting without projections", "err", err)
 	}
-	s := newServer(p.Config, p.ConfigDir, serverProjections(servers.Loaded), p.Logger)
+	s := newServer(serverInitParams{
+		Config: p.Config, ConfigDir: p.ConfigDir,
+		Projections: serverProjections(servers.Loaded), Logger: p.Logger,
+	})
 	applyParams(s, p)
-	store := mustStore(p.Config, p.ConfigDir, p.Logger, s.clock)
+	store := mustStore(storeInitParams{Config: p.Config, ConfigDir: p.ConfigDir, Logger: p.Logger, Clock: s.clock})
 	s.store = store
 	s.envelope = response.NewBuilder(store)
 	s.sessions = newSessionStore(s.clock)
@@ -61,26 +64,28 @@ func applyParams(s *Server, p Params) {
 	s.allowNonLoopbackHost = p.AllowNonLoopbackHost
 }
 
-func newServer(
-	cfg *config.Config,
-	configDir string,
-	projections map[string]map[string]*config.ProjectionConfig,
-	logger *slog.Logger,
-) *Server {
+type serverInitParams struct {
+	Config      *config.Config
+	ConfigDir   string
+	Projections map[string]map[string]*config.ProjectionConfig
+	Logger      *slog.Logger
+}
+
+func newServer(p serverInitParams) *Server {
 	s := &Server{
-		cfg:              cfg,
-		configDir:        configDir,
+		cfg:              p.Config,
+		configDir:        p.ConfigDir,
 		reg:              registry.New(),
 		upstreams:        make(map[string]*upstreamServer),
 		configServers:    make(map[string]configServer),
 		startup:          newStartupTracker(),
 		stopWaiting:      make(chan struct{}),
 		removeGen:        make(map[string]uint64),
-		projections:      projections,
-		projDefaults:     projection.DefaultsFrom(cfg),
+		projections:      p.Projections,
+		projDefaults:     projection.DefaultsFrom(p.Config),
 		toolSchemas:      compactToolSchemas(),
 		authFlows:        make(map[string]*authFlowState),
-		logger:           logger,
+		logger:           p.Logger,
 		clock:            clock.System(),
 		providerRegistry: provider.NewRegistry(),
 	}
@@ -88,14 +93,21 @@ func newServer(
 	return s
 }
 
-func mustStore(cfg *config.Config, configDir string, logger *slog.Logger, clock clock.Clock) *response.Store {
-	storeCfg := response.StoreConfigFrom(cfg, configDir)
-	storeCfg.Clock = clock
+type storeInitParams struct {
+	Config    *config.Config
+	ConfigDir string
+	Logger    *slog.Logger
+	Clock     clock.Clock
+}
+
+func mustStore(p storeInitParams) *response.Store {
+	storeCfg := response.StoreConfigFrom(p.Config, p.ConfigDir)
+	storeCfg.Clock = p.Clock
 	store, err := response.NewStore(storeCfg)
 	if err == nil {
 		return store
 	}
-	logger.Error("failed to create response store, falling back to tmp", "err", err)
+	p.Logger.Error("failed to create response store, falling back to tmp", "err", err)
 	storeCfg.Dir = filepath.Join(os.TempDir(), "mini-responses")
 	store, err = response.NewStore(storeCfg)
 	if err != nil {

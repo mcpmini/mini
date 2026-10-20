@@ -82,7 +82,9 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	return runEvals(context.Background(), runner, toRun, resultsFile)
+	return runEvals(context.Background(), runEvalsParams{
+		runner: runner, toRun: toRun, resultsFile: resultsFile,
+	})
 }
 
 func parseArgs(args []string) (parsedArgs, error) {
@@ -183,12 +185,18 @@ func setupResultsFile(evalArg string, modes []string, label string) *os.File {
 	return f
 }
 
-func runEvals(ctx context.Context, r *evals.Runner, toRun []evalEntry, resultsFile *os.File) error {
+type runEvalsParams struct {
+	runner      *evals.Runner
+	toRun       []evalEntry
+	resultsFile *os.File
+}
+
+func runEvals(ctx context.Context, p runEvalsParams) error {
 	failed := false
-	for _, e := range toRun {
+	for _, e := range p.toRun {
 		env := evals.NewEnv()
-		errs := runEvalEntry(ctx, r, env, e)
-		failed = reportEvalResult(e.name, errs, resultsFile) || failed
+		errs := runEvalEntry(ctx, runEvalEntryParams{runner: p.runner, env: env, entry: e})
+		failed = reportEvalResult(e.name, errs, p.resultsFile) || failed
 		fmt.Println()
 	}
 	if failed {
@@ -197,9 +205,15 @@ func runEvals(ctx context.Context, r *evals.Runner, toRun []evalEntry, resultsFi
 	return nil
 }
 
-func runEvalEntry(ctx context.Context, r *evals.Runner, env *evals.Env, e evalEntry) []error {
-	_, errs := e.fn(ctx, r, env)
-	env.Cleanup(len(errs) == 0)
+type runEvalEntryParams struct {
+	runner *evals.Runner
+	env    *evals.Env
+	entry  evalEntry
+}
+
+func runEvalEntry(ctx context.Context, p runEvalEntryParams) []error {
+	_, errs := p.entry.fn(ctx, p.runner, p.env)
+	p.env.Cleanup(len(errs) == 0)
 	return errs
 }
 

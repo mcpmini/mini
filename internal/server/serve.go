@@ -22,35 +22,47 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 	sessionID := transport.NewSessionID()
 	session := s.sessions.getOrCreate(sessionID)
 	defer s.sessions.delete(sessionID)
-	return s.serveLoop(ctx, in, out, session)
+	return s.serveLoop(ctx, serveLoopParams{Input: in, Output: out, Session: session})
 }
 
-func (s *Server) serveLoop(ctx context.Context, in io.Reader, out io.Writer, session *Session) error {
+type serveLoopParams struct {
+	Input   io.Reader
+	Output  io.Writer
+	Session *Session
+}
+
+func (s *Server) serveLoop(ctx context.Context, p serveLoopParams) error {
 	serveCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	writer := newSerializedWriter(out, cancel)
-	writer.observeResponseFailure(out)
-	stopNotifications := startSessionNotifyForwarder(session, writer.Write)
-	scanErr := s.scanServeInput(serveCtx, in, session, writer)
+	writer := newSerializedWriter(p.Output, cancel)
+	writer.observeResponseFailure(p.Output)
+	stopNotifications := startSessionNotifyForwarder(p.Session, writer.Write)
+	scanErr := s.scanServeInput(serveCtx, serveInputParams{Input: p.Input, Session: p.Session, Writer: writer})
 	stopNotifications()
 	return errors.Join(writer.Err(), scanErr)
 }
 
-func (s *Server) scanServeInput(ctx context.Context, in io.Reader, session *Session, writer *serializedWriter) error {
+type serveInputParams struct {
+	Input   io.Reader
+	Session *Session
+	Writer  *serializedWriter
+}
+
+func (s *Server) scanServeInput(ctx context.Context, p serveInputParams) error {
 	var wg sync.WaitGroup
-	scanner := transport.NewScanner(in)
+	scanner := transport.NewScanner(p.Input)
 	for scanner.Scan() {
-		if writer.Err() != nil || ctx.Err() != nil {
+		if p.Writer.Err() != nil || ctx.Err() != nil {
 			break
 		}
 		s.handleScannedLine(
 			handleScannedLineParams{
-				ctx: ctx, rawLine: scanner.Bytes(), session: session,
-				writeOut: writer.Write, wg: &wg,
+				ctx: ctx, rawLine: scanner.Bytes(), session: p.Session,
+				writeOut: p.Writer.Write, wg: &wg,
 			},
 		)
 	}
-	session.markAborted()
+	p.Session.markAborted()
 	wg.Wait()
 	return scanner.Err()
 }
@@ -67,9 +79,15 @@ func (s *Server) handleLineCancellable(ctx context.Context, line []byte, session
 	return s.handleLine(ctx, line, session)
 }
 
-func (s *Server) dispatchWithCancel(ctx context.Context, line []byte, session *Session, writeOut func(any)) {
-	if resp, send := s.handleLineCancellable(ctx, line, session); send {
-		writeOut(resp)
+type dispatchWithCancelParams struct {
+	Line     []byte
+	Session  *Session
+	WriteOut func(any)
+}
+
+func (s *Server) dispatchWithCancel(ctx context.Context, p dispatchWithCancelParams) {
+	if resp, send := s.handleLineCancellable(ctx, p.Line, p.Session); send {
+		p.WriteOut(resp)
 	}
 }
 
@@ -357,26 +375,29 @@ func (s *Server) routeTool(ctx context.Context, call toolCallRequest, session *S
 	if session.toolMode() == transport.ToolModeProxy {
 		return s.routeProxyTool(ctx, call, session)
 	}
-	return s.routeStandardTool(ctx, call.Name, call.Arguments, session)
+	return s.routeStandardTool(ctx, standardToolRouteParams{
+		Name: call.Name, Args: call.Arguments, Session: session,
+	})
 }
 
-func (s *Server) routeStandardTool(
-	ctx context.Context,
-	name string,
-	args json.RawMessage,
-	session *Session,
-) (any, error) {
-	switch name {
+type standardToolRouteParams struct {
+	Name    string
+	Args    json.RawMessage
+	Session *Session
+}
+
+func (s *Server) routeStandardTool(ctx context.Context, p standardToolRouteParams) (any, error) {
+	switch p.Name {
 	case "list":
-		return s.handleList(ctx, args)
+		return s.handleList(ctx, p.Args)
 	case "call":
-		return s.handleExecute(ctx, args, session)
+		return s.handleExecute(ctx, p.Args, p.Session)
 	case "perm_call":
-		return s.handleExecuteProtected(ctx, args, session)
+		return s.handleExecuteProtected(ctx, p.Args, p.Session)
 	case "config":
-		return s.handleConfigure(ctx, args, session)
+		return s.handleConfigure(ctx, p.Args, p.Session)
 	default:
-		return nil, fmt.Errorf("%w: unknown tool: %s", errInvalidParams, name)
+		return nil, fmt.Errorf("%w: unknown tool: %s", errInvalidParams, p.Name)
 	}
 }
 
@@ -453,6 +474,8 @@ func (s *Server) handleScannedLine(p handleScannedLineParams) {
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
-		s.dispatchWithCancel(p.ctx, line, p.session, p.writeOut)
+		s.dispatchWithCancel(p.ctx, dispatchWithCancelParams{
+			Line: line, Session: p.session, WriteOut: p.writeOut,
+		})
 	}()
 }

@@ -75,12 +75,12 @@ func tokenDelta(rawAvg int, directRan bool) func(int) string {
 }
 
 func logEvalRows(w io.Writer, r EvalResult, pct func(int) string) {
-	logRow(w, "direct (no mini)", r.Direct, pct)
+	logRow(logRowParams{Writer: w, Mode: "direct (no mini)", Stats: r.Direct, Percentile: pct})
 	for _, run := range EvalWithLabels(r) {
 		if run.Label == "direct" {
 			continue
 		}
-		logRow(w, run.Label, run.Stats, pct)
+		logRow(logRowParams{Writer: w, Mode: run.Label, Stats: run.Stats, Percentile: pct})
 	}
 }
 
@@ -99,17 +99,24 @@ func firstRunText(stats RunStats) string {
 	return stats.Runs[0].Text
 }
 
-func logRow(w io.Writer, mode string, s RunStats, pct func(int) string) {
-	if !s.Ran() {
+type logRowParams struct {
+	Writer     io.Writer
+	Mode       string
+	Stats      RunStats
+	Percentile func(int) string
+}
+
+func logRow(p logRowParams) {
+	if !p.Stats.Ran() {
 		return
 	}
-	tok := s.InputStats()
-	cost := s.CostStats()
-	if len(s.Runs) == 1 {
-		fmt.Fprintf(w, "  %-22s %7d in   $%.4f  (%.0f turns)  %s\n",
-			mode, tok.avg, cost.avg, s.AvgTurns(), pct(tok.avg))
+	tok := p.Stats.InputStats()
+	cost := p.Stats.CostStats()
+	if len(p.Stats.Runs) == 1 {
+		fmt.Fprintf(p.Writer, "  %-22s %7d in   $%.4f  (%.0f turns)  %s\n",
+			p.Mode, tok.avg, cost.avg, p.Stats.AvgTurns(), p.Percentile(tok.avg))
 	} else {
-		fmt.Fprintf(w, "  %-22s avg %7d / p95 %7d / max %7d   $%.4f avg  (%.1f turns avg)  %s\n",
-			mode, tok.avg, tok.p95, tok.max, cost.avg, s.AvgTurns(), pct(tok.avg))
+		fmt.Fprintf(p.Writer, "  %-22s avg %7d / p95 %7d / max %7d   $%.4f avg  (%.1f turns avg)  %s\n",
+			p.Mode, tok.avg, tok.p95, tok.max, cost.avg, p.Stats.AvgTurns(), p.Percentile(tok.avg))
 	}
 }

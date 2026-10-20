@@ -30,7 +30,7 @@ func NewRunner(modes map[string]bool, reps int) (*Runner, error) {
 	if err != nil {
 		return nil, err
 	}
-	return buildRunner(root, bins, modes, reps), nil
+	return buildRunner(buildRunnerParams{root: root, bins: bins, modes: modes, reps: reps}), nil
 }
 
 type evalBins struct {
@@ -38,23 +38,32 @@ type evalBins struct {
 	FakemcpBin string
 }
 
-func buildRunner(root string, bins evalBins, modes map[string]bool, reps int) *Runner {
+type buildRunnerParams struct {
+	root  string
+	bins  evalBins
+	modes map[string]bool
+	reps  int
+}
+
+func buildRunner(p buildRunnerParams) *Runner {
 	return &Runner{
-		MiniBin:     bins.MiniBin,
-		FakemcpBin:  bins.FakemcpBin,
-		FixturesDir: filepath.Join(root, "benchmarks", "fixtures"),
-		RepoRoot:    root,
-		Modes:       modes,
-		Reps:        reps,
+		MiniBin:     p.bins.MiniBin,
+		FakemcpBin:  p.bins.FakemcpBin,
+		FixturesDir: filepath.Join(p.root, "benchmarks", "fixtures"),
+		RepoRoot:    p.root,
+		Modes:       p.modes,
+		Reps:        p.reps,
 	}
 }
 
 func buildEvalBins(root string) (evalBins, error) {
-	miniBin, err := buildBin(root, "mini", "./cmd/mini")
+	miniBin, err := buildBin(buildBinParams{root: root, name: "mini", pkg: "./cmd/mini"})
 	if err != nil {
 		return evalBins{}, fmt.Errorf("build mini: %w", err)
 	}
-	fakemcpBin, err := buildBin(root, "fakemcp", "./test/fakemcp", "-tags", "integration")
+	fakemcpBin, err := buildBin(buildBinParams{
+		root: root, name: "fakemcp", pkg: "./test/fakemcp", extraFlags: []string{"-tags", "integration"},
+	})
 	if err != nil {
 		return evalBins{}, fmt.Errorf("build fakemcp: %w", err)
 	}
@@ -81,16 +90,23 @@ func findRepoRoot() (string, error) {
 	return "", fmt.Errorf("could not find repo root (no go.mod found)")
 }
 
-func buildBin(root, name, pkg string, extraFlags ...string) (string, error) {
+type buildBinParams struct {
+	root       string
+	name       string
+	pkg        string
+	extraFlags []string
+}
+
+func buildBin(p buildBinParams) (string, error) {
 	tmp, err := os.MkdirTemp("", "mini-evals-*")
 	if err != nil {
 		return "", err
 	}
-	out := filepath.Join(tmp, name)
-	args := append([]string{"build"}, extraFlags...)
-	args = append(args, "-o", out, pkg)
+	out := filepath.Join(tmp, p.name)
+	args := append([]string{"build"}, p.extraFlags...)
+	args = append(args, "-o", out, p.pkg)
 	cmd := exec.Command("go", args...)
-	cmd.Dir = root
+	cmd.Dir = p.root
 	if b, err := cmd.CombinedOutput(); err != nil {
 		return "", fmt.Errorf("%v\n%s", err, b)
 	}
@@ -220,7 +236,7 @@ func (r *Runner) buildRepSetup(label string, rep int, build func() (runSetup, er
 func (r *Runner) proxySetup(ec evalCtx, i format, rep int) (runSetup, error) {
 	env, p := ec.Env, ec.Params
 	callDir := env.DebugDir(fmt.Sprintf("proxy-%s-%d", fmtLabel[i], rep+1))
-	cfg, err := r.proxyMCPConfig(env, p.Servers, callDir, i)
+	cfg, err := r.proxyMCPConfig(miniConfigParams{env: env, servers: p.Servers, callLogDir: callDir, format: i})
 	if err != nil {
 		return runSetup{}, err
 	}
@@ -245,7 +261,7 @@ func (r *Runner) proxySetup(ec evalCtx, i format, rep int) (runSetup, error) {
 func (r *Runner) rawSetup(ec evalCtx, rep int) (runSetup, error) {
 	env, p := ec.Env, ec.Params
 	callDir := env.DebugDir(fmt.Sprintf("raw-%d", rep+1))
-	cfg, err := rawMCPConfig(env, r, p.Servers, callDir)
+	cfg, err := r.rawMCPConfig(env, p.Servers, callDir)
 	if err != nil {
 		return runSetup{}, err
 	}
@@ -261,7 +277,7 @@ func (r *Runner) rawSetup(ec evalCtx, rep int) (runSetup, error) {
 func (r *Runner) mcpSetup(ec evalCtx, i format, rep int) (runSetup, error) {
 	env, p := ec.Env, ec.Params
 	callDir := env.DebugDir(fmt.Sprintf("mcp-%s-%d", fmtLabel[i], rep+1))
-	cfg, err := r.miniMCPConfig(env, p.Servers, callDir, i)
+	cfg, err := r.miniMCPConfig(miniConfigParams{env: env, servers: p.Servers, callLogDir: callDir, format: i})
 	if err != nil {
 		return runSetup{}, err
 	}
@@ -277,7 +293,7 @@ func (r *Runner) mcpSetup(ec evalCtx, i format, rep int) (runSetup, error) {
 func (r *Runner) cliSetup(ec evalCtx, i format, rep int) (runSetup, error) {
 	env, p := ec.Env, ec.Params
 	callDir := env.DebugDir(fmt.Sprintf("cli-%s-%d", fmtLabel[i], rep+1))
-	cfgDir, err := r.miniCLIConfigDir(env, p.Servers, callDir, i)
+	cfgDir, err := r.miniCLIConfigDir(miniConfigParams{env: env, servers: p.Servers, callLogDir: callDir, format: i})
 	if err != nil {
 		return runSetup{}, err
 	}
@@ -312,7 +328,11 @@ type mcpRunSetupParams struct {
 func newMCPRunSetup(p mcpRunSetupParams) runSetup {
 	return runSetup{
 		kind: p.kind, idx: p.idx, rep: p.rep, callDir: p.callDir, workDir: p.workDir,
-		cmd: func() *exec.Cmd { return buildClaudeCmd(p.cfg, p.allowed, p.workDir, p.task) },
+		cmd: func() *exec.Cmd {
+			return buildClaudeCmd(claudeMCPCommandParams{
+				ConfigFile: p.cfg, AllowedTools: p.allowed, WorkDir: p.workDir, Task: p.task,
+			})
+		},
 	}
 }
 
@@ -325,7 +345,11 @@ type CLIRunSetupParams struct {
 func newCLIRunSetup(p CLIRunSetupParams) runSetup {
 	return runSetup{
 		kind: "cli", idx: p.Idx, rep: p.Rep, callDir: p.CallDir, workDir: p.WorkDir,
-		cmd: func() *exec.Cmd { return buildClaudeCLICmd(p.WrapDir, p.Allowed, p.WorkDir, p.Task) },
+		cmd: func() *exec.Cmd {
+			return buildClaudeCLICmd(claudeCLICommandParams{
+				WrapperDir: p.WrapDir, AllowedTools: p.Allowed, WorkDir: p.WorkDir, Task: p.Task,
+			})
+		},
 	}
 }
 

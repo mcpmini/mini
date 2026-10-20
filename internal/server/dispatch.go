@@ -48,25 +48,29 @@ func (s *Server) callPerSession(ctx context.Context, p dispatchParams) (json.Raw
 	}
 	raw, err := conn.Call(ctx, "tools/call", args)
 	if err != nil {
-		return nil, s.handleSessionConnErr(p.Upstream, p.Session, conn, err)
+		return nil, s.handleSessionConnErr(sessionConnErrParams{
+			Upstream: p.Upstream, Session: p.Session, Conn: conn, Err: err,
+		})
 	}
 	return raw, invoke.CheckResult(raw)
 }
 
-func (s *Server) handleSessionConnErr(
-	upstream *upstreamServer,
-	session *Session,
-	conn transport.Connection,
-	err error,
-) error {
+type sessionConnErrParams struct {
+	Upstream *upstreamServer
+	Session  *Session
+	Conn     transport.Connection
+	Err      error
+}
+
+func (s *Server) handleSessionConnErr(p sessionConnErrParams) error {
 	var rpcErr *transport.RPCError
-	if errors.As(err, &rpcErr) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-		return err
+	if errors.As(p.Err, &rpcErr) || errors.Is(p.Err, context.DeadlineExceeded) || errors.Is(p.Err, context.Canceled) {
+		return p.Err
 	}
-	s.logger.Warn("per-session connection error", "server", upstream.cfg.Name, "err", err)
-	session.EvictConn(upstream.cfg.Name, conn)
-	conn.Close() //nolint:errcheck // The call error is returned; Close only releases the evicted connection.
-	return connError{err}
+	s.logger.Warn("per-session connection error", "server", p.Upstream.cfg.Name, "err", p.Err)
+	p.Session.EvictConn(p.Upstream.cfg.Name, p.Conn)
+	p.Conn.Close() //nolint:errcheck // The call error is returned; Close only releases the evicted connection.
+	return connError{p.Err}
 }
 
 func (s *Server) getOrDialSessionConn(

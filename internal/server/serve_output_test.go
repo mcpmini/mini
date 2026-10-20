@@ -63,7 +63,9 @@ func TestWriteNotificationsReturnsBeforeFlushOnWriteFailure(t *testing.T) {
 	w := failingHTTPWriter{}
 	srv := &Server{}
 	r := httptest.NewRequest(http.MethodGet, "/mcp", nil).WithContext(ctx)
-	srv.writeNotifications(r, w, flusher, stream)
+	srv.writeNotifications(notificationParams{
+		Request: r, Writer: w, Flusher: flusher, Stream: stream,
+	})
 	if ctx.Err() != nil {
 		t.Fatalf("request context canceled: %v", ctx.Err())
 	}
@@ -96,7 +98,9 @@ func TestServeReturnsPendingNotificationFailureAtEOF(t *testing.T) {
 	session.toolsChanged.publishToolsChanged()
 	want := errors.New("notification output failed")
 	out := writerFunc(func([]byte) (int, error) { return 0, want })
-	err := (&Server{}).serveLoop(context.Background(), strings.NewReader(""), out, session)
+	err := (&Server{}).serveLoop(context.Background(), serveLoopParams{
+		Input: strings.NewReader(""), Output: out, Session: session,
+	})
 	if !errors.Is(err, want) {
 		t.Fatalf("Serve error = %v, want pending notification failure %v", err, want)
 	}

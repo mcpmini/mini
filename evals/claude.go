@@ -12,36 +12,50 @@ import (
 	"time"
 )
 
-func buildClaudeCmd(mcpConfigFile, allowedTools, workDir, task string) *exec.Cmd {
+type claudeMCPCommandParams struct {
+	ConfigFile   string
+	AllowedTools string
+	WorkDir      string
+	Task         string
+}
+
+func buildClaudeCmd(p claudeMCPCommandParams) *exec.Cmd {
 	args := []string{
-		"--print", "--output-format", "json", "--model", "claude-sonnet-4-6", task,
-		"--strict-mcp-config", "--mcp-config", mcpConfigFile,
-		"--no-session-persistence", "--allowedTools", allowedTools,
+		"--print", "--output-format", "json", "--model", "claude-sonnet-4-6", p.Task,
+		"--strict-mcp-config", "--mcp-config", p.ConfigFile,
+		"--no-session-persistence", "--allowedTools", p.AllowedTools,
 	}
-	if workDir != "" {
-		args = append(args, "--add-dir", workDir)
+	if p.WorkDir != "" {
+		args = append(args, "--add-dir", p.WorkDir)
 	}
 	cmd := exec.Command("claude", args...)
-	if workDir != "" {
-		cmd.Dir = workDir
+	if p.WorkDir != "" {
+		cmd.Dir = p.WorkDir
 	}
 	return cmd
 }
 
-func buildClaudeCLICmd(wrapperDir, allowedTools, workDir, task string) *exec.Cmd {
+type claudeCLICommandParams struct {
+	WrapperDir   string
+	AllowedTools string
+	WorkDir      string
+	Task         string
+}
+
+func buildClaudeCLICmd(p claudeCLICommandParams) *exec.Cmd {
 	preamble := "You have access to MCP servers via the CLI tool `mini`. " +
 		"Run `mini -h` to learn more and `mini ls` to list available servers.\n\nTask: "
 	args := []string{
-		"--print", "--output-format", "json", "--model", "claude-sonnet-4-6", preamble + task,
-		"--no-session-persistence", "--allowedTools", allowedTools,
+		"--print", "--output-format", "json", "--model", "claude-sonnet-4-6", preamble + p.Task,
+		"--no-session-persistence", "--allowedTools", p.AllowedTools,
 	}
-	if workDir != "" {
-		args = append(args, "--add-dir", workDir)
+	if p.WorkDir != "" {
+		args = append(args, "--add-dir", p.WorkDir)
 	}
 	cmd := exec.Command("claude", args...)
-	cmd.Env = append(os.Environ(), "PATH="+wrapperDir+":"+os.Getenv("PATH"))
-	if workDir != "" {
-		cmd.Dir = workDir
+	cmd.Env = append(os.Environ(), "PATH="+p.WrapperDir+":"+os.Getenv("PATH"))
+	if p.WorkDir != "" {
+		cmd.Dir = p.WorkDir
 	}
 	return cmd
 }
@@ -63,7 +77,9 @@ func runClaudeCmd(cmd *exec.Cmd, outputDir string) (string, error) {
 	select {
 	case err := <-done:
 		if err != nil {
-			return handleClaudeRunError(err, outputDir, out.String(), errBuf.String())
+			return handleClaudeRunError(claudeRunErrorParams{
+				Err: err, OutputDir: outputDir, Output: out.String(), Stderr: errBuf.String(),
+			})
 		}
 	case <-timer.C:
 		return handleClaudeTimeout(cmd, outputDir, out.String())
@@ -77,12 +93,19 @@ func handleClaudeTimeout(cmd *exec.Cmd, outputDir, output string) (string, error
 	return "", fmt.Errorf("claude eval timed out after 420s")
 }
 
-func handleClaudeRunError(err error, outputDir, output, stderr string) (string, error) {
-	saveOutput(outputDir, "claude-output-partial.json", output)
-	if stderr = strings.TrimSpace(stderr); stderr != "" {
-		return output, fmt.Errorf("claude: %v\nstderr: %s", err, stderr)
+type claudeRunErrorParams struct {
+	Err       error
+	OutputDir string
+	Output    string
+	Stderr    string
+}
+
+func handleClaudeRunError(p claudeRunErrorParams) (string, error) {
+	saveOutput(p.OutputDir, "claude-output-partial.json", p.Output)
+	if p.Stderr = strings.TrimSpace(p.Stderr); p.Stderr != "" {
+		return p.Output, fmt.Errorf("claude: %v\nstderr: %s", p.Err, p.Stderr)
 	}
-	return output, fmt.Errorf("claude: %v", err)
+	return p.Output, fmt.Errorf("claude: %v", p.Err)
 }
 
 func saveOutput(dir, name, content string) string {

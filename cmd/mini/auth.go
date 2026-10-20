@@ -167,43 +167,42 @@ func injectToken(ctx context.Context, configDir string, sc *config.ServerConfig)
 		printNotice(os.Stderr, "mini: %v\n", transport.ReauthorizationError(sc.Name, err))
 		return
 	}
-	token, err := ensureValidToken(ctx, configDir, sc, login)
+	token, err := ensureValidToken(loginRefreshParams{
+		ctx: ctx, configDir: configDir, server: sc, login: login,
+	})
 	if err != nil {
 		return
 	}
 	auth.ApplyBearerToken(sc, token.AccessToken)
 }
 
-func ensureValidToken(
-	ctx context.Context,
-	configDir string,
-	sc *config.ServerConfig,
-	login *auth.Login,
-) (*oauth2.Token, error) {
-	if login.Token.Valid() {
-		return login.Token, nil
-	}
-	if login.Token.RefreshToken == "" {
-		printNotice(os.Stderr, "mini: token for %s is expired — run: mini auth %s\n", sc.Name, sc.Name)
-		return nil, fmt.Errorf("expired")
-	}
-	return refreshAndSaveLogin(ctx, configDir, sc, login)
+type loginRefreshParams struct {
+	ctx       context.Context
+	configDir string
+	server    *config.ServerConfig
+	login     *auth.Login
 }
 
-func refreshAndSaveLogin(
-	ctx context.Context,
-	configDir string,
-	sc *config.ServerConfig,
-	login *auth.Login,
-) (*oauth2.Token, error) {
-	refreshed, err := auth.Refresh(ctx, login.RefreshConfig(sc.Auth), login.Token)
+func ensureValidToken(p loginRefreshParams) (*oauth2.Token, error) {
+	if p.login.Token.Valid() {
+		return p.login.Token, nil
+	}
+	if p.login.Token.RefreshToken == "" {
+		printNotice(os.Stderr, "mini: token for %s is expired — run: mini auth %s\n", p.server.Name, p.server.Name)
+		return nil, fmt.Errorf("expired")
+	}
+	return refreshAndSaveLogin(p)
+}
+
+func refreshAndSaveLogin(p loginRefreshParams) (*oauth2.Token, error) {
+	refreshed, err := auth.Refresh(p.ctx, p.login.RefreshConfig(p.server.Auth), p.login.Token)
 	if err != nil {
-		printNotice(os.Stderr, "mini: refresh token for %s failed — run: mini auth %s\n", sc.Name, sc.Name)
+		printNotice(os.Stderr, "mini: refresh token for %s failed — run: mini auth %s\n", p.server.Name, p.server.Name)
 		return nil, err
 	}
-	login.Token = refreshed
-	if saveErr := auth.SaveLogin(configDir, sc.Name, login); saveErr != nil {
-		printNotice(os.Stderr, "mini: save refreshed login for %s: %v\n", sc.Name, saveErr)
+	p.login.Token = refreshed
+	if saveErr := auth.SaveLogin(p.configDir, p.server.Name, p.login); saveErr != nil {
+		printNotice(os.Stderr, "mini: save refreshed login for %s: %v\n", p.server.Name, saveErr)
 	}
 	return refreshed, nil
 }
