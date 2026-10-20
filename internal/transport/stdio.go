@@ -25,7 +25,7 @@ type StdioConnection struct {
 	closeOnce    sync.Once // guards close(done)
 	shutdownOnce sync.Once // guards stdin.Close, Kill, Wait
 	logger       *slog.Logger
-	mu           sync.Mutex // guards stdin writes
+	writeGate    chan struct{} // a one-token channel, not a mutex, so a cancelled writer can stop waiting
 	toolsChanged toolsChangedNotifier
 }
 
@@ -89,13 +89,16 @@ func cmdPipes(cmd *exec.Cmd) (io.WriteCloser, io.ReadCloser, error) {
 }
 
 func newConn(cmd *exec.Cmd, stdin io.WriteCloser, stdout io.ReadCloser, logger *slog.Logger) *StdioConnection {
+	writeGate := make(chan struct{}, 1)
+	writeGate <- struct{}{}
 	return &StdioConnection{
-		cmd:     cmd,
-		stdin:   stdin,
-		scanner: NewScanner(stdout),
-		pending: newPendingMap(),
-		done:    make(chan struct{}),
-		logger:  logger,
+		cmd:       cmd,
+		stdin:     stdin,
+		scanner:   NewScanner(stdout),
+		pending:   newPendingMap(),
+		done:      make(chan struct{}),
+		logger:    logger,
+		writeGate: writeGate,
 	}
 }
 
@@ -105,20 +108,17 @@ func (c *StdioConnection) Call(ctx context.Context, method string, params json.R
 	}
 	id := c.nextID.Add(1)
 	ch := c.pending.register(id)
-
-	if err := c.sendRequest(id, method, params); err != nil {
+	if err := c.sendRequest(ctx, id, method, params); err != nil {
 		c.pending.remove(id)
+		c.abandonAfterFailedWrite(ctx, err)
 		return nil, err
 	}
-
 	return c.awaitResponse(ctx, id, ch)
 }
 
-func (c *StdioConnection) sendRequest(id int64, method string, params json.RawMessage) error {
+func (c *StdioConnection) sendRequest(ctx context.Context, id int64, method string, params json.RawMessage) error {
 	req := Request{JsonRPC: JsonRPCVersion, ID: id, Method: method, Params: params}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.writeJSON(req)
+	return c.writeJSONContext(ctx, req)
 }
 
 func (c *StdioConnection) awaitResponse(ctx context.Context, id int64, ch chan *Response) (json.RawMessage, error) {
@@ -197,9 +197,7 @@ func (c *StdioConnection) initialize(ctx context.Context) error {
 		return err
 	}
 	c.logger.Info("upstream connected", "server", result.ServerInfo.Name, "protocol", result.ProtocolVersion)
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.writeJSON(Notification{JsonRPC: JsonRPCVersion, Method: NotificationInitialized})
+	return c.writeJSONContext(ctx, Notification{JsonRPC: JsonRPCVersion, Method: NotificationInitialized})
 }
 
 func newInitializeParams() InitializeParams {
@@ -263,13 +261,4 @@ func (c *StdioConnection) dispatchNotification(line []byte) {
 
 func (c *StdioConnection) SetNotificationHandler(handler func(Notification)) {
 	c.toolsChanged.SetHandler(handler)
-}
-
-func (c *StdioConnection) writeJSON(v any) error {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintf(c.stdin, "%s\n", b)
-	return err
 }

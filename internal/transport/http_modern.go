@@ -60,7 +60,7 @@ func (c *HTTPConnection) isModern() bool {
 }
 
 func (c *HTTPConnection) callModern(ctx context.Context, call httpCall) (json.RawMessage, error) {
-	prepared, err := c.prepareModernParams(call.Params, call.modernVersion)
+	prepared, err := prepareModernParams(call.Params, call.modernVersion)
 	if err != nil {
 		return nil, err
 	}

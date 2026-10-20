@@ -144,9 +144,7 @@ func TestModernArgumentHeaderValues(t *testing.T) {
 }
 
 func TestModernRequestRejectsNonObjectParams(t *testing.T) {
-	conn := &HTTPConnection{}
-	conn.modernVersion.Store(&ModernVersions[0])
-	if _, err := conn.prepareModernParams(json.RawMessage(`[]`), ModernVersions[0]); err == nil ||
+	if _, err := prepareModernParams(json.RawMessage(`[]`), ModernVersions[0]); err == nil ||
 		err.Error() != "modern request params must be a JSON object" {
 		t.Fatalf("prepareModernParams error = %v", err)
 	}

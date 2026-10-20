@@ -20,14 +20,7 @@ func makePipeConn(t *testing.T) (conn *StdioConnection, serverW *io.PipeWriter, 
 	t.Helper()
 	srvOutR, srvOutW := io.Pipe()
 	connOutR, connOutW := io.Pipe()
-	conn = &StdioConnection{
-		cmd:     new(exec.Cmd),
-		stdin:   connOutW,
-		scanner: NewScanner(srvOutR),
-		pending: newPendingMap(),
-		done:    make(chan struct{}),
-		logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
-	}
+	conn = newConn(new(exec.Cmd), connOutW, srvOutR, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	go conn.readLoop()
 	t.Cleanup(func() {
 		conn.closeDone()
