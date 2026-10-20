@@ -119,7 +119,7 @@ func startListenHarness(t *testing.T) *listenHarness {
 	conn.clock = h.clock
 	conn.SetNotificationHandler(func(notification Notification) { h.changes <- notification })
 	conn.startSubscriptionListener(context.Background())
-	t.Cleanup(func() { conn.Close() }) //nolint:errcheck // the child's exit status is irrelevant to these tests.
+	t.Cleanup(func() { _ = conn.Close() })
 	if h.listen = readScannerRequest(t, h.scanner); h.listen.Method != MethodSubscriptionsListen {
 		t.Fatalf("first request = %q, want %s", h.listen.Method, MethodSubscriptionsListen)
 	}

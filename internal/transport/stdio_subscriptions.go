@@ -183,7 +183,7 @@ func (c *StdioConnection) cancelSubscription(raw json.RawMessage) bool {
 		c.listenMu.Unlock()
 		return true
 	}
-	wasActive := subscription.end()
+	wasActive := subscription.endLocked()
 	close(subscription.ended)
 	c.listenMu.Unlock()
 	c.pending.remove(subscription.requestID)
@@ -198,22 +198,21 @@ func (c *StdioConnection) noteSubscriptionResponse(response *Response) {
 	subscription := c.listen
 	ends := subscription != nil && subscription.state != listenEnded &&
 		normalizeID(response.ID) == subscription.requestID
-	wasActive := ends && subscription.end()
+	wasActive := ends && subscription.endLocked()
 	c.listenMu.Unlock()
 	if wasActive && response.Error == nil {
 		c.refreshAfterServerEndedSubscription()
 	}
 }
 
-// end must be called with listenMu held.
-func (s *stdioSubscription) end() (wasActive bool) {
+func (s *stdioSubscription) endLocked() (wasActive bool) {
 	wasActive = s.state == listenActive
 	s.state = listenEnded
 	return wasActive
 }
 
-// Servers end subscriptions when shutting down, so this one isn't renewed; one refresh covers any
-// change the ended subscription would have reported.
+// A server typically ends a subscription because it is shutting down, so this one isn't renewed;
+// one refresh covers any change the ended subscription would have reported.
 func (c *StdioConnection) refreshAfterServerEndedSubscription() {
 	c.logger.Info("upstream ended its tool-change subscription")
 	c.toolsChanged.NotifyToolsChanged()
