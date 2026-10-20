@@ -10,10 +10,9 @@ Source of truth: the MCP specification — prose in
 [`lifecycle.mdx`](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/699e664dfe1158045996f28e7dbd80db53bebbeb/docs/specification/2025-11-25/basic/lifecycle.mdx)
 and the machine schema
 [`schema.ts`](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/699e664dfe1158045996f28e7dbd80db53bebbeb/schema/2025-11-25/schema.ts).
-Behavior below is stable across protocol versions 2024-11-05, 2025-03-26, 2025-06-18,
-2025-11-25 unless noted; permalinks point at 2025-11-25. The initialize-based
-flow in this section describes legacy versions. The 2026-07-28 protocol uses per-request
-metadata and discovery instead, as described below.
+Behavior below is stable across protocol versions 2024-11-05, 2025-03-26, 2025-06-18 and
+2025-11-25 unless noted; permalinks point at 2025-11-25. Revision 2026-07-28 drops the
+`initialize` handshake; see [MCP 2026-07-28](#mcp-2026-07-28) for how mini serves both.
 
 The lifecycle has three phases. Initialization is the one that matters here.
 
@@ -193,3 +192,32 @@ it sits in the middle — surface upstream health to the *model*, which the agen
 
 Connection-robustness and degraded-upstream reporting are tracked in
 [issue #33](https://github.com/mcpmini/mini/issues/33).
+
+## MCP 2026-07-28
+
+Revision 2026-07-28 has no `initialize` handshake and no session: every request carries the
+protocol version, client info and capabilities in its `_meta`
+([versioning](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/1155ca460e5097019f32769b38dcba194432e2fb/docs/specification/2026-07-28/basic/versioning.mdx#L30-L40)).
+Servers **MUST** answer
+[`server/discover`](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/1155ca460e5097019f32769b38dcba194432e2fb/docs/specification/2026-07-28/basic/versioning.mdx#L73-L78),
+and a client that talks to both eras probes with it and falls back to `initialize` on
+anything that isn't a recognized modern answer
+([backward compatibility](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/1155ca460e5097019f32769b38dcba194432e2fb/docs/specification/2026-07-28/basic/versioning.mdx#L126-L172)).
+Tool-change notifications move to `subscriptions/listen`.
+
+mini supports both eras on each side:
+
+- **To the agent (Layer 1).** `mini connect` answers `server/discover`, serves modern
+  requests without a handshake, and acknowledges `subscriptions/listen` for tool changes, in
+  standalone mode and through the daemon. An agent that sends `initialize` gets the legacy
+  lifecycle above, with mini echoing any legacy version it knows and otherwise answering
+  2025-11-25. An unsupported modern version gets `-32022` with the supported list.
+- **To upstreams (Layer 2).** mini probes each HTTP upstream with `server/discover` once per
+  connection. A modern server gets modern requests (per-request `_meta`, the
+  `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` headers, and `Mcp-Param-*` headers for
+  annotated arguments); anything else gets the `initialize` handshake at the negotiated legacy
+  version. Stdio upstreams always use `initialize`.
+- **Input requests.** A modern upstream can answer `tools/call` with
+  `resultType: "input_required"`. mini passes it unchanged to a modern agent in proxy mode, and
+  forwards the agent's retry with its answers. Legacy agents, compact mode and `mini call` get a
+  tool error instead.
