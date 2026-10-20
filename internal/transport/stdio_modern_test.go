@@ -178,14 +178,15 @@ func TestStdioDiscoveryTimeoutFallsBackToLegacy(t *testing.T) {
 	conn, _, serverR := makePipeConn(t)
 	fakeClock := clock.NewFake()
 	conn.clock = fakeClock
-	go io.Copy(io.Discard, serverR) //nolint:errcheck // the silent server only drains the probe.
-	result := make(chan probeVerdict, 1)
+	go io.Copy(io.Discard, serverR)
+	type outcome struct {
+		verdict probeVerdict
+		err     error
+	}
+	result := make(chan outcome, 1)
 	go func() {
 		verdict, err := conn.discover(context.Background())
-		if err != nil {
-			verdict = probeVerdict{}
-		}
-		result <- verdict
+		result <- outcome{verdict, err}
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -193,14 +194,14 @@ func TestStdioDiscoveryTimeoutFallsBackToLegacy(t *testing.T) {
 		t.Fatal(err)
 	}
 	fakeClock.Advance(stdioDiscoveryTimeout)
-	if verdict := <-result; verdict.era != EraLegacy {
-		t.Fatalf("era after the probe timed out = %v, want legacy", verdict.era)
+	if got := <-result; got.err != nil || got.verdict.era != EraLegacy {
+		t.Fatalf("discover after the probe timed out = %v, %v; want legacy and no error", got.verdict.era, got.err)
 	}
 }
 
 func TestStdioDiscoveryParentCancellationIsTerminal(t *testing.T) {
 	conn, _, serverR := makePipeConn(t)
-	go io.Copy(io.Discard, serverR) //nolint:errcheck // the silent server only drains the probe.
+	go io.Copy(io.Discard, serverR)
 	ctx, cancel := context.WithCancel(context.Background())
 	result := make(chan error, 1)
 	go func() {

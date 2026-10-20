@@ -224,7 +224,7 @@ func (c *StdioConnection) replaceExitedProbe(ctx context.Context) (*StdioConnect
 		}
 	}
 	if err != nil {
-		// A server that crashes at startup fails the same way twice; its first exit is what explains it.
+		// When a server crashes at startup, its first exit is what explains the failure.
 		return nil, fmt.Errorf(
 			"upstream exited during setup (%s); restarting it without the modern probe failed too: %w",
 			exitStatus(exit),

@@ -205,7 +205,6 @@ func TestCall_roundTrip(t *testing.T) {
 
 func TestCall_ctxCancelBeforeResponse(t *testing.T) {
 	conn, _, serverR := makePipeConn(t)
-	// Drain requests so the request write doesn't block on the pipe.
 	go io.Copy(io.Discard, serverR)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -317,7 +316,6 @@ func TestListTools_viaPipe_pagination(t *testing.T) {
 
 func TestInitialize_respectsDeadlineWhenUpstreamNeverResponds(t *testing.T) {
 	conn, _, serverR := makePipeConn(t)
-	// Drain requests so the request write doesn't block on the pipe.
 	go io.Copy(io.Discard, serverR)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
