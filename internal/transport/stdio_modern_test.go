@@ -174,6 +174,22 @@ func TestStdioDiscoveryRetriesSupportedVersionErrorOnce(t *testing.T) {
 	}
 }
 
+func TestStdioDiscoveryMalformedRetryNeverFallsBack(t *testing.T) {
+	conn, serverW, serverR := makePipeConn(t)
+	supported := json.RawMessage(`{"requested":"2026-07-28","supported":["2026-07-28"]}`)
+	scriptStdioUpstream(serverW, serverR,
+		replyError(serverW, CodeUnsupportedProtocolVersion, supported),
+		replyResult(serverW, json.RawMessage(`{}`)),
+		noReply,
+	)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := conn.negotiate(ctx)
+	if err == nil || !strings.Contains(err.Error(), "returned no supported versions") {
+		t.Fatalf("negotiate error = %v, want the malformed retry reported and no legacy initialize", err)
+	}
+}
+
 func TestStdioDiscoveryTimeoutFallsBackToLegacy(t *testing.T) {
 	conn, _, serverR := makePipeConn(t)
 	fakeClock := clock.NewFake()

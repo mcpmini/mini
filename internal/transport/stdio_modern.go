@@ -142,7 +142,7 @@ func (c *StdioConnection) retrySupportedDiscovery(
 	data, ok := decodeUnsupportedVersionData(rpcErr.Data)
 	mutual := modernVersionVerdict(data.Supported)
 	if ok && mutual.era == EraModern {
-		verdict, err := c.discoverCorrected(probeCtx, mutual.version, data)
+		verdict, err := c.discoverCorrected(probeCtx, mutual.version)
 		return verdict, true, err
 	}
 	err := explicitModernProbeError{unsupportedStdioVersion(data, version)}
@@ -157,11 +157,7 @@ func (c *StdioConnection) discoverOnce(ctx context.Context, protocolVersion stri
 	return c.rpc(ctx, "server/discover", params)
 }
 
-func (c *StdioConnection) discoverCorrected(
-	ctx context.Context,
-	protocolVersion string,
-	data UnsupportedVersionData,
-) (probeVerdict, error) {
+func (c *StdioConnection) discoverCorrected(ctx context.Context, protocolVersion string) (probeVerdict, error) {
 	result, err := c.discoverOnce(ctx, protocolVersion)
 	if err != nil {
 		return probeVerdict{}, explicitModernProbeError{
@@ -171,7 +167,14 @@ func (c *StdioConnection) discoverCorrected(
 	if ctx.Err() != nil {
 		return probeVerdict{}, ctx.Err()
 	}
-	return classifyStdioDiscover(result, protocolVersion)
+	verdict, err := classifyStdioDiscover(result, protocolVersion)
+	if err == nil && verdict.era != EraModern {
+		// The first reply already showed a modern server, so the spec rules out falling back now.
+		return probeVerdict{}, explicitModernProbeError{
+			fmt.Errorf("modern discovery retry for %q returned no supported versions", protocolVersion),
+		}
+	}
+	return verdict, err
 }
 
 func legacyProbeVerdict() (probeVerdict, error) {
