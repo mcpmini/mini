@@ -212,7 +212,7 @@ func (s *stdioSubscription) endLocked() (wasActive bool) {
 }
 
 // A server typically ends a subscription because it is shutting down, so this one isn't renewed;
-// one refresh covers any change the ended subscription would have reported.
+// one refresh picks up any change made before it ended.
 func (c *StdioConnection) refreshAfterServerEndedSubscription() {
 	c.logger.Info("upstream ended its tool-change subscription")
 	c.toolsChanged.NotifyToolsChanged()
