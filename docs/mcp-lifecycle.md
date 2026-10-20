@@ -125,8 +125,14 @@ sequenceDiagram
 - **Layer 1 — agent ↔ mini.** The agent is the client; mini is the server. The agent's first
   interaction is a Layer-1 `initialize` request to mini.
 - **Layer 2 — mini ↔ upstreams.** mini is the client; github/sentry/etc. are the servers. mini
-  sends its own Layer-2 `initialize` + `tools/list` to each upstream and re-exposes the
-  resulting tools through Layer 1.
+  negotiates its own Layer-2 protocol with each upstream and re-exposes the resulting tools
+  through Layer 1.
+
+For legacy upstreams, mini sends `initialize`, confirms with
+`notifications/initialized`, then requests `tools/list`. For modern upstreams, over HTTP or
+stdio, mini first probes with `server/discover`, then attaches protocol and client metadata to
+each request instead of sending the legacy handshake. Each upstream's protocol is chosen
+independently of the agent's Layer-1 protocol.
 
 ### Connection modes
 

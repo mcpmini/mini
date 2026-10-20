@@ -40,7 +40,13 @@ func Dial(ctx context.Context, p DialParams) (transport.Connection, error) {
 	}
 	return transport.NewStdioConnection(
 		ctx,
-		transport.StdioCommand{Command: p.Server.Command, Args: p.Server.Args, Env: p.Server.Env, Logger: p.Logger},
+		transport.StdioCommand{
+			Command: p.Server.Command,
+			Args:    p.Server.Args,
+			Env:     p.Server.Env,
+			Logger:  p.Logger,
+			Clock:   p.Clock,
+		},
 	)
 }
 

@@ -8,25 +8,31 @@ import (
 	"io"
 	"log/slog"
 	"os/exec"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/version"
 )
 
 type StdioConnection struct {
-	cmd          *exec.Cmd
-	stdin        io.WriteCloser
-	scanner      *bufio.Scanner
-	pending      pendingMap
-	nextID       atomic.Int64
-	done         chan struct{}
-	closeOnce    sync.Once // guards close(done)
-	shutdownOnce sync.Once // guards stdin.Close, Kill, Wait
-	logger       *slog.Logger
-	writeGate    chan struct{} // not a mutex, so a cancelled writer can stop waiting
-	toolsChanged toolsChangedNotifier
+	cmd           *exec.Cmd
+	stdin         io.WriteCloser
+	scanner       *bufio.Scanner
+	pending       pendingMap
+	nextID        atomic.Int64
+	done          chan struct{}
+	closeOnce     sync.Once // guards close(done)
+	shutdownOnce  sync.Once // guards stdin.Close, Kill, Wait
+	waitErr       error     // set once by shutdownOnce
+	logger        *slog.Logger
+	command       StdioCommand
+	clock         clock.Clock
+	modernVersion atomic.Pointer[string]
+	writeGate     chan struct{} // not a mutex, so a cancelled writer can stop waiting
+	toolsChanged  toolsChangedNotifier
 }
 
 type StdioCommand struct {
@@ -34,17 +40,17 @@ type StdioCommand struct {
 	Args    []string
 	Env     []string
 	Logger  *slog.Logger
+	Clock   clock.Clock
 }
 
 func NewStdioConnection(ctx context.Context, p StdioCommand) (*StdioConnection, error) {
-	//nolint:contextcheck // The subprocess survives initialization; failed handshakes close it before returning.
-	c, err := startSubprocess(p)
+	c, err := startSubprocess(context.WithoutCancel(ctx), p)
 	if err != nil {
 		return nil, err
 	}
-	if err := c.initialize(ctx); err != nil {
-		c.Close() //nolint:errcheck // cleanup preserves the handshake failure as the constructor's reported error
-		return nil, fmt.Errorf("MCP handshake: %w", err)
+	c, err = c.negotiate(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("MCP connection setup: %w", err)
 	}
 	return c, nil
 }
@@ -54,9 +60,8 @@ func NewStdioConnection(ctx context.Context, p StdioCommand) (*StdioConnection, 
 // delay only bounds how long closing stalls.
 const stdioWaitDelay = 500 * time.Millisecond
 
-func startSubprocess(p StdioCommand) (*StdioConnection, error) {
-	// background context: stdio MCP connections are long-running
-	cmd := exec.CommandContext(context.Background(), p.Command, p.Args...)
+func startSubprocess(ctx context.Context, p StdioCommand) (*StdioConnection, error) {
+	cmd := exec.CommandContext(ctx, p.Command, p.Args...)
 	if len(p.Env) > 0 {
 		cmd.Env = append(cmd.Environ(), p.Env...)
 	}
@@ -72,6 +77,10 @@ func startSubprocess(p StdioCommand) (*StdioConnection, error) {
 		return nil, fmt.Errorf("start %s: %w", p.Command, err)
 	}
 	c := newConn(cmd, stdin, stdout, p.Logger)
+	c.command = p
+	if p.Clock != nil {
+		c.clock = p.Clock
+	}
 	go c.readLoop()
 	return c, nil
 }
@@ -98,14 +107,25 @@ func newConn(cmd *exec.Cmd, stdin io.WriteCloser, stdout io.ReadCloser, logger *
 		pending:   newPendingMap(),
 		done:      make(chan struct{}),
 		logger:    logger,
+		clock:     clock.System(),
 		writeGate: writeGate,
 	}
 }
 
 func (c *StdioConnection) Call(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
-	if method == "tools/call" {
+	if modernVersion := c.negotiatedModernVersion(); modernVersion != "" {
+		prepared, err := prepareModernParams(params, modernVersion)
+		if err != nil {
+			return nil, err
+		}
+		params = prepared
+	} else if method == "tools/call" {
 		params = stripModernToolCallFields(params)
 	}
+	return c.rpc(ctx, method, params)
+}
+
+func (c *StdioConnection) rpc(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
 	id := c.nextID.Add(1)
 	ch := c.pending.register(id)
 	request := Request{JsonRPC: JsonRPCVersion, ID: id, Method: method, Params: params}
@@ -120,7 +140,9 @@ func (c *StdioConnection) Call(ctx context.Context, method string, params json.R
 func (c *StdioConnection) awaitResponse(ctx context.Context, id int64, ch chan *Response) (json.RawMessage, error) {
 	select {
 	case <-ctx.Done():
-		c.pending.remove(id)
+		if c.pending.remove(id) && c.isModern() {
+			c.cancelUpstreamRequest(context.WithoutCancel(ctx), id)
+		}
 		return nil, ctx.Err()
 	case <-c.done:
 		return nil, fmt.Errorf("connection closed")
@@ -164,16 +186,15 @@ func (c *StdioConnection) Health(_ context.Context) error {
 
 func (c *StdioConnection) Close() error {
 	c.closeDone()
-	var closeErr error
 	c.shutdownOnce.Do(func() {
 		c.stdin.Close() //nolint:errcheck // child termination and Wait below own subprocess cleanup
 		if c.cmd.Process != nil {
 			//nolint:errcheck // an exited child may reject Kill; Wait observes its exit status.
 			c.cmd.Process.Kill()
 		}
-		closeErr = c.cmd.Wait()
+		c.waitErr = c.cmd.Wait()
 	})
-	return closeErr
+	return c.waitErr
 }
 
 // closeDone signals the done channel once, unblocking readLoop and any pending Call.
@@ -257,4 +278,22 @@ func (c *StdioConnection) dispatchNotification(line []byte) {
 
 func (c *StdioConnection) SetNotificationHandler(handler func(Notification)) {
 	c.toolsChanged.SetHandler(handler)
+}
+
+// A best-effort notice for a caller that has already given up, so it gets only a short bound.
+const stdioCancelWriteTimeout = 250 * time.Millisecond
+
+func (c *StdioConnection) cancelUpstreamRequest(parent context.Context, id int64) {
+	ctx, cancel := context.WithTimeout(parent, stdioCancelWriteTimeout)
+	defer cancel()
+	params, err := json.Marshal(CancelledParams{RequestID: json.RawMessage(strconv.FormatInt(id, 10))})
+	if err != nil {
+		c.logger.Debug("encode upstream cancellation", "err", err)
+		return
+	}
+	notification := Notification{JsonRPC: JsonRPCVersion, Method: NotificationCancelled, Params: params}
+	if err := c.writeJSONContext(ctx, notification); err != nil {
+		c.logger.Debug("send upstream cancellation", "err", err)
+		c.abandonAfterFailedWrite(ctx, err)
+	}
 }

@@ -64,12 +64,26 @@ func runEnvEchoServer() {
 			envEchoWrite(id, map[string]any{
 				"content": []any{map[string]any{"type": "text", "text": os.Getenv("MINI_TEST_VAR")}},
 			})
+		default:
+			envEchoError(id)
 		}
 	}
 }
 
 func envEchoWrite(id any, result any) {
 	b, _ := json.Marshal(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, "result": result})
+	fmt.Fprintf(os.Stdout, "%s\n", b)
+}
+
+func envEchoError(id any) {
+	b, _ := json.Marshal(map[string]any{
+		"jsonrpc": transport.JsonRPCVersion,
+		"id":      id,
+		"error": map[string]any{
+			"code":    transport.CodeMethodNotFound,
+			"message": "method not found",
+		},
+	})
 	fmt.Fprintf(os.Stdout, "%s\n", b)
 }
 

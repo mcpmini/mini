@@ -42,6 +42,8 @@ func handleLine(line []byte) {
 		respond(id, toolsListResult())
 	case "tools/call":
 		respond(id, echoResult(req))
+	default:
+		respondError(id)
 	}
 }
 
@@ -80,5 +82,17 @@ func echoResult(req map[string]any) map[string]any {
 
 func respond(id, result any) {
 	b, _ := json.Marshal(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, "result": result})
+	fmt.Fprintf(os.Stdout, "%s\n", b)
+}
+
+func respondError(id any) {
+	b, _ := json.Marshal(map[string]any{
+		"jsonrpc": transport.JsonRPCVersion,
+		"id":      id,
+		"error": map[string]any{
+			"code":    transport.CodeMethodNotFound,
+			"message": "method not found",
+		},
+	})
 	fmt.Fprintf(os.Stdout, "%s\n", b)
 }
