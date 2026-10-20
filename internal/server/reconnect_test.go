@@ -100,18 +100,25 @@ func reconnectHTTPServer(t *testing.T) *httptest.Server {
 	})
 }
 
-func waitForReconnect(t *testing.T, fakeClock *clock.Fake, srv *server.Server, svc string) {
-	t.Helper()
+type waitForReconnectParams struct {
+	T          *testing.T
+	FakeClock  *clock.Fake
+	Server     *server.Server
+	ServerName string
+}
+
+func waitForReconnect(params waitForReconnectParams) {
+	params.T.Helper()
 	reconnected := make(chan struct{})
-	srv.SetReconnectHook(svc, func() { close(reconnected) })
-	if err := fakeClock.BlockUntilContext(t.Context(), responseCleanupTimer+1); err != nil {
-		t.Fatalf("waiting for reconnect timer: %v", err)
+	params.Server.SetReconnectHook(params.ServerName, func() { close(reconnected) })
+	if err := params.FakeClock.BlockUntilContext(params.T.Context(), responseCleanupTimer+1); err != nil {
+		params.T.Fatalf("waiting for reconnect timer: %v", err)
 	}
-	fakeClock.Advance(time.Second)
+	params.FakeClock.Advance(time.Second)
 	select {
 	case <-reconnected:
 	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for reconnect to complete")
+		params.T.Fatal("timed out waiting for reconnect to complete")
 	}
 }
 
@@ -135,15 +142,23 @@ func makeErrConn(errOnCall *bool) *errAfterRegisterConn {
 	}
 }
 
-func assertEnvelopeOK(t *testing.T, srv *server.Server, svcName, toolName string, wantOK bool) {
-	t.Helper()
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": svcName, "tool": toolName, "params": map[string]any{},
+type assertEnvelopeOKParams struct {
+	T          *testing.T
+	Server     *server.Server
+	ServerName string
+	ToolName   string
+	WantOK     bool
+}
+
+func assertEnvelopeOK(params assertEnvelopeOKParams) {
+	params.T.Helper()
+	resp := serve(params.T, params.Server, callTool("call", map[string]any{
+		"server": params.ServerName, "tool": params.ToolName, "params": map[string]any{},
 	}))
-	env := parseEnvelope(t, toolResultText(t, resp))
+	env := parseEnvelope(params.T, toolResultText(params.T, resp))
 	gotOK := env["error"] == nil
-	if gotOK != wantOK {
-		t.Errorf("expected ok=%v, got: %v", wantOK, env)
+	if gotOK != params.WantOK {
+		params.T.Errorf("expected ok=%v, got: %v", params.WantOK, env)
 	}
 }
 
@@ -156,22 +171,30 @@ func TestReconnect_successAfterFailure(t *testing.T) {
 		Name: "svc", Transport: "http", URL: httpSrv.URL,
 	}, makeErrConn(&errOnCall))
 	errOnCall = true
-	assertEnvelopeOK(t, srv, "svc", "ping", false)
+	assertEnvelopeOK(assertEnvelopeOKParams{T: t, Server: srv, ServerName: "svc", ToolName: "ping", WantOK: false})
 	errOnCall = false
-	waitForReconnect(t, fakeClock, srv, "svc")
-	assertEnvelopeOK(t, srv, "svc", "ping", true)
+	waitForReconnect(waitForReconnectParams{T: t, FakeClock: fakeClock, Server: srv, ServerName: "svc"})
+	assertEnvelopeOK(assertEnvelopeOKParams{T: t, Server: srv, ServerName: "svc", ToolName: "ping", WantOK: true})
 }
 
-func writeToolsCallResp(w http.ResponseWriter, id any, callsSeen int, rpcErrOnCall *int) {
-	if *rpcErrOnCall > 0 && callsSeen == *rpcErrOnCall {
-		json.NewEncoder(w).
-			Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, "error": map[string]any{"code": -32602, "message": "bad args"}})
+type writeToolsCallRespParams struct {
+	Writer         http.ResponseWriter
+	ID             any
+	CallsSeen      int
+	RPCErrorOnCall *int
+}
+
+func writeToolsCallResp(params writeToolsCallRespParams) {
+	if *params.RPCErrorOnCall > 0 && params.CallsSeen == *params.RPCErrorOnCall {
+		json.NewEncoder(params.Writer).
+			Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": params.ID, "error": map[string]any{"code": -32602, "message": "bad args"}})
 
 			//nolint:errcheck
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, //nolint:errcheck
-		"result": map[string]any{"content": []map[string]any{{"type": "text", "text": "ok"}}}})
+	json.NewEncoder(params.Writer).
+		Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": params.ID, //nolint:errcheck
+			"result": map[string]any{"content": []map[string]any{{"type": "text", "text": "ok"}}}})
 }
 
 func perSessionUpstreamHandler(dialCount *int, rpcErrOnCall *int) http.HandlerFunc {
@@ -198,7 +221,9 @@ func perSessionUpstreamHandler(dialCount *int, rpcErrOnCall *int) http.HandlerFu
 		//nolint:errcheck
 		case "tools/call":
 			callsSeen++
-			writeToolsCallResp(w, id, callsSeen, rpcErrOnCall)
+			writeToolsCallResp(
+				writeToolsCallRespParams{Writer: w, ID: id, CallsSeen: callsSeen, RPCErrorOnCall: rpcErrOnCall},
+			)
 		}
 	}
 }
@@ -220,14 +245,14 @@ func newPerSessionSrv(t *testing.T, url string) *server.Server {
 	return srv
 }
 
-func postToMiniHTTP(t *testing.T, ts *httptest.Server, sessionID string, body []byte) {
-	t.Helper()
-	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", bytes.NewReader(body))
+func postToMiniHTTP(params mcpPostParams) {
+	params.T.Helper()
+	req, _ := http.NewRequest(http.MethodPost, params.HTTPServer.URL+"/mcp", bytes.NewReader(params.Body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Mcp-Session-Id", sessionID)
+	req.Header.Set("Mcp-Session-Id", params.SessionID)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		t.Fatalf("mini POST: %v", err)
+		params.T.Fatalf("mini POST: %v", err)
 	}
 	io.Copy(io.Discard, resp.Body) //nolint:errcheck
 	resp.Body.Close()
@@ -257,10 +282,14 @@ func TestPerSession_rpcErrorKeepsConn(t *testing.T) {
 		"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "tools/call",
 		"params": map[string]any{"name": "call", "arguments": map[string]any{"server": "svc", "tool": "ping"}},
 	})
-	postToMiniHTTP(t, ts, sid, init)
-	postToMiniHTTP(t, ts, sid, exec) // call 1: success, triggers per-session dial
-	postToMiniHTTP(t, ts, sid, exec) // call 2: RPC error
-	postToMiniHTTP(t, ts, sid, exec) // call 3: should reuse conn, not redial
+	postToMiniHTTP(mcpPostParams{T: t, HTTPServer: ts, SessionID: sid, Body: init})
+	postToMiniHTTP(
+		mcpPostParams{T: t, HTTPServer: ts, SessionID: sid, Body: exec},
+	) // call 1: success, triggers per-session dial
+	postToMiniHTTP(mcpPostParams{T: t, HTTPServer: ts, SessionID: sid, Body: exec}) // call 2: RPC error
+	postToMiniHTTP(
+		mcpPostParams{T: t, HTTPServer: ts, SessionID: sid, Body: exec},
+	) // call 3: should reuse conn, not redial
 
 	if dialCount != baseline+1 {
 		t.Errorf("RPC error should not redial per-session conn: expected %d dials, got %d", baseline+1, dialCount)
@@ -330,14 +359,20 @@ func TestPerSession_transportErrorRedialsConn(t *testing.T) {
 		"params": map[string]any{"name": "call", "arguments": map[string]any{"server": "svc", "tool": "ping"}},
 	})
 
-	postToMiniHTTP(t, ts, sid, init)
-	postToMiniHTTP(t, ts, sid, exec) // call 1: success, dials per-session conn (dialCount → 1)
+	postToMiniHTTP(mcpPostParams{T: t, HTTPServer: ts, SessionID: sid, Body: init})
+	postToMiniHTTP(
+		mcpPostParams{T: t, HTTPServer: ts, SessionID: sid, Body: exec},
+	) // call 1: success, dials per-session conn (dialCount → 1)
 
 	closeOnCall.Store(2)
-	postToMiniHTTP(t, ts, sid, exec) // call 2: transport error → conn evicted
+	postToMiniHTTP(
+		mcpPostParams{T: t, HTTPServer: ts, SessionID: sid, Body: exec},
+	) // call 2: transport error → conn evicted
 
 	closeOnCall.Store(0)
-	postToMiniHTTP(t, ts, sid, exec) // call 3: should redial (dialCount → 2)
+	postToMiniHTTP(
+		mcpPostParams{T: t, HTTPServer: ts, SessionID: sid, Body: exec},
+	) // call 3: should redial (dialCount → 2)
 
 	if got := dialCount.Load(); got < 2 {
 		t.Errorf("transport error should trigger redial: expected ≥2 dials, got %d", got)

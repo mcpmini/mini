@@ -106,7 +106,7 @@ func TestHTTPServer_SessionID(t *testing.T) {
 
 	check := func(t *testing.T, id string, want int) {
 		t.Helper()
-		resp := mcpPost(t, ts, initRequest(), id)
+		resp := mcpPost(mcpPostParams{T: t, HTTPServer: ts, Body: initRequest(), SessionID: id})
 		resp.Body.Close()
 		if resp.StatusCode != want {
 			t.Errorf("id=%q: got %d, want %d", id, resp.StatusCode, want)

@@ -38,7 +38,7 @@ func newSrvWithResponse(t *testing.T, format config.ResponseFormat, payload stri
 			"tools/call": json.RawMessage(`{"content":[{"type":"text","text":` + string(issuesJSON) + `}]}`),
 		},
 	}
-	addEdgeConn(t, srv, config.ServerConfig{Name: "gh"}, fake)
+	addEdgeConn(addConnectionParams{T: t, Server: srv, Config: config.ServerConfig{Name: "gh"}, Connection: fake})
 	return srv
 }
 
@@ -105,7 +105,7 @@ func newSrvWithConfigFormat(t *testing.T, format config.ResponseFormat) *server.
 		},
 	}
 	srv := newTestServer(t, server.Params{Config: cfg})
-	addEdgeConn(t, srv, config.ServerConfig{Name: "gh"}, fake)
+	addEdgeConn(addConnectionParams{T: t, Server: srv, Config: config.ServerConfig{Name: "gh"}, Connection: fake})
 	return srv
 }
 
@@ -183,7 +183,7 @@ func TestReadTool_ResolvesFileWrittenByCompactModeToonFormat(t *testing.T) {
 	conn := fakeConn("list_issues")
 	payloadJSON, _ := json.Marshal(payload)
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":` + string(payloadJSON) + `}]}`)
-	addProxyConn(t, srv, "gh", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "gh", Connection: conn})
 
 	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "gh", "tool": "list_issues",
@@ -223,7 +223,9 @@ func newSrvConfigDirAndToolErr(t *testing.T, globalFormat config.ResponseFormat)
 	cfg := config.DefaultConfig()
 	cfg.ResponseFormat = globalFormat
 	srv := newTestServer(t, server.Params{Config: cfg})
-	addEdgeConn(t, srv, config.ServerConfig{Name: "gh"}, toolErrFakeConn())
+	addEdgeConn(
+		addConnectionParams{T: t, Server: srv, Config: config.ServerConfig{Name: "gh"}, Connection: toolErrFakeConn()},
+	)
 	return srv
 }
 
@@ -272,7 +274,14 @@ func TestErrorEnvelopeHonorsFormat(t *testing.T) {
 			},
 		})
 		srv := newTestServer(t, server.Params{ConfigDir: configDir})
-		addEdgeConn(t, srv, config.ServerConfig{Name: "gh"}, toolErrFakeConn())
+		addEdgeConn(
+			addConnectionParams{
+				T:          t,
+				Server:     srv,
+				Config:     config.ServerConfig{Name: "gh"},
+				Connection: toolErrFakeConn(),
+			},
+		)
 		text := toolResultText(t, serve(t, srv, callTool("call", map[string]any{
 			"server": "gh", "tool": "list_issues", "params": map[string]any{},
 		})))
@@ -289,7 +298,18 @@ func TestErrorEnvelopeHonorsFormat(t *testing.T) {
 			TS: ts, SessionID: sessionID, SrvName: "gh", Tool: "list_issues",
 			Proj: map[string]any{"format": "toon"},
 		})
-		assertToonFormat(t, httpExecToolText(t, ts, sessionID, "gh", "list_issues"))
+		assertToonFormat(
+			t,
+			httpExecToolText(
+				httpExecToolTextParams{
+					T:          t,
+					HTTPServer: ts,
+					SessionID:  sessionID,
+					ServerName: "gh",
+					Tool:       "list_issues",
+				},
+			),
+		)
 	})
 
 	t.Run("not_found under global toon renders as TOON", func(t *testing.T) {
@@ -327,7 +347,7 @@ func TestToonFormatWithUpstream(t *testing.T) {
 	fake := fakeConn("list_directory")
 	fake.RespondWith(map[string]any{"entries": []string{"a.txt", "b.txt", "c.go"}})
 	srv := newTestServer(t, server.Params{})
-	addEdgeConn(t, srv, config.ServerConfig{Name: "fs"}, fake)
+	addEdgeConn(addConnectionParams{T: t, Server: srv, Config: config.ServerConfig{Name: "fs"}, Connection: fake})
 
 	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "fs", "tool": "list_directory",

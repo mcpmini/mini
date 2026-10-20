@@ -41,7 +41,7 @@ func TestConcurrentConfigureExec(t *testing.T) {
 	}
 	for range 2 {
 		wg.Add(1)
-		go runConfigureWorker(t, srv, ctx, &wg)
+		go runConfigureWorker(runConfigureWorkerParams{T: t, Server: srv, Context: ctx, WaitGroup: &wg})
 	}
 	wg.Wait()
 
@@ -66,20 +66,27 @@ func runExecWorker(t *testing.T, srv *server.Server, wg *sync.WaitGroup) {
 	}
 }
 
-func runConfigureWorker(t *testing.T, srv *server.Server, ctx context.Context, wg *sync.WaitGroup) {
-	t.Helper()
-	defer wg.Done()
+type runConfigureWorkerParams struct {
+	T         *testing.T
+	Server    *server.Server
+	Context   context.Context
+	WaitGroup *sync.WaitGroup
+}
+
+func runConfigureWorker(params runConfigureWorkerParams) {
+	params.T.Helper()
+	defer params.WaitGroup.Done()
 	fake := fakeConnWithResponse("toolC", `{"content":[{"type":"text","text":"c"}]}`)
 	for range stressIterations {
-		srv.AddConnection(ctx, config.ServerConfig{Name: "dynamic"}, fake)
+		params.Server.AddConnection(params.Context, config.ServerConfig{Name: "dynamic"}, fake)
 		serve(
-			t,
-			srv,
+			params.T,
+			params.Server,
 			callTool("config", map[string]any{"action": "remove_server", "server": "dynamic"}),
 		) //nolint:errcheck
 		serve(
-			t,
-			srv,
+			params.T,
+			params.Server,
 			callTool("config", map[string]any{ //nolint:errcheck
 				"action": "set_projection", "server": "alpha", "tool": "toolA",
 				"projection": map[string]any{"string_limit": 50}, "session_only": true,

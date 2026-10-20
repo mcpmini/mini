@@ -152,25 +152,32 @@ func runProxyResultCase(t *testing.T, tc proxyResultCase) {
 	if file == "" {
 		t.Fatalf("expected a recovery file key in the notice: %v", result)
 	}
-	assertRecovered(t, srv, file, tc.recovered)
+	assertRecovered(assertRecoveredParams{T: t, Server: srv, File: file, Recovered: tc.recovered})
 }
 
-func assertRecovered(t *testing.T, srv *Server, file string, recovered map[string]any) {
-	t.Helper()
-	for path, want := range recovered {
-		got, err := srv.handleRead(
+type assertRecoveredParams struct {
+	T         *testing.T
+	Server    *Server
+	File      string
+	Recovered map[string]any
+}
+
+func assertRecovered(params assertRecoveredParams) {
+	params.T.Helper()
+	for path, want := range params.Recovered {
+		got, err := params.Server.handleRead(
 			context.Background(),
-			json.RawMessage(jsonText(t, map[string]string{"file": file, "filter": path})),
+			json.RawMessage(jsonText(params.T, map[string]string{"file": params.File, "filter": path})),
 		)
 		if err != nil {
-			t.Fatalf("read %q: %v", path, err)
+			params.T.Fatalf("read %q: %v", path, err)
 		}
 		var value any
 		if err := json.Unmarshal([]byte(got.(string)), &value); err != nil {
-			t.Fatalf("read %q returned non-JSON %v: %v", path, got, err)
+			params.T.Fatalf("read %q returned non-JSON %v: %v", path, got, err)
 		}
-		if expected := roundTrip(t, want); !reflect.DeepEqual(value, expected) {
-			t.Errorf("read %q = %v, want %s", path, got, jsonText(t, want))
+		if expected := roundTrip(params.T, want); !reflect.DeepEqual(value, expected) {
+			params.T.Errorf("read %q = %v, want %s", path, got, jsonText(params.T, want))
 		}
 	}
 }

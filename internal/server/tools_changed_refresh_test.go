@@ -17,8 +17,8 @@ func TestToolsChangedRefreshesOnlyNotifyingUpstream(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	one, two := fakeConn("old"), fakeConn("still")
-	addProxyConn(t, srv, "one", one)
-	addProxyConn(t, srv, "two", two)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "one", Connection: one})
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "two", Connection: two})
 
 	one.SetTools(fakeConn("new").Tools)
 	two.SetTools(fakeConn("wrong").Tools)
@@ -37,7 +37,7 @@ func TestToolsChangedRefreshFailureKeepsOldCatalog(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := fakeConn("old")
-	addProxyConn(t, srv, "svc", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 	initialCalls := conn.ListToolsCallCount()
 
 	conn.SetTools(fakeConn("new").Tools)

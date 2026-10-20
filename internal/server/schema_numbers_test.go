@@ -50,7 +50,7 @@ func schemaNumberServer(t *testing.T, schema json.RawMessage) *server.Server {
 	conn := &transport.FakeConnection{Tools: []transport.ToolDefinition{{
 		Name: "numbers", InputSchema: schema, OutputSchema: schema,
 	}}}
-	addProxyConn(t, srv, "svc", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 	return srv
 }
 

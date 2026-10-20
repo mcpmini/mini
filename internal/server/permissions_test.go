@@ -14,7 +14,14 @@ import (
 
 func TestExecProtectedOnOpenTool(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
-	addEdgeConn(t, srv, config.ServerConfig{Name: "svc"}, fakeConn("doThing"))
+	addEdgeConn(
+		addConnectionParams{
+			T:          t,
+			Server:     srv,
+			Config:     config.ServerConfig{Name: "svc"},
+			Connection: fakeConn("doThing"),
+		},
+	)
 
 	resp := serve(t, srv, callTool("perm_call", map[string]any{
 		"server": "svc", "tool": "doThing", "params": map[string]any{},
@@ -28,7 +35,14 @@ func TestExecProtectedOnOpenTool(t *testing.T) {
 func TestExecOnHiddenTool_notFound(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	perm := &config.PermissionsConfig{Hidden: []string{"secret"}}
-	addEdgeConn(t, srv, config.ServerConfig{Name: "svc", Permissions: perm}, fakeConn("secret", "visible"))
+	addEdgeConn(
+		addConnectionParams{
+			T:          t,
+			Server:     srv,
+			Config:     config.ServerConfig{Name: "svc", Permissions: perm},
+			Connection: fakeConn("secret", "visible"),
+		},
+	)
 
 	resp := serve(t, srv, callTool("call", map[string]any{
 		"server": "svc", "tool": "secret", "params": map[string]any{},
@@ -39,7 +53,14 @@ func TestExecOnHiddenTool_notFound(t *testing.T) {
 func TestExecOnHiddenTool_notInDiscover(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	perm := &config.PermissionsConfig{Hidden: []string{"secret"}}
-	addEdgeConn(t, srv, config.ServerConfig{Name: "svc", Permissions: perm}, fakeConn("secret", "visible"))
+	addEdgeConn(
+		addConnectionParams{
+			T:          t,
+			Server:     srv,
+			Config:     config.ServerConfig{Name: "svc", Permissions: perm},
+			Connection: fakeConn("secret", "visible"),
+		},
+	)
 
 	resp := serve(t, srv, callTool("list", map[string]any{}))
 	text := toolResultText(t, resp)
@@ -56,7 +77,7 @@ func newSvcWithPartialProjection(t *testing.T) *server.Server {
 	srv := newTestServer(t, server.Params{})
 	fake := fakeConn("coveredTool", "uncoveredTool")
 	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"ok"}]}`)
-	addEdgeConn(t, srv, config.ServerConfig{Name: "svc"}, fake)
+	addEdgeConn(addConnectionParams{T: t, Server: srv, Config: config.ServerConfig{Name: "svc"}, Connection: fake})
 	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "svc", "tool": "coveredTool",
 		"projection": map[string]any{"depth_limit": 3},
@@ -92,7 +113,7 @@ func TestWildcardProjectionGrantsCallCoverage(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	fake := fakeConn("anyTool")
 	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"ok"}]}`)
-	addEdgeConn(t, srv, config.ServerConfig{Name: "svc"}, fake)
+	addEdgeConn(addConnectionParams{T: t, Server: srv, Config: config.ServerConfig{Name: "svc"}, Connection: fake})
 
 	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "svc", "tool": "*",
@@ -118,7 +139,7 @@ func newSvcWithReadOnlyTool(t *testing.T) *server.Server {
 			"tools/call": json.RawMessage(`{"content":[{"type":"text","text":"data"}]}`),
 		},
 	}
-	addEdgeConn(t, srv, config.ServerConfig{Name: "svc"}, fake)
+	addEdgeConn(addConnectionParams{T: t, Server: srv, Config: config.ServerConfig{Name: "svc"}, Connection: fake})
 	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "svc", "tool": "covered",
 		"projection": map[string]any{"depth_limit": 3},
@@ -139,7 +160,7 @@ func TestNoProjectionFileAllowsCallNormally(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	fake := fakeConn("anyTool")
 	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"ok"}]}`)
-	addEdgeConn(t, srv, config.ServerConfig{Name: "svc"}, fake)
+	addEdgeConn(addConnectionParams{T: t, Server: srv, Config: config.ServerConfig{Name: "svc"}, Connection: fake})
 
 	resp := serve(t, srv, callTool("call", map[string]any{"server": "svc", "tool": "anyTool"}))
 	text := toolResultText(t, resp)
@@ -151,7 +172,14 @@ func TestNoProjectionFileAllowsCallNormally(t *testing.T) {
 func TestDefaultPermissionProtected(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	perm := &config.PermissionsConfig{Default: "protected"}
-	addEdgeConn(t, srv, config.ServerConfig{Name: "svc", Permissions: perm}, fakeConn("dangerousOp", "safeRead"))
+	addEdgeConn(
+		addConnectionParams{
+			T:          t,
+			Server:     srv,
+			Config:     config.ServerConfig{Name: "svc", Permissions: perm},
+			Connection: fakeConn("dangerousOp", "safeRead"),
+		},
+	)
 
 	resp := serve(t, srv, callTool("call", map[string]any{
 		"server": "svc", "tool": "dangerousOp", "params": map[string]any{},

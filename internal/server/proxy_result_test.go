@@ -36,7 +36,7 @@ func newProxyServer(t *testing.T, upstream string, projection map[string]any) (s
 	t.Cleanup(srv.Close)
 	conn := fakeConn("tool")
 	conn.Responses["tools/call"] = json.RawMessage(upstream)
-	addProxyConn(t, srv, "svc", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 	if projection != nil {
 		serveProxy(t, srv, callTool("config", map[string]any{
 			"action": "set_projection", "server": "svc", "tool": "tool", "projection": projection,
@@ -105,14 +105,18 @@ func TestProxyResult_isReturnedAsSentWhenNothingIsTrimmed(t *testing.T) {
 func proxyStatsAfterCall(t *testing.T, srv *server.Server) (servers, sessions, result map[string]any) {
 	t.Helper()
 	const sessionID = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
-	postMCP(t, srv, sessionID, initMsg(false))
-	callResp := postMCP(t, srv, sessionID, map[string]any{
-		"jsonrpc": transport.JsonRPCVersion, "id": 2, "method": "tools/call",
-		"params": map[string]any{"name": "svc__tool", "arguments": map[string]any{}},
+	postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: initMsg(false)})
+	callResp := postMCP(postMCPParams{
+		T: t, Server: srv, SessionID: sessionID, Msg: map[string]any{
+			"jsonrpc": transport.JsonRPCVersion, "id": 2, "method": "tools/call",
+			"params": map[string]any{"name": "svc__tool", "arguments": map[string]any{}},
+		},
 	})
-	resp := postMCP(t, srv, sessionID, map[string]any{
-		"jsonrpc": transport.JsonRPCVersion, "id": 3, "method": "tools/call",
-		"params": map[string]any{"name": "config", "arguments": map[string]any{"action": "status"}},
+	resp := postMCP(postMCPParams{
+		T: t, Server: srv, SessionID: sessionID, Msg: map[string]any{
+			"jsonrpc": transport.JsonRPCVersion, "id": 3, "method": "tools/call",
+			"params": map[string]any{"name": "config", "arguments": map[string]any{"action": "status"}},
+		},
 	})
 	var status map[string]any
 	if err := json.Unmarshal([]byte(toolResultText(t, resp)), &status); err != nil {

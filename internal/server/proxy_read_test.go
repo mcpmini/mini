@@ -19,7 +19,7 @@ func TestProxy_MiniRead_ReadsFile(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(
 		`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"hidden\"}"}]}`,
 	)
-	addProxyConn(t, srv, "svc", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
 	serveProxy(t, srv, callTool("config", map[string]any{
 		"action":     "set_projection",
@@ -66,7 +66,7 @@ func TestProxy_MiniRead_WithFilter(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(
 		`{"content":[{"type":"text","text":"{\"id\":99,\"name\":\"widget\",\"secret\":\"x\"}"}]}`,
 	)
-	addProxyConn(t, srv, "svc", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
 	serveProxy(t, srv, callTool("config", map[string]any{
 		"action":     "set_projection",
@@ -101,7 +101,7 @@ func TestProxy_MiniRead_InvalidFilterReturnsError(t *testing.T) {
 
 	conn := fakeConn("get_data2")
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"x\"}"}]}`)
-	addProxyConn(t, srv, "svc", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
 	serveProxy(t, srv, callTool("config", map[string]any{
 		"action":     "set_projection",
@@ -135,7 +135,7 @@ func TestProxy_MiniRead_FilenameOnly(t *testing.T) {
 
 	conn := fakeConn("get_thing")
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":5,\"secret\":\"x\"}"}]}`)
-	addProxyConn(t, srv, "svc", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
 	serveProxy(t, srv, callTool("config", map[string]any{
 		"action":     "set_projection",

@@ -150,21 +150,28 @@ func fakeMCPHandle(w http.ResponseWriter, r *http.Request, tools []map[string]an
 }
 
 func serveAll(t *testing.T, srv *server.Server, lines ...[]byte) []map[string]any {
-	return serveAllMode(t, srv, true, lines...)
+	return serveAllMode(serveAllModeParams{T: t, Server: srv, Compact: true, Lines: lines})
 }
 
 func serveAllProxy(t *testing.T, srv *server.Server, lines ...[]byte) []map[string]any {
-	return serveAllMode(t, srv, false, lines...)
+	return serveAllMode(serveAllModeParams{T: t, Server: srv, Compact: false, Lines: lines})
 }
 
-func serveAllMode(t *testing.T, srv *server.Server, compact bool, lines ...[]byte) []map[string]any {
-	t.Helper()
-	input := buildServeInput(compact, lines)
+type serveAllModeParams struct {
+	T       *testing.T
+	Server  *server.Server
+	Compact bool
+	Lines   [][]byte
+}
+
+func serveAllMode(params serveAllModeParams) []map[string]any {
+	params.T.Helper()
+	input := buildServeInput(params.Compact, params.Lines)
 	var out bytes.Buffer
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := srv.Serve(ctx, bytes.NewReader(input), &out); err != nil {
-		t.Fatalf("Serve: %v", err)
+	if err := params.Server.Serve(ctx, bytes.NewReader(input), &out); err != nil {
+		params.T.Fatalf("Serve: %v", err)
 	}
 	return parseMessages(out.Bytes())
 }
@@ -247,17 +254,24 @@ func initParams(compact bool) map[string]any {
 }
 
 func serve(t *testing.T, srv *server.Server, input []byte) map[string]any {
-	return serveMode(t, srv, true, input)
+	return serveMode(serveModeParams{T: t, Server: srv, Compact: true, Input: input})
 }
 
 func serveProxy(t *testing.T, srv *server.Server, input []byte) map[string]any {
-	return serveMode(t, srv, false, input)
+	return serveMode(serveModeParams{T: t, Server: srv, Compact: false, Input: input})
 }
 
-func serveMode(t *testing.T, srv *server.Server, compact bool, input []byte) map[string]any {
-	t.Helper()
-	session := newTestSession(t, compact, input)
-	return session.response(t, session.run(srv))
+type serveModeParams struct {
+	T       *testing.T
+	Server  *server.Server
+	Compact bool
+	Input   []byte
+}
+
+func serveMode(params serveModeParams) map[string]any {
+	params.T.Helper()
+	session := newTestSession(params.T, params.Compact, params.Input)
+	return session.response(params.T, session.run(params.Server))
 }
 
 type testSession struct {
@@ -370,26 +384,33 @@ func toolResultText(t *testing.T, resp map[string]any) string {
 	return content[0].(map[string]any)["text"].(string)
 }
 
-func addTestConnection(t *testing.T, srv *server.Server, cfg config.ServerConfig, conn *transport.FakeConnection) {
-	t.Helper()
-	srv.AddConnection(context.Background(), cfg, conn)
+func addTestConnection(params addConnectionParams) {
+	params.T.Helper()
+	params.Server.AddConnection(context.Background(), params.Config, params.Connection)
+}
+
+type requireRPCErrorParams struct {
+	T          *testing.T
+	Resp       map[string]any
+	WantCode   int
+	WantSubstr string
 }
 
 // requireRPCError asserts resp is a JSON-RPC error with the given code and message substring.
-func requireRPCError(t *testing.T, resp map[string]any, wantCode int, wantSubstr string) {
-	t.Helper()
-	errObj, ok := resp["error"].(map[string]any)
+func requireRPCError(params requireRPCErrorParams) {
+	params.T.Helper()
+	errObj, ok := params.Resp["error"].(map[string]any)
 	if !ok {
-		t.Fatalf("expected JSON-RPC error with code %d, got result: %v", wantCode, resp)
+		params.T.Fatalf("expected JSON-RPC error with code %d, got result: %v", params.WantCode, params.Resp)
 	}
 	code, _ := errObj["code"].(float64)
-	if int(code) != wantCode {
-		t.Errorf("error code = %d, want %d (message: %v)", int(code), wantCode, errObj["message"])
+	if int(code) != params.WantCode {
+		params.T.Errorf("error code = %d, want %d (message: %v)", int(code), params.WantCode, errObj["message"])
 	}
-	if wantSubstr != "" {
+	if params.WantSubstr != "" {
 		msg, _ := errObj["message"].(string)
-		if !strings.Contains(msg, wantSubstr) {
-			t.Errorf("error message %q does not contain %q", msg, wantSubstr)
+		if !strings.Contains(msg, params.WantSubstr) {
+			params.T.Errorf("error message %q does not contain %q", msg, params.WantSubstr)
 		}
 	}
 }
@@ -436,7 +457,14 @@ func TestDiscoverEmpty(t *testing.T) {
 
 func TestDiscoverListsTools(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
-	addTestConnection(t, srv, config.ServerConfig{Name: "ci"}, fakeConn("getBuild", "listPipelines"))
+	addTestConnection(
+		addConnectionParams{
+			T:          t,
+			Server:     srv,
+			Config:     config.ServerConfig{Name: "ci"},
+			Connection: fakeConn("getBuild", "listPipelines"),
+		},
+	)
 	results := mustDiscoverResults(t, srv, map[string]any{})
 	if len(results) != 2 {
 		t.Errorf("expected 2 tools, got %d", len(results))
@@ -445,7 +473,14 @@ func TestDiscoverListsTools(t *testing.T) {
 
 func TestDiscoverSearch(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
-	addTestConnection(t, srv, config.ServerConfig{Name: "ci"}, fakeConn("getBuild", "listPipelines"))
+	addTestConnection(
+		addConnectionParams{
+			T:          t,
+			Server:     srv,
+			Config:     config.ServerConfig{Name: "ci"},
+			Connection: fakeConn("getBuild", "listPipelines"),
+		},
+	)
 	results := mustDiscoverResults(t, srv, map[string]any{"query": "build"})
 	if len(results) != 1 || results[0]["name"] != "ci.getBuild" {
 		t.Errorf("unexpected search results: %v", results)
@@ -456,7 +491,7 @@ func TestExecuteRoutesToUpstream(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	fake := fakeConn("getBuild")
 	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"build ok"}]}`)
-	addTestConnection(t, srv, config.ServerConfig{Name: "ci"}, fake)
+	addTestConnection(addConnectionParams{T: t, Server: srv, Config: config.ServerConfig{Name: "ci"}, Connection: fake})
 
 	resp := serve(t, srv, callTool("call", map[string]any{
 		"server": "ci",
@@ -472,7 +507,14 @@ func TestExecuteRoutesToUpstream(t *testing.T) {
 func TestExecuteRejectsProtectedTools(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	perm := &config.PermissionsConfig{Protected: []string{"deleteProject"}}
-	addTestConnection(t, srv, config.ServerConfig{Name: "ci", Permissions: perm}, fakeConn("deleteProject"))
+	addTestConnection(
+		addConnectionParams{
+			T:          t,
+			Server:     srv,
+			Config:     config.ServerConfig{Name: "ci", Permissions: perm},
+			Connection: fakeConn("deleteProject"),
+		},
+	)
 
 	resp := serve(t, srv, callTool("call", map[string]any{
 		"server": "ci",

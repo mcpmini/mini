@@ -81,22 +81,30 @@ func fakeTokenServer(t *testing.T, accessToken string) *httptest.Server {
 	return srv
 }
 
-func newOAuthServer(t *testing.T, dir, svcName, tokenURL, mcpURL string) *server.Server {
-	t.Helper()
-	configtest.WriteServer(t, dir, config.ServerConfig{
-		Name:      svcName,
+type newOAuthServerParams struct {
+	T          *testing.T
+	ConfigDir  string
+	ServerName string
+	TokenURL   string
+	MCPURL     string
+}
+
+func newOAuthServer(params newOAuthServerParams) *server.Server {
+	params.T.Helper()
+	configtest.WriteServer(params.T, params.ConfigDir, config.ServerConfig{
+		Name:      params.ServerName,
 		Transport: "http",
-		URL:       mcpURL,
+		URL:       params.MCPURL,
 		Auth: &config.AuthConfig{
 			Type:     "oauth2",
 			ClientID: "test-client",
-			AuthURL:  tokenURL + "/authorize",
-			TokenURL: tokenURL + "/token",
+			AuthURL:  params.TokenURL + "/authorize",
+			TokenURL: params.TokenURL + "/token",
 		},
 	})
 	cfg := config.DefaultConfig()
 	cfg.DisableAuthBrowserOpen = true
-	return newTestServer(t, server.Params{Config: cfg, ConfigDir: dir})
+	return newTestServer(params.T, server.Params{Config: cfg, ConfigDir: params.ConfigDir})
 }
 
 func waitForServerConnected(t *testing.T, srv *server.Server, svcName string) {
@@ -122,7 +130,15 @@ func TestStartAuth_e2e_connectsAfterOAuthFlow(t *testing.T) {
 	mcpSrv := fakeOAuthMCPServer(t, accessToken, []map[string]any{
 		{"name": "getData", "description": "get data", "inputSchema": map[string]any{"type": "object"}},
 	})
-	srv := newOAuthServer(t, t.TempDir(), "protected", tokenSrv.URL, mcpSrv.URL)
+	srv := newOAuthServer(
+		newOAuthServerParams{
+			T:          t,
+			ConfigDir:  t.TempDir(),
+			ServerName: "protected",
+			TokenURL:   tokenSrv.URL,
+			MCPURL:     mcpSrv.URL,
+		},
+	)
 	resp := serve(t, srv, callTool("config", map[string]any{"action": "start_auth", "server": "protected"}))
 	authResult := parseEnvelope(t, toolResultText(t, resp))
 	if authResult["ok"] != true {
@@ -197,7 +213,15 @@ func TestStartAuth_e2e_toolsAccessibleAfterAuth(t *testing.T) {
 		{"name": "search", "description": "search things", "inputSchema": map[string]any{"type": "object"}},
 		{"name": "create", "description": "create thing", "inputSchema": map[string]any{"type": "object"}},
 	})
-	srv := newOAuthServer(t, t.TempDir(), "mysvc", tokenSrv.URL, mcpSrv.URL)
+	srv := newOAuthServer(
+		newOAuthServerParams{
+			T:          t,
+			ConfigDir:  t.TempDir(),
+			ServerName: "mysvc",
+			TokenURL:   tokenSrv.URL,
+			MCPURL:     mcpSrv.URL,
+		},
+	)
 	authText := toolResultText(
 		t,
 		serve(t, srv, callTool("config", map[string]any{"action": "start_auth", "server": "mysvc"})),

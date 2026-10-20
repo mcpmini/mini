@@ -16,15 +16,22 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-func postMCP(t *testing.T, srv *server.Server, sessionID string, msg any) map[string]any {
-	t.Helper()
-	b, _ := json.Marshal(msg)
+type postMCPParams struct {
+	T         *testing.T
+	Server    *server.Server
+	SessionID string
+	Msg       any
+}
+
+func postMCP(params postMCPParams) map[string]any {
+	params.T.Helper()
+	b, _ := json.Marshal(params.Msg)
 	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(b))
 	req.Host = "127.0.0.1"
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Mcp-Session-Id", sessionID)
+	req.Header.Set("Mcp-Session-Id", params.SessionID)
 	w := httptest.NewRecorder()
-	srv.ServeHTTP(w, req)
+	params.Server.ServeHTTP(w, req)
 	var resp map[string]any
 	json.Unmarshal(w.Body.Bytes(), &resp) //nolint:errcheck
 	return resp
@@ -49,12 +56,14 @@ func toolsListMsg() map[string]any {
 func TestHTTPSession_InheritsServerCompactMode(t *testing.T) {
 	srv := newTestServer(t, server.Params{ToolMode: transport.ToolModeCompact})
 	defer srv.Close()
-	addProxyConn(t, srv, "gh", fakeConn("list_issues"))
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "gh", Connection: fakeConn("list_issues")})
 
 	const sessionID = "11111111-1111-1111-1111-111111111111"
-	postMCP(t, srv, sessionID, initMsg(false)) // no wire signal: must inherit server default
+	postMCP(
+		postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: initMsg(false)},
+	) // no wire signal: must inherit server default
 
-	tools := extractToolNames(postMCP(t, srv, sessionID, toolsListMsg()))
+	tools := extractToolNames(postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: toolsListMsg()}))
 	if !hasToolName(tools, "call") {
 		t.Errorf("HTTP session should inherit server-level compact mode, got %v", tools)
 	}
@@ -87,20 +96,22 @@ func hasToolName(names []string, name string) bool {
 func TestHTTPSession_DoubleInitialize_ModeLockedToFirst(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
-	addProxyConn(t, srv, "gh", fakeConn("list_issues"))
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "gh", Connection: fakeConn("list_issues")})
 
 	const sessionID = "22222222-2222-2222-2222-222222222222"
-	postMCP(t, srv, sessionID, initMsg(false)) // first init: proxy mode (no signal → server default)
+	postMCP(
+		postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: initMsg(false)},
+	) // first init: proxy mode (no signal → server default)
 
 	// Second initialize sends compact signal — must not flip the session mode.
 	secondInit := initMsg(true) // compact signal
 	secondInit["id"] = 99
-	resp := postMCP(t, srv, sessionID, secondInit)
+	resp := postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: secondInit})
 	if resp["error"] != nil {
 		t.Errorf("second initialize should not return error: %v", resp["error"])
 	}
 
-	tools := extractToolNames(postMCP(t, srv, sessionID, toolsListMsg()))
+	tools := extractToolNames(postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: toolsListMsg()}))
 	for _, n := range tools {
 		if n == "call" || n == "list" || n == "perm_call" {
 			t.Errorf("session should remain in proxy mode after double-initialize, got compact tool %q", n)
@@ -126,23 +137,27 @@ func TestProxy_SessionProjection_FieldExclusionPersistsAcrossCalls(t *testing.T)
 	conn.Responses["tools/call"] = json.RawMessage(
 		`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"topsecret\",\"name\":\"foo\"}"}]}`,
 	)
-	addProxyConn(t, srv, "svc", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
 	const sessionID = "ffffffff-ffff-ffff-ffff-ffffffffffff"
-	postMCP(t, srv, sessionID, initMsg(false))
+	postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: initMsg(false)})
 
-	postMCP(t, srv, sessionID, map[string]any{
-		"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "tools/call",
-		"params": map[string]any{"name": "config", "arguments": map[string]any{
-			"action": "set_projection", "server": "svc", "tool": "get_item",
-			"projection": map[string]any{"exclude": []string{"secret"}}, "session_only": true,
-		}},
+	postMCP(postMCPParams{
+		T: t, Server: srv, SessionID: sessionID, Msg: map[string]any{
+			"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "tools/call",
+			"params": map[string]any{"name": "config", "arguments": map[string]any{
+				"action": "set_projection", "server": "svc", "tool": "get_item",
+				"projection": map[string]any{"exclude": []string{"secret"}}, "session_only": true,
+			}},
+		},
 	})
 
 	for i := range 3 {
-		resp := postMCP(t, srv, sessionID, map[string]any{
-			"jsonrpc": transport.JsonRPCVersion, "id": 2 + i, "method": "tools/call",
-			"params": map[string]any{"name": "svc__get_item", "arguments": map[string]any{}},
+		resp := postMCP(postMCPParams{
+			T: t, Server: srv, SessionID: sessionID, Msg: map[string]any{
+				"jsonrpc": transport.JsonRPCVersion, "id": 2 + i, "method": "tools/call",
+				"params": map[string]any{"name": "svc__get_item", "arguments": map[string]any{}},
+			},
 		})
 		res, _ := resp["result"].(map[string]any)
 		content, _ := res["content"].([]any)
@@ -161,25 +176,29 @@ func TestProxy_SessionProjection_IsolatedBetweenSessions(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(
 		`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"topsecret\",\"name\":\"foo\"}"}]}`,
 	)
-	addProxyConn(t, srv, "svc", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
 	const sessionA = "aaaaaaaa-aaaa-aaaa-aaaa-000000000001"
 	const sessionB = "bbbbbbbb-bbbb-bbbb-bbbb-000000000002"
-	postMCP(t, srv, sessionA, initMsg(false))
-	postMCP(t, srv, sessionB, initMsg(false))
+	postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionA, Msg: initMsg(false)})
+	postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionB, Msg: initMsg(false)})
 
-	postMCP(t, srv, sessionA, map[string]any{
-		"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "tools/call",
-		"params": map[string]any{"name": "config", "arguments": map[string]any{
-			"action": "set_projection", "server": "svc", "tool": "get_item",
-			"projection": map[string]any{"exclude": []string{"secret"}}, "session_only": true,
-		}},
+	postMCP(postMCPParams{
+		T: t, Server: srv, SessionID: sessionA, Msg: map[string]any{
+			"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "tools/call",
+			"params": map[string]any{"name": "config", "arguments": map[string]any{
+				"action": "set_projection", "server": "svc", "tool": "get_item",
+				"projection": map[string]any{"exclude": []string{"secret"}}, "session_only": true,
+			}},
+		},
 	})
 
 	callItem := func(sid string, id int) string {
-		resp := postMCP(t, srv, sid, map[string]any{
-			"jsonrpc": transport.JsonRPCVersion, "id": id, "method": "tools/call",
-			"params": map[string]any{"name": "svc__get_item", "arguments": map[string]any{}},
+		resp := postMCP(postMCPParams{
+			T: t, Server: srv, SessionID: sid, Msg: map[string]any{
+				"jsonrpc": transport.JsonRPCVersion, "id": id, "method": "tools/call",
+				"params": map[string]any{"name": "svc__get_item", "arguments": map[string]any{}},
+			},
 		})
 		res, _ := resp["result"].(map[string]any)
 		content, _ := res["content"].([]any)
@@ -203,27 +222,33 @@ func TestProxy_Reload_PreservesSessionProjections(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(
 		`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"topsecret\"}"}]}`,
 	)
-	addProxyConn(t, srv, "svc", conn)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
 	const sessionID = "cccccccc-cccc-cccc-cccc-000000000003"
-	postMCP(t, srv, sessionID, initMsg(false))
+	postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: initMsg(false)})
 
-	postMCP(t, srv, sessionID, map[string]any{
-		"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "tools/call",
-		"params": map[string]any{"name": "config", "arguments": map[string]any{
-			"action": "set_projection", "server": "svc", "tool": "get_item",
-			"projection": map[string]any{"exclude": []string{"secret"}}, "session_only": true,
-		}},
+	postMCP(postMCPParams{
+		T: t, Server: srv, SessionID: sessionID, Msg: map[string]any{
+			"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "tools/call",
+			"params": map[string]any{"name": "config", "arguments": map[string]any{
+				"action": "set_projection", "server": "svc", "tool": "get_item",
+				"projection": map[string]any{"exclude": []string{"secret"}}, "session_only": true,
+			}},
+		},
 	})
 
-	postMCP(t, srv, sessionID, map[string]any{
-		"jsonrpc": transport.JsonRPCVersion, "id": 2, "method": "tools/call",
-		"params": map[string]any{"name": "config", "arguments": map[string]any{"action": "reload"}},
+	postMCP(postMCPParams{
+		T: t, Server: srv, SessionID: sessionID, Msg: map[string]any{
+			"jsonrpc": transport.JsonRPCVersion, "id": 2, "method": "tools/call",
+			"params": map[string]any{"name": "config", "arguments": map[string]any{"action": "reload"}},
+		},
 	})
 
-	resp := postMCP(t, srv, sessionID, map[string]any{
-		"jsonrpc": transport.JsonRPCVersion, "id": 3, "method": "tools/call",
-		"params": map[string]any{"name": "svc__get_item", "arguments": map[string]any{}},
+	resp := postMCP(postMCPParams{
+		T: t, Server: srv, SessionID: sessionID, Msg: map[string]any{
+			"jsonrpc": transport.JsonRPCVersion, "id": 3, "method": "tools/call",
+			"params": map[string]any{"name": "svc__get_item", "arguments": map[string]any{}},
+		},
 	})
 	res, _ := resp["result"].(map[string]any)
 	content, _ := res["content"].([]any)
@@ -244,11 +269,13 @@ func TestProxy_PerSession_ProxyAndStandardCoexist(t *testing.T) {
 	const proxyID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 	const compactID = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 
-	postMCP(t, srv, proxyID, initMsg(false))
-	postMCP(t, srv, compactID, initMsg(true))
+	postMCP(postMCPParams{T: t, Server: srv, SessionID: proxyID, Msg: initMsg(false)})
+	postMCP(postMCPParams{T: t, Server: srv, SessionID: compactID, Msg: initMsg(true)})
 
-	proxyTools := extractToolNames(postMCP(t, srv, proxyID, toolsListMsg()))
-	compactTools := extractToolNames(postMCP(t, srv, compactID, toolsListMsg()))
+	proxyTools := extractToolNames(postMCP(postMCPParams{T: t, Server: srv, SessionID: proxyID, Msg: toolsListMsg()}))
+	compactTools := extractToolNames(
+		postMCP(postMCPParams{T: t, Server: srv, SessionID: compactID, Msg: toolsListMsg()}),
+	)
 
 	if !hasToolName(proxyTools, "gh__list_issues") {
 		t.Errorf("proxy session: expected gh__list_issues, got %v", proxyTools)
@@ -277,7 +304,7 @@ func TestProxy_PerSession_ProxyAndStandardCoexist(t *testing.T) {
 func TestResolveToolMode_proxySignalOnCompactServer(t *testing.T) {
 	srv := newTestServer(t, server.Params{ToolMode: transport.ToolModeCompact})
 	defer srv.Close()
-	addProxyConn(t, srv, "gh", fakeConn("list_issues"))
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "gh", Connection: fakeConn("list_issues")})
 
 	params := map[string]any{
 		"protocolVersion":       transport.LegacyVersions[0],
@@ -287,13 +314,20 @@ func TestResolveToolMode_proxySignalOnCompactServer(t *testing.T) {
 	}
 	const sessionID = "22222222-2222-2222-2222-222222222222"
 	postMCP(
-		t,
-		srv,
-		sessionID,
-		map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": 0, "method": "initialize", "params": params},
+		postMCPParams{
+			T:         t,
+			Server:    srv,
+			SessionID: sessionID,
+			Msg: map[string]any{
+				"jsonrpc": transport.JsonRPCVersion,
+				"id":      0,
+				"method":  "initialize",
+				"params":  params,
+			},
+		},
 	)
 
-	tools := extractToolNames(postMCP(t, srv, sessionID, toolsListMsg()))
+	tools := extractToolNames(postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: toolsListMsg()}))
 	if !hasToolName(tools, "gh__list_issues") {
 		t.Errorf("proxy wire signal on compact server should yield proxy session, got tools: %v", tools)
 	}
@@ -308,7 +342,7 @@ func TestResolveToolMode_proxySignalOnCompactServer(t *testing.T) {
 func TestResolveToolMode_unrecognizedSignal_fallsBackToServerDefault(t *testing.T) {
 	srv := newTestServer(t, server.Params{ToolMode: transport.ToolModeCompact})
 	defer srv.Close()
-	addProxyConn(t, srv, "gh", fakeConn("list_issues"))
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "gh", Connection: fakeConn("list_issues")})
 
 	params := map[string]any{
 		"protocolVersion":       transport.LegacyVersions[0],
@@ -318,13 +352,20 @@ func TestResolveToolMode_unrecognizedSignal_fallsBackToServerDefault(t *testing.
 	}
 	const sessionID = "33333333-3333-3333-3333-333333333333"
 	postMCP(
-		t,
-		srv,
-		sessionID,
-		map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": 0, "method": "initialize", "params": params},
+		postMCPParams{
+			T:         t,
+			Server:    srv,
+			SessionID: sessionID,
+			Msg: map[string]any{
+				"jsonrpc": transport.JsonRPCVersion,
+				"id":      0,
+				"method":  "initialize",
+				"params":  params,
+			},
+		},
 	)
 
-	tools := extractToolNames(postMCP(t, srv, sessionID, toolsListMsg()))
+	tools := extractToolNames(postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: toolsListMsg()}))
 	if !hasToolName(tools, "call") {
 		t.Errorf("unrecognized signal should fall back to server default (compact), got tools: %v", tools)
 	}
@@ -335,7 +376,7 @@ func TestProxy_Initialize_PerSessionInstructions(t *testing.T) {
 	defer srv.Close()
 
 	instructions := func(compact bool, sessionID string) string {
-		resp := postMCP(t, srv, sessionID, initMsg(compact))
+		resp := postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: initMsg(compact)})
 		res, _ := resp["result"].(map[string]any)
 		s, _ := res["instructions"].(string)
 		return s

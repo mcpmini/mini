@@ -181,7 +181,14 @@ func TestPathTraversal_exec_rejected(t *testing.T) {
 				"tool":   "anything",
 				"params": map[string]any{},
 			}))
-			requireRPCError(t, resp, transport.CodeInvalidParams, "invalid server name")
+			requireRPCError(
+				requireRPCErrorParams{
+					T:          t,
+					Resp:       resp,
+					WantCode:   transport.CodeInvalidParams,
+					WantSubstr: "invalid server name",
+				},
+			)
 		}
 	}
 }
@@ -200,7 +207,14 @@ func TestExec_invalidToolName_rejected(t *testing.T) {
 				"tool":   badTool,
 				"params": map[string]any{},
 			}))
-			requireRPCError(t, resp, transport.CodeInvalidParams, "invalid tool name")
+			requireRPCError(
+				requireRPCErrorParams{
+					T:          t,
+					Resp:       resp,
+					WantCode:   transport.CodeInvalidParams,
+					WantSubstr: "invalid tool name",
+				},
+			)
 		}
 	}
 }
