@@ -32,6 +32,10 @@ type StdioConnection struct {
 	clock         clock.Clock
 	modernVersion atomic.Pointer[string]
 	writeGate     chan struct{} // not a mutex, so a cancelled writer can stop waiting
+	listenMu      sync.Mutex
+	listen        *stdioSubscription
+	listenCancel  context.CancelFunc
+	listenDone    chan struct{}
 	toolsChanged  toolsChangedNotifier
 }
 
@@ -186,6 +190,17 @@ func (c *StdioConnection) Health(_ context.Context) error {
 
 func (c *StdioConnection) Close() error {
 	c.closeDone()
+	if c.listenCancel != nil {
+		c.listenCancel()
+	}
+	waitErr := c.shutdownProcess()
+	if c.listenDone != nil {
+		<-c.listenDone
+	}
+	return waitErr
+}
+
+func (c *StdioConnection) shutdownProcess() error {
 	c.shutdownOnce.Do(func() {
 		c.stdin.Close() //nolint:errcheck // child termination and Wait below own subprocess cleanup
 		if c.cmd.Process != nil {
@@ -259,12 +274,16 @@ func (c *StdioConnection) dispatch(line []byte) {
 		c.dispatchNotification(line)
 		return
 	}
+	c.noteSubscriptionResponse(&resp)
 	c.pending.deliver(resp.ID, &resp)
 }
 
 func (c *StdioConnection) dispatchNotification(line []byte) {
 	var notification Notification
 	if err := json.Unmarshal(line, &notification); err != nil || notification.Method == "" {
+		return
+	}
+	if c.isModern() && c.dispatchModernSubscriptionNotification(notification) {
 		return
 	}
 	if notification.Method == NotificationToolsChanged {

@@ -43,6 +43,9 @@ func (c *StdioConnection) setUpEra(ctx context.Context) error {
 	}
 	c.setModern(verdict.version)
 	c.logger.Info("upstream connected", "protocol", verdict.version)
+	if verdict.listen {
+		c.startSubscriptionListener(context.WithoutCancel(ctx))
+	}
 	return nil
 }
 
@@ -196,6 +199,7 @@ func classifyStdioDiscover(result json.RawMessage, requested string) (probeVerdi
 			UnsupportedVersionData{Supported: discovered.SupportedVersions}, requested,
 		)}
 	}
+	verdict.listen = discovered.Capabilities.ToolsListChanged()
 	return verdict, nil
 }
 

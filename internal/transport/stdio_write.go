@@ -81,5 +81,6 @@ func (c *StdioConnection) abandonAfterFailedWrite(ctx context.Context, err error
 }
 
 func (c *StdioConnection) abandon() {
-	_ = c.Close() //nolint:errcheck // the caller reports why the connection ended
+	c.closeDone()
+	_ = c.shutdownProcess() //nolint:errcheck // the caller reports why the connection ended
 }

@@ -131,7 +131,8 @@ sequenceDiagram
 For legacy upstreams, mini sends `initialize`, confirms with
 `notifications/initialized`, then requests `tools/list`. For modern upstreams, over HTTP or
 stdio, mini first probes with `server/discover`, then attaches protocol and client metadata to
-each request instead of sending the legacy handshake. Each upstream's protocol is chosen
+each request instead of sending the legacy handshake. mini subscribes to a modern upstream's
+tool-list changes when it advertises `tools.listChanged`. Each upstream's protocol is chosen
 independently of the agent's Layer-1 protocol.
 
 ### Connection modes
