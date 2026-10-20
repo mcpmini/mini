@@ -14,8 +14,7 @@ type modernLine struct {
 }
 
 func (m modernLine) isModern() bool {
-	version, _ := transport.ProtocolVersionFromParams(m.Params)
-	return transport.IsModernVersion(version)
+	return transport.IsModernVersion(transport.ProtocolVersionFromParams(m.Params))
 }
 
 func (s *proxySession) ensureModernReady() {

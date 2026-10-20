@@ -19,15 +19,15 @@ func TestIsLegacyVersion(t *testing.T) {
 }
 
 func TestProtocolVersionFromParams(t *testing.T) {
-	version, ok := ProtocolVersionFromParams(json.RawMessage(
+	version := ProtocolVersionFromParams(json.RawMessage(
 		`{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}`,
 	))
-	if !ok || version != "2026-07-28" {
-		t.Fatalf("version=%q ok=%t", version, ok)
+	if version != "2026-07-28" {
+		t.Fatalf("version=%q", version)
 	}
 	for _, params := range []json.RawMessage{nil, json.RawMessage(`{}`), json.RawMessage(`not-json`)} {
-		if version, ok := ProtocolVersionFromParams(params); ok || version != "" {
-			t.Errorf("params=%s version=%q ok=%t", params, version, ok)
+		if version := ProtocolVersionFromParams(params); version != "" {
+			t.Errorf("params=%s version=%q, want none", params, version)
 		}
 	}
 }

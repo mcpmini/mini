@@ -49,24 +49,24 @@ func (s *Server) handleModernLine(p handleScannedLineParams, line []byte) bool {
 	if len(peekRequestID(line)) == 0 {
 		return false
 	}
-	version, modern := modernRequestVersion(line)
+	version := modernRequestVersion(line)
 	// A rejected version must leave the session as it was, so the client can still fall back to initialize.
 	if transport.IsModernVersion(version) {
 		s.activateModern(p.session)
 	}
-	if modern && peekMethod(line) == transport.MethodSubscriptionsListen {
+	if version != "" && peekMethod(line) == transport.MethodSubscriptionsListen {
 		s.startListen(p.ctx, p, line)
 		return true
 	}
 	return false
 }
 
-func modernRequestVersion(line []byte) (string, bool) {
+func modernRequestVersion(line []byte) string {
 	var request struct {
 		Params json.RawMessage `json:"params"`
 	}
 	if json.Unmarshal(line, &request) != nil {
-		return "", false
+		return ""
 	}
 	return transport.ProtocolVersionFromParams(request.Params)
 }
@@ -81,8 +81,8 @@ func (s *Server) activateModern(session *Session) {
 }
 
 func modernVersionError(req transport.Request, session *Session) *transport.Response {
-	version, modern := transport.ProtocolVersionFromParams(req.Params)
-	if !modern || transport.IsModernVersion(version) {
+	version := transport.ProtocolVersionFromParams(req.Params)
+	if version == "" || transport.IsModernVersion(version) {
 		return nil
 	}
 	response, err := unsupportedVersionResponse(req.ID, version)

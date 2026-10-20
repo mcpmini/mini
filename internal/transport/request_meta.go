@@ -20,10 +20,10 @@ type requestParamsMeta struct {
 	Meta RequestMeta `json:"_meta"`
 }
 
-func ProtocolVersionFromParams(params json.RawMessage) (string, bool) {
+func ProtocolVersionFromParams(params json.RawMessage) string {
 	var request requestParamsMeta
-	if json.Unmarshal(params, &request) != nil || request.Meta.ProtocolVersion == "" {
-		return "", false
+	if json.Unmarshal(params, &request) != nil {
+		return ""
 	}
-	return request.Meta.ProtocolVersion, true
+	return request.Meta.ProtocolVersion
 }
