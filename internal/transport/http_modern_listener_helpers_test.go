@@ -15,7 +15,7 @@ import (
 func modernListenerServer(
 	t *testing.T,
 	advertise bool,
-	listen func(http.ResponseWriter, *http.Request, Request),
+	listen upstreamHandler,
 ) *httptest.Server {
 	t.Helper()
 	return newModernServer(t, modernUpstream{ListChanged: advertise, Handle: listenOnly(t, listen)})
@@ -24,8 +24,8 @@ func modernListenerServer(
 // listenOnly hands subscriptions/listen requests to listen as an SSE stream and answers the rest.
 func listenOnly(
 	t *testing.T,
-	listen func(http.ResponseWriter, *http.Request, Request),
-) func(http.ResponseWriter, *http.Request, Request) {
+	listen upstreamHandler,
+) upstreamHandler {
 	t.Helper()
 	return func(w http.ResponseWriter, r *http.Request, req Request) {
 		if req.Method != MethodSubscriptionsListen {
@@ -95,8 +95,6 @@ func writeComplete(t *testing.T, w http.ResponseWriter, id any) {
 	}
 	writeSSEJSON(t, w, Response{JsonRPC: JsonRPCVersion, ID: id, Result: result})
 }
-
-type upstreamHandler = func(http.ResponseWriter, *http.Request, Request)
 
 // resetOnFirstPing answers the first ping with -32022, which resets the era, and passes every
 // other request to next.
