@@ -10,8 +10,8 @@ import (
 	"github.com/mcpmini/mini/internal/version"
 )
 
-// acknowledgeListen writes the acknowledgement and registers the listen under the lock that
-// forwardToolsChanged holds while it writes, so every tool change after the acknowledgement reaches it.
+// Acknowledging and registering under the lock writeTaggedToolsChanged holds means every tool change
+// written after the acknowledgement reaches this listen.
 func (s *Session) acknowledgeListen(listen listenSubscription, cancel context.CancelFunc, writeOut func(any)) {
 	s.listensMu.Lock()
 	defer s.listensMu.Unlock()
