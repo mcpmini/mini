@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -104,11 +105,45 @@ func TestServeReturnsPendingNotificationFailureAtEOF(t *testing.T) {
 func TestToolChangeDuringListenAcknowledgementReachesTheListen(t *testing.T) {
 	session := newSession(clock.System())
 	session.modern.Store(true)
-	var mu sync.Mutex
-	var written []any
-	record := func(message any) { mu.Lock(); written = append(written, message); mu.Unlock() }
+	var log messageLog
+	writeAck, forwarded := forwardToolChangeDuringAck(session, log.record)
+	listen := listenSubscription{
+		id:            json.RawMessage(`7`),
+		notifications: transport.ListenNotifications{ToolsListChanged: true},
+	}
+	session.acknowledgeListen(listen, func() {}, writeAck)
+	<-forwarded
+	written := log.messages()
+	if len(written) != 2 {
+		t.Fatalf("written = %+v, want the acknowledgement then one tagged tool change", written)
+	}
+	if _, tagged := written[1].(transport.ToolsListChangedNotification); !tagged {
+		t.Fatalf("second message = %+v, want a tagged tool change", written[1])
+	}
+}
+
+type messageLog struct {
+	mu      sync.Mutex
+	written []any
+}
+
+func (l *messageLog) record(message any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.written = append(l.written, message)
+}
+
+func (l *messageLog) messages() []any {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return slices.Clone(l.written)
+}
+
+// forwardToolChangeDuringAck returns an acknowledgement writer that records the acknowledgement and
+// then forwards a tool change concurrently, the race a listen must not lose.
+func forwardToolChangeDuringAck(session *Session, record func(any)) (func(any), <-chan struct{}) {
 	forwarded := make(chan struct{})
-	writeAck := func(message any) {
+	return func(message any) {
 		record(message)
 		go func() {
 			session.forwardToolsChanged(json.RawMessage(`{}`), record)
@@ -119,19 +154,5 @@ func TestToolChangeDuringListenAcknowledgementReachesTheListen(t *testing.T) {
 		case <-forwarded:
 		case <-time.After(50 * time.Millisecond):
 		}
-	}
-	listen := listenSubscription{
-		id:            json.RawMessage(`7`),
-		notifications: transport.ListenNotifications{ToolsListChanged: true},
-	}
-	session.acknowledgeListen(listen, func() {}, writeAck)
-	<-forwarded
-	mu.Lock()
-	defer mu.Unlock()
-	if len(written) != 2 {
-		t.Fatalf("written = %+v, want the acknowledgement then one tagged tool change", written)
-	}
-	if _, tagged := written[1].(transport.ToolsListChangedNotification); !tagged {
-		t.Fatalf("second message = %+v, want a tagged tool change", written[1])
-	}
+	}, forwarded
 }
