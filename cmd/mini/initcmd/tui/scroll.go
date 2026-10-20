@@ -8,15 +8,22 @@ type scroll struct {
 
 // cut shows height lines with the block from line first to line last in view. A block taller than
 // the window keeps its first line, so callers start the block at the line that must stay visible.
-func (sc *scroll) cut(lines []string, first, last, height int) []string {
-	if height <= 0 || len(lines) <= height {
+func (sc *scroll) cut(params cutParams) []string {
+	if params.Height <= 0 || len(params.Lines) <= params.Height {
 		sc.offset = 0
-		return lines
+		return params.Lines
 	}
-	sc.offset = min(sc.offset, len(lines)-height)
-	if last >= sc.offset+height {
-		sc.offset = last + 1 - height
+	sc.offset = min(sc.offset, len(params.Lines)-params.Height)
+	if params.Last >= sc.offset+params.Height {
+		sc.offset = params.Last + 1 - params.Height
 	}
-	sc.offset = max(min(sc.offset, first), 0)
-	return lines[sc.offset : sc.offset+height]
+	sc.offset = max(min(sc.offset, params.First), 0)
+	return params.Lines[sc.offset : sc.offset+params.Height]
+}
+
+type cutParams struct {
+	Lines  []string
+	First  int
+	Last   int
+	Height int
 }

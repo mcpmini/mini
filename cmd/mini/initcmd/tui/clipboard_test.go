@@ -18,7 +18,9 @@ func TestCopyToClipboard_givesTheTextToThePlatformsTool(t *testing.T) {
 	}
 	dir := t.TempDir()
 	out := filepath.Join(dir, "copied")
-	fakeClipboardTool(t, dir, clipboardTools()[0][0], "exec /bin/cat > "+out)
+	fakeClipboardTool(
+		fakeClipboardToolParams{T: t, Dir: dir, Name: clipboardTools()[0][0], Script: "exec /bin/cat > " + out},
+	)
 	t.Setenv("PATH", dir)
 	if err := copyToClipboard(t.Context(), "https://auth.example/linear"); err != nil {
 		t.Fatalf("copy: %v", err)
@@ -35,12 +37,12 @@ func TestCopyToClipboard_withNoToolSaysSo(t *testing.T) {
 	}
 }
 
-func fakeClipboardTool(t *testing.T, dir, name, script string) {
-	t.Helper()
-	tool := filepath.Join(dir, name)
-	testutil.WriteFile(t, tool, "#!/bin/sh\n"+script+"\n")
+func fakeClipboardTool(params fakeClipboardToolParams) {
+	params.T.Helper()
+	tool := filepath.Join(params.Dir, params.Name)
+	testutil.WriteFile(params.T, tool, "#!/bin/sh\n"+params.Script+"\n")
 	if err := os.Chmod(tool, 0o700); err != nil {
-		t.Fatal(err)
+		params.T.Fatal(err)
 	}
 }
 
@@ -51,8 +53,8 @@ func TestCopyToClipboard_aFailingToolGivesTheNextOneATurn(t *testing.T) {
 	}
 	dir := t.TempDir()
 	out := filepath.Join(dir, "copied")
-	fakeClipboardTool(t, dir, tools[0][0], "exit 1")
-	fakeClipboardTool(t, dir, tools[1][0], "exec /bin/cat > "+out)
+	fakeClipboardTool(fakeClipboardToolParams{T: t, Dir: dir, Name: tools[0][0], Script: "exit 1"})
+	fakeClipboardTool(fakeClipboardToolParams{T: t, Dir: dir, Name: tools[1][0], Script: "exec /bin/cat > " + out})
 	t.Setenv("PATH", dir)
 	if err := copyToClipboard(t.Context(), "https://auth.example/linear"); err != nil {
 		t.Fatalf("copy: %v, want the second tool to copy", err)
@@ -60,4 +62,11 @@ func TestCopyToClipboard_aFailingToolGivesTheNextOneATurn(t *testing.T) {
 	if got := testutil.ReadFile(t, out); string(got) != "https://auth.example/linear" {
 		t.Errorf("second tool got %q, want the whole URL", got)
 	}
+}
+
+type fakeClipboardToolParams struct {
+	T      *testing.T
+	Dir    string
+	Name   string
+	Script string
 }

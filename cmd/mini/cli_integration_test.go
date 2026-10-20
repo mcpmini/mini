@@ -20,10 +20,10 @@ func miniBin(t *testing.T) string {
 	return testutil.Binary(t, "MINIMCP_BIN")
 }
 
-func run(t *testing.T, bin, configDir string, args ...string) (stdout, stderr string, code int) {
-	t.Helper()
-	a := append([]string{"--config", configDir}, args...)
-	cmd := exec.Command(bin, a...)
+func run(params runParams) (stdout, stderr string, code int) {
+	params.T.Helper()
+	a := append([]string{"--config", params.ConfigDir}, params.Args...)
+	cmd := exec.Command(params.Bin, a...)
 	var outBuf, errBuf strings.Builder
 	cmd.Stdout = &outBuf
 	cmd.Stderr = &errBuf
@@ -36,7 +36,7 @@ func run(t *testing.T, bin, configDir string, args ...string) (stdout, stderr st
 		if errors.As(err, &exit) {
 			code = exit.ExitCode()
 		} else {
-			t.Fatalf("run %v: %v", args, err)
+			params.T.Fatalf("run %v: %v", params.Args, err)
 		}
 	}
 	return
@@ -46,7 +46,7 @@ func TestIntegrationCLI_ls_empty(t *testing.T) {
 	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
-	stdout, _, code := run(t, bin, cfg, "ls")
+	stdout, _, code := run(runParams{T: t, Bin: bin, ConfigDir: cfg, Args: []string{"ls"}})
 	if code != 0 {
 		t.Errorf("ls with empty config should exit 0, got %d", code)
 	}
@@ -60,7 +60,9 @@ func TestIntegrationCLI_add_and_ls(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
 
-	_, _, code := run(t, bin, cfg, "add", "myserver", "--url", "http://localhost:9999")
+	_, _, code := run(
+		runParams{T: t, Bin: bin, ConfigDir: cfg, Args: []string{"add", "myserver", "--url", "http://localhost:9999"}},
+	)
 	if code != 0 {
 		t.Fatalf("add should exit 0, got %d", code)
 	}
@@ -68,7 +70,7 @@ func TestIntegrationCLI_add_and_ls(t *testing.T) {
 	if _, err := os.Stat(serverFile); err != nil {
 		t.Errorf("expected servers/myserver.yaml to exist: %v", err)
 	}
-	checkLsContains(t, bin, cfg, "myserver", "http")
+	checkLsContains(checkLsContainsParams{T: t, Bin: bin, Cfg: cfg, Want: []string{"myserver", "http"}})
 }
 
 func TestIntegrationCLI_add_preservesChildFlags(t *testing.T) {
@@ -99,7 +101,9 @@ func TestIntegrationCLI_configAfterSubcommandIsAccepted(t *testing.T) {
 	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
-	stdout, stderr, code := run(t, bin, t.TempDir(), "ls", "--config", cfg)
+	stdout, stderr, code := run(
+		runParams{T: t, Bin: bin, ConfigDir: t.TempDir(), Args: []string{"ls", "--config", cfg}},
+	)
 	if code != 0 || !strings.Contains(stdout, "no servers") {
 		t.Fatalf("ls exited %d: stdout=%q stderr=%q", code, stdout, stderr)
 	}
@@ -108,21 +112,23 @@ func TestIntegrationCLI_configAfterSubcommandIsAccepted(t *testing.T) {
 func TestIntegrationCLI_addRequiresDashBeforeStdioCommand(t *testing.T) {
 	t.Parallel()
 	bin := miniBin(t)
-	_, stderr, code := run(t, bin, t.TempDir(), "add", "svc", "printf", "hello")
+	_, stderr, code := run(
+		runParams{T: t, Bin: bin, ConfigDir: t.TempDir(), Args: []string{"add", "svc", "printf", "hello"}},
+	)
 	if code != 2 || !strings.Contains(stderr, "require NAME -- CMD") {
 		t.Fatalf("add exited %d: %s", code, stderr)
 	}
 }
 
-func checkLsContains(t *testing.T, bin, cfg string, want ...string) {
-	t.Helper()
-	stdout, _, code := run(t, bin, cfg, "ls")
+func checkLsContains(params checkLsContainsParams) {
+	params.T.Helper()
+	stdout, _, code := run(runParams{T: params.T, Bin: params.Bin, ConfigDir: params.Cfg, Args: []string{"ls"}})
 	if code != 0 {
-		t.Errorf("ls should exit 0, got %d", code)
+		params.T.Errorf("ls should exit 0, got %d", code)
 	}
-	for _, s := range want {
+	for _, s := range params.Want {
 		if !strings.Contains(stdout, s) {
-			t.Errorf("expected %q in ls output, got: %q", s, stdout)
+			params.T.Errorf("expected %q in ls output, got: %q", s, stdout)
 		}
 	}
 }
@@ -132,14 +138,14 @@ func TestIntegrationCLI_rm(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
 
-	run(t, bin, cfg, "add", "myserver", "--url", "http://localhost:9999")
+	run(runParams{T: t, Bin: bin, ConfigDir: cfg, Args: []string{"add", "myserver", "--url", "http://localhost:9999"}})
 
-	_, _, code := run(t, bin, cfg, "rm", "myserver")
+	_, _, code := run(runParams{T: t, Bin: bin, ConfigDir: cfg, Args: []string{"rm", "myserver"}})
 	if code != 0 {
 		t.Errorf("rm should exit 0, got %d", code)
 	}
 
-	stdout, _, _ := run(t, bin, cfg, "ls")
+	stdout, _, _ := run(runParams{T: t, Bin: bin, ConfigDir: cfg, Args: []string{"ls"}})
 	if strings.Contains(stdout, "myserver") {
 		t.Errorf("myserver should not appear in ls after rm, got: %q", stdout)
 	}
@@ -149,7 +155,7 @@ func TestIntegrationCLI_rm_nonexistent(t *testing.T) {
 	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
-	_, _, code := run(t, bin, cfg, "rm", "ghost")
+	_, _, code := run(runParams{T: t, Bin: bin, ConfigDir: cfg, Args: []string{"rm", "ghost"}})
 	if code == 0 {
 		t.Error("rm of nonexistent server should exit non-zero")
 	}
@@ -159,7 +165,9 @@ func TestIntegrationCLI_add_invalidName(t *testing.T) {
 	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
-	_, stderr, code := run(t, bin, cfg, "add", "bad/name", "--url", "http://localhost:9999")
+	_, stderr, code := run(
+		runParams{T: t, Bin: bin, ConfigDir: cfg, Args: []string{"add", "bad/name", "--url", "http://localhost:9999"}},
+	)
 	if code == 0 {
 		t.Error("add with invalid name should exit non-zero")
 	}
@@ -172,7 +180,7 @@ func TestIntegrationCLI_unknownCommand(t *testing.T) {
 	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
-	_, _, code := run(t, bin, cfg, "boguscommand")
+	_, _, code := run(runParams{T: t, Bin: bin, ConfigDir: cfg, Args: []string{"boguscommand"}})
 	if code != 2 {
 		t.Errorf("unknown command should exit 2, got %d", code)
 	}
@@ -182,7 +190,7 @@ func TestIntegrationCLI_rm_missingName_exitsTwo(t *testing.T) {
 	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
-	_, _, code := run(t, bin, cfg, "rm")
+	_, _, code := run(runParams{T: t, Bin: bin, ConfigDir: cfg, Args: []string{"rm"}})
 	if code != 2 {
 		t.Errorf("rm with no NAME should exit 2, got %d", code)
 	}
@@ -192,7 +200,7 @@ func TestIntegrationCLI_auth_missingName_exitsTwo(t *testing.T) {
 	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
-	_, _, code := run(t, bin, cfg, "auth")
+	_, _, code := run(runParams{T: t, Bin: bin, ConfigDir: cfg, Args: []string{"auth"}})
 	if code != 2 {
 		t.Errorf("auth with no server name should exit 2, got %d", code)
 	}
@@ -202,7 +210,7 @@ func TestIntegrationCLI_ls_tooManyArgs_exitsTwo(t *testing.T) {
 	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
-	_, _, code := run(t, bin, cfg, "ls", "a", "b", "c")
+	_, _, code := run(runParams{T: t, Bin: bin, ConfigDir: cfg, Args: []string{"ls", "a", "b", "c"}})
 	if code != 2 {
 		t.Errorf("ls with 3 args should exit 2, got %d", code)
 	}
@@ -212,7 +220,7 @@ func TestIntegrationCLI_test_noServers(t *testing.T) {
 	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
-	_, _, code := run(t, bin, cfg, "test")
+	_, _, code := run(runParams{T: t, Bin: bin, ConfigDir: cfg, Args: []string{"test"}})
 	if code != 0 {
 		t.Errorf("test with no servers should exit 0, got %d", code)
 	}
@@ -223,9 +231,9 @@ func TestIntegrationCLI_test_unreachableServer(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
 
-	run(t, bin, cfg, "add", "dead", "--url", "http://127.0.0.1:19999")
+	run(runParams{T: t, Bin: bin, ConfigDir: cfg, Args: []string{"add", "dead", "--url", "http://127.0.0.1:19999"}})
 
-	stdout, _, code := run(t, bin, cfg, "test", "--timeout", "2s")
+	stdout, _, code := run(runParams{T: t, Bin: bin, ConfigDir: cfg, Args: []string{"test", "--timeout", "2s"}})
 	if code == 0 {
 		t.Error("test with unreachable server should exit non-zero")
 	}
@@ -238,9 +246,9 @@ func TestIntegrationCLI_status_unreachableServer(t *testing.T) {
 	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
-	run(t, bin, cfg, "add", "dead", "--url", "http://127.0.0.1:19999")
+	run(runParams{T: t, Bin: bin, ConfigDir: cfg, Args: []string{"add", "dead", "--url", "http://127.0.0.1:19999"}})
 
-	stdout, stderr, code := run(t, bin, cfg, "status")
+	stdout, stderr, code := run(runParams{T: t, Bin: bin, ConfigDir: cfg, Args: []string{"status"}})
 	if code != 1 {
 		t.Fatalf("status with unreachable server exited %d, want 1: stdout=%q stderr=%q", code, stdout, stderr)
 	}
@@ -255,7 +263,7 @@ func TestIntegrationCLI_init_createsStructure(t *testing.T) {
 	t.Setenv("CODEX_HOME", "")
 	cfg := t.TempDir()
 
-	stdout, _, code := run(t, bin, cfg, "init", "--import")
+	stdout, _, code := run(runParams{T: t, Bin: bin, ConfigDir: cfg, Args: []string{"init", "--import"}})
 	if code != 0 {
 		t.Errorf("init should exit 0, got %d", code)
 	}
@@ -295,7 +303,7 @@ func TestIntegrationCLI_init_importFromClaude(t *testing.T) {
 	t.Setenv("CODEX_HOME", "")
 	cfg := t.TempDir()
 	claudeConfig := writeClaudeConfigFile(t)
-	_, _, code := run(t, bin, cfg, "init", "--from", claudeConfig)
+	_, _, code := run(runParams{T: t, Bin: bin, ConfigDir: cfg, Args: []string{"init", "--from", claudeConfig}})
 	if code != 0 {
 		t.Errorf("init --from should exit 0, got %d", code)
 	}
@@ -312,7 +320,7 @@ func TestIntegrationCLI_connect_badConfig(t *testing.T) {
 
 	testutil.WriteFile(t, filepath.Join(cfg, "config.yaml"), "not: valid: yaml: :::")
 
-	_, _, code := run(t, bin, cfg, "connect")
+	_, _, code := run(runParams{T: t, Bin: bin, ConfigDir: cfg, Args: []string{"connect"}})
 	if code == 0 {
 		t.Error("connect with invalid config.yaml should exit non-zero")
 	}
@@ -322,7 +330,7 @@ func TestIntegrationCLI_bareMini_printsHelpAndExitsZero(t *testing.T) {
 	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
-	stdout, _, code := run(t, bin, cfg)
+	stdout, _, code := run(runParams{T: t, Bin: bin, ConfigDir: cfg, Args: nil})
 	if code != 0 {
 		t.Errorf("bare mini should exit 0, got %d", code)
 	}
@@ -335,7 +343,7 @@ func TestIntegrationCLI_connect_invalidToolMode(t *testing.T) {
 	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
-	_, stderr, code := run(t, bin, cfg, "connect", "--tool-mode", "bogus")
+	_, stderr, code := run(runParams{T: t, Bin: bin, ConfigDir: cfg, Args: []string{"connect", "--tool-mode", "bogus"}})
 	if code == 0 {
 		t.Error("connect with invalid --tool-mode should exit non-zero")
 	}
@@ -348,7 +356,7 @@ func TestIntegrationCLI_cleanup_empty(t *testing.T) {
 	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
-	_, _, code := run(t, bin, cfg, "cleanup")
+	_, _, code := run(runParams{T: t, Bin: bin, ConfigDir: cfg, Args: []string{"cleanup"}})
 	if code != 0 {
 		t.Errorf("cleanup with no response files should exit 0, got %d", code)
 	}
@@ -358,7 +366,7 @@ func TestIntegrationCLI_daemon_status_noDaemon(t *testing.T) {
 	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
-	stdout, _, code := run(t, bin, cfg, "daemon", "status")
+	stdout, _, code := run(runParams{T: t, Bin: bin, ConfigDir: cfg, Args: []string{"daemon", "status"}})
 	if code != 0 {
 		t.Errorf("daemon status should exit 0 even without running daemon, got %d", code)
 	}
@@ -371,16 +379,14 @@ func TestIntegrationCLI_add_withHeader(t *testing.T) {
 	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
-	_, _, code := run(
-		t,
-		bin,
-		cfg,
+	_, _, code := run(runParams{T: t, Bin: bin, ConfigDir: cfg, Args: []string{
 		"add",
 		"myserver",
 		"--url",
 		"http://example.com/mcp",
 		"--header",
 		"Authorization=Bearer tok123",
+	}},
 	)
 	if code != 0 {
 		t.Fatalf("add --header should exit 0, got %d", code)
@@ -395,10 +401,7 @@ func TestIntegrationCLI_add_stdioCommand(t *testing.T) {
 	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
-	_, _, code := run(
-		t,
-		bin,
-		cfg,
+	_, _, code := run(runParams{T: t, Bin: bin, ConfigDir: cfg, Args: []string{
 		"add",
 		"localserver",
 		"--no-connect",
@@ -407,6 +410,7 @@ func TestIntegrationCLI_add_stdioCommand(t *testing.T) {
 		"-y",
 		"@modelcontextprotocol/server-filesystem",
 		"/tmp",
+	}},
 	)
 	if code != 0 {
 		t.Fatalf("add stdio command should exit 0, got %d", code)
@@ -431,7 +435,7 @@ func TestIntegrationCLI_version(t *testing.T) {
 	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
-	stdout, _, code := run(t, bin, cfg, "version")
+	stdout, _, code := run(runParams{T: t, Bin: bin, ConfigDir: cfg, Args: []string{"version"}})
 	if code != 0 {
 		t.Fatalf("version should exit 0, got %d", code)
 	}
@@ -443,6 +447,7 @@ func TestIntegrationCLI_version(t *testing.T) {
 func TestIntegrationCLI_version_flag(t *testing.T) {
 	t.Parallel()
 	bin := miniBin(t)
+
 	// --version is a global flag, not a subcommand — run without --config
 	cmd := exec.Command(bin, "--version")
 	var out strings.Builder
@@ -459,10 +464,7 @@ func TestIntegrationCLI_add_protectedTool(t *testing.T) {
 	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
-	_, _, code := run(
-		t,
-		bin,
-		cfg,
+	_, _, code := run(runParams{T: t, Bin: bin, ConfigDir: cfg, Args: []string{
 		"add",
 		"svc",
 		"--url",
@@ -471,6 +473,7 @@ func TestIntegrationCLI_add_protectedTool(t *testing.T) {
 		"delete_item",
 		"--protected",
 		"create_item",
+	}},
 	)
 	if code != 0 {
 		t.Fatalf("add --protected should exit 0, got %d", code)
@@ -504,4 +507,18 @@ func TestIntegrationCLI_init_nullDeviceRejectedBeforeWriting(t *testing.T) {
 	if _, err := os.Stat(cfg); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("init changed config before rejecting the terminal: %v", err)
 	}
+}
+
+type runParams struct {
+	T         *testing.T
+	Bin       string
+	ConfigDir string
+	Args      []string
+}
+
+type checkLsContainsParams struct {
+	T    *testing.T
+	Bin  string
+	Cfg  string
+	Want []string
 }

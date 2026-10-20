@@ -21,7 +21,9 @@ func (l *list) view(height int, focused bool) string {
 		shown = append(shown, l.headerLine())
 	}
 	lines, first, last := l.lines(focused)
-	shown = append(shown, l.scroll.cut(lines, first, last, height-len(shown))...)
+	shown = append(
+		shown,
+		l.scroll.cut(cutParams{Lines: lines, First: first, Last: last, Height: height - len(shown)})...)
 	return strings.Join(shown, "\n")
 }
 
@@ -46,7 +48,11 @@ func (l *list) lines(focused bool) (lines []string, first, last int) {
 	rows := slices.Concat(l.visible(), l.matching(l.untickable))
 	for i, r := range rows {
 		start := len(lines)
-		lines = append(lines, l.rowLines(r, i >= tickable, focused && i == l.cursor, width)...)
+		lines = append(
+			lines,
+			l.rowLines(
+				rowLinesParams{Row: r, Untickable: i >= tickable, AtCursor: focused && i == l.cursor, Width: width},
+			)...)
 		if i == l.cursor {
 			first, last = start, len(lines)-1
 		}
@@ -62,14 +68,14 @@ func (l *list) lines(focused bool) (lines []string, first, last int) {
 	return lines, first, last
 }
 
-func (l *list) rowLines(r row, untickable, atCursor bool, width int) []string {
-	if untickable {
-		line := strings.TrimRight(fmt.Sprintf("%-*s  %s", width, r.label, r.detail), " ")
-		return []string{cursorMark(atCursor) + dim.Render(doneMark+line)}
+func (l *list) rowLines(params rowLinesParams) []string {
+	if params.Untickable {
+		line := strings.TrimRight(fmt.Sprintf("%-*s  %s", params.Width, params.Row.label, params.Row.detail), " ")
+		return []string{cursorMark(params.AtCursor) + dim.Render(doneMark+line)}
 	}
-	lines := []string{l.line(r, atCursor, width)}
-	if r.subtitle != "" {
-		lines = append(lines, "      "+dim.Render(r.subtitle))
+	lines := []string{l.line(params.Row, params.AtCursor, params.Width)}
+	if params.Row.subtitle != "" {
+		lines = append(lines, "      "+dim.Render(params.Row.subtitle))
 	}
 	return lines
 }
@@ -113,4 +119,11 @@ func (l *list) line(r row, atCursor bool, width int) string {
 	) + "  " + dim.Render(
 		r.detail,
 	)
+}
+
+type rowLinesParams struct {
+	Row        row
+	Untickable bool
+	AtCursor   bool
+	Width      int
 }

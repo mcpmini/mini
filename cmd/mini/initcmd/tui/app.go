@@ -344,7 +344,10 @@ func (a *app) body(height int) string {
 	} else {
 		first, last = len(lines)+first, len(lines)+last
 	}
-	return strings.Join(a.nav.scroll.cut(append(lines, nav...), first, last, height), "\n")
+	return strings.Join(
+		a.nav.scroll.cut(cutParams{Lines: append(lines, nav...), First: first, Last: last, Height: height}),
+		"\n",
+	)
 }
 
 // A chooser's choice lines can be taller than the window, so its rows keep the whole window and the

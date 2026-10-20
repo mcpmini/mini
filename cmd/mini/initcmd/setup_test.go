@@ -299,7 +299,15 @@ func TestServerStatuses_aServerFinishedFromItsCommentedSteps(t *testing.T) {
 	t.Run("an app with its client ID but the secret's placeholder isn't finished", func(t *testing.T) {
 		setup, _ := addCredentialServers(t)
 		uncommented(t, setup.ConfigDir, "asana")
-		editServerFile(t, setup.ConfigDir, "asana", clientIDPlaceholder, "app-123")
+		editServerFile(
+			editServerFileParams{
+				T:           t,
+				ConfigDir:   setup.ConfigDir,
+				Name:        "asana",
+				Old:         clientIDPlaceholder,
+				Replacement: "app-123",
+			},
+		)
 		if status := currentStatus(t, setup, "asana"); !status.NeedsOwnApp() {
 			t.Errorf("asana = %+v, want it still needing its app: the secret is a placeholder", status)
 		}
@@ -347,10 +355,14 @@ func registersOnlyAt(selfRegistering ...string) discoverFunc {
 	}
 }
 
-func editServerFile(t *testing.T, configDir, name, old, replacement string) {
-	t.Helper()
-	path := config.ServerPath(configDir, name)
-	testutil.WriteFile(t, path, strings.Replace(string(testutil.ReadFile(t, path)), old, replacement, 1))
+func editServerFile(params editServerFileParams) {
+	params.T.Helper()
+	path := config.ServerPath(params.ConfigDir, params.Name)
+	testutil.WriteFile(
+		params.T,
+		path,
+		strings.Replace(string(testutil.ReadFile(params.T, path)), params.Old, params.Replacement, 1),
+	)
 }
 
 func currentStatus(t *testing.T, setup Setup, name string) ServerStatus {
@@ -408,4 +420,12 @@ func uncommented(t *testing.T, configDir, name string) config.ServerConfig {
 		t.Fatalf("%s uncommented doesn't load: %v\n%s", name, err, strings.Join(lines, "\n"))
 	}
 	return sc
+}
+
+type editServerFileParams struct {
+	T           *testing.T
+	ConfigDir   string
+	Name        string
+	Old         string
+	Replacement string
 }

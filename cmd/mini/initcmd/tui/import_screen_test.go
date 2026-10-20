@@ -11,10 +11,13 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
-func candidate(name, url string, picked bool, agents ...string) initcmd.Candidate {
-	c := initcmd.Candidate{Server: config.ServerConfig{Name: name, Transport: "http", URL: url}, Picked: picked}
-	for _, agent := range agents {
-		c.From = append(c.From, initcmd.AgentEntry{Agent: agent, Name: name})
+func candidate(params candidateParams) initcmd.Candidate {
+	c := initcmd.Candidate{
+		Server: config.ServerConfig{Name: params.Name, Transport: "http", URL: params.URL},
+		Picked: params.Picked,
+	}
+	for _, agent := range params.Agents {
+		c.From = append(c.From, initcmd.AgentEntry{Agent: agent, Name: params.Name})
 	}
 	return c
 }
@@ -29,8 +32,22 @@ func screenText(s *importScreen) string {
 
 func TestImportScreen_listsEachCandidateTickedAsThePlanPicks(t *testing.T) {
 	s := importScreenFor([]initcmd.Candidate{
-		candidate("github", "https://gh.example.com/mcp", true, "Claude Code", "Codex"),
-		candidate("github-2", "https://gh.example.com/mcp", false, "Codex"),
+		candidate(
+			candidateParams{
+				Name:   "github",
+				URL:    "https://gh.example.com/mcp",
+				Picked: true,
+				Agents: []string{"Claude Code", "Codex"},
+			},
+		),
+		candidate(
+			candidateParams{
+				Name:   "github-2",
+				URL:    "https://gh.example.com/mcp",
+				Picked: false,
+				Agents: []string{"Codex"},
+			},
+		),
 	})
 	text := screenText(s)
 	for _, want := range []string{
@@ -45,9 +62,13 @@ func TestImportScreen_listsEachCandidateTickedAsThePlanPicks(t *testing.T) {
 }
 
 func TestImportScreen_onlyASwitchedOffRowSaysWhyItIsUnticked(t *testing.T) {
-	switchedOff := candidate("notes", "https://notes.example.com/mcp", false, "Codex")
+	switchedOff := candidate(
+		candidateParams{Name: "notes", URL: "https://notes.example.com/mcp", Picked: false, Agents: []string{"Codex"}},
+	)
 	switchedOff.InitialDisposition = initcmd.OriginallyDisabled
-	second := candidate("github-2", "https://gh.example.com/mcp", false, "Cursor")
+	second := candidate(
+		candidateParams{Name: "github-2", URL: "https://gh.example.com/mcp", Picked: false, Agents: []string{"Cursor"}},
+	)
 	second.InitialDisposition = initcmd.DuplicateConfig
 	text := screenText(importScreenFor([]initcmd.Candidate{second, switchedOff}))
 	for _, want := range []string{
@@ -61,7 +82,18 @@ func TestImportScreen_onlyASwitchedOffRowSaysWhyItIsUnticked(t *testing.T) {
 }
 
 func TestImportScreen_oneAgentIsNamedInTheHeadingInsteadOfAColumn(t *testing.T) {
-	s := importScreenFor([]initcmd.Candidate{candidate("linear", "https://linear.example.com/mcp", true, "Cursor")})
+	s := importScreenFor(
+		[]initcmd.Candidate{
+			candidate(
+				candidateParams{
+					Name:   "linear",
+					URL:    "https://linear.example.com/mcp",
+					Picked: true,
+					Agents: []string{"Cursor"},
+				},
+			),
+		},
+	)
 	if text := screenText(s); !strings.HasPrefix(text, "Select which MCPs you want to import from Cursor\n") ||
 		strings.Contains(s.body(20, true), "Cursor") {
 		t.Errorf("screen:\n%s\nwant Cursor named in the heading only", text)
@@ -70,8 +102,17 @@ func TestImportScreen_oneAgentIsNamedInTheHeadingInsteadOfAColumn(t *testing.T) 
 
 func TestImportScreen_ticksBecomeThePicks(t *testing.T) {
 	candidates := []initcmd.Candidate{
-		candidate("github", "https://gh.example.com/mcp", true, "Codex"),
-		candidate("notes", "https://notes.example.com/mcp", false, "Codex"),
+		candidate(
+			candidateParams{Name: "github", URL: "https://gh.example.com/mcp", Picked: true, Agents: []string{"Codex"}},
+		),
+		candidate(
+			candidateParams{
+				Name:   "notes",
+				URL:    "https://notes.example.com/mcp",
+				Picked: false,
+				Agents: []string{"Codex"},
+			},
+		),
 	}
 	candidates[1].InitialDisposition = initcmd.OriginallyDisabled
 	s := importScreenFor(candidates)
@@ -94,7 +135,18 @@ func TestImportScreen_ticksBecomeThePicks(t *testing.T) {
 }
 
 func TestImportScreen_enterAndSpaceTickTheRowAndDownPastItLeavesTheList(t *testing.T) {
-	s := importScreenFor([]initcmd.Candidate{candidate("github", "https://gh.example.com/mcp", true, "Codex")})
+	s := importScreenFor(
+		[]initcmd.Candidate{
+			candidate(
+				candidateParams{
+					Name:   "github",
+					URL:    "https://gh.example.com/mcp",
+					Picked: true,
+					Agents: []string{"Codex"},
+				},
+			),
+		},
+	)
 	for _, key := range []string{"enter", "space"} {
 		if got, _ := s.handle(press(key)); got != handled {
 			t.Errorf("%s = %v, want handled", key, got)
@@ -118,7 +170,9 @@ func TestImportScreen_aLongCommandLeavesRoomForTheOtherColumns(t *testing.T) {
 		Server: config.ServerConfig{Name: "files", Command: "npx", Args: []string{"-y", strings.Repeat("server-", 12)}},
 		From:   []initcmd.AgentEntry{{Agent: "Codex", Name: "files"}},
 	}
-	other := candidate("notes", "https://notes.example.com/mcp", true, "Cursor")
+	other := candidate(
+		candidateParams{Name: "notes", URL: "https://notes.example.com/mcp", Picked: true, Agents: []string{"Cursor"}},
+	)
 	text := screenText(importScreenFor([]initcmd.Candidate{long, other}))
 	if !strings.Contains(text, "…  Codex") {
 		t.Errorf("screen:\n%s\nwant the command cut short so the agents column stays in line", text)
@@ -127,8 +181,8 @@ func TestImportScreen_aLongCommandLeavesRoomForTheOtherColumns(t *testing.T) {
 
 func TestImportScreen_eachHeadingSitsAboveItsColumnEvenWhenTheColumnIsNarrower(t *testing.T) {
 	s := importScreenFor([]initcmd.Candidate{
-		candidate("a", "https://x.io", true, "Codex"),
-		candidate("b", "https://y.io", true, "Cursor"),
+		candidate(candidateParams{Name: "a", URL: "https://x.io", Picked: true, Agents: []string{"Codex"}}),
+		candidate(candidateParams{Name: "b", URL: "https://y.io", Picked: true, Agents: []string{"Cursor"}}),
 	})
 	lines := strings.Split(ansi.Strip(s.body(20, true)), "\n")
 	header, row := lines[0], lines[1]
@@ -142,7 +196,17 @@ func TestImportScreen_eachHeadingSitsAboveItsColumnEvenWhenTheColumnIsNarrower(t
 func TestImportScreen_theHeaderStaysAboveTheRowsAsTheyScroll(t *testing.T) {
 	var candidates []initcmd.Candidate
 	for _, name := range []string{"a", "b", "c", "d", "e"} {
-		candidates = append(candidates, candidate(name, "https://"+name+".example.com/mcp", true, "Codex", "Cursor"))
+		candidates = append(
+			candidates,
+			candidate(
+				candidateParams{
+					Name:   name,
+					URL:    "https://" + name + ".example.com/mcp",
+					Picked: true,
+					Agents: []string{"Codex", "Cursor"},
+				},
+			),
+		)
 	}
 	s := importScreenFor(candidates)
 	for range 4 {
@@ -166,8 +230,24 @@ func withInMini(candidates []initcmd.Candidate, inMini ...initcmd.Candidate) *im
 
 func TestImportScreen_serversMiniRunsFollowTheCandidatesMarkedAndCantBeTicked(t *testing.T) {
 	s := withInMini(
-		[]initcmd.Candidate{candidate("notes", "https://notes.example.com/mcp", true, "Codex")},
-		candidate("github", "https://gh.example.com/mcp", false, "Codex", "Claude Code"),
+		[]initcmd.Candidate{
+			candidate(
+				candidateParams{
+					Name:   "notes",
+					URL:    "https://notes.example.com/mcp",
+					Picked: true,
+					Agents: []string{"Codex"},
+				},
+			),
+		},
+		candidate(
+			candidateParams{
+				Name:   "github",
+				URL:    "https://gh.example.com/mcp",
+				Picked: false,
+				Agents: []string{"Codex", "Claude Code"},
+			},
+		),
 	)
 	want := "  SERVER      COMMAND / URL          FROM\n" +
 		"> [x] notes   notes.example.com/mcp  Codex\n" +
@@ -192,9 +272,30 @@ func TestImportScreen_theCursorScrollsThroughMoreServersMiniRunsThanFit(t *testi
 	var inMini []initcmd.Candidate
 	for i := range 12 {
 		name := fmt.Sprintf("m%02d", i)
-		inMini = append(inMini, candidate(name, "https://"+name+".example.com/mcp", false, "Codex"))
+		inMini = append(
+			inMini,
+			candidate(
+				candidateParams{
+					Name:   name,
+					URL:    "https://" + name + ".example.com/mcp",
+					Picked: false,
+					Agents: []string{"Codex"},
+				},
+			),
+		)
 	}
-	s := withInMini([]initcmd.Candidate{candidate("notes", "https://notes.example.com/mcp", true, "Codex")}, inMini...)
+	s := withInMini(
+		[]initcmd.Candidate{
+			candidate(
+				candidateParams{
+					Name:   "notes",
+					URL:    "https://notes.example.com/mcp",
+					Picked: true,
+					Agents: []string{"Codex"},
+				},
+			),
+		},
+		inMini...)
 	for range len(inMini) {
 		s.handle(press("down"))
 	}
@@ -209,8 +310,24 @@ func TestImportScreen_theCursorScrollsThroughMoreServersMiniRunsThanFit(t *testi
 
 func TestImportScreen_theFilterNarrowsTheServersMiniRunsToo(t *testing.T) {
 	s := withInMini(
-		[]initcmd.Candidate{candidate("notes", "https://notes.example.com/mcp", true, "Codex")},
-		candidate("github", "https://gh.example.com/mcp", false, "Codex"),
+		[]initcmd.Candidate{
+			candidate(
+				candidateParams{
+					Name:   "notes",
+					URL:    "https://notes.example.com/mcp",
+					Picked: true,
+					Agents: []string{"Codex"},
+				},
+			),
+		},
+		candidate(
+			candidateParams{
+				Name:   "github",
+				URL:    "https://gh.example.com/mcp",
+				Picked: false,
+				Agents: []string{"Codex"},
+			},
+		),
 	)
 	for _, key := range []string{"/", "n", "o", "enter"} {
 		s.handle(press(key))
@@ -232,8 +349,25 @@ func TestImportScreen_theFilterNarrowsTheServersMiniRunsToo(t *testing.T) {
 }
 
 func TestImportScreen_withOnlyServersMiniRunsIsSkipped(t *testing.T) {
-	s := withInMini(nil, candidate("github", "https://gh.example.com/mcp", false, "Codex"))
+	s := withInMini(
+		nil,
+		candidate(
+			candidateParams{
+				Name:   "github",
+				URL:    "https://gh.example.com/mcp",
+				Picked: false,
+				Agents: []string{"Codex"},
+			},
+		),
+	)
 	if !s.empty() {
 		t.Error("Import is shown with nothing to tick; want it skipped like any screen with nothing to pick")
 	}
+}
+
+type candidateParams struct {
+	Name   string
+	URL    string
+	Picked bool
+	Agents []string
 }

@@ -18,7 +18,9 @@ func TestRunListUsesStoredOAuthLogin(t *testing.T) {
 	dir := t.TempDir()
 	upstream := newTestMCPUpstream(t)
 	tokens := newTestTokenEndpoint(t)
-	sc := oauthServerConfig("live", upstream.srv.URL, tokens.srv.URL, true)
+	sc := oauthServerConfig(
+		oauthServerConfigParams{Name: "live", MCPURL: upstream.srv.URL, TokenURL: tokens.srv.URL, Enabled: true},
+	)
 	configtest.WriteServer(t, dir, sc)
 	authtest.SaveToken(t, authtest.TokenFile{
 		ConfigDir: dir, ServerName: sc.Name, Server: sc,

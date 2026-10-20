@@ -24,27 +24,23 @@ func reviewWith(added []string, endingInstead, offering []screen) *reviewScreen 
 	for _, name := range added {
 		statuses = append(statuses, initcmd.ServerStatus{Name: name})
 	}
-	return reviewOf(statuses, nil, endingInstead, offering)
+	return reviewOf(reviewOfParams{Statuses: statuses, Checking: nil, EndingInstead: endingInstead, Offering: offering})
 }
 
-func reviewOf(
-	statuses []initcmd.ServerStatus,
-	checking map[string]bool,
-	endingInstead, offering []screen,
-) *reviewScreen {
+func reviewOf(params reviewOfParams) *reviewScreen {
 	var added []string
-	for _, st := range statuses {
+	for _, st := range params.Statuses {
 		added = append(added, st.Name)
 	}
 	s := newReviewScreen(reviewParams{
 		saveFailures:  noSaveFailures,
 		added:         func() []string { return added },
-		statuses:      func() ([]initcmd.ServerStatus, error) { return statuses, nil },
-		checking:      func() map[string]bool { return checking },
+		statuses:      func() ([]initcmd.ServerStatus, error) { return params.Statuses, nil },
+		checking:      func() map[string]bool { return params.Checking },
 		steps:         testSteps,
 		configDir:     "/example/mini",
-		endingInstead: endingInstead,
-		offering:      offering,
+		endingInstead: params.EndingInstead,
+		offering:      params.Offering,
 	})
 	s.resize(200, 20)
 	s.refresh()
@@ -53,10 +49,12 @@ func reviewOf(
 
 func TestReview_aFailedSaveLeavesRoomForTheServersItAdded(t *testing.T) {
 	s := reviewOf(
-		[]initcmd.ServerStatus{{Name: "canva"}, {Name: "linear"}, {Name: "notion"}},
-		nil,
-		nil,
-		[]screen{&fakeScreen{}},
+		reviewOfParams{
+			Statuses:      []initcmd.ServerStatus{{Name: "canva"}, {Name: "linear"}, {Name: "notion"}},
+			Checking:      nil,
+			EndingInstead: nil,
+			Offering:      []screen{&fakeScreen{}},
+		},
 	)
 	s.p.saveFailures = func() []initcmd.ServerError {
 		return []initcmd.ServerError{{Name: "sentry", Err: errors.New("disk full")}}
@@ -75,13 +73,13 @@ func TestReview_aFailedSaveLeavesRoomForTheServersItAdded(t *testing.T) {
 }
 
 func TestReview_listsEachAddedServerWithWhatItStillNeeds(t *testing.T) {
-	s := reviewOf([]initcmd.ServerStatus{
+	s := reviewOf(reviewOfParams{Statuses: []initcmd.ServerStatus{
 		{Name: "canva"},
 		{Name: "sentry", Readiness: initcmd.NeedsLoginState{}},
 		{Name: "asana", Readiness: initcmd.NeedsOwnAppState{}},
 		{Name: "github", Readiness: initcmd.NeedsTokenState{}},
 		{Name: "linear"},
-	}, map[string]bool{"linear": true}, nil, []screen{&fakeScreen{}})
+	}, Checking: map[string]bool{"linear": true}, EndingInstead: nil, Offering: []screen{&fakeScreen{}}})
 	want := "5 MCPs will be added to mini:\n" +
 		"  canva   ✓ ready\n" +
 		"  sentry  requires a login, run: mini auth sentry\n" +
@@ -96,7 +94,9 @@ func TestReview_listsEachAddedServerWithWhatItStillNeeds(t *testing.T) {
 func TestReview_aFinishedCheckUpdatesTheServersState(t *testing.T) {
 	statuses := []initcmd.ServerStatus{{Name: "linear"}}
 	checking := map[string]bool{"linear": true}
-	s := reviewOf(statuses, checking, nil, []screen{&fakeScreen{}})
+	s := reviewOf(
+		reviewOfParams{Statuses: statuses, Checking: checking, EndingInstead: nil, Offering: []screen{&fakeScreen{}}},
+	)
 	delete(checking, "linear")
 	statuses[0].Readiness = initcmd.NeedsLoginState{}
 	s.update(checksChanged{})
@@ -115,7 +115,9 @@ func TestReview_aListTallerThanTheWindowCountsWhatDoesntFit(t *testing.T) {
 	for i := range 22 {
 		statuses = append(statuses, initcmd.ServerStatus{Name: fmt.Sprintf("s%02d", i)})
 	}
-	s := reviewOf(statuses, nil, nil, []screen{&fakeScreen{}})
+	s := reviewOf(
+		reviewOfParams{Statuses: statuses, Checking: nil, EndingInstead: nil, Offering: []screen{&fakeScreen{}}},
+	)
 	a := inApp(80, 24, &fakeScreen{name: "Before"}, s)
 	send(a, "enter")
 	view := shown(a)
@@ -141,10 +143,12 @@ func TestHomeRelative_shortensOnlyPathsUnderHome(t *testing.T) {
 
 func TestReview_aLongStepWrapsUnderItsColumn(t *testing.T) {
 	s := reviewOf(
-		[]initcmd.ServerStatus{{Name: "github", Readiness: initcmd.NeedsTokenState{}}},
-		nil,
-		nil,
-		[]screen{&fakeScreen{}},
+		reviewOfParams{
+			Statuses:      []initcmd.ServerStatus{{Name: "github", Readiness: initcmd.NeedsTokenState{}}},
+			Checking:      nil,
+			EndingInstead: nil,
+			Offering:      []screen{&fakeScreen{}},
+		},
 	)
 	s.resize(40, 20)
 	lines := strings.Split(ansi.Strip(s.body(10, false)), "\n")
@@ -195,7 +199,14 @@ func TestReview_isEmptyWhileAScreenThatEndsTheRunInsteadShows(t *testing.T) {
 func TestRun_aRunWithAnAgentToConnectEndsOnConnectNotReview(t *testing.T) {
 	c := catalog.Catalog{Entries: []catalog.Entry{entryWithAuth("sentry", catalog.AuthNone)}}
 	setup := connectingSetup(configWithAServerToFinish(t), stdioAgent("Codex"))
-	view := screenAfter(t, setup, fromCatalog(c), "tab", "enter", "tab", "enter", "down", "enter")
+	view := screenAfter(
+		screenAfterParams{
+			T:     t,
+			Setup: setup,
+			Load:  fromCatalog(c),
+			Keys:  []string{"tab", "enter", "tab", "enter", "down", "enter"},
+		},
+	)
 	if !strings.Contains(view, "Connect mini to Codex") || strings.Contains(view, "Review and finish") {
 		t.Errorf(
 			"after choosing on Connect:\n%s\nwant the run ended on Connect: Review is only for runs without agents",
@@ -206,11 +217,15 @@ func TestRun_aRunWithAnAgentToConnectEndsOnConnectNotReview(t *testing.T) {
 
 func TestRun_aRunThatOnlyImportsEndsOnReview(t *testing.T) {
 	view := screenAfter(
-		t,
-		setupFor(t.TempDir(), stdioAgent("Codex", "files")),
-		fromCatalog(catalog.Catalog{}),
-		"tab",
-		"enter",
+		screenAfterParams{
+			T:     t,
+			Setup: setupFor(t.TempDir(), stdioAgent("Codex", "files")),
+			Load:  fromCatalog(catalog.Catalog{}),
+			Keys: []string{
+				"tab",
+				"enter",
+			},
+		},
 	)
 	if !strings.Contains(view, "Review and finish") || !strings.Contains(view, "will be added to mini:\n  files") {
 		t.Errorf("after Continue on Import:\n%s\nwant Review naming files", view)
@@ -234,11 +249,25 @@ func TestReview_isEmptyOnlyWhenNothingWasOffered(t *testing.T) {
 
 func TestRun_noAgentsWithAnOAuthPickGoesFromLoginsToReview(t *testing.T) {
 	c := catalog.Catalog{Entries: []catalog.Entry{oauthEntry("linear")}}
-	logins := screenAfter(t, setupFor(t.TempDir()), fromCatalog(c), "space", "tab", "enter")
+	logins := screenAfter(
+		screenAfterParams{
+			T:     t,
+			Setup: setupFor(t.TempDir()),
+			Load:  fromCatalog(c),
+			Keys:  []string{"space", "tab", "enter"},
+		},
+	)
 	if !strings.Contains(logins, "Log in to your MCPs (optional)") || strings.Contains(logins, "Save and finish") {
 		t.Errorf("Logins:\n%s\nwant Continue, not the final actions: Review ends the run", logins)
 	}
-	review := screenAfter(t, setupFor(t.TempDir()), fromCatalog(c), "space", "tab", "enter", "tab", "enter")
+	review := screenAfter(
+		screenAfterParams{
+			T:     t,
+			Setup: setupFor(t.TempDir()),
+			Load:  fromCatalog(c),
+			Keys:  []string{"space", "tab", "enter", "tab", "enter"},
+		},
+	)
 	if !strings.Contains(review, "Review and finish") ||
 		!strings.Contains(review, "Save and finish\n  Exit without saving\n  Back") {
 		t.Errorf("after Continue on Logins:\n%s\nwant Review with the final actions", review)
@@ -303,8 +332,17 @@ func TestRun_exitWithoutSavingOnReviewWritesNothing(t *testing.T) {
 
 func TestRun_catalogOfferedButNothingTickedReviewsWithTheGuidance(t *testing.T) {
 	c := catalog.Catalog{Entries: []catalog.Entry{oauthEntry("linear")}}
-	view := screenAfter(t, setupFor(t.TempDir()), fromCatalog(c), "tab", "enter")
+	view := screenAfter(
+		screenAfterParams{T: t, Setup: setupFor(t.TempDir()), Load: fromCatalog(c), Keys: []string{"tab", "enter"}},
+	)
 	if !strings.Contains(view, "Review and finish") || !strings.Contains(view, "No MCPs will be added to mini.") {
 		t.Errorf("view:\n%s\nwant Review with the no-MCPs guidance", view)
 	}
+}
+
+type reviewOfParams struct {
+	Statuses      []initcmd.ServerStatus
+	Checking      map[string]bool
+	EndingInstead []screen
+	Offering      []screen
 }

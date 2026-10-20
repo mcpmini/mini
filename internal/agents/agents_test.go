@@ -46,15 +46,15 @@ func jsonConfigWith(t *testing.T, servers map[string]string) []byte {
 	return data
 }
 
-func connectAndParse(t *testing.T, agent Agent, cfg []byte, remove []string, mini *MiniEntry) map[string]Server {
-	t.Helper()
-	out, err := agent.Connect(cfg, remove, mini)
+func connectAndParse(params connectAndParseParams) map[string]Server {
+	params.T.Helper()
+	out, err := params.Agent.Connect(params.Cfg, params.Remove, params.Mini)
 	if err != nil {
-		t.Fatalf("Connect: %v", err)
+		params.T.Fatalf("Connect: %v", err)
 	}
-	got, err := agent.Parse(out)
+	got, err := params.Agent.Parse(out)
 	if err != nil {
-		t.Fatalf("Parse after Connect: %v\n%s", err, out)
+		params.T.Fatalf("Parse after Connect: %v\n%s", err, out)
 	}
 	return got
 }
@@ -90,7 +90,7 @@ func TestKnownAgents_followTheAgentContract(t *testing.T) {
 
 func connectAddsRunnableMini(t *testing.T, agent Agent) {
 	mini := contractMini
-	got := connectAndParse(t, agent, nil, nil, &mini)[MiniKey]
+	got := connectAndParse(connectAndParseParams{T: t, Agent: agent, Cfg: nil, Remove: nil, Mini: &mini})[MiniKey]
 	if got.Config.Command != mini.Command || !reflect.DeepEqual(got.Config.Args, mini.Args) || got.Disabled {
 		t.Errorf("mini entry = %#v, want command %q args %v enabled", got, mini.Command, mini.Args)
 	}
@@ -100,7 +100,7 @@ func connectRemovesOnlyNamed(t *testing.T, agent Agent) {
 	mini := contractMini
 	cfg := configWith(t, agent, map[string]string{"files": "files-server", "notes": "notes-server"})
 	notesBefore := mustParse(t, agent, cfg)["notes"]
-	got := connectAndParse(t, agent, cfg, []string{"files"}, &mini)
+	got := connectAndParse(connectAndParseParams{T: t, Agent: agent, Cfg: cfg, Remove: []string{"files"}, Mini: &mini})
 	if !reflect.DeepEqual(got["notes"], notesBefore) {
 		t.Errorf("notes = %#v, want it unchanged from %#v", got["notes"], notesBefore)
 	}
@@ -118,7 +118,7 @@ func connectKeepsUsersMini(t *testing.T, agent Agent) {
 	mini := contractMini
 	cfg := configWith(t, agent, map[string]string{MiniKey: "custom-mini"})
 	before := mustParse(t, agent, cfg)[MiniKey]
-	got := connectAndParse(t, agent, cfg, []string{MiniKey}, &mini)[MiniKey]
+	got := connectAndParse(connectAndParseParams{T: t, Agent: agent, Cfg: cfg, Remove: []string{MiniKey}, Mini: &mini})[MiniKey]
 	if !reflect.DeepEqual(got, before) {
 		t.Errorf("mini = %#v, want the user's entry %#v", got, before)
 	}
@@ -141,4 +141,12 @@ func malformedConfigIsAnError(t *testing.T, agent Agent) {
 	if _, err := agent.Parse([]byte("{not valid")); err == nil {
 		t.Fatal("expected a parse error")
 	}
+}
+
+type connectAndParseParams struct {
+	T      *testing.T
+	Agent  Agent
+	Cfg    []byte
+	Remove []string
+	Mini   *MiniEntry
 }

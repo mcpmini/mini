@@ -12,7 +12,9 @@ import (
 
 func TestConnectScreen_removingWaitsForTheChecksThenCountsTheTickedAgents(t *testing.T) {
 	plan := newFakePlan(map[string][]string{"Claude": {"files", "notes"}, "Codex": {"github"}})
-	s, check := connectScreenFor(t, plan, namedAgents("Claude", "Codex"), nil)
+	s, check := connectScreenFor(
+		connectScreenForParams{T: t, Plan: plan, Agents: namedAgents("Claude", "Codex"), WithMini: nil},
+	)
 	checking := "> Connect mini and remove existing MCPs\n  Checking which MCPs mini can run…\n  Just connect mini"
 	if text := connectText(s); !strings.Contains(text, checking) {
 		t.Fatalf("screen:\n%s\nwant the cursor on removing, which says it is checking", text)
@@ -43,7 +45,9 @@ func TestConnectScreen_removingWaitsForTheChecksThenCountsTheTickedAgents(t *tes
 
 func TestConnectScreen_aCheckRunFromAnEarlierVisitIsIgnored(t *testing.T) {
 	plan := newFakePlan(map[string][]string{"Claude": {"files"}})
-	s, earlier := connectScreenFor(t, plan, namedAgents("Claude"), nil)
+	s, earlier := connectScreenFor(
+		connectScreenForParams{T: t, Plan: plan, Agents: namedAgents("Claude"), WithMini: nil},
+	)
 	later := showScreen(s)
 	<-plan.cancelled
 	s.update(earlier())
@@ -59,7 +63,9 @@ func TestConnectScreen_aCheckRunFromAnEarlierVisitIsIgnored(t *testing.T) {
 func TestConnectScreen_removingSaysWhatTheChecksLeft(t *testing.T) {
 	t.Run("an agent with nothing to remove gets no line", func(t *testing.T) {
 		plan := newFakePlan(map[string][]string{"Claude": {"files"}})
-		s, check := connectScreenFor(t, plan, namedAgents("Claude", "Codex"), nil)
+		s, check := connectScreenFor(
+			connectScreenForParams{T: t, Plan: plan, Agents: namedAgents("Claude", "Codex"), WithMini: nil},
+		)
 		plan.checksPass(s, check)
 		text := connectText(s)
 		if strings.Contains(text, "Codex:") || !strings.Contains(text, "Claude: Removing files") {
@@ -70,7 +76,9 @@ func TestConnectScreen_removingSaysWhatTheChecksLeft(t *testing.T) {
 		plan := newFakePlan(
 			map[string][]string{"Claude": {"linear"}, "Codex": {"sentry", "linear"}, "Cursor": {"datadog"}},
 		)
-		s, check := connectScreenFor(t, plan, namedAgents("Claude", "Codex", "Cursor"), nil)
+		s, check := connectScreenFor(
+			connectScreenForParams{T: t, Plan: plan, Agents: namedAgents("Claude", "Codex", "Cursor"), WithMini: nil},
+		)
 		s.ticked["Cursor"] = false
 		plan.release <- initcmd.Removals{}
 		s.update(check())
@@ -86,7 +94,9 @@ func TestConnectScreen_removingSaysWhatTheChecksLeft(t *testing.T) {
 	})
 	t.Run("a server needing a login says to log in to it", func(t *testing.T) {
 		plan := newFakePlan(map[string][]string{"Claude": {"linear"}, "Codex": {"sentry", "linear"}})
-		s, check := connectScreenFor(t, plan, namedAgents("Claude", "Codex"), nil)
+		s, check := connectScreenFor(
+			connectScreenForParams{T: t, Plan: plan, Agents: namedAgents("Claude", "Codex"), WithMini: nil},
+		)
 		s.p.statuses = func() ([]initcmd.ServerStatus, error) {
 			return []initcmd.ServerStatus{{Name: "linear", Readiness: initcmd.NeedsLoginState{}}, {Name: "sentry"}}, nil
 		}
@@ -104,7 +114,14 @@ func TestConnectScreen_removingSaysWhatTheChecksLeft(t *testing.T) {
 	})
 	t.Run("an agent that has mini and nothing to remove gets no line", func(t *testing.T) {
 		plan := newFakePlan(map[string][]string{"Claude": {"files"}, "Codex": {"github"}})
-		s, check := connectScreenFor(t, plan, namedAgents("Claude", "Codex"), map[string]bool{"Claude": true})
+		s, check := connectScreenFor(
+			connectScreenForParams{
+				T:        t,
+				Plan:     plan,
+				Agents:   namedAgents("Claude", "Codex"),
+				WithMini: map[string]bool{"Claude": true},
+			},
+		)
 		plan.release <- initcmd.Removals{ByAgent: map[string][]string{"Codex": {"github"}}}
 		s.update(check())
 		text := connectText(s)
@@ -114,7 +131,9 @@ func TestConnectScreen_removingSaysWhatTheChecksLeft(t *testing.T) {
 	})
 	t.Run("a narrow window wraps the subtitle", func(t *testing.T) {
 		plan := newFakePlan(map[string][]string{"Claude": {"files", "notes", "calendar", "drive"}})
-		s, check := connectScreenFor(t, plan, namedAgents("Claude"), nil)
+		s, check := connectScreenFor(
+			connectScreenForParams{T: t, Plan: plan, Agents: namedAgents("Claude"), WithMini: nil},
+		)
 		s.resize(44, 30)
 		plan.checksPass(s, check)
 		lines := strings.Split(linesUnder(s, initcmd.ConnectAndRemove), "\n")
@@ -131,7 +150,9 @@ func TestConnectScreen_removingSaysWhatTheChecksLeft(t *testing.T) {
 
 func TestConnectScreen_removingStaysListedWhileTicksChangeAndIsDimWithoutRemovals(t *testing.T) {
 	plan := newFakePlan(map[string][]string{"Codex": {"github"}})
-	s, check := connectScreenFor(t, plan, namedAgents("Claude", "Codex"), nil)
+	s, check := connectScreenFor(
+		connectScreenForParams{T: t, Plan: plan, Agents: namedAgents("Claude", "Codex"), WithMini: nil},
+	)
 	plan.checksPass(s, check)
 	s.handle(press("space"))
 	if got := s.choices(); !slices.Contains(got, optionLabel(initcmd.ConnectAndRemove)) {
@@ -150,7 +171,14 @@ func TestConnectScreen_removingStaysListedWhileTicksChangeAndIsDimWithoutRemoval
 
 func TestConnectScreen_removingFromAnAgentThatHasMiniOnlyRemoves(t *testing.T) {
 	plan := newFakePlan(map[string][]string{"Claude": {"files"}, "Codex": {"github"}})
-	s, check := connectScreenFor(t, plan, namedAgents("Claude", "Codex"), map[string]bool{"Claude": true})
+	s, check := connectScreenFor(
+		connectScreenForParams{
+			T:        t,
+			Plan:     plan,
+			Agents:   namedAgents("Claude", "Codex"),
+			WithMini: map[string]bool{"Claude": true},
+		},
+	)
 	plan.checksPass(s, check)
 	if text := connectText(s); !strings.Contains(text, "Claude: Removing files\n") {
 		t.Errorf("screen:\n%s\nwant Claude's entry removed without adding mini again", text)
@@ -159,7 +187,14 @@ func TestConnectScreen_removingFromAnAgentThatHasMiniOnlyRemoves(t *testing.T) {
 
 func TestConnectScreen_anAgentThatAlreadyHasMiniIsNotToldMiniWillBeAdded(t *testing.T) {
 	plan := newFakePlan(map[string][]string{"Claude": {"files"}})
-	s, check := connectScreenFor(t, plan, namedAgents("Claude"), map[string]bool{"Claude": true})
+	s, check := connectScreenFor(
+		connectScreenForParams{
+			T:        t,
+			Plan:     plan,
+			Agents:   namedAgents("Claude"),
+			WithMini: map[string]bool{"Claude": true},
+		},
+	)
 	plan.checksPass(s, check)
 	removing, connecting := linesUnder(s, initcmd.ConnectAndRemove), linesUnder(s, initcmd.ConnectOnly)
 	if strings.Contains(removing, "Adds mini") || !strings.Contains(removing, "Claude: Removing files") {

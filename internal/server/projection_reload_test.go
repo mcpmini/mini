@@ -155,7 +155,9 @@ func (e *reloadEnv) assertDataKeys(present []string, absent []string) {
 
 func (e *reloadEnv) writeRawProjections(content string) {
 	e.t.Helper()
-	configtest.WriteRawProjections(e.t, e.dir, "svc", content)
+	configtest.WriteRawProjections(
+		configtest.WriteRawProjectionsParams{T: e.t, Dir: e.dir, ServerName: "svc", Projections: content},
+	)
 }
 
 func (e *reloadEnv) writeProjections(tools map[string]*config.ProjectionConfig) {

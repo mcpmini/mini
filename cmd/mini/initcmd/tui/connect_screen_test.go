@@ -69,22 +69,17 @@ func noneAdded() []string { return nil }
 
 func noStatuses() ([]initcmd.ServerStatus, error) { return nil, nil }
 
-func connectScreenFor(
-	t *testing.T,
-	plan *fakePlan,
-	list []agents.Agent,
-	withMini map[string]bool,
-) (*connectScreen, tea.Cmd) {
+func connectScreenFor(params connectScreenForParams) (*connectScreen, tea.Cmd) {
 	s := newConnectScreen(connectParams{
 		saveFailures: noSaveFailures,
-		agents:       list,
-		withMini:     withMini,
-		plan:         func() (connectPlan, error) { return plan, nil },
+		agents:       params.Agents,
+		withMini:     params.WithMini,
+		plan:         func() (connectPlan, error) { return params.Plan, nil },
 		added:        noneAdded,
 		statuses:     noStatuses,
 	})
 	s.resize(200, 30)
-	t.Cleanup(s.checks.cancelAndWait)
+	params.T.Cleanup(s.checks.cancelAndWait)
 	return s, showScreen(s)
 }
 
@@ -123,7 +118,9 @@ func pickedNames(s *connectScreen) []string {
 }
 
 func TestConnectScreen_saysWhichServersTheSaveCouldNotSave(t *testing.T) {
-	s, _ := connectScreenFor(t, newFakePlan(nil), namedAgents("Claude"), nil)
+	s, _ := connectScreenFor(
+		connectScreenForParams{T: t, Plan: newFakePlan(nil), Agents: namedAgents("Claude"), WithMini: nil},
+	)
 	s.p.saveFailures = func() []initcmd.ServerError {
 		full := errors.New("disk full")
 		return []initcmd.ServerError{{Name: "linear", Err: full}, {Name: "sentry", Err: full}}
@@ -135,7 +132,9 @@ func TestConnectScreen_saysWhichServersTheSaveCouldNotSave(t *testing.T) {
 }
 
 func TestConnectScreen_countsTheFailuresPastTheFirstFewReasons(t *testing.T) {
-	s, _ := connectScreenFor(t, newFakePlan(nil), namedAgents("Claude"), nil)
+	s, _ := connectScreenFor(
+		connectScreenForParams{T: t, Plan: newFakePlan(nil), Agents: namedAgents("Claude"), WithMini: nil},
+	)
 	s.p.saveFailures = func() []initcmd.ServerError {
 		var failed []initcmd.ServerError
 		for _, name := range []string{"a", "b", "c", "d", "e"} {
@@ -155,7 +154,9 @@ func TestConnectScreen_countsTheFailuresPastTheFirstFewReasons(t *testing.T) {
 }
 
 func TestConnectScreen_withOneAgentOffersOnlyTheOptions(t *testing.T) {
-	s, _ := connectScreenFor(t, newFakePlan(nil), namedAgents("Claude"), nil)
+	s, _ := connectScreenFor(
+		connectScreenForParams{T: t, Plan: newFakePlan(nil), Agents: namedAgents("Claude"), WithMini: nil},
+	)
 	want := "> Just connect mini\n" +
 		"  Adds mini to your agent configurations and leaves existing MCP configurations alone.\n" +
 		"  I'll connect mini later\n" +
@@ -175,7 +176,14 @@ func TestConnectScreen_withOneAgentOffersOnlyTheOptions(t *testing.T) {
 func TestConnectScreen_eachAgentRowNamesTheMCPsMiniWouldReplace(t *testing.T) {
 	plan := newFakePlan(map[string][]string{"Claude": {"linear"}, "Codex": {"github", "sentry"}})
 	withMini := map[string]bool{"Claude": true, "Windsurf": true}
-	s, _ := connectScreenFor(t, plan, namedAgents("Claude", "Codex", "Cursor", "Windsurf"), withMini)
+	s, _ := connectScreenFor(
+		connectScreenForParams{
+			T:        t,
+			Plan:     plan,
+			Agents:   namedAgents("Claude", "Codex", "Cursor", "Windsurf"),
+			WithMini: withMini,
+		},
+	)
 	want := "[x] Claude    mini already connected · also configured with linear\n" +
 		"  [x] Codex     configured with github, sentry\n" +
 		"  [x] Cursor\n" +
@@ -190,7 +198,9 @@ func TestConnectScreen_eachAgentRowNamesTheMCPsMiniWouldReplace(t *testing.T) {
 
 func TestConnectScreen_withSeveralAgentsConnectsOnlyTheTickedOnes(t *testing.T) {
 	list := namedAgents("Claude", "Codex", "Cursor", "Windsurf")
-	s, _ := connectScreenFor(t, newFakePlan(nil), list, map[string]bool{"Windsurf": true})
+	s, _ := connectScreenFor(
+		connectScreenForParams{T: t, Plan: newFakePlan(nil), Agents: list, WithMini: map[string]bool{"Windsurf": true}},
+	)
 	text := connectText(s)
 	marked := "[x] Cursor\n   ✓  Windsurf  mini already connected\n\n> Just connect mini"
 	if !strings.Contains(text, marked) {
@@ -227,7 +237,9 @@ func TestConnectScreen_withSeveralAgentsConnectsOnlyTheTickedOnes(t *testing.T) 
 func TestConnectScreen_justConnectingWarnsOnlyWhileATickedAgentHasDuplicates(t *testing.T) {
 	list := namedAgents("Claude", "Codex")
 	plan := newFakePlan(map[string][]string{"Claude": {"files"}})
-	s, _ := connectScreenFor(t, plan, list, map[string]bool{"Claude": true})
+	s, _ := connectScreenFor(
+		connectScreenForParams{T: t, Plan: plan, Agents: list, WithMini: map[string]bool{"Claude": true}},
+	)
 	const adds = "  Adds mini to your agent configurations and leaves existing MCP configurations alone."
 	const warns = "  ⚠ Your agents will see these MCPs twice and may not use mini for smaller responses"
 	if text := linesUnder(s, initcmd.ConnectOnly); text != adds+"\n"+warns {
@@ -243,20 +255,31 @@ func TestConnectScreen_justConnectingWarnsOnlyWhileATickedAgentHasDuplicates(t *
 func TestConnectScreen_isEmptyWhenEveryAgentHasMiniAndNothingToRemove(t *testing.T) {
 	list := namedAgents("Claude", "Codex")
 	both := map[string]bool{"Claude": true, "Codex": true}
-	if s, _ := connectScreenFor(t, newFakePlan(nil), list, both); !s.empty() {
+	if s, _ := connectScreenFor(
+		connectScreenForParams{T: t, Plan: newFakePlan(nil), Agents: list, WithMini: both},
+	); !s.empty() {
 		t.Error("Connect is shown although every agent already has mini and nothing to remove")
 	}
-	if s, _ := connectScreenFor(t, newFakePlan(map[string][]string{"Codex": {"files"}}), list, both); s.empty() {
+	if s, _ := connectScreenFor(
+		connectScreenForParams{
+			T:        t,
+			Plan:     newFakePlan(map[string][]string{"Codex": {"files"}}),
+			Agents:   list,
+			WithMini: both,
+		},
+	); s.empty() {
 		t.Error("Connect is skipped although Codex has an entry mini could replace")
 	}
-	if s, _ := connectScreenFor(t, newFakePlan(nil), nil, nil); !s.empty() {
+	if s, _ := connectScreenFor(
+		connectScreenForParams{T: t, Plan: newFakePlan(nil), Agents: nil, WithMini: nil},
+	); !s.empty() {
 		t.Error("Connect is shown with no agent to connect")
 	}
 }
 
 func TestConnectScreen_leavingCancelsTheRunningChecks(t *testing.T) {
 	plan := newFakePlan(map[string][]string{"Claude": {"files"}})
-	s, _ := connectScreenFor(t, plan, namedAgents("Claude"), nil)
+	s, _ := connectScreenFor(connectScreenForParams{T: t, Plan: plan, Agents: namedAgents("Claude"), WithMini: nil})
 	a := framed(s, true)
 	if send(a, "esc"); a.at != 0 {
 		t.Fatalf("at = %d after esc, want back on the screen before", a.at)
@@ -266,7 +289,7 @@ func TestConnectScreen_leavingCancelsTheRunningChecks(t *testing.T) {
 
 func TestConnectScreen_escWithNothingToGoBackToKeepsTheChecksRunning(t *testing.T) {
 	plan := newFakePlan(map[string][]string{"Claude": {"files"}})
-	s, check := connectScreenFor(t, plan, namedAgents("Claude"), nil)
+	s, check := connectScreenFor(connectScreenForParams{T: t, Plan: plan, Agents: namedAgents("Claude"), WithMini: nil})
 	a := framed(s, false)
 	send(a, "esc")
 	plan.checksPass(s, check)
@@ -307,6 +330,7 @@ func TestConnectScreen_leavingDoesNotWaitForTheChecksToStop(t *testing.T) {
 }
 
 // stuckPlan's check ignores cancellation, as a server that is slow to close does.
+
 type stuckPlan struct{ unblock chan struct{} }
 
 func (*stuckPlan) HasDuplicates(string) bool { return true }
@@ -349,7 +373,9 @@ func TestConnectScreen_anAgentAlreadyConnectedIsMarkedWithOnlyOneToConnect(t *te
 }
 
 func TestConnectScreen_withNoAgentTickedTheConnectChoicesSayToTickOne(t *testing.T) {
-	s, _ := connectScreenFor(t, newFakePlan(nil), namedAgents("Claude", "Codex"), nil)
+	s, _ := connectScreenFor(
+		connectScreenForParams{T: t, Plan: newFakePlan(nil), Agents: namedAgents("Claude", "Codex"), WithMini: nil},
+	)
 	a := framed(s, false)
 	send(a, "up", "a", "tab", "up")
 	want := "> Just connect mini\n  Tick the agents above to connect mini to them\n" +
@@ -377,7 +403,9 @@ func TestConnectScreen_withNoAgentTickedTheConnectChoicesSayToTickOne(t *testing
 }
 
 func TestConnectScreen_untickingEveryAgentDimsTheConnectChoicesUntilOneIsTickedAgain(t *testing.T) {
-	s, _ := connectScreenFor(t, newFakePlan(nil), namedAgents("Claude", "Codex"), nil)
+	s, _ := connectScreenFor(
+		connectScreenForParams{T: t, Plan: newFakePlan(nil), Agents: namedAgents("Claude", "Codex"), WithMini: nil},
+	)
 	a := framed(s, false)
 	send(a, "up", "a")
 	if view := a.render(); !strings.Contains(view, dim.Render("Just connect mini")) ||
@@ -410,7 +438,14 @@ func TestConnectScreen_untickingEveryAgentDimsTheConnectChoicesUntilOneIsTickedA
 
 func TestConnectScreen_aLoneAgentLeftAfterGoingBackIsConnectedThoughItWasUnticked(t *testing.T) {
 	plan := newFakePlan(map[string][]string{"Codex": {"github"}})
-	s, _ := connectScreenFor(t, plan, namedAgents("Claude", "Codex"), map[string]bool{"Codex": true})
+	s, _ := connectScreenFor(
+		connectScreenForParams{
+			T:        t,
+			Plan:     plan,
+			Agents:   namedAgents("Claude", "Codex"),
+			WithMini: map[string]bool{"Codex": true},
+		},
+	)
 	a := framed(s, false)
 	send(a, "up", "up", "space")
 	delete(plan.removable, "Codex")
@@ -422,7 +457,9 @@ func TestConnectScreen_aLoneAgentLeftAfterGoingBackIsConnectedThoughItWasUnticke
 }
 
 func TestConnectScreen_aTicksEveryAgentAndBackFollowsTheChoices(t *testing.T) {
-	s, _ := connectScreenFor(t, newFakePlan(nil), namedAgents("Claude", "Codex"), nil)
+	s, _ := connectScreenFor(
+		connectScreenForParams{T: t, Plan: newFakePlan(nil), Agents: namedAgents("Claude", "Codex"), WithMini: nil},
+	)
 	a := framed(s, true)
 	send(a, "up", "a")
 	if got := pickedNames(s); len(got) != 0 {
@@ -442,7 +479,9 @@ func TestConnectScreen_aTicksEveryAgentAndBackFollowsTheChoices(t *testing.T) {
 }
 
 func TestConnectScreen_aWithOneAgentLeavesItTicked(t *testing.T) {
-	s, _ := connectScreenFor(t, newFakePlan(nil), namedAgents("Claude"), nil)
+	s, _ := connectScreenFor(
+		connectScreenForParams{T: t, Plan: newFakePlan(nil), Agents: namedAgents("Claude"), WithMini: nil},
+	)
 	a := framed(s, false)
 	if cmd := send(a, "a", "enter"); cmd == nil || strings.Join(pickedNames(s), ",") != "Claude" {
 		t.Errorf("enter after a = %v, picked %v; want Just connect for Claude: one agent shows no checkbox to untick",
@@ -451,7 +490,9 @@ func TestConnectScreen_aWithOneAgentLeavesItTicked(t *testing.T) {
 }
 
 func TestConnectScreen_upFromTheFirstChoiceReachesTheLastAgentAndTabReturns(t *testing.T) {
-	s, _ := connectScreenFor(t, newFakePlan(nil), namedAgents("Claude", "Codex"), nil)
+	s, _ := connectScreenFor(
+		connectScreenForParams{T: t, Plan: newFakePlan(nil), Agents: namedAgents("Claude", "Codex"), WithMini: nil},
+	)
 	a := framed(s, false)
 	send(a, "up")
 	if text := framedText(a); !strings.Contains(text, "> [x] Codex") {
@@ -465,7 +506,9 @@ func TestConnectScreen_upFromTheFirstChoiceReachesTheLastAgentAndTabReturns(t *t
 
 func TestConnectScreen_twoTickedAgentsShowAllThreeChoicesAndTheirLinesAtOnce(t *testing.T) {
 	plan := newFakePlan(map[string][]string{"Claude": {"files"}, "Codex": {"github"}})
-	s, check := connectScreenFor(t, plan, namedAgents("Claude", "Codex"), nil)
+	s, check := connectScreenFor(
+		connectScreenForParams{T: t, Plan: plan, Agents: namedAgents("Claude", "Codex"), WithMini: nil},
+	)
 	plan.checksPass(s, check)
 	text := connectText(s)
 	for _, want := range []string{
@@ -485,3 +528,10 @@ func TestConnectScreen_twoTickedAgentsShowAllThreeChoicesAndTheirLinesAtOnce(t *
 }
 
 func noSaveFailures() []initcmd.ServerError { return nil }
+
+type connectScreenForParams struct {
+	T        *testing.T
+	Plan     *fakePlan
+	Agents   []agents.Agent
+	WithMini map[string]bool
+}

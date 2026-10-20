@@ -167,7 +167,7 @@ func (g *catalogGrid) moveKey(key string) reply {
 	if key == "up" || key == "down" {
 		return g.moveVertically(columns[col], row, direction(key))
 	}
-	g.moveAcross(columns, col, row, direction(key))
+	g.moveAcross(moveAcrossParams{Columns: columns, Column: col, Row: row, Step: direction(key)})
 	return handled
 }
 
@@ -195,17 +195,17 @@ func (g *catalogGrid) hasSelectable() bool {
 	})
 }
 
-func (g *catalogGrid) moveAcross(columns [][]gridCell, col, row, step int) {
+func (g *catalogGrid) moveAcross(params moveAcrossParams) {
 	if !g.isGrid() {
-		g.openOrClose(step)
+		g.openOrClose(params.Step)
 		return
 	}
-	next := col + step
-	if next < 0 || next >= len(columns) {
+	next := params.Column + params.Step
+	if next < 0 || next >= len(params.Columns) {
 		return
 	}
-	if r, ok := nearestSelectable(columns[next], row); ok {
-		g.at = columns[next][r].spot
+	if r, ok := nearestSelectable(params.Columns[next], params.Row); ok {
+		g.at = params.Columns[next][r].spot
 	}
 }
 
@@ -240,4 +240,11 @@ func abs(x int) int {
 		return -x
 	}
 	return x
+}
+
+type moveAcrossParams struct {
+	Columns [][]gridCell
+	Column  int
+	Row     int
+	Step    int
 }

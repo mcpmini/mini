@@ -90,28 +90,38 @@ func runFixtureFile(t *testing.T, path string, seenSkips map[string]bool) {
 	for _, tc := range ff.Tests {
 		key := filepath.Base(path) + "/" + tc.Name
 		t.Run(key, func(t *testing.T) {
-			runFixtureCase(t, tc, key, seenSkips)
+			runFixtureCase(runFixtureCaseParams{T: t, TestCase: tc, Key: key, SeenSkips: seenSkips})
 		})
 	}
 }
 
-func runFixtureCase(t *testing.T, tc fixtureCase, key string, seenSkips map[string]bool) {
-	if reason, ok := fixtureSkips[key]; ok {
-		seenSkips[key] = true
-		t.Skip(reason)
+func runFixtureCase(params runFixtureCaseParams) {
+	if reason, ok := fixtureSkips[params.Key]; ok {
+		params.SeenSkips[params.Key] = true
+		params.T.Skip(reason)
 	}
-	if !tc.Options.matchesLockedConfig() {
-		t.Fatalf("fixture has options outside the locked config but is not on the skip list: %+v", tc.Options)
+	if !params.TestCase.Options.matchesLockedConfig() {
+		params.T.Fatalf(
+			"fixture has options outside the locked config but is not on the skip list: %+v",
+			params.TestCase.Options,
+		)
 	}
-	v, err := FromJSON(tc.Input)
+	v, err := FromJSON(params.TestCase.Input)
 	if err != nil {
-		t.Fatalf("FromJSON unexpected error: %v", err)
+		params.T.Fatalf("FromJSON unexpected error: %v", err)
 	}
 	got, err := Encode(v)
 	if err != nil {
-		t.Fatalf("Encode unexpected error: %v", err)
+		params.T.Fatalf("Encode unexpected error: %v", err)
 	}
-	if got != tc.Expected {
-		t.Errorf("Encode() = %q, want %q", got, tc.Expected)
+	if got != params.TestCase.Expected {
+		params.T.Errorf("Encode() = %q, want %q", got, params.TestCase.Expected)
 	}
+}
+
+type runFixtureCaseParams struct {
+	T         *testing.T
+	TestCase  fixtureCase
+	Key       string
+	SeenSkips map[string]bool
 }

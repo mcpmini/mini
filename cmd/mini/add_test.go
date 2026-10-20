@@ -78,7 +78,7 @@ func TestRunAdd(t *testing.T) {
 			t.Fatalf("runAdd: %v", err)
 		}
 		var sc config.ServerConfig
-		readServerYAML(t, dir, "gh", &sc)
+		readServerYAML(readServerYAMLParams{T: t, ConfigDir: dir, Name: "gh", Out: &sc})
 		if sc.Command != "npx" {
 			t.Errorf("Command = %q, want 'npx'", sc.Command)
 		}
@@ -112,7 +112,7 @@ func TestRunAdd(t *testing.T) {
 			t.Fatalf("runAdd: %v", err)
 		}
 		var sc config.ServerConfig
-		readServerYAML(t, dir, "svc", &sc)
+		readServerYAML(readServerYAMLParams{T: t, ConfigDir: dir, Name: "svc", Out: &sc})
 		want := []string{"-h", "--config", "child-value"}
 		if !slices.Equal(sc.Args, want) {
 			t.Errorf("Args = %v, want %v", sc.Args, want)
@@ -127,7 +127,7 @@ func TestRunAdd(t *testing.T) {
 			t.Fatalf("runAdd: %v", err)
 		}
 		var sc config.ServerConfig
-		readServerYAML(t, dir, "gh", &sc)
+		readServerYAML(readServerYAMLParams{T: t, ConfigDir: dir, Name: "gh", Out: &sc})
 		if sc.Transport != "http" {
 			t.Errorf("Transport = %q, want 'http'", sc.Transport)
 		}
@@ -188,7 +188,7 @@ func TestRunAdd(t *testing.T) {
 			t.Fatalf("runAdd: %v", err)
 		}
 		var sc config.ServerConfig
-		readServerYAML(t, dir, "svc", &sc)
+		readServerYAML(readServerYAMLParams{T: t, ConfigDir: dir, Name: "svc", Out: &sc})
 		if sc.Headers["Authorization"] != "Bearer tok" {
 			t.Errorf("Header Authorization = %q, want 'Bearer tok'", sc.Headers["Authorization"])
 		}
@@ -230,7 +230,7 @@ func TestRunAdd(t *testing.T) {
 			t.Errorf("output = %q, want a graceful failure message pointing at manual retry", out.String())
 		}
 		var sc config.ServerConfig
-		readServerYAML(t, dir, "myserver", &sc)
+		readServerYAML(readServerYAMLParams{T: t, ConfigDir: dir, Name: "myserver", Out: &sc})
 		if sc.URL != oauthSrv.URL {
 			t.Errorf("URL = %q, server config should still have been written despite auto-authorize failing", sc.URL)
 		}
@@ -265,7 +265,7 @@ func TestRunAdd(t *testing.T) {
 			t.Fatalf("runAdd: %v", err)
 		}
 		var sc config.ServerConfig
-		readServerYAML(t, dir, "svc", &sc)
+		readServerYAML(readServerYAMLParams{T: t, ConfigDir: dir, Name: "svc", Out: &sc})
 		if sc.Permissions == nil || len(sc.Permissions.Protected) != 1 ||
 			sc.Permissions.Protected[0] != "delete_everything" {
 			t.Errorf("Protected = %v, want [delete_everything]", sc.Permissions)
@@ -360,7 +360,7 @@ func TestRunAddImport(t *testing.T) {
 			}
 
 			var sc config.ServerConfig
-			readServerYAML(t, dir, "svc", &sc)
+			readServerYAML(readServerYAMLParams{T: t, ConfigDir: dir, Name: "svc", Out: &sc})
 			if sc.Command != "run" || !strings.Contains(out.String(), src.tip) {
 				t.Errorf("command = %q, output = %q; want run and %q", sc.Command, out.String(), src.tip)
 			}
@@ -618,11 +618,18 @@ func TestRunRemove(t *testing.T) {
 	})
 }
 
-func readServerYAML(t *testing.T, configDir, name string, out any) {
-	t.Helper()
-	path := filepath.Join(configDir, "servers", name+".yaml")
-	data := testutil.ReadFile(t, path)
-	if err := yaml.Unmarshal(data, out); err != nil {
-		t.Fatalf("yaml.Unmarshal: %v", err)
+func readServerYAML(params readServerYAMLParams) {
+	params.T.Helper()
+	path := filepath.Join(params.ConfigDir, "servers", params.Name+".yaml")
+	data := testutil.ReadFile(params.T, path)
+	if err := yaml.Unmarshal(data, params.Out); err != nil {
+		params.T.Fatalf("yaml.Unmarshal: %v", err)
 	}
+}
+
+type readServerYAMLParams struct {
+	T         *testing.T
+	ConfigDir string
+	Name      string
+	Out       any
 }

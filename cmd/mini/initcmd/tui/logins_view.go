@@ -34,7 +34,7 @@ func (s *loginsScreen) body(height int, focused bool) string {
 	}
 	rows, first, last := s.serverLines(focused)
 	lines := slices.Concat(rows, s.detailLines(focused), s.skippedLoginWarning(), s.byHandList())
-	return strings.Join(s.scroll.cut(lines, first, last, height), "\n")
+	return strings.Join(s.scroll.cut(cutParams{Lines: lines, First: first, Last: last, Height: height}), "\n")
 }
 
 // The heading calls logins optional, so the screen says what skipping one costs.
@@ -90,7 +90,11 @@ func (s *loginsScreen) byHandList() []string {
 	lines = append(lines, strings.Split(ansi.Wordwrap(text, max(s.width, 20), ""), "\n")...)
 	width := initcmd.Widest(s.byHand, func(status initcmd.ServerStatus) string { return status.Name })
 	for _, status := range s.byHand {
-		lines = append(lines, columnLines(status.Name, width, s.p.steps.step(status), s.width)...)
+		lines = append(
+			lines,
+			columnLines(
+				columnLinesParams{Name: status.Name, NameWidth: width, Text: s.p.steps.step(status), Width: s.width},
+			)...)
 	}
 	return lines
 }

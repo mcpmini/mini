@@ -86,7 +86,7 @@ func (s *reviewScreen) addedLines(height int) []string {
 	lines := []string{initcmd.Plural(len(s.added), "MCP") + " will be added to mini:"}
 	width := initcmd.Widest(s.added, func(r reviewRow) string { return r.name })
 	for i, r := range s.added {
-		row := columnLines(r.name, width, r.state, s.width)
+		row := columnLines(columnLinesParams{Name: r.name, NameWidth: width, Text: r.state, Width: s.width})
 		left := len(s.added) - i
 		if room := height - len(lines); len(row) > room || left > 1 && len(row) == room {
 			return append(lines, dim.Render(fmt.Sprintf("  … and %d more", left)))

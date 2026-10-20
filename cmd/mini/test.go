@@ -49,7 +49,12 @@ func runTest(configDir string, timeout time.Duration, out io.Writer) error {
 		return err
 	}
 	results := brokenServerResults(servers.Broken)
-	return printTestResults(out, append(results, checkServers(ctx, srv, servers.Loaded, timeout)...))
+	return printTestResults(
+		out,
+		append(
+			results,
+			checkServers(checkServersParams{Context: ctx, Server: srv, Servers: servers.Loaded, Timeout: timeout})...),
+	)
 }
 
 func emptyTestMessage(servers []config.ServerConfig) string {
@@ -77,16 +82,21 @@ func brokenServerResults(broken []config.SourceError) []upstreamResult {
 	return results
 }
 
-func checkServers(
-	ctx context.Context,
-	srv *server.Server,
-	servers []config.ServerConfig,
-	timeout time.Duration,
-) []upstreamResult {
+func checkServers(params checkServersParams) []upstreamResult {
 	var results []upstreamResult
-	for _, sc := range servers {
+	for _, sc := range params.Servers {
 		if sc.IsEnabled() {
-			results = append(results, checkServer(ctx, srv, sc, timeout))
+			results = append(
+				results,
+				checkServer(
+					probeUpstreamParams{
+						Context: params.Context,
+						Server:  params.Server,
+						Config:  sc,
+						Timeout: params.Timeout,
+					},
+				),
+			)
 		} else if sc.ProjectionsErr != nil {
 			results = append(results, upstreamResult{name: sc.Name, transport: sc.Transport, err: projectionsError(sc)})
 		}
@@ -94,34 +104,24 @@ func checkServers(
 	return results
 }
 
-func checkServer(
-	ctx context.Context,
-	srv *server.Server,
-	sc config.ServerConfig,
-	timeout time.Duration,
-) upstreamResult {
-	r := probeUpstream(ctx, srv, sc, timeout)
-	if r.err == nil && sc.ProjectionsErr != nil {
-		r.err = projectionsError(sc)
+func checkServer(params probeUpstreamParams) upstreamResult {
+	r := probeUpstream(params)
+	if r.err == nil && params.Config.ProjectionsErr != nil {
+		r.err = projectionsError(params.Config)
 	}
 	return r
 }
 
-func probeUpstream(
-	ctx context.Context,
-	srv *server.Server,
-	sc config.ServerConfig,
-	timeout time.Duration,
-) upstreamResult {
+func probeUpstream(params probeUpstreamParams) upstreamResult {
 	clock := clock.System()
-	tctx, cancel := context.WithTimeout(ctx, timeout)
+	tctx, cancel := context.WithTimeout(params.Context, params.Timeout)
 	start := clock.Now()
-	err := srv.AddUpstream(tctx, sc)
+	err := params.Server.AddUpstream(tctx, params.Config)
 	elapsed := clock.Since(start)
 	cancel()
-	r := upstreamResult{name: sc.Name, transport: sc.Transport, elapsed: elapsed, err: err}
+	r := upstreamResult{name: params.Config.Name, transport: params.Config.Transport, elapsed: elapsed, err: err}
 	if err == nil {
-		r.tools = srv.ToolCount(sc.Name)
+		r.tools = params.Server.ToolCount(params.Config.Name)
 	}
 	return r
 }
@@ -178,4 +178,18 @@ func displayTransport(transport config.TransportKind) string {
 		return "stdio"
 	}
 	return string(transport)
+}
+
+type checkServersParams struct {
+	Context context.Context
+	Server  *server.Server
+	Servers []config.ServerConfig
+	Timeout time.Duration
+}
+
+type probeUpstreamParams struct {
+	Context context.Context
+	Server  *server.Server
+	Config  config.ServerConfig
+	Timeout time.Duration
 }

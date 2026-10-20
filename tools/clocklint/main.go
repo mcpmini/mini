@@ -83,18 +83,20 @@ func checkFile(path string, fset *token.FileSet, hasError *bool) {
 	}
 	srcLines := strings.Split(string(src), "\n")
 	ast.Inspect(f, func(n ast.Node) bool {
-		return inspectTimeCalls(n, fset, srcLines, timeIdents, hasError)
+		return inspectTimeCalls(
+			inspectTimeCallsParams{
+				Node:        n,
+				FileSet:     fset,
+				SourceLines: srcLines,
+				TimeIdents:  timeIdents,
+				HasError:    hasError,
+			},
+		)
 	})
 }
 
-func inspectTimeCalls(
-	n ast.Node,
-	fset *token.FileSet,
-	srcLines []string,
-	timeIdents map[string]bool,
-	hasError *bool,
-) bool {
-	call, ok := n.(*ast.CallExpr)
+func inspectTimeCalls(params inspectTimeCallsParams) bool {
+	call, ok := params.Node.(*ast.CallExpr)
 	if !ok {
 		return true
 	}
@@ -103,15 +105,15 @@ func inspectTimeCalls(
 		return true
 	}
 	id, ok := sel.X.(*ast.Ident)
-	if !ok || !timeIdents[id.Name] || !bannedFuncs[sel.Sel.Name] {
+	if !ok || !params.TimeIdents[id.Name] || !bannedFuncs[sel.Sel.Name] {
 		return true
 	}
-	pos := fset.Position(call.Pos())
-	if isNolinted(srcLines, pos.Line) {
+	pos := params.FileSet.Position(call.Pos())
+	if isNolinted(params.SourceLines, pos.Line) {
 		return true
 	}
 	fmt.Printf("ERROR %s:%d: direct time.%s() call, use clock.Clock instead\n", pos.Filename, pos.Line, sel.Sel.Name)
-	*hasError = true
+	*params.HasError = true
 	return true
 }
 
@@ -132,4 +134,12 @@ func timeImportIdents(f *ast.File) map[string]bool {
 		}
 	}
 	return out
+}
+
+type inspectTimeCallsParams struct {
+	Node        ast.Node
+	FileSet     *token.FileSet
+	SourceLines []string
+	TimeIdents  map[string]bool
+	HasError    *bool
 }

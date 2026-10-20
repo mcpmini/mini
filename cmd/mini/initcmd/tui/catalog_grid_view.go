@@ -186,7 +186,7 @@ func (g *catalogGrid) settle() {
 func (g *catalogGrid) view(height int, focused bool) string {
 	columns := g.columns()
 	col, row, _ := g.locate(columns)
-	lines := joinColumns(columns, col, row, focused)
+	lines := joinColumns(joinColumnsParams{Columns: columns, Column: col, Row: row, ShowCursor: focused})
 	first, last := row, row
 	if g.isGrid() {
 		first, last = 0, 0
@@ -196,26 +196,28 @@ func (g *catalogGrid) view(height int, focused bool) string {
 		detail = g.detail()
 	}
 	under := g.linesUnderSections(detail)
-	lines = g.scroll.cut(lines, first, last, height-len(under))
+	lines = g.scroll.cut(cutParams{Lines: lines, First: first, Last: last, Height: height - len(under)})
 	return strings.Join(append(lines, under...), "\n")
 }
 
-func joinColumns(columns [][]gridCell, col, row int, showCursor bool) []string {
+func joinColumns(params joinColumnsParams) []string {
 	height := 0
-	for _, column := range columns {
+	for _, column := range params.Columns {
 		height = max(height, len(column))
 	}
-	widths := make([]int, len(columns))
-	for c, column := range columns {
+	widths := make([]int, len(params.Columns))
+	for c, column := range params.Columns {
 		widths[c] = columnWidth(column)
 	}
 	lines := make([]string, height)
 	for r := range lines {
 		var line strings.Builder
-		for c, column := range columns {
+		for c, column := range params.Columns {
 			cell := ""
 			if r < len(column) {
-				cell = cursorMark(showCursor && c == col && r == row && column[r].selectable) + column[r].text
+				cell = cursorMark(
+					params.ShowCursor && c == params.Column && r == params.Row && column[r].selectable,
+				) + column[r].text
 			}
 			line.WriteString(cell + strings.Repeat(" ", widths[c]-ansi.StringWidth(cell)+columnGap))
 		}
@@ -240,4 +242,11 @@ func (g *catalogGrid) detail() string {
 
 func (g *catalogGrid) keys(screenKeys string) string {
 	return g.filter.keys(screenKeys)
+}
+
+type joinColumnsParams struct {
+	Columns    [][]gridCell
+	Column     int
+	Row        int
+	ShowCursor bool
 }
