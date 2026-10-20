@@ -51,6 +51,22 @@ func TestStdioSubscriptionEndedByTheServerRefreshesOnceAndStops(t *testing.T) {
 	}
 }
 
+func TestStdioSubscriptionEndedBeforeItsAckStopsWithoutARefresh(t *testing.T) {
+	for name, end := range map[string]func(h *listenHarness){
+		"graceful completion": func(h *listenHarness) {
+			sendResponse(h.serverW, h.listen.ID, json.RawMessage(`{"resultType":"complete"}`))
+		},
+		"server cancellation": func(h *listenHarness) { h.serverCancels(h.listenID()) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := startListenHarness(t)
+			end(h)
+			h.expectStopped()
+			h.expectNoChange()
+		})
+	}
+}
+
 func TestStdioSubscriptionIgnoresAnUnrelatedCancellation(t *testing.T) {
 	h := startAcknowledgedListen(t)
 	h.serverCancels(json.RawMessage(`"unrelated"`))
@@ -78,6 +94,7 @@ func TestStdioSubscriptionRejectionStopsTheListener(t *testing.T) {
 	h := startAcknowledgedListen(t)
 	writeRPCError(h.serverW, h.listen.ID, CodeInternalError, "listen rejected", nil)
 	h.expectStopped()
+	h.expectNoChange()
 }
 
 type listenHarness struct {

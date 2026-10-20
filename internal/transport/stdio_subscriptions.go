@@ -9,14 +9,21 @@ import (
 
 const stdioListenAckTimeout = 5 * time.Second
 
+type listenState int
+
+const (
+	listenAwaitingAck listenState = iota
+	listenActive
+	listenEnded
+)
+
 type stdioSubscription struct {
 	requestID      int64
 	response       chan *Response
 	acknowledged   chan struct{}
 	ended          chan struct{}
 	subscriptionID json.RawMessage
-	acked          bool
-	completed      bool
+	state          listenState // guarded by listenMu
 }
 
 func (c *StdioConnection) startSubscriptionListener(parent context.Context) {
@@ -37,12 +44,7 @@ func (c *StdioConnection) listenForToolChanges(ctx context.Context) {
 		}
 		return
 	}
-	if c.awaitSubscription(ctx, subscription) {
-		// Servers end subscriptions when shutting down, so this one isn't renewed; one refresh
-		// covers any change the ended subscription would have reported.
-		c.toolsChanged.NotifyToolsChanged()
-		c.logger.Info("upstream ended its tool-change subscription")
-	}
+	c.awaitSubscription(ctx, subscription)
 }
 
 func (c *StdioConnection) beginSubscription(ctx context.Context) (*stdioSubscription, error) {
@@ -78,7 +80,7 @@ func (c *StdioConnection) listenParams() (json.RawMessage, error) {
 	return prepareModernParams(params, c.negotiatedModernVersion())
 }
 
-func (c *StdioConnection) awaitSubscription(ctx context.Context, subscription *stdioSubscription) bool {
+func (c *StdioConnection) awaitSubscription(ctx context.Context, subscription *stdioSubscription) {
 	timer := c.clock.NewTimer(stdioListenAckTimeout)
 	defer timer.Stop()
 	acknowledged, ackTimeout := subscription.acknowledged, timer.Chan()
@@ -87,18 +89,20 @@ func (c *StdioConnection) awaitSubscription(ctx context.Context, subscription *s
 		case <-acknowledged:
 			acknowledged, ackTimeout = nil, nil
 		case response := <-subscription.response:
-			return c.finishSubscription(subscription, response)
+			c.finishSubscription(subscription, response)
+			return
 		case <-subscription.ended:
-			return c.finishSubscription(subscription, nil)
+			c.clearSubscription(subscription)
+			return
 		case <-ackTimeout:
 			c.withdrawUnacknowledged(ctx, subscription)
-			return false
+			return
 		case <-ctx.Done():
 			c.retireSubscription(subscription)
-			return false
+			return
 		case <-c.done:
 			c.retireSubscription(subscription)
-			return false
+			return
 		}
 	}
 }
@@ -109,14 +113,11 @@ func (c *StdioConnection) withdrawUnacknowledged(ctx context.Context, subscripti
 	c.cancelUpstreamRequest(ctx, subscription.requestID)
 }
 
-func (c *StdioConnection) finishSubscription(subscription *stdioSubscription, response *Response) bool {
-	acked := c.subscriptionAcked(subscription)
+func (c *StdioConnection) finishSubscription(subscription *stdioSubscription, response *Response) {
 	c.clearSubscription(subscription)
-	if response != nil && response.Error != nil {
+	if response.Error != nil {
 		c.logger.Warn("upstream rejected tool-change subscription", "err", response.Error)
-		return false
 	}
-	return acked && !c.isClosed()
 }
 
 func (c *StdioConnection) dispatchModernSubscriptionNotification(notification Notification) bool {
@@ -140,13 +141,13 @@ func (c *StdioConnection) acknowledgeSubscription(raw json.RawMessage) bool {
 	}
 	c.listenMu.Lock()
 	subscription := c.listen
-	if subscription == nil || subscription.completed || subscription.acked ||
+	if subscription == nil || subscription.state != listenAwaitingAck ||
 		!sameJSONID(ack.Meta.SubscriptionID, subscription.requestID) {
 		c.listenMu.Unlock()
 		return true
 	}
 	subscription.subscriptionID = append(json.RawMessage(nil), ack.Meta.SubscriptionID...)
-	subscription.acked = true
+	subscription.state = listenActive
 	close(subscription.acknowledged)
 	c.listenMu.Unlock()
 	c.logger.Debug("upstream acknowledged tool-change subscription")
@@ -161,7 +162,7 @@ func (c *StdioConnection) forwardSubscriptionChange(raw json.RawMessage) bool {
 	}
 	c.listenMu.Lock()
 	subscription := c.listen
-	accepted := subscription != nil && subscription.acked && !subscription.completed &&
+	accepted := subscription != nil && subscription.state == listenActive &&
 		subscriptionIDsEqual(subscription.subscriptionID, changed.Meta.SubscriptionID)
 	c.listenMu.Unlock()
 	if accepted {
@@ -177,24 +178,45 @@ func (c *StdioConnection) cancelSubscription(raw json.RawMessage) bool {
 	}
 	c.listenMu.Lock()
 	subscription := c.listen
-	if subscription == nil || subscription.completed || !sameJSONID(params.RequestID, subscription.requestID) {
+	if subscription == nil || subscription.state == listenEnded ||
+		!sameJSONID(params.RequestID, subscription.requestID) {
 		c.listenMu.Unlock()
 		return true
 	}
-	subscription.completed = true
+	wasActive := subscription.end()
 	close(subscription.ended)
 	c.listenMu.Unlock()
 	c.pending.remove(subscription.requestID)
+	if wasActive {
+		c.refreshAfterServerEndedSubscription()
+	}
 	return true
 }
 
 func (c *StdioConnection) noteSubscriptionResponse(response *Response) {
 	c.listenMu.Lock()
-	if subscription := c.listen; subscription != nil && !subscription.completed &&
-		normalizeID(response.ID) == subscription.requestID {
-		subscription.completed = true
-	}
+	subscription := c.listen
+	ends := subscription != nil && subscription.state != listenEnded &&
+		normalizeID(response.ID) == subscription.requestID
+	wasActive := ends && subscription.end()
 	c.listenMu.Unlock()
+	if wasActive && response.Error == nil {
+		c.refreshAfterServerEndedSubscription()
+	}
+}
+
+// end must be called with listenMu held.
+func (s *stdioSubscription) end() (wasActive bool) {
+	wasActive = s.state == listenActive
+	s.state = listenEnded
+	return wasActive
+}
+
+// Servers end subscriptions when shutting down, so this one isn't renewed; one refresh covers any
+// change the ended subscription would have reported.
+func (c *StdioConnection) refreshAfterServerEndedSubscription() {
+	c.logger.Info("upstream ended its tool-change subscription")
+	c.toolsChanged.NotifyToolsChanged()
 }
 
 func (c *StdioConnection) retireSubscription(subscription *stdioSubscription) {
@@ -208,12 +230,6 @@ func (c *StdioConnection) clearSubscription(subscription *stdioSubscription) {
 		c.listen = nil
 	}
 	c.listenMu.Unlock()
-}
-
-func (c *StdioConnection) subscriptionAcked(subscription *stdioSubscription) bool {
-	c.listenMu.Lock()
-	defer c.listenMu.Unlock()
-	return subscription.acked
 }
 
 func subscriptionIDsEqual(a, b json.RawMessage) bool {
