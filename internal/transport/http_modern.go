@@ -55,8 +55,16 @@ func (c *HTTPConnection) currentModernVersion() string {
 	return ModernVersions[0]
 }
 
+// modernEraVersion returns the modern version the upstream speaks, or "" while it is legacy or unprobed.
+func (c *HTTPConnection) modernEraVersion() string {
+	if v := c.modernVersion.Load(); v != nil {
+		return *v
+	}
+	return ""
+}
+
 func (c *HTTPConnection) isModern() bool {
-	return c.modernVersion.Load() != nil
+	return c.modernEraVersion() != ""
 }
 
 func (c *HTTPConnection) callModern(

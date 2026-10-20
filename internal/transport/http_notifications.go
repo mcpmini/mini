@@ -13,11 +13,13 @@ import (
 )
 
 func (c *HTTPConnection) ListTools(ctx context.Context) ([]ToolDefinition, error) {
-	// Decided per page, not from the shared era, which a concurrent reset can change mid-listing.
+	// Decided by the pages listed, not the shared era, which a concurrent reset can change mid-listing.
 	listedModern := true
 	tools, err := paginateToolsList(ctx, func(ctx context.Context, cursor string) (ToolsListResult, error) {
 		page, modernVersion, err := c.callToolsPage(ctx, cursor)
-		listedModern = listedModern && modernVersion != ""
+		if err == nil && modernVersion == "" {
+			listedModern = false
+		}
 		return page, err
 	})
 	if err != nil {
@@ -29,9 +31,8 @@ func (c *HTTPConnection) ListTools(ctx context.Context) ([]ToolDefinition, error
 	return tools, nil
 }
 
-// ensureReady returns the modern version to send this call under, or "" once a legacy session is ready.
-func (c *HTTPConnection) ensureReady(ctx context.Context) (string, error) {
-	modernVersion, err := c.probeOnce(ctx)
+func (c *HTTPConnection) ensureReady(ctx context.Context) (modernVersion string, err error) {
+	modernVersion, err = c.probeOnce(ctx)
 	if err != nil || modernVersion != "" {
 		return modernVersion, err
 	}

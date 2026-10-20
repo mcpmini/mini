@@ -3,6 +3,7 @@
 package transport
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -239,8 +240,6 @@ func TestModernCallKeepsItsEraThroughAConcurrentReset(t *testing.T) {
 	}
 }
 
-// resettingUpstream holds tools/list until releaseList closes, answers ping with -32022 so a
-// caller can reset the era mid-call, and reports the headers of each tools/call.
 type resettingUpstream struct {
 	url         string
 	listing     chan struct{}
@@ -284,3 +283,39 @@ func callInBackground(t *testing.T, conn *HTTPConnection, method, params string)
 }
 
 const ownerHeaderSchema = `{"type":"object","properties":{"owner":{"type":"string","x-mcp-header":"Owner"}}}`
+
+func TestModernPartialListingStillSendsToolHeaders(t *testing.T) {
+	callHeaders := make(chan http.Header, 1)
+	server := newModernServer(t, modernUpstream{Handle: failSecondToolsPage(t, callHeaders)})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: server.URL})
+	if tools, err := conn.ListTools(t.Context()); err != nil || len(tools) != 1 {
+		t.Fatalf("ListTools = %v, %v; want the first page's tool", tools, err)
+	}
+	if _, err := conn.Call(
+		t.Context(),
+		"tools/call",
+		json.RawMessage(`{"name":"x","arguments":{"owner":"octo"}}`),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if got := (<-callHeaders).Get("Mcp-Param-Owner"); got != "octo" {
+		t.Fatalf("Mcp-Param-Owner = %q after a partial listing, want octo", got)
+	}
+}
+
+// failSecondToolsPage lists tool x on the first page and rejects the second, so listing ends partial.
+func failSecondToolsPage(t *testing.T, callHeaders chan<- http.Header,
+) func(http.ResponseWriter, *http.Request, Request) {
+	return func(w http.ResponseWriter, r *http.Request, req Request) {
+		switch {
+		case req.Method == "tools/list" && !bytes.Contains(req.Params, []byte(`"cursor"`)):
+			page := ToolsListResult{Tools: []ToolDefinition{modernTool("x", ownerHeaderSchema)}, NextCursor: "2"}
+			writeRPCResult(t, w, req.ID, page)
+		case req.Method == "tools/list":
+			writeHTTPRPCError(t, w, httpRPCErrorParams{id: req.ID, code: CodeInvalidParams})
+		case req.Method == "tools/call":
+			callHeaders <- r.Header.Clone()
+			writeRPCResult(t, w, req.ID, map[string]bool{"ok": true})
+		}
+	}
+}

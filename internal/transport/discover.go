@@ -51,15 +51,11 @@ func setDiscoverRequestHeaders(req *http.Request) {
 	req.Header.Set("Mcp-Method", "server/discover")
 }
 
-// probeOnce returns the modern version this upstream speaks, or "" for legacy.
-func (c *HTTPConnection) probeOnce(ctx context.Context) (string, error) {
+func (c *HTTPConnection) probeOnce(ctx context.Context) (modernVersion string, err error) {
 	c.initMu.Lock()
 	defer c.initMu.Unlock()
 	if c.eraKnown {
-		if version := c.modernVersion.Load(); version != nil {
-			return *version, nil
-		}
-		return "", nil
+		return c.modernEraVersion(), nil
 	}
 	result, err := c.probe(ctx)
 	verdict, err := classifyDiscover(result, err)

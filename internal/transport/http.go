@@ -172,24 +172,23 @@ func (c *HTTPConnection) Call(ctx context.Context, method string, params json.Ra
 	return result, err
 }
 
-// callInEra also returns the modern version the call went out under, or "" if it was sent as legacy.
 func (c *HTTPConnection) callInEra(
 	ctx context.Context,
 	method string,
 	params json.RawMessage,
-) (json.RawMessage, string, error) {
-	modernVersion, err := c.ensureReady(ctx)
+) (result json.RawMessage, modernVersion string, err error) {
+	modernVersion, err = c.ensureReady(ctx)
 	if err != nil {
 		return nil, "", err
 	}
 	if modernVersion != "" {
-		result, callErr := c.callModern(ctx, modernVersion, method, params)
-		return result, modernVersion, callErr
+		result, err = c.callModern(ctx, modernVersion, method, params)
+		return result, modernVersion, err
 	}
 	if method == "tools/call" {
 		params = stripModernToolCallFields(params)
 	}
-	result, err := c.withSessionRecovery(ctx, func() (json.RawMessage, error) {
+	result, err = c.withSessionRecovery(ctx, func() (json.RawMessage, error) {
 		return c.rpc(ctx, method, params)
 	})
 	return result, "", err
@@ -222,10 +221,9 @@ func (c *HTTPConnection) compareAndResetSession(expiredID string) {
 	}
 }
 
-// httpCall is one JSON-RPC request and the protocol it was prepared under, kept for all its retries so a
-// concurrent era reset cannot send modern params with legacy headers. An empty modernVersion is legacy.
 type httpCall struct {
 	Request
+	// Fixed for every retry so a concurrent era reset cannot send modern params with legacy headers.
 	modernVersion string
 }
 
@@ -249,24 +247,24 @@ type postResult struct {
 	sentAuth  string
 }
 
-func (c *HTTPConnection) post(ctx context.Context, rpcReq httpCall) (postResult, error) {
+func (c *HTTPConnection) post(ctx context.Context, call httpCall) (postResult, error) {
 	backoff := time.Second
 	for i := range maxRetries {
-		result, done, err := c.postWithRetryDelay(ctx, rpcReq, i, &backoff)
+		result, done, err := c.postWithRetryDelay(ctx, call, i, &backoff)
 		if done {
 			return result, err
 		}
 	}
-	return postResult{}, fmt.Errorf("exceeded max retries for %s", rpcReq.Method)
+	return postResult{}, fmt.Errorf("exceeded max retries for %s", call.Method)
 }
 
 func (c *HTTPConnection) postWithRetryDelay(
 	ctx context.Context,
-	rpcReq httpCall,
+	call httpCall,
 	i int,
 	backoff *time.Duration,
 ) (postResult, bool, error) {
-	r, err := c.doPost(ctx, rpcReq)
+	r, err := c.doPost(ctx, call)
 	if err == nil {
 		return r, true, nil
 	}
@@ -274,7 +272,7 @@ func (c *HTTPConnection) postWithRetryDelay(
 		return r, true, err
 	}
 	delay := nextRetryDelay(r.delay, backoff)
-	slog.Warn("upstream http request retrying", "method", rpcReq.Method, "attempt", i+1, "delay", delay)
+	slog.Warn("upstream http request retrying", "method", call.Method, "attempt", i+1, "delay", delay)
 	if !c.sleepCtx(ctx, delay) {
 		return postResult{}, true, ctx.Err()
 	}
@@ -294,19 +292,19 @@ func nextRetryDelay(delay time.Duration, backoff *time.Duration) time.Duration {
 	return delay
 }
 
-func (c *HTTPConnection) doPost(ctx context.Context, rpcReq httpCall) (postResult, error) {
-	httpReq, sentAuth, err := c.buildHTTPRequest(ctx, rpcReq)
+func (c *HTTPConnection) doPost(ctx context.Context, call httpCall) (postResult, error) {
+	httpReq, sentAuth, err := c.buildHTTPRequest(ctx, call)
 	if err != nil {
 		return postResult{}, err
 	}
 	sentSessionID := httpReq.Header.Get("Mcp-Session-Id")
 	resp, err := c.client.Do(httpReq)
 	if err != nil {
-		return postResult{sentAuth: sentAuth}, &ConnectionError{Err: fmt.Errorf("http %s: %w", rpcReq.Method, err)}
+		return postResult{sentAuth: sentAuth}, &ConnectionError{Err: fmt.Errorf("http %s: %w", call.Method, err)}
 	}
 	//nolint:errcheck // processResponse determines the result; Close releases the response stream.
 	defer resp.Body.Close()
-	result, err := c.processResponse(resp, rpcReq.Request, sentSessionID)
+	result, err := c.processResponse(resp, call.Request, sentSessionID)
 	result.sentAuth = sentAuth
 	return result, err
 }
@@ -315,8 +313,7 @@ func (c *HTTPConnection) buildHTTPRequest(ctx context.Context, call httpCall) (*
 	if call.modernVersion != "" {
 		return c.buildModernHTTPRequest(ctx, call.Request, call.modernVersion)
 	}
-	rpcReq := call.Request
-	reqBody, err := json.Marshal(rpcReq)
+	reqBody, err := json.Marshal(call.Request)
 	if err != nil {
 		return nil, "", err
 	}
@@ -331,16 +328,16 @@ func (c *HTTPConnection) buildHTTPRequest(ctx context.Context, call httpCall) (*
 	// A strict legacy server can reject an unsupported version header before initialize
 	// negotiates a version both sides support:
 	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/ab3a39c13bd23be691c2760e1c6c5c15a64582e1/docs/specification/2025-11-25/basic/transports.mdx#L279-L280
-	if rpcReq.Method == "initialize" {
+	if call.Method == "initialize" {
 		httpReq.Header.Del("MCP-Protocol-Version")
 	}
-	if rpcReq.Method == "server/discover" {
+	if call.Method == "server/discover" {
 		setDiscoverRequestHeaders(httpReq)
 	}
 	// The stored ID may belong to the session being replaced, and a new session must start
 	// with an InitializeRequest that carries no session ID:
 	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/ab3a39c13bd23be691c2760e1c6c5c15a64582e1/docs/specification/2025-11-25/basic/transports.mdx#L213-L215
-	if rpcReq.Method != "initialize" && rpcReq.Method != "server/discover" {
+	if call.Method != "initialize" && call.Method != "server/discover" {
 		c.attachSessionID(httpReq)
 	}
 	return httpReq, sentAuth, nil
