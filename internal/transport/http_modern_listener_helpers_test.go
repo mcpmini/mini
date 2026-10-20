@@ -66,7 +66,7 @@ func rawID(t *testing.T, id any) json.RawMessage {
 	t.Helper()
 	encoded, err := json.Marshal(id)
 	if err != nil {
-		t.Fatalf("encode request id: %v", err)
+		t.Errorf("encode request id: %v", err)
 	}
 	return encoded
 }
