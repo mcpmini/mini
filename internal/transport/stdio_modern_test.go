@@ -335,3 +335,32 @@ func readScannerRequest(t *testing.T, scanner *bufio.Scanner) Request {
 	}
 	return request
 }
+
+func TestStdioCancellationGivesUpOnItsTurnToWrite(t *testing.T) {
+	conn := newWriteOnlyConn(discardWriteCloser{Writer: io.Discard})
+	fakeClock := clock.NewFake()
+	conn.clock = fakeClock
+	if err := conn.lockWrite(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer conn.unlockWrite()
+	sent := make(chan struct{})
+	go func() {
+		conn.cancelUpstreamRequest(context.Background(), 1)
+		close(sent)
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := fakeClock.BlockUntilContext(ctx, 1); err != nil {
+		t.Fatal(err)
+	}
+	fakeClock.Advance(stdioCancelWriteTimeout)
+	select {
+	case <-sent:
+	case <-time.After(time.Second):
+		t.Fatal("the cancellation kept waiting behind another write")
+	}
+	if conn.Health(context.Background()) != nil {
+		t.Fatal("a cancellation that never started writing ended the connection")
+	}
+}

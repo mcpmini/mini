@@ -303,7 +303,7 @@ func (c *StdioConnection) SetNotificationHandler(handler func(Notification)) {
 const stdioCancelWriteTimeout = 250 * time.Millisecond
 
 func (c *StdioConnection) cancelUpstreamRequest(parent context.Context, id int64) {
-	ctx, cancel := context.WithTimeout(parent, stdioCancelWriteTimeout)
+	ctx, cancel := clock.WithTimeout(parent, c.clock, stdioCancelWriteTimeout)
 	defer cancel()
 	params, err := json.Marshal(CancelledParams{RequestID: json.RawMessage(strconv.FormatInt(id, 10))})
 	if err != nil {
