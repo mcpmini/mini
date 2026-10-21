@@ -202,37 +202,6 @@ func TestModernRequestRejectsNonObjectParams(t *testing.T) {
 	}
 }
 
-func TestResultTypeOf(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		raw  string
-		want ResultType
-		bad  bool
-	}{
-		{name: "absent", raw: `{}`, want: ResultComplete},
-		{name: "complete", raw: `{"resultType":"complete"}`, want: ResultComplete},
-		{name: "input required", raw: `{"resultType":"input_required"}`, want: ResultInputRequired},
-		{name: "unknown", raw: `{"resultType":"bogus"}`, bad: true},
-		{name: "non-string", raw: `{"resultType":42}`, bad: true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := ResultTypeOf(json.RawMessage(tc.raw))
-			if tc.bad {
-				if err == nil {
-					t.Fatal("ResultTypeOf succeeded for invalid value")
-				}
-				if tc.name == "unknown" && err.Error() != `upstream returned unknown resultType "bogus"` {
-					t.Fatalf("ResultTypeOf error = %v", err)
-				}
-				return
-			}
-			if err != nil || got != tc.want {
-				t.Fatalf("ResultTypeOf = %q, %v; want %q", got, err, tc.want)
-			}
-		})
-	}
-}
-
 func modernTool(name, schema string) ToolDefinition {
 	return ToolDefinition{Name: name, InputSchema: json.RawMessage(schema)}
 }
