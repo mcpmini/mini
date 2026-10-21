@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -84,7 +85,7 @@ func (c *HTTPConnection) probe(ctx context.Context) (json.RawMessage, error) {
 
 func classifyDiscover(result json.RawMessage, err error) (probeVerdict, error) {
 	if err == nil {
-		return classifyDiscoverResult(result), nil
+		return classifyDiscoverResult(result)
 	}
 	return classifyDiscoverError(err)
 }
@@ -111,14 +112,45 @@ func classifyDiscoverError(err error) (probeVerdict, error) {
 	return probeVerdict{}, err
 }
 
-func classifyDiscoverResult(result json.RawMessage) probeVerdict {
-	var discovered DiscoverResult
-	if json.Unmarshal(result, &discovered) != nil {
-		return probeVerdict{era: EraLegacy}
+func classifyDiscoverResult(result json.RawMessage) (probeVerdict, error) {
+	versions, recognized := discoverSupportedVersions(result)
+	if !recognized {
+		return legacyProbeVerdict()
 	}
-	verdict := modernVersionVerdict(discovered.SupportedVersions)
+	verdict := modernVersionVerdict(versions)
+	if verdict.era != EraModern {
+		return verdict, nil
+	}
+	if err := requireCompleteResult(result, "server/discover"); err != nil {
+		return probeVerdict{}, err
+	}
+	var discovered DiscoverResult
+	if err := json.Unmarshal(result, &discovered); err != nil {
+		return legacyProbeVerdict()
+	}
 	verdict.listen = verdict.era == EraModern && discovered.Capabilities.ToolsListChanged()
-	return verdict
+	return verdict, nil
+}
+
+func discoverSupportedVersions(raw json.RawMessage) ([]string, bool) {
+	var result struct {
+		SupportedVersions []string `json:"supportedVersions"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil || result.SupportedVersions == nil {
+		return nil, false
+	}
+	return result.SupportedVersions, true
+}
+
+func requireCompleteResult(raw json.RawMessage, method string) error {
+	resultType, err := ResultTypeOf(raw)
+	if err != nil {
+		return err
+	}
+	if resultType != ResultComplete {
+		return fmt.Errorf("upstream asked for input during %s, which mini cannot relay", method)
+	}
+	return nil
 }
 
 func classifyDiscoverRPC(err *RPCError) (probeVerdict, error) {

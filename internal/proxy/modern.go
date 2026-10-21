@@ -33,6 +33,11 @@ func (s *proxySession) handleModernInput(line []byte) (bool, error) {
 	if json.Unmarshal(line, &message) != nil {
 		return false, nil //nolint:nilerr // Malformed lines must reach the daemon for its parse error.
 	}
+	if message.JsonRPC == transport.JsonRPCVersion && len(message.ID) != 0 && string(message.ID) != "null" {
+		if err := transport.ValidateModernRequestMeta(message.Params); err != nil {
+			return true, s.writeInvalidRequestMeta(message.ID, err.Error())
+		}
+	}
 	if message.isModern() {
 		s.ensureModernReady()
 	}
@@ -79,6 +84,16 @@ func (s *proxySession) acknowledgeListen(id json.RawMessage, params transport.Li
 func (s *proxySession) writeInvalidListenParams(id json.RawMessage) error {
 	line, err := json.Marshal(transport.Response{JsonRPC: transport.JsonRPCVersion, ID: id, Error: &transport.RPCError{
 		Code: transport.CodeInvalidParams, Message: transport.InvalidListenParamsMessage,
+	}})
+	if err != nil {
+		return err
+	}
+	return s.writeLine(line)
+}
+
+func (s *proxySession) writeInvalidRequestMeta(id json.RawMessage, message string) error {
+	line, err := json.Marshal(transport.Response{JsonRPC: transport.JsonRPCVersion, ID: id, Error: &transport.RPCError{
+		Code: transport.CodeInvalidParams, Message: message,
 	}})
 	if err != nil {
 		return err

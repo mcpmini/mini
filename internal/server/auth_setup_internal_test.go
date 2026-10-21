@@ -64,7 +64,7 @@ func TestConfigureStartAuth_handoffSurvivesRequestCancellationAndCloseJoins(t *t
 	t.Cleanup(srv.Close)
 	srv.cfg.DisableAuthBrowserOpen = true
 	tokenServer := authtest.NewTokenServer(t)
-	upstreamURL, initializing := stalledAuthInitialize(t)
+	upstreamURL, initializing := stalledAuthInitialize(t, tokenServer.Srv.URL)
 	configtest.WriteServer(t, srv.configDir, config.ServerConfig{
 		Name: "svc", Transport: "http", URL: upstreamURL,
 		Auth: authConfigWithFreeCallbackPort(t, tokenServer.AuthConfig()),

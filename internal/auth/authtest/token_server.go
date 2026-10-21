@@ -44,6 +44,7 @@ func NewTokenServer(t *testing.T) *TokenServer {
 	m.Status.Store(http.StatusOK)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/token", m.handleToken)
+	mux.HandleFunc("/.well-known/oauth-authorization-server", m.handleMetadata)
 	m.Srv = httptest.NewServer(mux)
 	t.Cleanup(m.Srv.Close)
 	return m
@@ -115,6 +116,7 @@ func (m *TokenServer) captureRequestFields(r *http.Request) {
 func (m *TokenServer) AuthConfig() *config.AuthConfig {
 	return &config.AuthConfig{
 		Type:     "oauth2",
+		Issuer:   m.Srv.URL,
 		ClientID: "test-client-id",
 		AuthURL:  m.Srv.URL + "/authorize",
 		TokenURL: m.Srv.URL + "/token",
@@ -132,4 +134,14 @@ func (m *TokenServer) ClearOverride() {
 	m.Mu.Lock()
 	m.OverrideBody = nil
 	m.Mu.Unlock()
+}
+
+func (m *TokenServer) handleMetadata(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+		"issuer":                           m.Srv.URL,
+		"authorization_endpoint":           m.Srv.URL + "/authorize",
+		"token_endpoint":                   m.Srv.URL + "/token",
+		"code_challenge_methods_supported": []string{"S256"},
+	})
 }

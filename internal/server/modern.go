@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -49,12 +50,13 @@ func (s *Server) handleModernLine(p handleScannedLineParams, line []byte) bool {
 	if len(peekRequestID(line)) == 0 {
 		return false
 	}
-	version := modernRequestVersion(line)
-	// A rejected version must leave the session as it was, so the client can still fall back to initialize.
-	if transport.IsModernVersion(version) {
-		s.activateModern(p.session)
-	}
-	if version != "" && peekMethod(line) == transport.MethodSubscriptionsListen {
+	if peekMethod(line) == transport.MethodSubscriptionsListen {
+		var request struct {
+			Params json.RawMessage `json:"params"`
+		}
+		if json.Unmarshal(line, &request) != nil || !transport.HasModernRequestIntent(request.Params) {
+			return false
+		}
 		s.startListen(p.ctx, p, line)
 		return true
 	}
@@ -80,7 +82,7 @@ func (s *Server) activateModern(session *Session) {
 	session.clientReady.Store(true)
 }
 
-func modernVersionError(req transport.Request, session *Session) *transport.Response {
+func modernVersionError(req transport.Request) *transport.Response {
 	version := transport.ProtocolVersionFromParams(req.Params)
 	if version == "" || transport.IsModernVersion(version) {
 		return nil
@@ -126,7 +128,30 @@ func addModernResultFields(method string, result any) (any, error) {
 		addMissingField(fields, "ttlMs", json.RawMessage(`0`))
 		addMissingField(fields, "cacheScope", json.RawMessage(`"private"`))
 	}
+	if err := addMiniServerIdentity(fields); err != nil {
+		return nil, err
+	}
 	return fields, nil
+}
+
+func addMiniServerIdentity(fields map[string]json.RawMessage) error {
+	meta := map[string]json.RawMessage{}
+	if raw, ok := fields["_meta"]; ok && !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		if err := json.Unmarshal(raw, &meta); err != nil || meta == nil {
+			return fmt.Errorf("modern result _meta must be a JSON object")
+		}
+	}
+	identity, err := json.Marshal(transport.ServerInfo{Name: "mini", Version: version.Version})
+	if err != nil {
+		return fmt.Errorf("encode mini server identity: %w", err)
+	}
+	addMissingField(meta, "io.modelcontextprotocol/serverInfo", identity)
+	encoded, err := json.Marshal(meta)
+	if err != nil {
+		return fmt.Errorf("encode modern result metadata: %w", err)
+	}
+	fields["_meta"] = encoded
+	return nil
 }
 
 func addMissingField(fields map[string]json.RawMessage, key string, value json.RawMessage) {

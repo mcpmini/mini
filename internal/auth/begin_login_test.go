@@ -42,6 +42,9 @@ func TestBeginLogin_completesWithoutWritingToTerminal(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Wait: %v", err)
 		}
+		if got.Issuer != mock.Srv.URL {
+			t.Fatalf("login issuer = %q, want %q", got.Issuer, mock.Srv.URL)
+		}
 		token = got.Token.AccessToken
 	})
 

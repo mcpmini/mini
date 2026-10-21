@@ -12,6 +12,8 @@ import (
 
 const stdioDiscoveryTimeout = 5 * time.Second
 
+var errProbeUnanswered = errors.New("upstream did not answer the modern probe")
+
 type explicitModernProbeError struct{ err error }
 
 func (e explicitModernProbeError) Error() string { return e.err.Error() }
@@ -19,12 +21,22 @@ func (e explicitModernProbeError) Unwrap() error { return e.err }
 
 func (c *StdioConnection) negotiate(ctx context.Context) (*StdioConnection, error) {
 	err := c.setUpEra(ctx)
-	if err == nil {
+	switch {
+	case err == nil:
 		return c, nil
-	}
-	if c.exitedBeforeSetup(ctx, err) {
+	case errors.Is(err, errProbeUnanswered):
+		_ = c.Close() //nolint:errcheck // the unanswered probe is the failure to report
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return c.restartForLegacy(ctx, errProbeUnanswered.Error())
+	case c.exitedBeforeSetup(ctx, err):
 		// Some legacy servers exit on an unknown method, before or after answering it.
-		return c.replaceExitedProbe(ctx)
+		exit := c.Close()
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return c.restartForLegacy(ctx, fmt.Sprintf("upstream exited during setup (%s)", exitStatus(exit)))
 	}
 	_ = c.Close() //nolint:errcheck // cleanup must not mask the setup error
 	return nil, err
@@ -118,7 +130,7 @@ func (c *StdioConnection) classifyDiscoveryError(p discoveryErrorParams) (probeV
 		return verdict, retry
 	}
 	if p.probeCtx.Err() != nil {
-		return legacyProbeVerdict()
+		return probeVerdict{}, errProbeUnanswered
 	}
 	return probeVerdict{}, p.err
 }
@@ -188,20 +200,24 @@ func legacyProbeVerdict() (probeVerdict, error) {
 }
 
 func classifyStdioDiscover(result json.RawMessage, requested string) (probeVerdict, error) {
-	var discovered DiscoverResult
-	if err := json.Unmarshal(result, &discovered); err != nil {
+	versions, recognized := discoverSupportedVersions(result)
+	if !recognized {
 		return legacyProbeVerdict()
 	}
-	if discovered.SupportedVersions == nil {
-		return legacyProbeVerdict()
-	}
-	verdict := modernVersionVerdict(discovered.SupportedVersions)
+	verdict := modernVersionVerdict(versions)
 	if verdict.era != EraModern {
 		// Unlike HTTP, don't fall back: a server that answers discover is modern, so initialize would
 		// fail too, and naming the versions it does support tells the user what to change.
 		return probeVerdict{}, explicitModernProbeError{unsupportedStdioVersion(
-			UnsupportedVersionData{Supported: discovered.SupportedVersions}, requested,
+			UnsupportedVersionData{Supported: versions}, requested,
 		)}
+	}
+	if err := requireCompleteResult(result, "server/discover"); err != nil {
+		return probeVerdict{}, explicitModernProbeError{fmt.Errorf("validate modern discovery result: %w", err)}
+	}
+	var discovered DiscoverResult
+	if err := json.Unmarshal(result, &discovered); err != nil {
+		return legacyProbeVerdict()
 	}
 	verdict.listen = discovered.Capabilities.ToolsListChanged()
 	return verdict, nil
@@ -227,20 +243,18 @@ func (c *StdioConnection) isClosed() bool {
 	}
 }
 
-func (c *StdioConnection) replaceExitedProbe(ctx context.Context) (*StdioConnection, error) {
-	exit := c.Close()
+func (c *StdioConnection) restartForLegacy(ctx context.Context, probeFailure string) (*StdioConnection, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 	replacement, err := startSubprocess(context.WithoutCancel(ctx), c.command)
 	if err == nil {
 		if err = replacement.initialize(ctx); err != nil {
-			_ = replacement.Close() //nolint:errcheck // the first exit is the failure to report
+			_ = replacement.Close() //nolint:errcheck // the probe failure is the failure to report
 		}
 	}
 	if err != nil {
-		return nil, fmt.Errorf(
-			"upstream exited during setup (%s); restarting it without the modern probe failed too: %w",
-			exitStatus(exit),
-			err,
-		)
+		return nil, fmt.Errorf("%s; restarting it without the modern probe failed too: %w", probeFailure, err)
 	}
 	return replacement, nil
 }

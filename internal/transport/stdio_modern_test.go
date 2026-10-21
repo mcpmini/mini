@@ -198,7 +198,7 @@ func TestStdioDiscoveryMalformedRetryNeverFallsBack(t *testing.T) {
 	}
 }
 
-func TestStdioDiscoveryTimeoutFallsBackToLegacy(t *testing.T) {
+func TestStdioDiscoveryTimeoutIsUnanswered(t *testing.T) {
 	conn, _, serverR := makePipeConn(t)
 	fakeClock := clock.NewFake()
 	conn.clock = fakeClock
@@ -218,8 +218,8 @@ func TestStdioDiscoveryTimeoutFallsBackToLegacy(t *testing.T) {
 		t.Fatal(err)
 	}
 	fakeClock.Advance(stdioDiscoveryTimeout)
-	if got := <-result; got.err != nil || got.verdict.era != EraLegacy {
-		t.Fatalf("discover after the probe timed out = %v, %v; want legacy and no error", got.verdict.era, got.err)
+	if got := <-result; !errors.Is(got.err, errProbeUnanswered) {
+		t.Fatalf("discover after the probe timed out = %v, want errProbeUnanswered", got.err)
 	}
 }
 

@@ -107,7 +107,7 @@ func TestDiscover_metadataNamingAnotherIssuer_isRefused(t *testing.T) {
 	}
 }
 
-func TestResolveEndpoints_expectsTheIssuerOnlyWhenItsMetadataChoseTheAuthorizationEndpoint(t *testing.T) {
+func TestResolveEndpoints_expectsTheIssuerForDiscoveredAndConfiguredEndpoints(t *testing.T) {
 	as := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":                         "https://as.example.com/authorize",
 		"token_endpoint":                                 "https://as.example.com/token",
@@ -121,11 +121,11 @@ func TestResolveEndpoints_expectsTheIssuerOnlyWhenItsMetadataChoseTheAuthorizati
 		want    auth.ExpectedIssuer
 	}{
 		{name: "discovered", want: auth.ExpectedIssuer{Issuer: as.URL, AlwaysSent: true}},
-		{name: "configured", authURL: "https://other.example.com/authorize"},
+		{name: "configured", authURL: "https://other.example.com/authorize", want: auth.ExpectedIssuer{Issuer: as.URL, AlwaysSent: true}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			sc := &config.ServerConfig{URL: as.URL + "/mcp", Auth: &config.AuthConfig{
-				Type: "oauth2", ClientID: "configured-client", AuthURL: tc.authURL,
+				Type: "oauth2", Issuer: as.URL, ClientID: "configured-client", AuthURL: tc.authURL,
 			}}
 
 			resolved, err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(t.TempDir(), "srv"))
@@ -152,7 +152,7 @@ func TestBeginLogin_callbackFromAnotherIssuer_neverReachesTheTokenEndpoint(t *te
 	})
 	t.Cleanup(as.Close)
 	sc := config.ServerConfig{Name: "synthetic", URL: as.URL + "/mcp", Auth: &config.AuthConfig{
-		Type: "oauth2", ClientID: "configured-client",
+		Type: "oauth2", Issuer: as.URL, ClientID: "configured-client",
 	}}
 	login, err := auth.BeginLogin(context.Background(), sc, beginLoginParams(t))
 	if err != nil {

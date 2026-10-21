@@ -78,9 +78,16 @@ func StartBrowserLogin(ac *config.AuthConfig, listener net.Listener, resolved Re
 	}
 	cfg, verifier, state := buildPKCEConfig(ac, tcpAddr.Port)
 	login := &BrowserLogin{
-		results: make(chan loginCallbackResult, 1), closed: make(chan struct{}),
-		oauth2Cfg: cfg, verifier: verifier,
-		login: Login{Resource: ac.ResourceURL, TokenURL: ac.TokenURL, Client: resolved.Client},
+		results:   make(chan loginCallbackResult, 1),
+		closed:    make(chan struct{}),
+		oauth2Cfg: cfg,
+		verifier:  verifier,
+		login: Login{
+			Resource: ac.ResourceURL,
+			Issuer:   resolved.Issuer.Issuer,
+			TokenURL: ac.TokenURL,
+			Client:   resolved.Client,
+		},
 		authURL: buildAuthURL(cfg, buildAuthURLParams{
 			state: state, verifier: verifier,
 			resourceURL: ac.ResourceURL, extraAuthParams: ac.ExtraAuthParams,

@@ -14,6 +14,7 @@ import (
 // The placeholders the steps leave for the user; a value still holding one is no credential yet.
 const (
 	tokenPlaceholder        = "<your token>"
+	issuerPlaceholder       = "<authorization server issuer>"
 	clientIDPlaceholder     = "<your app's client ID>"
 	clientSecretPlaceholder = "<your app's client secret>"
 )
@@ -42,6 +43,7 @@ func credentialSteps(authKind catalog.AuthKind, setupURL string) (intro string, 
 			[]string{
 				"auth:",
 				"    type: oauth2",
+				"    issuer: " + issuerPlaceholder,
 				"    client_id: " + clientIDPlaceholder,
 				"    client_secret: " + clientSecretPlaceholder + "  # leave this line out if your app has none",
 			}
@@ -60,5 +62,6 @@ func holdsTokenPlaceholder(sc config.ServerConfig) bool {
 
 func holdsAppPlaceholder(sc config.ServerConfig) bool {
 	return sc.Auth != nil &&
-		(sc.Auth.ClientID == clientIDPlaceholder || sc.Auth.ClientSecret == clientSecretPlaceholder)
+		(sc.Auth.Issuer == issuerPlaceholder || sc.Auth.ClientID == clientIDPlaceholder ||
+			sc.Auth.ClientSecret == clientSecretPlaceholder)
 }

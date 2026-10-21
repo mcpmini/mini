@@ -52,7 +52,7 @@ func (s *Server) handleProxyCall(ctx context.Context, call toolCallRequest, sess
 		Entry:    entry,
 		Session:  session,
 		Controls: req.Controls,
-		MRTR:     call.mrtr(session),
+		MRTR:     call.mrtr(),
 	})
 }
 

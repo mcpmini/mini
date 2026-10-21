@@ -172,6 +172,62 @@ func TestIntegrationStdioProbeExitGetsOneLegacyReplacement(t *testing.T) {
 	}
 }
 
+func TestIntegrationStdioUnansweredProbeReplacesPoisonedProcessOnce(t *testing.T) {
+	command, starts := countedProtocolHelper(t, helperUnresponsiveOnce)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	conn, err := NewStdioConnection(ctx, command)
+	if err != nil {
+		t.Fatalf("connect through replacement: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+	tools, err := conn.ListTools(ctx)
+	if err != nil || len(tools) != 1 || tools[0].Name != "modern_tool" {
+		t.Fatalf("tools/list on replacement = %+v, %v", tools, err)
+	}
+	if _, err := conn.Call(ctx, "tools/call", json.RawMessage(`{"name":"modern_tool","arguments":{}}`)); err != nil {
+		t.Fatalf("tools/call on replacement: %v", err)
+	}
+	if got := helperStarts(t, starts); got != 2 {
+		t.Fatalf("helper process starts = %d, want one initial process and one replacement", got)
+	}
+}
+
+func TestIntegrationStdioUnansweredProbeAndReplacementFailureAreBoundedByCallerDeadline(t *testing.T) {
+	command, starts := countedProtocolHelper(t, helperUnresponsiveAlways)
+	ctx, cancel := context.WithTimeout(context.Background(), 800*time.Millisecond)
+	defer cancel()
+	_, err := NewStdioConnection(ctx, command)
+	if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "did not answer the modern probe") ||
+		!strings.Contains(err.Error(), "restarting it without the modern probe failed too") {
+		t.Fatalf("connect error = %v, want bounded unanswered-probe and replacement failure", err)
+	}
+	if got := helperStarts(t, starts); got != 2 {
+		t.Fatalf("helper process starts = %d, want one initial process and one failed replacement", got)
+	}
+}
+
+func TestIntegrationStdioCallerCancellationDuringUnansweredProbeDoesNotReplace(t *testing.T) {
+	command, starts := countedProtocolHelper(t, helperUnresponsiveOnce)
+	marker := t.TempDir() + "/discovered"
+	command.Env = append(command.Env, "MINI_STDIO_DISCOVERED="+marker)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		_, err := NewStdioConnection(ctx, command)
+		result <- err
+	}()
+	waitForHelperMarker(t, marker)
+	cancel()
+	if err := <-result; !errors.Is(err, context.Canceled) {
+		t.Fatalf("connect error = %v, want context.Canceled", err)
+	}
+	if got := helperStarts(t, starts); got != 1 {
+		t.Fatalf("helper process starts = %d, want no replacement after cancellation", got)
+	}
+}
+
 func TestIntegrationStdioCallReturnsAtItsDeadlineWhenTheServerStopsReadingStdin(t *testing.T) {
 	t.Parallel()
 	if _, err := exec.LookPath("sh"); err != nil {
@@ -262,6 +318,8 @@ const (
 	helperModern                   = "modern"
 	helperExitOnProbeOnce          = "exit-on-probe-once"
 	helperReplyThenExitOnProbeOnce = "reply-then-exit-on-probe-once"
+	helperUnresponsiveOnce         = "unresponsive-once"
+	helperUnresponsiveAlways       = "unresponsive-always"
 	helperCrash                    = "crash"
 )
 
@@ -282,15 +340,33 @@ func TestIntegrationStdioProtocolHelper(t *testing.T) {
 		count, err := countHelperStarts(starts)
 		firstStart = err == nil && count == 1
 	}
+	initialized := false
 	scanner := NewScanner(os.Stdin)
 	for scanner.Scan() {
 		var request Request
 		if err := json.Unmarshal(scanner.Bytes(), &request); err != nil {
 			os.Exit(2)
 		}
+		if request.Method == "server/discover" {
+			markHelperFile(os.Getenv("MINI_STDIO_DISCOVERED"))
+		}
+		if shouldIgnoreRequest(mode, firstStart, request) {
+			time.Sleep(time.Hour)
+		}
+		if mode == helperUnresponsiveOnce && !firstStart && !initialized && request.Method != "initialize" {
+			os.Exit(3)
+		}
+		if request.Method == "initialize" {
+			initialized = true
+		}
 		answerProtocolRequest(mode, firstStart, request)
 	}
 	os.Exit(0)
+}
+
+func shouldIgnoreRequest(mode string, firstStart bool, request Request) bool {
+	return (mode == helperUnresponsiveAlways || mode == helperUnresponsiveOnce && firstStart) &&
+		(request.Method == "server/discover" || request.Method == "initialize")
 }
 
 func answerProtocolRequest(mode string, firstStart bool, request Request) {
@@ -313,6 +389,9 @@ func answerProtocolRequest(mode string, firstStart bool, request Request) {
 }
 
 func answerProtocolProbe(mode string, firstStart bool, request Request) {
+	if mode == helperUnresponsiveOnce || mode == helperUnresponsiveAlways {
+		return
+	}
 	if mode == helperModern {
 		sendResponse(os.Stdout, request.ID, DiscoverResult{SupportedVersions: ModernVersions})
 		return
@@ -329,6 +408,36 @@ func answerProtocolProbe(mode string, firstStart bool, request Request) {
 	})
 	if firstStart && mode == helperReplyThenExitOnProbeOnce {
 		os.Exit(0)
+	}
+}
+
+func waitForHelperMarker(t *testing.T, path string) {
+	t.Helper()
+	deadline := time.After(5 * time.Second)
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		select {
+		case <-ticker.C:
+		case <-deadline:
+			t.Fatalf("helper did not create marker %q", path)
+		}
+	}
+}
+
+func markHelperFile(path string) {
+	if path == "" {
+		return
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		os.Exit(2)
+	}
+	if err := file.Close(); err != nil {
+		os.Exit(2)
 	}
 }
 

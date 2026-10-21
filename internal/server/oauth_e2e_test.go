@@ -29,6 +29,9 @@ import (
 
 func oauthMCPHandler(validToken string, tools []map[string]any) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if serveOAuthMetadata(w, r) {
+			return
+		}
 		if r.Header.Get("Authorization") != "Bearer "+validToken {
 			w.Header().Set("WWW-Authenticate", "Bearer")
 			w.WriteHeader(http.StatusUnauthorized)
@@ -69,6 +72,9 @@ func fakeOAuthMCPServer(t *testing.T, validToken string, tools []map[string]any)
 func fakeTokenServer(t *testing.T, accessToken string) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if serveOAuthMetadata(w, r) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
 			"access_token":  accessToken,
@@ -97,6 +103,7 @@ func newOAuthServer(params newOAuthServerParams) *server.Server {
 		URL:       params.MCPURL,
 		Auth: &config.AuthConfig{
 			Type:     "oauth2",
+			Issuer:   params.MCPURL,
 			ClientID: "test-client",
 			AuthURL:  params.TokenURL + "/authorize",
 			TokenURL: params.TokenURL + "/token",
@@ -165,6 +172,7 @@ func TestStartAuth_opensServerBrowserCommandWithAuthURL(t *testing.T) {
 		URL:       tokenSrv.URL + "/mcp",
 		Auth: &config.AuthConfig{
 			Type:       "oauth2",
+			Issuer:     tokenSrv.URL,
 			ClientID:   "test-client",
 			AuthURL:    tokenSrv.URL + "/authorize",
 			TokenURL:   tokenSrv.URL + "/token",
@@ -275,11 +283,16 @@ func TestStartAuth_e2e_withStaleToken_browserTokenUsedOnFirstRequest(t *testing.
 	var unauthorizedAfterAuth atomic.Int32
 
 	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if serveOAuthMetadata(w, r) {
+			return
+		}
 		mu.Lock()
 		vt := acceptedToken
 		mu.Unlock()
 		if vt == "" || r.Header.Get("Authorization") != "Bearer "+vt {
-			unauthorizedAfterAuth.Add(1)
+			if r.Method == http.MethodPost {
+				unauthorizedAfterAuth.Add(1)
+			}
 			w.Header().Set("WWW-Authenticate", "Bearer")
 			w.WriteHeader(http.StatusUnauthorized)
 			return
@@ -328,6 +341,7 @@ func TestStartAuth_e2e_withStaleToken_browserTokenUsedOnFirstRequest(t *testing.
 		URL:       mcpSrv.URL,
 		Auth: &config.AuthConfig{
 			Type:     "oauth2",
+			Issuer:   mcpSrv.URL,
 			ClientID: "test-client",
 			AuthURL:  tokenSrv.URL + "/authorize",
 			TokenURL: tokenSrv.URL + "/token",
@@ -371,4 +385,18 @@ func TestStartAuth_e2e_withStaleToken_browserTokenUsedOnFirstRequest(t *testing.
 	if n := unauthorizedAfterAuth.Load(); n > 0 {
 		t.Errorf("browser token caused %d unexpected 401 responses after auth, want 0", n)
 	}
+}
+
+func serveOAuthMetadata(w http.ResponseWriter, r *http.Request) bool {
+	if r.URL.Path != "/.well-known/oauth-authorization-server" {
+		return false
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+		"issuer":                           "http://" + r.Host,
+		"authorization_endpoint":           "https://as.example.com/authorize",
+		"token_endpoint":                   "https://as.example.com/token",
+		"code_challenge_methods_supported": []string{"S256"},
+	})
+	return true
 }
