@@ -96,17 +96,18 @@ func hydrateFromSavedRegistration(t *testing.T, p savedRegistrationParams) *conf
 func resolveWithSavedRegistration(t *testing.T, p savedRegistrationParams) (*config.AuthConfig, error) {
 	t.Helper()
 	dir := t.TempDir()
-	authtest.SaveRegistration(t, authtest.RegistrationFile{
-		ConfigDir:    dir,
-		ServerName:   "srv",
-		Registration: p.Registration,
-	})
 	asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":           "https://as.example.com/authorize",
 		"token_endpoint":                   "https://as.example.com/token",
 		"code_challenge_methods_supported": []string{"S256"},
 	})
 	t.Cleanup(asSrv.Close)
+	p.Registration.Issuer = asSrv.URL
+	authtest.SaveRegistration(t, authtest.RegistrationFile{
+		ConfigDir:    dir,
+		ServerName:   "srv",
+		Registration: p.Registration,
+	})
 
 	sc := &config.ServerConfig{
 		URL: asSrv.URL + "/mcp",
@@ -345,6 +346,13 @@ func TestRegistrationInconsistency_failsResolutionNamingTheField(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
+			asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+				"authorization_endpoint":           "https://as.example.com/authorize",
+				"token_endpoint":                   "https://as.example.com/token",
+				"code_challenge_methods_supported": []string{"S256"},
+			})
+			defer asSrv.Close()
+			tc.reg.Issuer = asSrv.URL
 			authtest.SaveRegistration(
 				t,
 				authtest.RegistrationFile{
@@ -353,12 +361,6 @@ func TestRegistrationInconsistency_failsResolutionNamingTheField(t *testing.T) {
 					Registration: withTokenURL(tc.reg, "https://as.example.com/token"),
 				},
 			)
-			asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
-				"authorization_endpoint":           "https://as.example.com/authorize",
-				"token_endpoint":                   "https://as.example.com/token",
-				"code_challenge_methods_supported": []string{"S256"},
-			})
-			defer asSrv.Close()
 
 			sc := &config.ServerConfig{URL: asSrv.URL + "/mcp", Auth: &config.AuthConfig{Type: "oauth2"}}
 			params := auth.ResolveEndpointsParams{ConfigDir: dir, ServerName: "srv", Clock: clock.System()}

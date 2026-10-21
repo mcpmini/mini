@@ -16,7 +16,11 @@ func StartLogin(t *testing.T, ac *config.AuthConfig) *auth.BrowserLogin {
 		t.Fatalf("listen: %v", err)
 	}
 	client := auth.LoginClient{ID: ac.ClientID, Configured: true}
-	login, err := auth.StartBrowserLogin(ac, listener, auth.ResolvedLogin{Client: client})
+	login, err := auth.StartBrowserLogin(
+		ac,
+		listener,
+		auth.ResolvedLogin{Client: client, Issuer: auth.ExpectedIssuer{Issuer: ac.Issuer}},
+	)
 	if err != nil {
 		t.Fatalf("StartBrowserLogin: %v", err)
 	}

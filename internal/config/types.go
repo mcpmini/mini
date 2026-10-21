@@ -274,6 +274,7 @@ type AuthConfig struct {
 	Header string `yaml:"header,omitempty"`
 
 	// OAuth2 fields
+	Issuer       string   `yaml:"issuer,omitempty"`
 	ClientID     string   `yaml:"client_id,omitempty"`
 	ClientSecret string   `yaml:"client_secret,omitempty"`
 	AuthURL      string   `yaml:"auth_url,omitempty"`

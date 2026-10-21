@@ -130,7 +130,7 @@ func sameLogin(a, b *auth.Login) bool {
 	if a == nil || b == nil {
 		return a == b
 	}
-	return a.Resource == b.Resource && a.TokenURL == b.TokenURL && a.Client == b.Client &&
+	return a.Issuer == b.Issuer && a.Resource == b.Resource && a.TokenURL == b.TokenURL && a.Client == b.Client &&
 		sameToken(a.Token, b.Token)
 }
 

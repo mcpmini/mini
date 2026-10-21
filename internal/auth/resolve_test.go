@@ -100,7 +100,7 @@ func TestResolveEndpoints_refusesAServerWithAnUnsetVariable(t *testing.T) {
 	}
 }
 
-func TestResolveEndpoints_configuredEndpoints_canonicalizesResourceURL(t *testing.T) {
+func TestApplyResourceURL_canonicalizesResourceURL(t *testing.T) {
 	tests := []struct {
 		name string
 		url  string
@@ -123,12 +123,8 @@ func TestResolveEndpoints_configuredEndpoints_canonicalizesResourceURL(t *testin
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			sc := configuredOAuthServer(tc.url)
-			if _, err := auth.ResolveEndpoints(
-				context.Background(),
-				sc,
-				resolveParams(t.TempDir(), "srv"),
-			); err != nil {
-				t.Fatalf("ResolveEndpoints: %v", err)
+			if err := auth.ApplyResourceURL(sc); err != nil {
+				t.Fatalf("ApplyResourceURL: %v", err)
 			}
 			if sc.Auth.ResourceURL != tc.want {
 				t.Errorf("ResourceURL = %q, want %q", sc.Auth.ResourceURL, tc.want)
@@ -188,7 +184,7 @@ func TestResolveEndpoints_cachedRegistrationBeforeCIMD(t *testing.T) {
 		ConfigDir:  dir,
 		ServerName: "srv",
 		Registration: &auth.Registration{
-			ClientID: "cached-id", TokenURL: "https://as.example.com/token",
+			ClientID: "cached-id", Issuer: asSrv.URL, TokenURL: "https://as.example.com/token",
 		},
 	})
 
@@ -313,7 +309,7 @@ func TestResolveEndpoints_rejectsLoopbackDiscoveredEndpoints(t *testing.T) {
 
 			sc := &config.ServerConfig{
 				URL:  asSrv.URL + "/mcp",
-				Auth: &config.AuthConfig{Type: "oauth2", ClientID: "pre-configured"},
+				Auth: &config.AuthConfig{Type: "oauth2", Issuer: asSrv.URL, ClientID: "pre-configured"},
 			}
 			_, err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(t.TempDir(), "srv"))
 			if err == nil {
@@ -352,7 +348,7 @@ func TestResolveEndpoints_scopesAutoPopulatedFromPRM(t *testing.T) {
 
 	sc := &config.ServerConfig{
 		URL:  mcpSrv.URL + "/mcp",
-		Auth: &config.AuthConfig{Type: "oauth2", ClientID: "pre-configured"},
+		Auth: &config.AuthConfig{Type: "oauth2", Issuer: asSrv.URL, ClientID: "pre-configured"},
 	}
 	if _, err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(t.TempDir(), "srv")); err != nil {
 		t.Fatal(err)
@@ -372,8 +368,13 @@ func TestResolveEndpoints_userScopesNotOverwritten(t *testing.T) {
 	defer asSrv.Close()
 
 	sc := &config.ServerConfig{
-		URL:  asSrv.URL + "/mcp",
-		Auth: &config.AuthConfig{Type: "oauth2", ClientID: "pre-configured", Scopes: []string{"custom:scope"}},
+		URL: asSrv.URL + "/mcp",
+		Auth: &config.AuthConfig{
+			Type:     "oauth2",
+			Issuer:   asSrv.URL,
+			ClientID: "pre-configured",
+			Scopes:   []string{"custom:scope"},
+		},
 	}
 	if _, err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(t.TempDir(), "srv")); err != nil {
 		t.Fatal(err)

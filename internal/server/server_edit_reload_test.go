@@ -134,7 +134,7 @@ func TestServerReload_aLoginStartedAfterAnEdit_survivesAndIsKept(t *testing.T) {
 	e := &serverReloadEnv{reloadEnv: buildReloadEnvWithConfig(t, evalTempDir(t), cfg)}
 	oauthServer := func(scopes ...string) config.ServerConfig {
 		return config.ServerConfig{Name: "svc", Transport: "http", URL: upstream.URL, Auth: &config.AuthConfig{
-			Type: "oauth2", ClientID: "test-client", Scopes: scopes,
+			Type: "oauth2", Issuer: upstream.URL, ClientID: "test-client", Scopes: scopes,
 			AuthURL: tokens.URL + "/authorize", TokenURL: tokens.URL + "/token",
 		}}
 	}

@@ -32,6 +32,7 @@ If the comment holds OAuth app steps, they look like Asana's:
 # Register an OAuth app at https://app.asana.com/0/my-apps with redirect URI http://localhost:6464/callback, then uncomment:
 # auth:
 #     type: oauth2
+#     issuer: <authorization server issuer>
 #     client_id: <your app's client ID>
 #     client_secret: <your app's client secret>  # leave this line out if your app has none
 
@@ -40,11 +41,12 @@ url: https://mcp.asana.com/v2/mcp
 ```
 
 1. In the provider's developer settings, create an OAuth app. Register the redirect URI `http://localhost:6464/callback` exactly. Follow the provider's MCP setup guide: if it offers an app type for MCP clients, such as Asana's MCP app, pick it. If the provider issues a client secret, keep it. Enable the scopes the MCP's documentation lists.
-2. Uncomment the `auth:` block and replace both placeholders, or delete the `client_secret` line if your app has no secret. If the file has no comment, add `client_id` (and `client_secret`) to its `auth:` block, or add the whole block if there's none; a file can have only one `auth:` key. Leave the rest of the file as it is:
+2. Uncomment the `auth:` block and replace the issuer and client placeholders, or delete the `client_secret` line if your app has no secret. If the file has no comment, add `client_id` (and `client_secret`) to its `auth:` block, or add the whole block if there's none; a file can have only one `auth:` key. Leave the rest of the file as it is:
 
    ```yaml
    auth:
        type: oauth2
+       issuer: <authorization server issuer>
        client_id: 1209876543210
        client_secret: ${ASANA_CLIENT_SECRET}
    ```
@@ -55,6 +57,16 @@ url: https://mcp.asana.com/v2/mcp
    ```bash
    mini auth asana
    ```
+
+Set `auth.issuer` to the exact issuer of the authorization server that registered your app,
+including any path or trailing slash. Confirm it against the provider's authorization-server
+metadata. mini discovers the MCP's current authorization server and refuses to use a configured
+client if its issuer differs. A client ID based on an HTTPS Client ID Metadata Document can be
+portable when the server advertises support.
+
+Saved registrations and logins are bound to their issuer. Records from an older mini without
+that binding are not reused: dynamic clients are registered again, and saved logins require
+`mini auth <name>` again. Supplying a new issuer does not make an old registration valid.
 
 mini requests the scopes the MCP advertises. A list under `auth.scopes` replaces them, so include every scope you need. If port 6464 is taken, set `auth.callback_port` and register that port in the redirect URI instead. If the provider rejects the redirect URI, compare the app's registered URI with the `redirect_uri` in the URL `mini auth` prints, port included.
 

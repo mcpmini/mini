@@ -48,11 +48,13 @@ func LoginFor(t testing.TB, sc config.ServerConfig, token *oauth2.Token) *auth.L
 	}
 	login := &auth.Login{
 		Resource: resource,
+		Issuer:   "https://as.example.com",
 		TokenURL: discoveredTokenURL,
 		Client:   auth.LoginClient{ID: registeredClientID},
 		Token:    token,
 	}
 	if sc.Auth != nil {
+		login.Issuer = cmp.Or(sc.Auth.Issuer, login.Issuer)
 		login.TokenURL = cmp.Or(sc.Auth.TokenURL, discoveredTokenURL)
 		if sc.Auth.ClientID != "" {
 			login.Client = auth.LoginClient{ID: sc.Auth.ClientID, Configured: true}

@@ -4,9 +4,11 @@ package provider_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -18,6 +20,7 @@ import (
 	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -352,5 +355,28 @@ func directParams(dir string, endpoint *authtest.TokenServer) provider.Params {
 		ServerName: "srv",
 		ServerURL:  testServerURL,
 		Clock:      clock.NewFake(),
+	}
+}
+
+func TestRefreshAuthorization_unboundLoginNeverReachesEndpoint(t *testing.T) {
+	endpoint := authtest.NewTokenServer(t)
+	params := directParams(t.TempDir(), endpoint)
+	login := loginFor(t, params, storedToken(time.Time{}))
+	login.Issuer = ""
+	raw, err := json.Marshal(login)
+	if err != nil {
+		t.Fatal(err)
+	}
+	testutil.WriteFile(t, filepath.Join(params.ConfigDir, "internal", "srv.token.json"), string(raw))
+	p, err := provider.New(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = p.RefreshAuthorization(context.Background(), "Bearer stored-access")
+	if err == nil || !strings.Contains(err.Error(), "log in again") {
+		t.Fatalf("unbound refresh error = %v", err)
+	}
+	if hits := endpoint.Hits.Load(); hits != 0 {
+		t.Fatalf("unbound login reached token endpoint %d times", hits)
 	}
 }
