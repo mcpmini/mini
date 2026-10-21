@@ -14,26 +14,25 @@ import (
 )
 
 type Server struct {
-	cfg                  *config.Config
-	configDir            string
-	reg                  *registry.Registry
-	upstreams            map[string]*upstreamServer
-	configServers        map[string]configServer // servers started from the config files, the only ones a config edit removes
-	startup              *startupTracker         // guarded by stateMu
-	stopWaiting          chan struct{}
-	stopWaitingOnce      sync.Once
-	projections          map[string]map[string]*config.ProjectionConfig
-	envelope             *response.Builder
-	store                *response.Store
-	projDefaults         *projection.Defaults
-	toolSchemas          []map[string]any
-	sessions             *sessionStore
-	logger               *slog.Logger
-	clock                clock.Clock
-	toolMode             transport.ToolMode
-	daemonAuthToken      string
-	allowNonLoopbackHost bool
-	providerRegistry     *provider.Registry
+	cfg              *config.Config
+	configDir        string
+	reg              *registry.Registry
+	upstreams        map[string]*upstreamServer
+	configServers    map[string]configServer // servers started from the config files, the only ones a config edit removes
+	startup          *startupTracker         // guarded by stateMu
+	stopWaiting      chan struct{}
+	stopWaitingOnce  sync.Once
+	projections      map[string]map[string]*config.ProjectionConfig
+	envelope         *response.Builder
+	store            *response.Store
+	projDefaults     *projection.Defaults
+	toolSchemas      []map[string]any
+	sessions         *sessionStore
+	logger           *slog.Logger
+	clock            clock.Clock
+	toolMode         transport.ToolMode
+	daemonAuthToken  string
+	providerRegistry *provider.Registry
 	// Held across each add_server, remove_server and config check of one name, so its saved and live states agree.
 	serverNames nameLocks
 	// Lock ordering: serverNames → persistMu → serverOpMu → stateMu → authMu.

@@ -300,7 +300,7 @@ Use compact mode when your client loads every MCP tool schema eagerly at session
 ## Commands
 
 ```
-mini connect [--http ADDR] [--standalone] [--tool-mode proxy|compact]   Connect an agent (stdio MCP)
+mini connect [--standalone] [--tool-mode proxy|compact]   Connect an agent (stdio MCP)
 mini daemon                               Run as a shared background daemon
 mini daemon status                        Check whether the daemon is running
 

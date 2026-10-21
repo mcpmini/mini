@@ -9,7 +9,7 @@ import (
 
 type daemonHTTPService interface {
 	http.Handler
-	sessionEvictor
+	RunSessionEviction(context.Context, time.Duration)
 	ReleaseStartupHolds()
 }
 

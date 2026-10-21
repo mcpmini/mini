@@ -73,15 +73,9 @@ Agents can only register HTTP upstreams via `add_server` by default. Stdio subpr
 
 HTTP header values containing CR, LF, or NUL characters are rejected by Go's `net/http` package before being forwarded to upstreams, preventing header injection attacks.
 
-### HTTP mode binding
+### Local connections
 
-`mini connect --http ADDR` listens for HTTP MCP connections. By default:
-
-- A bare port (`4857`) or colon-prefixed port (`:4857`) binds to `127.0.0.1` (loopback only).
-- Any other host component (e.g. `0.0.0.0:4857`) is considered non-loopback and **requires** passing `--dangerous-nonloopback-http` to `mini connect`. Without the flag, the server exits with an error.
-- When `--dangerous-nonloopback-http` is passed, a warning is logged and the server starts; the operator is responsible for ensuring all network clients are trusted (e.g. via firewall rules or VPN).
-
-The shared daemon does not open a TCP port. It listens on a Unix socket inside the private config directory.
+Agents connect to mini over stdio. The shared daemon listens on a Unix socket inside the private config directory and does not open a TCP port.
 
 ### Session ID
 

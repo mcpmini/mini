@@ -2,15 +2,11 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
-	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -24,18 +20,10 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-const standaloneHTTPSessionMaxIdle = 30 * time.Minute
-
-type sessionEvictor interface {
-	RunSessionEviction(context.Context, time.Duration)
-}
-
 type connectFlags struct {
-	logLevel          string
-	httpAddr          string
-	standalone        bool
-	dangerNonLoopback bool
-	toolMode          transport.ToolMode
+	logLevel   string
+	standalone bool
+	toolMode   transport.ToolMode
 }
 
 func newConnectCmd(opts *rootOptions) *cobra.Command {
@@ -70,27 +58,21 @@ func runConnect(configDir string, f connectFlags) error {
 		fatalf("%v", err)
 	}
 	logger := buildLogger(cfg, f.logLevel, os.Stderr)
-	if shouldTryDaemon(f.standalone, f.httpAddr) && connectViaDaemon(configDir, logger, f.toolMode) == nil {
+	if !f.standalone && connectViaDaemon(configDir, logger, f.toolMode) == nil {
 		return nil
 	}
 	return serveStandalone(ServeParams{
 		ConfigDir: configDir, Cfg: cfg, Servers: servers.Loaded, Logger: logger,
-		HTTPAddr: f.httpAddr, DangerNonLoopback: f.dangerNonLoopback, ToolMode: f.toolMode,
+		ToolMode: f.toolMode,
 	})
 }
 
-func shouldTryDaemon(standalone bool, httpAddr string) bool {
-	return !standalone && httpAddr == ""
-}
-
 type ServeParams struct {
-	ConfigDir         string
-	Cfg               *config.Config
-	Servers           []config.ServerConfig
-	Logger            *slog.Logger
-	HTTPAddr          string
-	DangerNonLoopback bool
-	ToolMode          transport.ToolMode
+	ConfigDir string
+	Cfg       *config.Config
+	Servers   []config.ServerConfig
+	Logger    *slog.Logger
+	ToolMode  transport.ToolMode
 }
 
 type serveFunc func(context.Context, io.Reader, io.Writer) error
@@ -145,91 +127,37 @@ func serveStandalone(p ServeParams) error {
 	defer stop()
 	srv := buildAndStart(ctx, BuildServerParams{
 		Cfg: p.Cfg, ConfigDir: p.ConfigDir, Logger: p.Logger, Servers: p.Servers,
-		ToolMode: p.ToolMode, AllowNonLoopbackHost: resolveAllowNonLoopbackHost(p.HTTPAddr),
+		ToolMode: p.ToolMode,
 	})
 	defer srv.Close()
-	httpSrv := maybeStartHTTP(httpServerParams{
-		addr: p.HTTPAddr, handler: srv, logger: p.Logger, dangerNonLoopback: p.DangerNonLoopback,
-	})
-	maybeStartSessionEviction(ctx, httpSrv, srv)
 	p.Logger.Info("mini ready")
 	err := serveUntilCanceled(serveWatchParams{Ctx: ctx, Serve: srv.Serve, In: stdinPipe(os.Stdin), Out: os.Stdout})
 	srv.ReleaseStartupHolds()
-	shutdownErr := shutdownHTTP(httpSrv)
 	if err != nil {
-		return errors.Join(fmt.Errorf("serve stdio: %w", err), shutdownErr)
+		return fmt.Errorf("serve stdio: %w", err)
 	}
-	return shutdownErr
-}
-
-func shutdownHTTP(httpSrv *http.Server) error {
-	if httpSrv == nil {
-		return nil
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	return shutdownHTTPWithContext(httpSrv, ctx)
-}
-
-func shutdownHTTPWithContext(httpSrv *http.Server, ctx context.Context) error {
-	shutdownErr := httpSrv.Shutdown(ctx)
-	if shutdownErr == nil {
-		return nil
-	}
-	return errors.Join(shutdownErr, httpSrv.Close())
+	return nil
 }
 
 type BuildServerParams struct {
-	Cfg                  *config.Config
-	ConfigDir            string
-	Logger               *slog.Logger
-	Servers              []config.ServerConfig
-	Clock                clock.Clock
-	ToolMode             transport.ToolMode
-	DaemonAuthToken      string
-	AllowNonLoopbackHost bool
+	Cfg             *config.Config
+	ConfigDir       string
+	Logger          *slog.Logger
+	Servers         []config.ServerConfig
+	Clock           clock.Clock
+	ToolMode        transport.ToolMode
+	DaemonAuthToken string
 }
 
 func buildAndStart(ctx context.Context, p BuildServerParams) *server.Server {
 	srv := server.New(server.Params{
 		Config: p.Cfg, ConfigDir: p.ConfigDir, Logger: p.Logger,
 		Clock: p.Clock, ToolMode: p.ToolMode,
-		DaemonAuthToken: p.DaemonAuthToken, AllowNonLoopbackHost: p.AllowNonLoopbackHost,
+		DaemonAuthToken: p.DaemonAuthToken,
 	})
 	srv.ConnectUpstreams(ctx, p.Servers)
 	srv.StartConfigReload(ctx)
 	return srv
-}
-
-// resolveAllowNonLoopbackHost reports whether the HTTP server will bind to a non-loopback address.
-// Without this check, the DNS-rebinding Host header guard would reject legitimate remote clients.
-func resolveAllowNonLoopbackHost(httpAddr string) bool {
-	if httpAddr == "" {
-		return false
-	}
-	_, nonLoopback := resolveHTTPAddr(httpAddr)
-	return nonLoopback
-}
-
-type httpServerParams struct {
-	addr              string
-	handler           http.Handler
-	logger            *slog.Logger
-	dangerNonLoopback bool
-}
-
-func maybeStartHTTP(p httpServerParams) *http.Server {
-	if p.addr == "" {
-		return nil
-	}
-	return startHTTPServer(p)
-}
-
-func maybeStartSessionEviction(ctx context.Context, httpSrv *http.Server, srv sessionEvictor) {
-	if httpSrv == nil {
-		return
-	}
-	go srv.RunSessionEviction(ctx, standaloneHTTPSessionMaxIdle)
 }
 
 func connectViaDaemon(configDir string, logger *slog.Logger, mode transport.ToolMode) error {
@@ -306,84 +234,10 @@ func fatalf(format string, args ...any) {
 	os.Exit(1)
 }
 
-// resolveHTTPAddr canonicalizes the --http flag value.
-// A bare port ("4857") or ":port" binds to loopback (127.0.0.1).
-// Any other address is accepted but considered non-loopback.
-func resolveHTTPAddr(addr string) (resolved string, nonLoopback bool) {
-	if !strings.Contains(addr, ":") {
-		return "127.0.0.1:" + addr, false
-	}
-	host, port, err := net.SplitHostPort(addr)
-	if err != nil {
-		return "127.0.0.1:" + addr, false
-	}
-	if host == "" {
-		return "127.0.0.1:" + port, false
-	}
-	ip := net.ParseIP(host)
-	return addr, ip == nil || !ip.IsLoopback()
-}
-
-type loopbackPolicyParams struct {
-	Addr              string
-	Resolved          string
-	NonLoopback       bool
-	DangerNonLoopback bool
-	Logger            *slog.Logger
-}
-
-func checkLoopbackPolicy(p loopbackPolicyParams) {
-	if p.NonLoopback && !p.DangerNonLoopback {
-		fatalf(
-			"--http %q binds to a non-loopback address; pass --dangerous-nonloopback-http to allow this (ensures all network clients are trusted)",
-			p.Addr,
-		)
-	}
-	if p.NonLoopback {
-		p.Logger.Warn(
-			"HTTP server binding to non-loopback address; ensure all network clients are trusted",
-			"addr",
-			p.Resolved,
-		)
-	}
-}
-
-func startHTTPServer(p httpServerParams) *http.Server {
-	resolved, nonLoopback := resolveHTTPAddr(p.addr)
-	checkLoopbackPolicy(
-		loopbackPolicyParams{
-			Addr:              p.addr,
-			Resolved:          resolved,
-			NonLoopback:       nonLoopback,
-			DangerNonLoopback: p.dangerNonLoopback,
-			Logger:            p.logger,
-		},
-	)
-	ln, err := net.Listen("tcp", resolved)
-	if err != nil {
-		fatalf("listen: %v", err)
-	}
-	p.logger.Info("mini HTTP listening", "addr", resolved)
-	httpSrv := &http.Server{Handler: p.handler, ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 64 << 10}
-	go func() {
-		if err := httpSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
-			p.logger.Error("HTTP server error", "err", err)
-		}
-	}()
-	return httpSrv
-}
-
 func bindConnectFlags(cmd *cobra.Command, f *connectFlags, toolModeStr *string) {
 	fl := cmd.Flags()
 	fl.StringVar(&f.logLevel, "log-level", "", "log level (debug|info|warn|error)")
-	fl.StringVar(&f.httpAddr, "http", "", "also listen for HTTP MCP connections on this address (e.g. :4857)")
 	fl.BoolVar(&f.standalone, "standalone", false, "skip daemon detection, serve directly (useful for debugging)")
-	fl.BoolVar(
-		&f.dangerNonLoopback,
-		"dangerous-nonloopback-http",
-		false,
-		"allow --http to bind to a non-loopback address",
-	)
 	fl.StringVar(
 		toolModeStr,
 		"tool-mode",

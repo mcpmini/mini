@@ -16,13 +16,12 @@ import (
 
 // Params configures a new Server. Config, ConfigDir, and Logger are required.
 type Params struct {
-	Config               *config.Config
-	ConfigDir            string
-	Logger               *slog.Logger
-	Clock                clock.Clock
-	ToolMode             transport.ToolMode
-	DaemonAuthToken      string
-	AllowNonLoopbackHost bool
+	Config          *config.Config
+	ConfigDir       string
+	Logger          *slog.Logger
+	Clock           clock.Clock
+	ToolMode        transport.ToolMode
+	DaemonAuthToken string
 }
 
 func New(p Params) *Server {
@@ -61,7 +60,6 @@ func applyParams(s *Server, p Params) {
 	}
 	s.toolMode = p.ToolMode
 	s.daemonAuthToken = p.DaemonAuthToken
-	s.allowNonLoopbackHost = p.AllowNonLoopbackHost
 }
 
 type serverInitParams struct {
