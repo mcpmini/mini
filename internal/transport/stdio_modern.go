@@ -188,20 +188,24 @@ func legacyProbeVerdict() (probeVerdict, error) {
 }
 
 func classifyStdioDiscover(result json.RawMessage, requested string) (probeVerdict, error) {
-	var discovered DiscoverResult
-	if err := json.Unmarshal(result, &discovered); err != nil {
+	versions, recognized := discoverSupportedVersions(result)
+	if !recognized {
 		return legacyProbeVerdict()
 	}
-	if discovered.SupportedVersions == nil {
-		return legacyProbeVerdict()
-	}
-	verdict := modernVersionVerdict(discovered.SupportedVersions)
+	verdict := modernVersionVerdict(versions)
 	if verdict.era != EraModern {
 		// Unlike HTTP, don't fall back: a server that answers discover is modern, so initialize would
 		// fail too, and naming the versions it does support tells the user what to change.
 		return probeVerdict{}, explicitModernProbeError{unsupportedStdioVersion(
-			UnsupportedVersionData{Supported: discovered.SupportedVersions}, requested,
+			UnsupportedVersionData{Supported: versions}, requested,
 		)}
+	}
+	if err := requireCompleteResult(result, "server/discover"); err != nil {
+		return probeVerdict{}, explicitModernProbeError{fmt.Errorf("validate modern discovery result: %w", err)}
+	}
+	var discovered DiscoverResult
+	if err := json.Unmarshal(result, &discovered); err != nil {
+		return legacyProbeVerdict()
 	}
 	verdict.listen = discovered.Capabilities.ToolsListChanged()
 	return verdict, nil
