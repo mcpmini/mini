@@ -124,7 +124,7 @@ func TestApplyResourceURL_canonicalizesResourceURL(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			sc := configuredOAuthServer(tc.url)
 			if err := auth.ApplyResourceURL(sc); err != nil {
-				t.Fatalf("ResolveEndpoints: %v", err)
+				t.Fatalf("ApplyResourceURL: %v", err)
 			}
 			if sc.Auth.ResourceURL != tc.want {
 				t.Errorf("ResourceURL = %q, want %q", sc.Auth.ResourceURL, tc.want)

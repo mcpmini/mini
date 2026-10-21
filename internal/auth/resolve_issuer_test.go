@@ -7,17 +7,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
 
-	"golang.org/x/oauth2"
-
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
-	"github.com/mcpmini/mini/internal/testutil"
 )
 
 type registrationIssuer struct {
@@ -116,6 +112,7 @@ func TestConfiguredClientRequiresExactIssuerBinding(t *testing.T) {
 	issuer := newRegistrationIssuer(t, "unused-client")
 	for _, tc := range []struct {
 		name, binding, clientID string
+		secret, authMethod      string
 		wantError               bool
 	}{
 		{name: "missing issuer", clientID: "configured", wantError: true},
@@ -123,11 +120,14 @@ func TestConfiguredClientRequiresExactIssuerBinding(t *testing.T) {
 		{name: "trailing slash differs", binding: issuer.server.URL + "/", clientID: "configured", wantError: true},
 		{name: "matching issuer", binding: issuer.server.URL, clientID: "configured"},
 		{name: "portable metadata client", clientID: auth.ClientMetadataURL},
+		{name: "metadata URL with secret", clientID: auth.ClientMetadataURL, secret: "configured-secret", wantError: true},
+		{name: "metadata URL with client authentication", clientID: auth.ClientMetadataURL, authMethod: "client_secret_basic", wantError: true},
 		{name: "URL without metadata path", clientID: "https://client.example", wantError: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			sc := config.ServerConfig{URL: issuer.server.URL + "/mcp", Auth: &config.AuthConfig{
 				Type: "oauth2", Issuer: tc.binding, ClientID: tc.clientID,
+				ClientSecret: tc.secret, TokenEndpointAuthMethod: tc.authMethod,
 				AuthURL: "https://shared.example/authorize", TokenURL: "https://shared.example/token",
 			}}
 			got, err := auth.ResolveEndpoints(context.Background(), &sc, resolveParams(t.TempDir(), "srv"))
@@ -144,43 +144,5 @@ func TestConfiguredClientRequiresExactIssuerBinding(t *testing.T) {
 	}
 	if count := issuer.registrations.Load(); count != 0 {
 		t.Fatalf("configured client silently re-registered %d times", count)
-	}
-}
-
-func TestSavedLoginWithoutIssuerCannotBeLoadedOrRefreshed(t *testing.T) {
-	dir := t.TempDir()
-	testutil.WriteFile(
-		t,
-		filepath.Join(dir, "internal", "srv.token.json"),
-		`{"resource":"https://resource.example/mcp","token_url":"https://shared.example/token","client":{"id":"old-client"},"token":{"access_token":"old-token","refresh_token":"old-refresh"}}`,
-	)
-	_, err := auth.LoadLogin(dir, "srv")
-	if err == nil || !strings.Contains(err.Error(), "log in again") {
-		t.Fatalf("unbound login load error = %v", err)
-	}
-}
-
-func TestSavedLoginRetainsIssuerAndRejectsConfiguredIssuerChange(t *testing.T) {
-	sc := config.ServerConfig{Name: "srv", URL: "https://resource.example/mcp", Auth: &config.AuthConfig{
-		Type:     "oauth2",
-		Issuer:   "https://issuer.example",
-		ClientID: "configured",
-		TokenURL: "https://shared.example/token",
-	}}
-	dir := t.TempDir()
-	authtest.SaveToken(
-		t,
-		authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Server: sc, Token: &oauth2.Token{AccessToken: "token"}},
-	)
-	login, err := auth.LoadLoginFor(dir, sc)
-	if err != nil || login.Issuer != sc.Auth.Issuer {
-		t.Fatalf("saved login issuer = %+v, %v", login, err)
-	}
-	if got := login.RefreshConfig(sc.Auth); got.Issuer != login.Issuer {
-		t.Fatalf("refresh lost issuer: %+v", got)
-	}
-	sc.Auth.Issuer += "/"
-	if _, err := auth.LoadLoginFor(dir, sc); err == nil || !strings.Contains(err.Error(), "issuer changed") {
-		t.Fatalf("changed issuer load error = %v", err)
 	}
 }

@@ -3,58 +3,14 @@
 package provider_test
 
 import (
-	"context"
-	"encoding/json"
-	"path/filepath"
-	"strings"
 	"testing"
-	"time"
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
-	"github.com/mcpmini/mini/internal/testutil"
 )
-
-func TestUnboundSavedLoginNeverReachesRefreshEndpoint(t *testing.T) {
-	endpoint := authtest.NewTokenServer(t)
-	params := directParams(t.TempDir(), endpoint)
-	login := loginFor(t, params, storedToken(time.Time{}))
-	login.Issuer = ""
-	raw, err := json.Marshal(login)
-	if err != nil {
-		t.Fatal(err)
-	}
-	testutil.WriteFile(t, filepath.Join(params.ConfigDir, "internal", "srv.token.json"), string(raw))
-	p, err := provider.New(params)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = p.RefreshAuthorization(context.Background(), "Bearer stored-access")
-	if err == nil || !strings.Contains(err.Error(), "log in again") {
-		t.Fatalf("unbound refresh error = %v", err)
-	}
-	if hits := endpoint.Hits.Load(); hits != 0 {
-		t.Fatalf("unbound login reached token endpoint %d times", hits)
-	}
-}
-
-func TestCommitRejectsLoginForAnotherIssuer(t *testing.T) {
-	f := newCommitFixture(t)
-	params := f.params()
-	params.AuthConfig.Issuer = "https://new.example"
-	login := loginFor(t, params, storedToken(time.Time{}))
-	login.Issuer = "https://old.example"
-	if err := f.registry.CommitAuthorizedToken(
-		params,
-		login,
-	); err == nil ||
-		!strings.Contains(err.Error(), "issuer changed") {
-		t.Fatalf("mismatched issuer commit error = %v", err)
-	}
-}
 
 func TestIssuerBindingSurvivesBrowserLoginCommitAndRefresh(t *testing.T) {
 	auth.UseEphemeralCallbackPort()

@@ -393,3 +393,18 @@ func saveRegisteredLogin(t *testing.T, p registeredLoginParams) {
 		t.Fatal(err)
 	}
 }
+
+func TestCommitAuthorizedToken_otherIssuerRejected(t *testing.T) {
+	f := newCommitFixture(t)
+	params := f.params()
+	params.AuthConfig.Issuer = "https://new.example"
+	login := loginFor(t, params, storedToken(time.Time{}))
+	login.Issuer = "https://old.example"
+	if err := f.registry.CommitAuthorizedToken(
+		params,
+		login,
+	); err == nil ||
+		!strings.Contains(err.Error(), "issuer changed") {
+		t.Fatalf("mismatched issuer commit error = %v", err)
+	}
+}
