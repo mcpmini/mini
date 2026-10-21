@@ -17,33 +17,6 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-var resolveHTTPAddrCases = []struct {
-	in          string
-	wantAddr    string
-	wantNonLoop bool
-}{
-	{"4857", "127.0.0.1:4857", false},
-	{":4857", "127.0.0.1:4857", false},
-	{"127.0.0.1:4857", "127.0.0.1:4857", false},
-	{"0.0.0.0:4857", "0.0.0.0:4857", true},
-	{"192.168.1.1:4857", "192.168.1.1:4857", true},
-	{"myhost:4857", "myhost:4857", true},
-}
-
-func TestResolveHTTPAddr(t *testing.T) {
-	for _, tc := range resolveHTTPAddrCases {
-		t.Run(tc.in, func(t *testing.T) {
-			addr, nonLoop := resolveHTTPAddr(tc.in)
-			if addr != tc.wantAddr {
-				t.Errorf("addr: got %q, want %q", addr, tc.wantAddr)
-			}
-			if nonLoop != tc.wantNonLoop {
-				t.Errorf("nonLoopback: got %v, want %v", nonLoop, tc.wantNonLoop)
-			}
-		})
-	}
-}
-
 func TestParseToolMode(t *testing.T) {
 	cases := []struct {
 		in   string
@@ -59,37 +32,6 @@ func TestParseToolMode(t *testing.T) {
 				t.Errorf("parseToolMode(%q) = %v, want %v", tc.in, got, tc.want)
 			}
 		})
-	}
-}
-
-type fakeSessionEvictor struct {
-	calls chan time.Duration
-}
-
-func (f *fakeSessionEvictor) RunSessionEviction(_ context.Context, maxIdle time.Duration) {
-	f.calls <- maxIdle
-}
-
-func TestMaybeStartSessionEviction_skipsWithoutHTTPServer(t *testing.T) {
-	fake := &fakeSessionEvictor{calls: make(chan time.Duration, 1)}
-	maybeStartSessionEviction(context.Background(), nil, fake)
-	select {
-	case got := <-fake.calls:
-		t.Fatalf("unexpected eviction start with nil HTTP server: %v", got)
-	case <-time.After(20 * time.Millisecond):
-	}
-}
-
-func TestMaybeStartSessionEviction_startsWithHTTPServer(t *testing.T) {
-	fake := &fakeSessionEvictor{calls: make(chan time.Duration, 1)}
-	maybeStartSessionEviction(context.Background(), &http.Server{}, fake)
-	select {
-	case got := <-fake.calls:
-		if got != standaloneHTTPSessionMaxIdle {
-			t.Fatalf("maxIdle = %v, want %v", got, standaloneHTTPSessionMaxIdle)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for session eviction to start")
 	}
 }
 
@@ -224,68 +166,5 @@ func TestDaemonShutdown_boundedContextUnblocksWithHungHandler(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("Shutdown with bounded context blocked past deadline — hung handler prevented exit")
-	}
-}
-
-func TestShutdownHTTPWithContextClosesActiveConnectionAfterShutdownFailure(t *testing.T) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	started := make(chan struct{})
-	release := make(chan struct{})
-	finished := make(chan struct{})
-	srv := &http.Server{Handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		close(started)
-		<-release
-		close(finished)
-	})}
-	defer srv.Close()
-	serveDone := make(chan error, 1)
-	go func() { serveDone <- srv.Serve(ln) }()
-	defer func() {
-		close(release)
-		select {
-		case <-finished:
-		case <-time.After(time.Second):
-			t.Error("handler did not finish after release")
-		}
-	}()
-
-	requestDone := make(chan error, 1)
-	go func() {
-		resp, requestErr := http.Get("http://" + ln.Addr().String())
-		if resp != nil {
-			resp.Body.Close()
-		}
-		requestDone <- requestErr
-	}()
-	select {
-	case <-started:
-	case <-time.After(time.Second):
-		t.Fatal("request handler did not start")
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	err = shutdownHTTPWithContext(srv, ctx)
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("shutdownHTTPWithContext() error = %v, want canceled shutdown", err)
-	}
-	select {
-	case err := <-serveDone:
-		if !errors.Is(err, http.ErrServerClosed) {
-			t.Fatalf("Serve() error = %v, want server closed", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("HTTP server did not stop after forced close")
-	}
-	select {
-	case err := <-requestDone:
-		if err == nil {
-			t.Fatal("active request succeeded after forced connection close")
-		}
-	case <-time.After(time.Second):
-		t.Fatal("active request remained blocked after forced connection close")
 	}
 }

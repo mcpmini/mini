@@ -99,7 +99,7 @@ and making outbound fetches:
   compromised and re-minted.
 - **Loopback-`Host` check (defense-in-depth).** `/mcp` rejects any request whose `Host` isn't a
   loopback identity (`127.0.0.1`, `::1`, `localhost`); proxies send `localhost`. Redundant with the
-  socket for the default path, but kept so the `--dangerous-nonloopback-http` TCP path stays guarded.
+  socket; retained as defense-in-depth.
 - **SSRF-safe dialer → SSRF.** Outbound URLs pass `ValidateURL`, then a dialer that re-validates
   the *resolved* IP at connect time (rejecting private / loopback / link-local / NAT64 / etc.) so
   DNS can't rebind a validated hostname to an internal address. The client also refuses redirects,

@@ -543,12 +543,3 @@ func TestDaemonAuth_HealthzUnauthenticated(t *testing.T) {
 	defer resp.Body.Close()
 	mustStatus(t, resp, http.StatusOK)
 }
-
-func TestHTTPServer_AllowNonLoopbackHostSkipsHostCheck(t *testing.T) {
-	_, ts := newHTTPTestServer(t, server.Params{AllowNonLoopbackHost: true})
-	resp := postWithHost(t, ts.URL, "203.0.113.5:4857")
-	resp.Body.Close()
-	if resp.StatusCode == http.StatusForbidden {
-		t.Fatalf("non-loopback Host should be allowed when configured, got 403")
-	}
-}

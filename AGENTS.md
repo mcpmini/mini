@@ -191,6 +191,6 @@ text := toolResultText(t, resp)
 
 `mini [--config DIR] <command>`: `connect`, `daemon`, `ls`, `add`, `rm`, `status`, `cleanup`, `auth`, `test`, `init`
 
-- `connect [--http ADDR] [--standalone] [--tool-mode compact]` — connect an agent via stdio; proxy mode by default; `--tool-mode compact` for the 4-meta-tool interface
+- `connect [--standalone] [--tool-mode compact]` — connect an agent via stdio; proxy mode by default; `--tool-mode compact` for the 4-meta-tool interface
 - `daemon` — run as shared Unix socket daemon (background)
 - `daemon status` — show whether the daemon is running

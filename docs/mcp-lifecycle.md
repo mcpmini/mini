@@ -137,8 +137,8 @@ independently of the agent's Layer-1 protocol.
 
 ### Connection modes
 
-- **Standalone** (`mini connect --standalone`, or `--http`): the agent spawns mini directly; mini
-  serves Layer 1 over stdio (and optionally HTTP).
+- **Standalone** (`mini connect --standalone`): the agent spawns mini directly; mini
+  serves Layer 1 over stdio.
 - **Daemon** (default): the agent spawns a thin `mini` **proxy**, which connects to a shared,
   long-lived **daemon** over HTTP. The proxy bridges agent stdio ↔ daemon HTTP and *forwards*
   the Layer-1 `initialize` to the daemon. Because the daemon is long-lived, the agent typically
