@@ -88,7 +88,7 @@ func TestToolCallRequestMRTRUsesItsDeclaredVersion(t *testing.T) {
 	}
 }
 
-func TestRequestEraControlsDispatchAndResultDecoration(t *testing.T) {
+func TestRequestVersionControlsDispatchAndResultDecoration(t *testing.T) {
 	s := &Server{
 		logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
 		toolMode:    transport.ToolModeCompact,

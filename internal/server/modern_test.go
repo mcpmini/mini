@@ -205,3 +205,40 @@ func responsesByID(messages []modernMessage) map[int]modernMessage {
 	}
 	return responses
 }
+
+func TestModernMetadataRejectedBeforeActivationOrDispatch(t *testing.T) {
+	srv := newTestServer(t, server.Params{ToolMode: transport.ToolModeProxy})
+	conn := fakeConn("ping")
+	if err := srv.AddConnection(t.Context(), config.ServerConfig{Name: "svc"}, conn); err != nil {
+		t.Fatal(err)
+	}
+	callParams := json.RawMessage(`{"name":"svc__ping","arguments":{},"_meta":null}`)
+	lines := [][]byte{
+		legacyRequest(legacyRequestParams{
+			T:  t,
+			ID: 1, Method: "server/discover",
+			Params: json.RawMessage(`{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}`),
+		}),
+		legacyRequest(legacyRequestParams{
+			T:  t,
+			ID: 2, Method: "tools/list",
+			Params: json.RawMessage(`{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28",` +
+				`"io.modelcontextprotocol/clientCapabilities":[]}}`),
+		}),
+		legacyRequest(legacyRequestParams{T: t, ID: 3, Method: "tools/call", Params: callParams}),
+		legacyRequest(legacyRequestParams{T: t, ID: 4, Method: "initialize", Params: initParams(true)}),
+		legacyRequest(legacyRequestParams{T: t, ID: 5, Method: "tools/list", Params: nil}),
+	}
+	responses := responsesByID(serveModern(t, srv, lines...))
+	for _, id := range []int{1, 2, 3} {
+		if responses[id].Error == nil || responses[id].Error.Code != transport.CodeInvalidParams {
+			t.Errorf("request %d error = %+v, want -32602", id, responses[id].Error)
+		}
+	}
+	if got := len(decodeResult[transport.ToolsListResult](t, responses[5]).Tools); got != 4 {
+		t.Fatalf("legacy tools/list after invalid probes returned %d tools, want compact mode's 4", got)
+	}
+	if len(conn.LastParams) != 0 {
+		t.Fatalf("invalid tools/call reached upstream with params %s", conn.LastParams)
+	}
+}
