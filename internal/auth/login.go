@@ -13,6 +13,7 @@ import (
 // Login is a token with the server, token endpoint and client it was issued for.
 type Login struct {
 	Resource string        `json:"resource"`
+	Issuer   string        `json:"issuer"`
 	TokenURL string        `json:"token_url"`
 	Client   LoginClient   `json:"client"`
 	Token    *oauth2.Token `json:"token"`
@@ -29,6 +30,9 @@ type LoginClient struct {
 }
 
 func (l *Login) validate() error {
+	if !validLoginIssuer(l.Issuer) {
+		return errors.New("login record has no valid issuer; log in again")
+	}
 	if l.Resource == "" || l.TokenURL == "" || l.Client.ID == "" || l.Token == nil {
 		return errors.New("login record is missing its resource, token_url, client or token")
 	}
@@ -47,6 +51,9 @@ func (l *Login) MatchesConfig(sc config.ServerConfig) error {
 	resource, err := CanonicalResourceURI(sc.URL)
 	if err != nil || resource != l.Resource {
 		return errors.New("the server URL changed")
+	}
+	if sc.Auth != nil && sc.Auth.Issuer != "" && sc.Auth.Issuer != l.Issuer {
+		return errors.New("the issuer changed")
 	}
 	configuredID, configuredTokenURL := "", ""
 	if sc.Auth != nil {
@@ -81,6 +88,7 @@ func mismatchedLogin(cause error) error {
 // rediscovered from the current server URL.
 func (l *Login) RefreshConfig(configured *config.AuthConfig) *config.AuthConfig {
 	ac := configured.Clone()
+	ac.Issuer = l.Issuer
 	ac.TokenURL = l.TokenURL
 	ac.ResourceURL = l.Resource
 	ac.ClientID = l.Client.ID
@@ -89,4 +97,10 @@ func (l *Login) RefreshConfig(configured *config.AuthConfig) *config.AuthConfig 
 		ac.TokenEndpointAuthMethod = l.Client.AuthMethod
 	}
 	return ac
+}
+
+func validLoginIssuer(issuer string) bool {
+	u, err := url.Parse(issuer)
+	return err == nil && (u.Scheme == "https" || u.Scheme == "http") && u.Host != "" &&
+		u.User == nil && u.RawQuery == "" && u.Fragment == ""
 }

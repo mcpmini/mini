@@ -4,6 +4,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -141,7 +142,7 @@ func TestRunAuthFlow_loginCompletingAfterRemoveServerDoesNotReinstall(t *testing
 func TestRunAuthFlow_CloseCancelsReconnectAfterLogin(t *testing.T) {
 	srv := newInternalAuthTestServer(t)
 	t.Cleanup(srv.Close)
-	url, initializing := stalledAuthInitialize(t)
+	url, initializing := stalledAuthInitialize(t, authtest.NewTokenServer(t).Srv.URL)
 	ctx := startCompletedAuthFlow(t, srv, config.ServerConfig{Name: "svc", Transport: "http", URL: url})
 	select {
 	case <-initializing:
@@ -167,10 +168,15 @@ func TestRunAuthFlow_CloseCancelsReconnectAfterLogin(t *testing.T) {
 	}
 }
 
-func stalledAuthInitialize(t *testing.T) (string, <-chan struct{}) {
+func stalledAuthInitialize(t *testing.T, issuer string) (string, <-chan struct{}) {
 	t.Helper()
 	initializing, release := make(chan struct{}, 1), make(chan struct{})
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"authorization_servers": []string{issuer}}) //nolint:errcheck
+			return
+		}
 		select {
 		case initializing <- struct{}{}:
 		default:

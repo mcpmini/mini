@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/mcpmini/mini/internal/clock"
@@ -37,10 +38,8 @@ type ResolvedLogin struct {
 	Issuer ExpectedIssuer
 }
 
-// ResolveEndpoints fills in missing OAuth endpoints on sc.Auth via RFC 9728
-// discovery and client registration. It always canonicalizes sc.URL into
-// sc.Auth.ResourceURL. Endpoint discovery is skipped when AuthURL, TokenURL,
-// and ClientID are all already set.
+// ResolveEndpoints discovers the authorization server, binds client credentials to its issuer,
+// and fills missing OAuth endpoints. ResourceURL is canonicalized from the server URL.
 func ResolveEndpoints(ctx context.Context, sc *config.ServerConfig, p ResolveEndpointsParams) (ResolvedLogin, error) {
 	if sc.UnsetEnv != nil {
 		return ResolvedLogin{}, sc.UnsetEnv
@@ -58,6 +57,9 @@ func ResolveEndpoints(ctx context.Context, sc *config.ServerConfig, p ResolveEnd
 		return ResolvedLogin{}, err
 	}
 	if a.ClientID != "" {
+		if err = validateConfiguredIssuer(a, meta); err != nil {
+			return ResolvedLogin{}, err
+		}
 		return ResolvedLogin{Client: LoginClient{ID: a.ClientID, Configured: true}, Issuer: issuer}, nil
 	}
 	client, err := resolveClient(ctx, ClientRegParams{
@@ -70,26 +72,51 @@ func ResolveEndpoints(ctx context.Context, sc *config.ServerConfig, p ResolveEnd
 	return ResolvedLogin{Client: client, Issuer: issuer}, err
 }
 
-// discoverForLogin expects an issuer only when the login goes to the authorization endpoint its
-// metadata named; a configured endpoint may belong to another server.
 func discoverForLogin(
 	ctx context.Context,
 	serverURL string,
 	a *config.AuthConfig,
 ) (*ServerMeta, ExpectedIssuer, error) {
-	authFromMetadata := a.AuthURL == ""
 	meta, err := DiscoverAndApply(ctx, serverURL, a)
-	if err != nil || meta == nil || !authFromMetadata {
-		return meta, ExpectedIssuer{}, err
+	if err != nil {
+		return nil, ExpectedIssuer{}, err
+	}
+	if meta.Issuer == "" {
+		return nil, ExpectedIssuer{}, fmt.Errorf("authorization server metadata is missing its issuer")
 	}
 	return meta, ExpectedIssuer{Issuer: meta.Issuer, AlwaysSent: meta.IssParameterSupported}, nil
 }
 
+func validateConfiguredIssuer(a *config.AuthConfig, meta *ServerMeta) error {
+	issuer := meta.Issuer
+	if a.Issuer == issuer {
+		return nil
+	}
+	if a.Issuer == "" && meta.CIMDSupported && portableClientID(a) {
+		return nil
+	}
+	if a.Issuer == "" {
+		return fmt.Errorf(
+			"configured OAuth client requires auth.issuer identifying the server that registered it; discovery reports %q",
+			issuer,
+		)
+	}
+	return fmt.Errorf(
+		"configured OAuth client belongs to issuer %q, but the server now uses %q; configure a client registered with that issuer",
+		a.Issuer,
+		issuer,
+	)
+}
+
+func portableClientID(a *config.AuthConfig) bool {
+	u, err := url.Parse(a.ClientID)
+	return err == nil && u.Scheme == "https" && u.Host != "" && u.Path != "" && u.User == nil && u.Fragment == "" &&
+		a.ClientSecret == "" &&
+		(a.TokenEndpointAuthMethod == "" || a.TokenEndpointAuthMethod == "none")
+}
+
 // DiscoverAndApply fills in a's missing OAuth endpoints from the server's discovery metadata.
 func DiscoverAndApply(ctx context.Context, serverURL string, a *config.AuthConfig) (*ServerMeta, error) {
-	if a.AuthURL != "" && a.TokenURL != "" && a.ClientID != "" {
-		return nil, nil
-	}
 	meta, err := Discover(ctx, serverURL)
 	if err != nil {
 		return nil, fmt.Errorf("discover oauth endpoints: %w", err)
@@ -156,7 +183,7 @@ func resolveClient(ctx context.Context, p ClientRegParams) (LoginClient, error) 
 // registrationUsable rejects a client registered with another authorization server, which wouldn't
 // know it and mustn't receive its secret, and a client whose secret expired, which can't log in.
 func registrationUsable(reg *Registration, p ClientRegParams) bool {
-	if reg.TokenURL != p.AuthConfig.TokenURL {
+	if p.Meta == nil || reg.Issuer == "" || reg.Issuer != p.Meta.Issuer || reg.TokenURL != p.AuthConfig.TokenURL {
 		return false
 	}
 	return reg.ClientSecret == "" || secretApplies(reg, p.Now)
@@ -179,6 +206,7 @@ func dynamicRegister(ctx context.Context, p ClientRegParams) (LoginClient, error
 		return LoginClient{}, err
 	}
 	reg := &Registration{
+		Issuer:                  p.Meta.Issuer,
 		ClientID:                result.ClientID,
 		ClientSecret:            result.ClientSecret,
 		TokenEndpointAuthMethod: result.TokenEndpointAuthMethod,

@@ -79,6 +79,10 @@ func (c *Registry) Forget(serverName string) {
 
 // CommitAuthorizedToken saves login and, if the server already has a provider, installs it there.
 func (c *Registry) CommitAuthorizedToken(params Params, login *auth.Login) error {
+	if err := login.MatchesConfig(configuredServer(params)); err != nil {
+		return fmt.Errorf("refuse OAuth login for other settings: %w", err)
+	}
+
 	c.mu.Lock()
 	e := c.m[params.ServerName]
 	if e != nil && !e.identity.matches(params) {

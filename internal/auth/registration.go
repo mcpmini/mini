@@ -12,6 +12,7 @@ import (
 
 type Registration struct {
 	ClientID string `json:"client_id"`
+	Issuer   string `json:"issuer"`
 
 	// Populated when the AS registered mini as confidential (RFC 7591 §3.2.1).
 	// Zero in older public-client registration files without these fields.
