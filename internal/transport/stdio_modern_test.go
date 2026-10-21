@@ -203,14 +203,10 @@ func TestStdioDiscoveryTimeoutIsUnanswered(t *testing.T) {
 	fakeClock := clock.NewFake()
 	conn.clock = fakeClock
 	go io.Copy(io.Discard, serverR)
-	type outcome struct {
-		verdict probeVerdict
-		err     error
-	}
-	result := make(chan outcome, 1)
+	result := make(chan error, 1)
 	go func() {
-		verdict, err := conn.discover(context.Background())
-		result <- outcome{verdict, err}
+		_, err := conn.discover(t.Context())
+		result <- err
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -218,8 +214,8 @@ func TestStdioDiscoveryTimeoutIsUnanswered(t *testing.T) {
 		t.Fatal(err)
 	}
 	fakeClock.Advance(stdioDiscoveryTimeout)
-	if got := <-result; !errors.Is(got.err, errProbeUnanswered) {
-		t.Fatalf("discover after the probe timed out = %v, want errProbeUnanswered", got.err)
+	if got := <-result; !errors.Is(got, errProbeUnanswered) {
+		t.Fatalf("discover after the probe timed out = %v, want errProbeUnanswered", got)
 	}
 }
 
