@@ -124,7 +124,8 @@ func newConn(p newStdioConnParams) *StdioConnection {
 }
 
 func (c *StdioConnection) Call(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
-	if modernVersion := c.negotiatedModernVersion(); modernVersion != "" {
+	modernVersion := c.negotiatedModernVersion()
+	if modernVersion != "" {
 		prepared, err := prepareModernParams(params, modernVersion)
 		if err != nil {
 			return nil, err
@@ -133,7 +134,14 @@ func (c *StdioConnection) Call(ctx context.Context, method string, params json.R
 	} else if method == "tools/call" {
 		params = stripModernToolCallFields(params)
 	}
-	return c.rpc(ctx, method, params)
+	result, err := c.rpc(ctx, method, params)
+	if err != nil || modernVersion == "" {
+		return result, err
+	}
+	if _, err := ResultTypeOf(result); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func (c *StdioConnection) rpc(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
@@ -179,11 +187,7 @@ func (c *StdioConnection) callToolsPage(ctx context.Context, cursor string) (Too
 	if err != nil {
 		return ToolsListResult{}, err
 	}
-	var r ToolsListResult
-	if err := json.Unmarshal(raw, &r); err != nil {
-		return ToolsListResult{}, fmt.Errorf("parse tools/list: %w", err)
-	}
-	return r, nil
+	return decodeToolsListPage(raw)
 }
 
 func (c *StdioConnection) Health(_ context.Context) error {

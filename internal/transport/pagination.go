@@ -2,10 +2,23 @@ package transport
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log/slog"
 )
 
 const maxToolsListPages = 10
+
+func decodeToolsListPage(raw json.RawMessage) (ToolsListResult, error) {
+	if err := requireCompleteResult(raw, "tools/list"); err != nil {
+		return ToolsListResult{}, err
+	}
+	var result ToolsListResult
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return ToolsListResult{}, fmt.Errorf("parse tools/list: %w", err)
+	}
+	return result, nil
+}
 
 func paginateToolsList(
 	ctx context.Context,

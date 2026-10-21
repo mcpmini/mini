@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"slices"
 	"testing"
@@ -183,5 +184,21 @@ func TestPaginateToolsList_contextCancellation(t *testing.T) {
 	_, err := paginateToolsList(ctx, callPage)
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("expected context.Canceled, got %v", err)
+	}
+}
+
+func TestPaginationReturnsOnlyVerifiedEarlierPages(t *testing.T) {
+	page := 0
+	first := json.RawMessage(`{"tools":[{"name":"verified","inputSchema":{}}],"nextCursor":"next"}`)
+	second := json.RawMessage(`{"resultType":"future","tools":[{"name":"invalid","inputSchema":{}}]}`)
+	got, err := paginateToolsList(context.Background(), func(context.Context, string) (ToolsListResult, error) {
+		page++
+		if page == 1 {
+			return decodeToolsListPage(first)
+		}
+		return decodeToolsListPage(second)
+	})
+	if err != nil || !slices.Equal(toolNames(got), []string{"verified"}) {
+		t.Fatalf("pagination = %v, %v; want only verified first page", toolNames(got), err)
 	}
 }

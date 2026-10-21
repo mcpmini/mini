@@ -72,9 +72,9 @@ func (c *HTTPConnection) callToolsPage(ctx context.Context, cursor string) (Tool
 	if err != nil {
 		return ToolsListResult{}, "", err
 	}
-	var r ToolsListResult
-	if err := json.Unmarshal(raw, &r); err != nil {
-		return ToolsListResult{}, "", fmt.Errorf("parse tools/list: %w", err)
+	r, err := decodeToolsListPage(raw)
+	if err != nil {
+		return ToolsListResult{}, "", err
 	}
 	return r, modernVersion, nil
 }

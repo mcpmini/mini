@@ -71,14 +71,19 @@ func (c *HTTPConnection) callModern(ctx context.Context, call httpCall) (json.Ra
 		}
 	}
 	result, err := c.send(ctx, call)
-	if call.Method != "tools/call" || !isHeaderMismatch(err) {
-		return result, c.modernError(err)
+	if call.Method == "tools/call" && isHeaderMismatch(err) {
+		if _, err = c.ListTools(ctx); err != nil {
+			return nil, err
+		}
+		result, err = c.send(ctx, call)
 	}
-	if _, err = c.ListTools(ctx); err != nil {
+	if err != nil {
+		return nil, c.modernError(err)
+	}
+	if _, err := ResultTypeOf(result); err != nil {
 		return nil, err
 	}
-	result, err = c.send(ctx, call)
-	return result, c.modernError(err)
+	return result, nil
 }
 
 func isHeaderMismatch(err error) bool {
