@@ -11,7 +11,9 @@ Source of truth: the MCP specification — prose in
 and the machine schema
 [`schema.ts`](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/699e664dfe1158045996f28e7dbd80db53bebbeb/schema/2025-11-25/schema.ts).
 Behavior below is stable across protocol versions 2024-11-05, 2025-03-26, 2025-06-18,
-2025-11-25, and draft unless noted; permalinks point at 2025-11-25.
+2025-11-25 unless noted; permalinks point at 2025-11-25. The initialize-based
+flow in this section describes legacy versions. The 2026-07-28 protocol uses per-request
+metadata and discovery instead, as described below.
 
 The lifecycle has three phases. Initialization is the one that matters here.
 
@@ -134,6 +136,20 @@ stdio, mini first probes with `server/discover`, then attaches protocol and clie
 each request instead of sending the legacy handshake. mini subscribes to a modern upstream's
 tool-list changes when it advertises `tools.listChanged`. Each upstream's protocol is chosen
 independently of the agent's Layer-1 protocol.
+
+### Modern request metadata and result identity
+
+For [2026-07-28](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/8e12bf3c8f01f374146acfa19b8ece0018bfc86c/docs/specification/2026-07-28/basic/index.mdx),
+each modern request carries its protocol version and client capabilities in `params._meta`.
+mini rejects missing or malformed required metadata before dispatch or daemon bootstrap.
+The current request determines result formatting and which client capabilities can be relayed;
+a previous modern request does not supply metadata for a later one.
+
+Results mini creates or adapts from legacy results include mini's server identity, preserving
+any existing identity and unrelated metadata. Typed modern upstream results pass through
+without identity decoration, including `input_required` envelopes. This deliberately forgoes
+the specification's recommendation to include server identity when the upstream omitted it,
+so transparent forwarding preserves the upstream result envelope.
 
 ### Connection modes
 
