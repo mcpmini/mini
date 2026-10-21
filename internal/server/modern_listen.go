@@ -24,11 +24,21 @@ func (s *Server) startListen(ctx context.Context, p handleScannedLineParams, lin
 		p.writeOut(errorResponse(req.ID, transport.CodeInvalidRequest, "jsonrpc must be \"2.0\""))
 		return
 	}
+	var rawRequest transport.Request
+	if err := json.Unmarshal(line, &rawRequest); err != nil {
+		p.writeOut(errorResponse(req.ID, transport.CodeInvalidParams, transport.InvalidListenParamsMessage))
+		return
+	}
+	if err := transport.ValidateModernRequestMeta(rawRequest.Params); err != nil {
+		p.writeOut(errorResponse(req.ID, transport.CodeInvalidParams, err.Error()))
+		return
+	}
 	version := modernRequestVersion(line)
 	if !transport.IsModernVersion(version) {
 		s.rejectListenVersion(p, req.ID, version)
 		return
 	}
+	s.activateModern(p.session)
 	acknowledged := transport.ListenNotifications{ToolsListChanged: req.Params.Notifications.ToolsListChanged}
 	s.waitOnListen(ctx, p, listenSubscription{id: req.ID, notifications: acknowledged})
 }

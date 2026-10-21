@@ -142,10 +142,14 @@ func (s *Server) handleRequest(
 	req transport.Request,
 	session *Session,
 ) (transport.Response, bool) {
-	if unsupported := modernVersionError(req, session); unsupported != nil {
+	if err := transport.ValidateModernRequestMeta(req.Params); err != nil {
+		return errorResponse(req.ID, transport.CodeInvalidParams, err.Error()), true
+	}
+	if unsupported := modernVersionError(req); unsupported != nil {
 		return *unsupported, true
 	}
-	if transport.IsModernVersion(transport.ProtocolVersionFromParams(req.Params)) {
+	modern := transport.IsModernVersion(transport.ProtocolVersionFromParams(req.Params))
+	if modern {
 		s.activateModern(session)
 	}
 	if !s.awaitInitialization(ctx, req, session) {
@@ -156,7 +160,7 @@ func (s *Server) handleRequest(
 	if req.Method == "initialize" && err == nil {
 		session.markInitialized()
 	}
-	if err == nil && session.modern.Load() {
+	if err == nil && modern {
 		result, err = addModernResultFields(req.Method, result)
 	}
 	return buildDispatchResponse(req.ID, result, err)
@@ -204,7 +208,7 @@ func dispatchErrorResponse(id any, err error) transport.Response {
 func (s *Server) dispatch(ctx context.Context, req transport.Request, session *Session) (any, error) {
 	switch req.Method {
 	case "server/discover":
-		if !session.modern.Load() {
+		if !transport.IsModernVersion(transport.ProtocolVersionFromParams(req.Params)) {
 			return nil, fmt.Errorf("%w: %s", errMethodNotFound, req.Method)
 		}
 		return s.handleDiscover(session), nil
@@ -337,8 +341,8 @@ func parseToolCall(params json.RawMessage) (toolCallRequest, error) {
 }
 
 // mrtr is nil for legacy agents: only a modern agent can answer an upstream's input request.
-func (c toolCallRequest) mrtr(session *Session) *transport.ToolCallMRTR {
-	if !session.modern.Load() {
+func (c toolCallRequest) mrtr() *transport.ToolCallMRTR {
+	if !transport.IsModernVersion(c.Meta.ProtocolVersion) {
 		return nil
 	}
 	mrtr := &transport.ToolCallMRTR{InputResponses: c.InputResponses, RequestState: c.RequestState}

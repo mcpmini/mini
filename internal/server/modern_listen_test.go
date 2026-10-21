@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"strconv"
@@ -236,4 +237,16 @@ func (s *modernSession) close() []modernMessage {
 		s.t.Fatal(err)
 	}
 	return rest
+}
+
+func TestLegacyListenWithUnrelatedMetadataRemainsMethodNotFound(t *testing.T) {
+	request := legacyRequest(legacyRequestParams{
+		T:  t,
+		ID: 1, Method: transport.MethodSubscriptionsListen,
+		Params: json.RawMessage(`{"_meta":{"trace":"legacy"}}`),
+	})
+	messages := serveAll(t, newTestServer(t, server.Params{}), request)
+	if got := rpcErrorCode(messages[len(messages)-1]); got != transport.CodeMethodNotFound {
+		t.Fatalf("legacy listen error code = %v, want -32601", got)
+	}
 }
