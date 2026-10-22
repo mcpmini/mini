@@ -4,7 +4,13 @@ package server
 
 import (
 	"encoding/json"
+	"slices"
+	"sync"
 	"testing"
+	"time"
+
+	"github.com/mcpmini/mini/internal/clock"
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 func TestToolsChangedOutboxDeliversPendingToNextStream(t *testing.T) {
@@ -62,4 +68,57 @@ func receiveCount(stream <-chan json.RawMessage) int {
 	default:
 		return 0
 	}
+}
+
+func TestToolChangeDuringListenAcknowledgementReachesTheListen(t *testing.T) {
+	session := newSession(clock.System())
+	session.modern.Store(true)
+	var log messageLog
+	writeAck, forwarded := forwardToolChangeDuringAck(session, log.record)
+	listen := listenSubscription{
+		id:            json.RawMessage(`7`),
+		notifications: transport.ListenNotifications{ToolsListChanged: true},
+	}
+	session.acknowledgeListen(listen, func() {}, writeAck)
+	<-forwarded
+	written := log.messages()
+	if len(written) != 2 {
+		t.Fatalf("written = %+v, want the acknowledgement then one tagged tool change", written)
+	}
+	if _, tagged := written[1].(transport.ToolsListChangedNotification); !tagged {
+		t.Fatalf("second message = %+v, want a tagged tool change", written[1])
+	}
+}
+
+type messageLog struct {
+	mu      sync.Mutex
+	written []any
+}
+
+func (l *messageLog) record(message any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.written = append(l.written, message)
+}
+
+func (l *messageLog) messages() []any {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return slices.Clone(l.written)
+}
+
+func forwardToolChangeDuringAck(session *Session, record func(any)) (func(any), <-chan struct{}) {
+	forwarded := make(chan struct{})
+	return func(message any) {
+		record(message)
+		go func() {
+			session.forwardToolsChanged(json.RawMessage(`{}`), record)
+			close(forwarded)
+		}()
+		// Give a forwarder that is not held back by the acknowledgement time to run first.
+		select {
+		case <-forwarded:
+		case <-time.After(50 * time.Millisecond):
+		}
+	}, forwarded
 }

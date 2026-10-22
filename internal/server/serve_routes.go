@@ -1,14 +1,11 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
-	"sync"
 	"time"
 
 	"github.com/mcpmini/mini/internal/response"
@@ -16,126 +13,10 @@ import (
 	"github.com/mcpmini/mini/internal/version"
 )
 
-// Serve dispatches each request in its own goroutine so slow upstream calls
-// do not block subsequent requests from the same agent.
-func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
-	sessionID := transport.NewSessionID()
-	session := s.sessions.getOrCreate(sessionID)
-	defer s.sessions.delete(sessionID)
-	return s.serveLoop(ctx, serveLoopParams{Input: in, Output: out, Session: session})
-}
-
-type serveLoopParams struct {
-	Input   io.Reader
-	Output  io.Writer
-	Session *Session
-}
-
-func (s *Server) serveLoop(ctx context.Context, p serveLoopParams) error {
-	serveCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	writer := newSerializedWriter(p.Output, cancel)
-	writer.observeResponseFailure(p.Output)
-	stopNotifications := startSessionNotifyForwarder(p.Session, writer.Write)
-	scanErr := s.scanServeInput(serveCtx, serveInputParams{Input: p.Input, Session: p.Session, Writer: writer})
-	stopNotifications()
-	return errors.Join(writer.Err(), scanErr)
-}
-
-type serveInputParams struct {
-	Input   io.Reader
-	Session *Session
-	Writer  *serializedWriter
-}
-
-func (s *Server) scanServeInput(ctx context.Context, p serveInputParams) error {
-	var wg sync.WaitGroup
-	scanner := transport.NewScanner(p.Input)
-	for scanner.Scan() {
-		if p.Writer.Err() != nil || ctx.Err() != nil {
-			break
-		}
-		s.handleScannedLine(
-			handleScannedLineParams{
-				ctx: ctx, rawLine: scanner.Bytes(), session: p.Session,
-				writeOut: p.Writer.Write, wg: &wg,
-			},
-		)
-	}
-	p.Session.markAborted()
-	wg.Wait()
-	return scanner.Err()
-}
-
-func (s *Server) handleLineCancellable(ctx context.Context, line []byte, session *Session) (transport.Response, bool) {
-	rawID := peekRequestID(line)
-	if len(rawID) == 0 {
-		return s.handleLine(ctx, line, session)
-	}
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	session.registerInFlight(rawID, cancel)
-	defer session.removeInFlight(rawID)
-	return s.handleLine(ctx, line, session)
-}
-
-type dispatchWithCancelParams struct {
-	Line     []byte
-	Session  *Session
-	WriteOut func(any)
-}
-
-func (s *Server) dispatchWithCancel(ctx context.Context, p dispatchWithCancelParams) {
-	if resp, send := s.handleLineCancellable(ctx, p.Line, p.Session); send {
-		p.WriteOut(resp)
-	}
-}
-
-func peekMethod(line []byte) string {
-	var peek struct {
-		Method string `json:"method"`
-	}
-	if err := json.Unmarshal(line, &peek); err != nil {
-		return ""
-	}
-	return peek.Method
-}
-
-// peekRequestID extracts the raw JSON "id" field from a JSON-RPC line without
-// fully parsing it. Returns nil for notifications (no id) or parse failures.
-func peekRequestID(line []byte) json.RawMessage {
-	var peek struct {
-		ID json.RawMessage `json:"id"`
-	}
-	if err := json.Unmarshal(line, &peek); err != nil {
-		return nil
-	}
-	if len(peek.ID) == 0 || string(peek.ID) == "null" {
-		return nil
-	}
-	return peek.ID
-}
-
 var (
 	errMethodNotFound = errors.New("method not found")
 	errInvalidParams  = errors.New("invalid params")
 )
-
-func (s *Server) handleLine(ctx context.Context, line []byte, session *Session) (transport.Response, bool) {
-	session.touch()
-	var req transport.Request
-	if err := json.Unmarshal(line, &req); err != nil {
-		return errorResponse(nil, transport.CodeParseError, "parse error"), true
-	}
-	if req.JsonRPC != transport.JsonRPCVersion {
-		return errorResponse(req.ID, transport.CodeInvalidRequest, "jsonrpc must be \"2.0\""), true
-	}
-	if req.ID == nil {
-		s.dispatch(ctx, req, session) //nolint:errcheck // Notifications have no response channel for dispatch errors.
-		return transport.Response{}, false
-	}
-	return s.handleRequest(ctx, req, session)
-}
 
 func (s *Server) handleRequest(
 	ctx context.Context,
@@ -156,14 +37,14 @@ func (s *Server) handleRequest(
 		return errorResponse(req.ID, transport.CodeInvalidRequest, transport.NotInitializedMessage), true
 	}
 	s.logger.Debug("agent request", "method", req.Method, "id", req.ID)
-	result, err := s.dispatch(ctx, req, session)
+	result, err := s.routeRequest(ctx, req, session)
 	if req.Method == "initialize" && err == nil {
 		session.markInitialized()
 	}
 	if err == nil && modern {
 		result, err = addModernResultFields(req.Method, result)
 	}
-	return buildDispatchResponse(req.ID, result, err)
+	return buildRouteResponse(req.ID, result, err)
 }
 
 func (s *Server) awaitInitialization(ctx context.Context, req transport.Request, session *Session) bool {
@@ -183,9 +64,9 @@ func (s *Server) awaitInitialization(ctx context.Context, req transport.Request,
 	return session.waitInitialized(waitCtx)
 }
 
-func buildDispatchResponse(id any, result any, err error) (transport.Response, bool) {
+func buildRouteResponse(id any, result any, err error) (transport.Response, bool) {
 	if err != nil {
-		return dispatchErrorResponse(id, err), true
+		return routeErrorResponse(id, err), true
 	}
 	resp, err := okResponse(id, result)
 	if err != nil {
@@ -194,7 +75,7 @@ func buildDispatchResponse(id any, result any, err error) (transport.Response, b
 	return resp, true
 }
 
-func dispatchErrorResponse(id any, err error) transport.Response {
+func routeErrorResponse(id any, err error) transport.Response {
 	switch {
 	case errors.Is(err, errMethodNotFound):
 		return errorResponse(id, transport.CodeMethodNotFound, err.Error())
@@ -205,7 +86,7 @@ func dispatchErrorResponse(id any, err error) transport.Response {
 	}
 }
 
-func (s *Server) dispatch(ctx context.Context, req transport.Request, session *Session) (any, error) {
+func (s *Server) routeRequest(ctx context.Context, req transport.Request, session *Session) (any, error) {
 	switch req.Method {
 	case "server/discover":
 		if !transport.IsModernVersion(transport.ProtocolVersionFromParams(req.Params)) {
@@ -448,38 +329,4 @@ func mustJSON(v any) string {
 		return fmt.Sprintf("%v", v)
 	}
 	return string(b)
-}
-
-type handleScannedLineParams struct {
-	ctx      context.Context
-	rawLine  []byte
-	session  *Session
-	writeOut func(any)
-	wg       *sync.WaitGroup
-}
-
-func (s *Server) handleScannedLine(p handleScannedLineParams) {
-	if len(p.rawLine) == 0 {
-		return
-	}
-	line := bytes.Clone(p.rawLine)
-	if s.handleModernLine(p, line) {
-		return
-	}
-	method := peekMethod(line)
-	// Lifecycle and cancellation transitions must finish before later requests start.
-	if method == "initialize" || method == transport.NotificationInitialized ||
-		method == transport.NotificationCancelled {
-		if resp, send := s.handleLine(p.ctx, line, p.session); send {
-			p.writeOut(resp)
-		}
-		return
-	}
-	p.wg.Add(1)
-	go func() {
-		defer p.wg.Done()
-		s.dispatchWithCancel(p.ctx, dispatchWithCancelParams{
-			Line: line, Session: p.session, WriteOut: p.writeOut,
-		})
-	}()
 }
