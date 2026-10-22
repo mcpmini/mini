@@ -21,7 +21,7 @@ func (c *StdioConnection) handleMessage(ctx context.Context, line []byte) {
 		Method string `json:"method"`
 	}
 	if err := json.Unmarshal(line, &message); err != nil {
-		c.logger.Error("bad upstream response", "err", err)
+		c.logger.Error("bad upstream message", "err", err)
 		return
 	}
 	resp := &message.Response
