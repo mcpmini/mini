@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/mcpmini/mini/internal/clock"
-	"github.com/mcpmini/mini/internal/version"
 )
 
 type StdioConnection struct {
@@ -199,6 +198,15 @@ func (c *StdioConnection) Health(_ context.Context) error {
 	}
 }
 
+func (c *StdioConnection) isClosed() bool {
+	select {
+	case <-c.done:
+		return true
+	default:
+		return false
+	}
+}
+
 func (c *StdioConnection) Close() error {
 	c.closeDone()
 	if c.listenCancel != nil {
@@ -228,41 +236,16 @@ func (c *StdioConnection) closeDone() {
 	c.closeOnce.Do(func() { close(c.done) })
 }
 
-func (c *StdioConnection) initialize(ctx context.Context) error {
-	//nolint:errcheck // fixed handshake fields contain only JSON-serializable values.
-	params, _ := json.Marshal(newInitializeParams())
-	raw, err := c.Call(ctx, "initialize", params)
-	if err != nil {
-		return err
-	}
-	result, err := parseInitializeResult(raw)
-	if err != nil {
-		return err
-	}
-	c.logger.Info("upstream connected", "server", result.ServerInfo.Name, "protocol", result.ProtocolVersion)
-	return c.writeJSONContext(ctx, Notification{JsonRPC: JsonRPCVersion, Method: NotificationInitialized})
+func (c *StdioConnection) abandon() {
+	c.closeDone()
+	_ = c.shutdownProcess() //nolint:errcheck // the caller reports why the connection ended
 }
 
-func newInitializeParams() InitializeParams {
-	return InitializeParams{
-		ProtocolVersion: LatestLegacyVersion,
-		Capabilities:    map[string]any{},
-		ClientInfo:      ClientInfo{Name: "mini", Version: version.Version},
+func exitStatus(waitErr error) string {
+	if waitErr == nil {
+		return "exit status 0"
 	}
-}
-
-func parseInitializeResult(raw json.RawMessage) (InitializeResult, error) {
-	var result InitializeResult
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return InitializeResult{}, fmt.Errorf("parse initialize: %w", err)
-	}
-	if !IsLegacyVersion(result.ProtocolVersion) {
-		return InitializeResult{}, fmt.Errorf(
-			"upstream negotiated unsupported protocol version %q",
-			result.ProtocolVersion,
-		)
-	}
-	return result, nil
+	return waitErr.Error()
 }
 
 func (c *StdioConnection) readLoop() {

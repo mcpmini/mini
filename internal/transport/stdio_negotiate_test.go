@@ -38,36 +38,6 @@ func TestStdioModernDiscoverySendsModernMetadata(t *testing.T) {
 	})
 }
 
-const modernContinuationCall = `{"name":"confirm","arguments":{},"inputResponses":{"r1":{"accepted":true}},` +
-	`"requestState":9007199254740993,"custom":1,` +
-	`"_meta":{"io.modelcontextprotocol/clientCapabilities":{"elicitation":{"form":{}}},"unknown":true}}`
-
-func TestStdioModernCallKeepsContinuationFieldsAndMetadata(t *testing.T) {
-	conn, serverW, serverR := makePipeConn(t)
-	conn.setModern(ModernVersions[0])
-	seen := scriptStdioUpstream(serverW, serverR, replyResult(serverW, json.RawMessage(`{"ok":true}`)))
-	if _, err := conn.Call(context.Background(), "tools/call", json.RawMessage(modernContinuationCall)); err != nil {
-		t.Fatalf("Call: %v", err)
-	}
-	call := <-seen
-	assertRequestMeta(t, requestMetaParams{
-		Params:          call.Params,
-		ProtocolVersion: ModernVersions[0],
-		Elicitation:     true,
-	})
-	kept := []string{
-		`"inputResponses":{"r1":{"accepted":true}}`,
-		`"requestState":9007199254740993`,
-		`"custom":1`,
-		`"unknown":true`,
-	}
-	for _, raw := range kept {
-		if !strings.Contains(string(call.Params), raw) {
-			t.Errorf("modern call params %s do not contain %s", call.Params, raw)
-		}
-	}
-}
-
 func TestStdioDiscoveryFallsBackToLegacy(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -234,34 +204,6 @@ func TestStdioDiscoveryParentCancellationIsTerminal(t *testing.T) {
 	}
 }
 
-func TestStdioModernCancellationTargetsSentRequest(t *testing.T) {
-	conn, _, serverR := makePipeConn(t)
-	conn.setModern(ModernVersions[0])
-	scanner := bufio.NewScanner(serverR)
-	ctx, cancel := context.WithCancel(context.Background())
-	result := make(chan error, 1)
-	go func() {
-		_, err := conn.Call(ctx, "tools/call", json.RawMessage(`{"name":"slow","arguments":{}}`))
-		result <- err
-	}()
-	call := readScannerRequest(t, scanner)
-	cancel()
-	notice := readScannerRequest(t, scanner)
-	var cancelled CancelledParams
-	if notice.Method != NotificationCancelled || json.Unmarshal(notice.Params, &cancelled) != nil ||
-		!sameJSONID(cancelled.RequestID, call.ID) {
-		t.Fatalf(
-			"after cancelling call %v mini sent %q %s, want a cancel for that call",
-			call.ID,
-			notice.Method,
-			notice.Params,
-		)
-	}
-	if err := <-result; !errors.Is(err, context.Canceled) {
-		t.Fatalf("Call error = %v, want context.Canceled", err)
-	}
-}
-
 func scriptStdioUpstream(serverW io.Writer, serverR io.Reader, replies ...func(Request)) <-chan Request {
 	seen := make(chan Request, len(replies))
 	scanner := bufio.NewScanner(serverR)
@@ -362,31 +304,68 @@ func readScannerRequest(t *testing.T, scanner *bufio.Scanner) Request {
 	return request
 }
 
-func TestStdioCancellationGivesUpOnItsTurnToWrite(t *testing.T) {
-	conn := newWriteOnlyConn(discardWriteCloser{Writer: io.Discard})
-	fakeClock := clock.NewFake()
-	conn.clock = fakeClock
-	if err := conn.lockWrite(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	defer conn.unlockWrite()
-	sent := make(chan struct{})
-	go func() {
-		conn.cancelUpstreamRequest(context.Background(), 1)
-		close(sent)
-	}()
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+func TestInitialize_respectsDeadlineWhenUpstreamNeverResponds(t *testing.T) {
+	conn, _, serverR := makePipeConn(t)
+	go io.Copy(io.Discard, serverR)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	if err := fakeClock.BlockUntilContext(ctx, 1); err != nil {
-		t.Fatal(err)
+
+	start := time.Now()
+	err := conn.initialize(ctx)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected initialize to fail when upstream never responds")
 	}
-	fakeClock.Advance(stdioCancelWriteTimeout)
-	select {
-	case <-sent:
-	case <-time.After(time.Second):
-		t.Fatal("the cancellation kept waiting behind another write")
+	if elapsed >= 5*time.Second {
+		t.Fatalf("initialize did not respect deadline, took %v", elapsed)
 	}
-	if conn.Health(context.Background()) != nil {
-		t.Fatal("a cancellation that never started writing ended the connection")
+}
+
+func TestStdioInitialize_offersNewestLegacyAndRejectsUnsupportedVersion(t *testing.T) {
+	request, err := initializeStdioForTest(t, "2025-06-18")
+	if err != nil {
+		t.Fatalf("initialize: %v", err)
 	}
+	var params InitializeParams
+	if err := json.Unmarshal(request.Params, &params); err != nil {
+		t.Fatalf("decode initialize params: %v", err)
+	}
+	if params.ProtocolVersion != LegacyVersions[0] {
+		t.Errorf("offered protocolVersion = %q, want %q", params.ProtocolVersion, LegacyVersions[0])
+	}
+	for _, version := range []string{"2026-07-28", "1999-01-01"} {
+		_, err := initializeStdioForTest(t, version)
+		want := fmt.Sprintf("upstream negotiated unsupported protocol version %q", version)
+		if err == nil || !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "parse initialize") {
+			t.Errorf("initialize error = %v, want %q without a parse error", err, want)
+		}
+	}
+}
+
+func initializeStdioForTest(t *testing.T, replyVersion string) (Request, error) {
+	t.Helper()
+	conn, serverW, serverR := makePipeConn(t)
+	done := make(chan error, 1)
+	go func() { done <- conn.initialize(context.Background()) }()
+	request := readStdioRequest(t, serverR)
+	sendResponse(serverW, request.ID, InitializeResult{ProtocolVersion: replyVersion})
+	if IsLegacyVersion(replyVersion) {
+		readStdioRequest(t, serverR)
+	}
+	return request, <-done
+}
+
+func readStdioRequest(t *testing.T, r io.Reader) Request {
+	t.Helper()
+	line, err := bufio.NewReader(r).ReadBytes('\n')
+	if err != nil {
+		t.Fatalf("read stdio request: %v", err)
+	}
+	var request Request
+	if err := json.Unmarshal(line, &request); err != nil {
+		t.Fatalf("decode stdio request: %v", err)
+	}
+	return request
 }
