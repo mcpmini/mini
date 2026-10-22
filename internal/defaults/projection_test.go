@@ -2,9 +2,12 @@ package defaults_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -30,11 +33,9 @@ type projectionFixtureCase struct {
 
 var projectionFixtureCases = []projectionFixtureCase{
 	{server: "github", tool: "list_pull_requests", requiredKeys: []string{"number", "title", "state"}},
-	{server: "github", tool: "list_issues", requiredKeys: []string{"issues", "totalCount"}},
 	{server: "github", tool: "get_commit", requiredKeys: []string{"sha", "commit"}},
 	{server: "github", tool: "list_commits", requiredKeys: []string{"sha", "commit"}},
 	{server: "github", tool: "search_repositories", requiredKeys: []string{"total_count", "items"}},
-	{server: "github", tool: "search_code", requiredKeys: []string{"total_count", "items"}},
 	{server: "github", tool: "issue_read", requiredKeys: []string{"number", "title", "body"}},
 	{server: "github", tool: "pull_request_read", requiredKeys: []string{"number", "title", "body"}},
 }
@@ -118,4 +119,135 @@ func firstObject(t *testing.T, value any) map[string]any {
 		t.Fatalf("unexpected projected output type %T", value)
 	}
 	return nil
+}
+
+func TestPullRequestProjectionPreservesForkContext(t *testing.T) {
+	var value any
+	err := json.Unmarshal([]byte(`{
+		"number": 42, "body": "Review the fork's implementation",
+		"user": {"login": "contributor", "id": 7, "profile_url": "https://github.com/contributor", "avatar_url": "https://example.test/avatar"},
+		"head": {"ref": "feature", "sha": "abc123", "repo": {"full_name": "contributor/project", "description": "Experimental fork"}},
+		"base": {"ref": "main", "sha": "def456", "repo": {"full_name": "upstream/project", "description": "Upstream project"}}
+	}`), &value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule := loadBundledProjection(t, projectionFixtureCase{server: "github", tool: "pull_request_read"})
+	result := projection.Apply(value, rule, defaultProjectionDefaults())
+	want := firstObject(t, value)
+	delete(want["user"].(map[string]any), "avatar_url")
+	if !reflect.DeepEqual(result.Summary, want) {
+		t.Fatalf("fork context changed: got %#v, want %#v", result.Summary, want)
+	}
+	if !reflect.DeepEqual(result.ExcludedKeys, []string{".user.avatar_url"}) {
+		t.Fatalf("excluded paths = %v", result.ExcludedKeys)
+	}
+}
+
+func TestBundledProjectionsPreserveRequestedCollections(t *testing.T) {
+	for _, tc := range projectionFixtureCases {
+		t.Run(tc.server+"/"+tc.tool, func(t *testing.T) {
+			value := populatedProjectionCollections()
+			rule := loadBundledProjection(t, tc)
+			result := projection.Apply(value, rule, defaultProjectionDefaults())
+			if !reflect.DeepEqual(result.Summary, value) {
+				t.Fatalf(
+					"requested collection was trimmed: truncated=%v excluded=%v",
+					result.Truncated,
+					result.ExcludedKeys,
+				)
+			}
+		})
+	}
+}
+
+func populatedProjectionCollections() map[string]any {
+	values := make([]any, 60)
+	for i := range values {
+		values[i] = map[string]any{"id": i, "name": "useful context"}
+	}
+	return map[string]any{
+		"items": values, "files": values, "labels": values,
+		"topics": values, "text_matches": values,
+	}
+}
+
+func TestGitHubSearchProjectionKeepsLinksAndDropsUnusableMetadata(t *testing.T) {
+	for _, tool := range []string{"search_issues", "search_pull_requests"} {
+		t.Run(tool, func(t *testing.T) {
+			rule := loadBundledProjection(t, projectionFixtureCase{server: "github", tool: tool})
+			result := projection.Apply(searchResultWithRESTMetadata(t), rule, defaultProjectionDefaults())
+			if !reflect.DeepEqual(result.Summary, searchResultWithoutUnusableMetadata(t)) {
+				t.Fatalf("got %#v\nexcluded %v", result.Summary, result.ExcludedKeys)
+			}
+		})
+	}
+}
+
+func searchResultWithRESTMetadata(t *testing.T) any {
+	t.Helper()
+	return decodeJSON(t, `{"total_count": 1, "items": [{
+		"number": 7, "title": "Leak", "body": "steps", "node_id": "PR_x",
+		"url": "https://api.github.com/repos/o/r/issues/7",
+		"html_url": "https://github.com/o/r/pull/7",
+		"comments_url": "https://api.github.com/repos/o/r/issues/7/comments",
+		"labels_url": "https://api.github.com/repos/o/r/issues/7/labels{/name}",
+		"user": {"login": "copilot", "id": 9, "type": "Bot", "html_url": "https://github.com/apps/copilot",
+			"url": "https://api.github.com/users/copilot", "node_id": "U_x", "avatar_url": "https://avatars.example/9",
+			"gravatar_id": "", "site_admin": false, "user_view_type": "public",
+			"following_url": "https://api.github.com/users/copilot/following{/other_user}"},
+		"assignees": [{"login": "dev", "html_url": "https://github.com/dev",
+			"starred_url": "https://api.github.com/users/dev/starred{/owner}{/repo}"}],
+		"labels": [{"id": 3, "name": "bug", "description": "Broken", "color": "d73a4a", "default": true,
+			"url": "https://api.github.com/repos/o/r/labels/bug", "node_id": "LA_x"}],
+		"reactions": {"total_count": 2, "+1": 2, "url": "https://api.github.com/repos/o/r/issues/7/reactions"}
+	}]}`)
+}
+
+func searchResultWithoutUnusableMetadata(t *testing.T) any {
+	t.Helper()
+	return decodeJSON(t, `{"total_count": 1, "items": [{
+		"number": 7, "title": "Leak", "body": "steps",
+		"url": "https://api.github.com/repos/o/r/issues/7",
+		"html_url": "https://github.com/o/r/pull/7",
+		"comments_url": "https://api.github.com/repos/o/r/issues/7/comments",
+		"user": {"login": "copilot", "id": 9, "type": "Bot", "html_url": "https://github.com/apps/copilot",
+			"url": "https://api.github.com/users/copilot"},
+		"assignees": [{"login": "dev", "html_url": "https://github.com/dev"}],
+		"labels": [{"id": 3, "name": "bug", "description": "Broken",
+			"url": "https://api.github.com/repos/o/r/labels/bug"}],
+		"reactions": {"total_count": 2, "+1": 2, "url": "https://api.github.com/repos/o/r/issues/7/reactions"}
+	}]}`)
+}
+
+func TestBundledProjectionsKeepWholeDocumentsPastTheDefaultLimit(t *testing.T) {
+	for _, tc := range []struct {
+		server, tool, shape string
+		chars               int
+	}{
+		{server: "github", tool: "get_file_contents", shape: `[{"type": "resource", "resource": {"text": %q}}]`, chars: 25000},
+		{server: "github", tool: "issue_read", shape: `{"body": %q}`, chars: 25000},
+		{server: "slack", tool: "slack_read_channel", shape: `{"messages": %q}`, chars: 25000},
+		{server: "atlassian", tool: "getConfluenceContent", shape: `{"data": {"body": {"value": %q}}}`, chars: 25000},
+		{server: "atlassian", tool: "getJiraIssue", shape: `{"fields": {"description": %q}}`, chars: 25000},
+		{server: "linear", tool: "get_issue", shape: `{"description": %q}`, chars: 25000},
+		{server: "atlassian", tool: "executeRead", shape: `{"data": {"body": %q}}`, chars: 36000},
+	} {
+		t.Run(tc.server+"/"+tc.tool, func(t *testing.T) {
+			value := decodeJSON(t, fmt.Sprintf(tc.shape, strings.Repeat("x", tc.chars)))
+			rule := loadBundledProjection(t, projectionFixtureCase{server: tc.server, tool: tc.tool})
+			if result := projection.Apply(value, rule, defaultProjectionDefaults()); len(result.Truncated) > 0 {
+				t.Fatalf("a %d-char document was truncated: %v", tc.chars, result.Truncated)
+			}
+		})
+	}
+}
+
+func decodeJSON(t *testing.T, text string) any {
+	t.Helper()
+	var value any
+	if err := json.Unmarshal([]byte(text), &value); err != nil {
+		t.Fatal(err)
+	}
+	return value
 }

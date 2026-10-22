@@ -1,35 +1,34 @@
-conversations_history:
-  array_limits:
-    messages: 20
-    reactions: 10
-    reply_users: 3
-  exclude: [client_msg_id, team, edited, subscribed, last_read, bot_profile]
+# Philosophy: docs/default-config-philosophy.md
+# Each result is one string holding a whole page; the 2000-char default would cut it.
+
+slack_read_channel:
   string_limits:
-    text: 1500
+    messages: 25000
 
-conversations_replies:
-  array_limits:
-    messages: 30
-    reactions: 10
-  exclude: [client_msg_id, team, edited, subscribed, last_read, bot_profile, reply_users]
+slack_read_thread:
   string_limits:
-    text: 1500
+    messages: 25000
 
-conversations_list:
-  array_limits:
-    channels: 50
-  exclude: [unlinked, shared_team_ids, pending_shared, pending_connected_team_ids, internal_team_ids, connected_team_ids, enterprise, context_team_id, conversation_host_id]
-
-search_messages:
-  array_limits:
-    reactions: 10
-    reply_users: 3
-  exclude: [client_msg_id, team, edited, subscribed, last_read, bot_profile, time_spent_ms]
+slack_search_public:
   string_limits:
-    text: 1500
+    results: 25000
 
-users_list:
-  array_limits:
-    members: 50
-  exclude: [profile.fields, profile.image_24, profile.image_32, profile.image_48, profile.image_72, profile.image_192, profile.image_512, profile.image_1024, profile.image_original, profile.phone, profile.skype, team_id, tz_offset]
+slack_search_public_and_private:
+  string_limits:
+    results: 25000
 
+slack_search_channels:
+  string_limits:
+    results: 25000
+
+slack_search_users:
+  string_limits:
+    results: 25000
+
+slack_list_user_channels:
+  string_limits:
+    result: 25000
+
+slack_read_user_profile:
+  string_limits:
+    result: 25000

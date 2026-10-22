@@ -1,85 +1,130 @@
 # Philosophy: docs/default-config-philosophy.md
-# String limits follow the doc: 1500 for list bodies, 500 for commit messages,
-# 8000 for detail views. The bar for exclusion is high — keep the field if unsure.
+# Paths target legacy REST shapes; on modern (2026-07-28) results they match nothing.
 
-list_pull_requests:
-  exclude: [avatar_url]
-  string_limits:
-    body: 1500
+search_issues: &search_issues
+  exclude:
+    - "items[].user.following_url"
+    - "items[].user.starred_url"
+    - "items[].user.gists_url"
+    - "items[].user.events_url"
+    - "items[].assignee.following_url"
+    - "items[].assignee.starred_url"
+    - "items[].assignee.gists_url"
+    - "items[].assignee.events_url"
+    - "items[].assignees[].following_url"
+    - "items[].assignees[].starred_url"
+    - "items[].assignees[].gists_url"
+    - "items[].assignees[].events_url"
+    - "items[].milestone.creator.following_url"
+    - "items[].milestone.creator.starred_url"
+    - "items[].milestone.creator.gists_url"
+    - "items[].milestone.creator.events_url"
+    - "items[].closed_by.following_url"
+    - "items[].closed_by.starred_url"
+    - "items[].closed_by.gists_url"
+    - "items[].closed_by.events_url"
+    - "items[].labels_url"
+    - "items[].user.node_id"
+    - "items[].assignee.node_id"
+    - "items[].assignees[].node_id"
+    - "items[].milestone.creator.node_id"
+    - "items[].closed_by.node_id"
+    - "items[].node_id"
+    - "items[].labels[].node_id"
+    - "items[].milestone.node_id"
+    - "items[].user.gravatar_id"
+    - "items[].user.site_admin"
+    - "items[].user.user_view_type"
+    - "items[].assignee.gravatar_id"
+    - "items[].assignee.site_admin"
+    - "items[].assignee.user_view_type"
+    - "items[].assignees[].gravatar_id"
+    - "items[].assignees[].site_admin"
+    - "items[].assignees[].user_view_type"
+    - "items[].milestone.creator.gravatar_id"
+    - "items[].milestone.creator.site_admin"
+    - "items[].milestone.creator.user_view_type"
+    - "items[].closed_by.gravatar_id"
+    - "items[].closed_by.site_admin"
+    - "items[].closed_by.user_view_type"
+    - "items[].labels[].color"
+    - "items[].labels[].default"
+    - "items[].user.avatar_url"
+    - "items[].assignee.avatar_url"
+    - "items[].assignees[].avatar_url"
+    - "items[].milestone.creator.avatar_url"
+    - "items[].closed_by.avatar_url"
 
-list_issues:
-  string_limits:
-    body: 1500
-
-# Detail tools: generous limits. Agent may need to read and reference the full body.
-issue_read:
-  exclude: [avatar_url]
-  string_limits:
-    body: 8000
-
-pull_request_read:
-  exclude: [avatar_url]
-  string_limits:
-    body: 8000
-
-get_issue:
-  exclude: [avatar_url]
-  string_limits:
-    body: 8000
-
-get_pull_request:
-  exclude: [avatar_url]
-  string_limits:
-    body: 8000
-
-list_pull_request_files:
-  array_limits:
-    default: 100
-  string_limits:
-    patch: 5000
-
-get_commit:
-  exclude: [avatar_url]
-  string_limits:
-    message: 2000
-    patch: 3000
-  array_limits:
-    files: 50
-
-list_commits:
-  exclude: [avatar_url]
-  array_limits:
-    default: 30
-  string_limits:
-    message: 500
-
-search_code:
-  array_limits:
-    items: 20
-    text_matches: 3
-  string_limits:
-    fragment: 500
-  exclude: [score, gravatar_id, archive_url, assignees_url, blobs_url, branches_url, collaborators_url, comments_url, commits_url, compare_url, contents_url, contributors_url, deployments_url, downloads_url, events_url, forks_url, git_commits_url, git_refs_url, git_tags_url, hooks_url, issue_comment_url, issue_events_url, issues_url, keys_url, labels_url, languages_url, merges_url, milestones_url, notifications_url, pulls_url, releases_url, stargazers_url, statuses_url, subscribers_url, subscription_url, tags_url, teams_url, trees_url]
+search_pull_requests: *search_issues
 
 search_repositories:
-  array_limits:
-    items: 15
-    topics: 10
-  string_limits:
-    description: 400
-  exclude: [score, gravatar_id, archive_url, assignees_url, blobs_url, branches_url, collaborators_url, comments_url, commits_url, compare_url, contents_url, contributors_url, deployments_url, downloads_url, events_url, forks_url, git_commits_url, git_refs_url, git_tags_url, hooks_url, issue_comment_url, issue_events_url, issues_url, keys_url, labels_url, languages_url, merges_url, milestones_url, notifications_url, pulls_url, releases_url, stargazers_url, statuses_url, subscribers_url, subscription_url, tags_url, teams_url, trees_url]
+  exclude:
+    - "items[].archive_url"
+    - "items[].assignees_url"
+    - "items[].blobs_url"
+    - "items[].branches_url"
+    - "items[].collaborators_url"
+    - "items[].comments_url"
+    - "items[].commits_url"
+    - "items[].compare_url"
+    - "items[].contents_url"
+    - "items[].git_commits_url"
+    - "items[].git_refs_url"
+    - "items[].git_tags_url"
+    - "items[].issue_comment_url"
+    - "items[].issue_events_url"
+    - "items[].issues_url"
+    - "items[].keys_url"
+    - "items[].labels_url"
+    - "items[].milestones_url"
+    - "items[].notifications_url"
+    - "items[].pulls_url"
+    - "items[].releases_url"
+    - "items[].statuses_url"
+    - "items[].trees_url"
+    - "items[].node_id"
+    - "items[].owner.events_url"
+    - "items[].owner.following_url"
+    - "items[].owner.gists_url"
+    - "items[].owner.starred_url"
+    - "items[].owner.node_id"
+    - "items[].owner.gravatar_id"
+    - "items[].owner.site_admin"
+    - "items[].owner.user_view_type"
+    - "items[].owner.avatar_url"
 
-search_issues:
-  array_limits:
-    items: 20
-    labels: 5
+list_pull_requests:
+  exclude:
+    - "[].user.avatar_url"
+
+issue_read:
   string_limits:
-    body: 500
-  exclude: [score]
+    body: 25000
+  exclude:
+    - "user.avatar_url"
+    - "[].user.avatar_url"
+
+pull_request_read:
+  string_limits:
+    body: 25000
+    patch: 5000
+  exclude:
+    - "user.avatar_url"
+    - "[].user.avatar_url"
+
+list_commits:
+  exclude:
+    - "[].author.avatar_url"
+    - "[].committer.avatar_url"
+
+get_commit:
+  string_limits:
+    message: 25000
+    patch: 5000
+  exclude:
+    - "author.avatar_url"
+    - "committer.avatar_url"
 
 get_file_contents:
-  exclude: [url, git_url, download_url, html_url, _links]
-
-list_repository_contents:
-  array_limits:
-    default: 200
+  string_limits:
+    text: 25000

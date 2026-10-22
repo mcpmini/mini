@@ -18,47 +18,58 @@ permissions:
 
 ## Projection defaults
 
-Projection configs reduce the token cost of tool responses. The goal is not to hide information — it's to trim provably-useless noise while keeping everything an agent might legitimately need. **When in doubt, keep the field.**
+Projection configs reduce the token cost of tool responses. The goal is to trim noise while keeping the information agents need for realistic workflows. **When in doubt, keep the field.**
 
 ### The bar for exclusion is very high
 
-Every excluded field is a potential loss. Agents use responses for context, and context that seems irrelevant often isn't. Even things like emoji reactions on a comment can carry signal. A field should only be excluded if you can make a strong, specific case that **it is never useful in any realistic agent workflow** — not just that it's rarely useful, or that you can't think of a use.
+Every excluded field is a potential loss. Agents use responses for context, and context that seems irrelevant often isn't. Even things like emoji reactions on a comment can carry signal. Exclude a field only when there is a strong, tool-specific reason it is **almost never useful in normal development workflows**. A field name or URL shape alone is not enough; consider the values the tool returns and how an agent could use them.
 
-The two categories of fields that clear this bar:
+Keep a field if it could reasonably help during a typical month of development. Repetition is not enough to justify exclusion: a pull request's head repository may be a fork, and its description can explain the source of a change. Preserve descriptions, identities, profile links, revision references, and navigation information unless a specific workflow establishes otherwise.
 
-1. **URL template strings** — Fields like `archive_url: "https://api.github.com/repos/{owner}/{repo}/{archive_format}{/ref}"` are parameterised REST endpoint templates for API clients to construct URLs. They are not real URLs and have no agent use case. Exclude these.
-2. **Deprecated or empty fields** — Fields that are always empty or were removed by the upstream API (e.g. `gravatar_id` on GitHub, which has been empty for years).
+Fields that clear the bar, once checked against the tool's real values:
 
-Everything else needs a genuine justification.
+- **URL templates**: strings with `{placeholder}` parts, such as `following_url: ".../following{/other_user}"`. They are not usable URLs.
+- **GraphQL `node_id`s** on REST responses, when no exposed tool accepts one.
+- **Always-empty or internal flags**, such as GitHub's `gravatar_id`, `site_admin` and `user_view_type`.
+- **Display-only fields**, such as label colors.
+- **Profile avatar URLs**: the account's login, id and profile link remain. This does not justify excluding screenshots, attachments, or other images that carry task context.
+
+Concrete API URLs and label ids do not clear it yet; keep them until agent-flow testing shows they go unused. Never exclude a field the tool lets the caller request by name (for example through a `fields` argument). A null or empty sample does not establish that a field is useless.
+
+Every excluded field that matched is listed in the response's `__mini` notice. On a small single-object response, a few excludes can add more bytes than they remove; measure, and prefer string limits there.
 
 ### List vs get vs write operations have different needs
 
-**List operations** (returning many items): use an explicit `include` list. These responses can contain dozens of objects, so field selection matters most here. Only include what an agent needs to make a decision without fetching individual items.
+**List operations** (returning many items): these responses can contain dozens of objects, so excludes save the most here. Keep what an agent needs to pick an item without fetching it individually.
 
-**Get/detail operations** (single resource): minimal projection. Use `depth_limit` and generous `string_limits`. Do not use an `include` filter — it's too easy to accidentally exclude fields the agent needs. Let the response come through mostly intact.
+**Get/detail operations** (single resource): minimal projection with generous `string_limits`. Don't use `include_only`; it's too easy to drop a field the agent needs.
 
 **Write/mutate operations** (create, update, delete): the response typically confirms what was done, including the created resource. Projection needs are minimal — the response is usually already compact, and the agent needs the identifier (id, number, sha, html_url) to reference what it just created. Apply the same rules as get operations.
+
+### Array limits
+
+Bundled defaults preserve returned collections, including labels, code matches, changed files and search results. These items can be relevant even when there are many. Let the caller choose the upstream page size and follow pagination. Do not silently shrink a requested page or discard labels to reduce response size.
 
 ### String limits
 
 String limits should be **liberal**. The purpose is to prevent runaway responses (multi-megabyte issue bodies, enormous diffs), not to aggressively compress content. Cutting a body at 300 chars is too short — the agent may not have enough context and will make a second API call anyway, costing more tokens overall.
 
+Every string without a limit is capped by the global `default_string_limit` (2000 chars). A tool rule exists to raise that where content is longer, or to set a deliberate value; don't add a rule that only tightens short fields.
+
 Rough guidance:
-- **List context body/description**: 1000–2000 chars
-- **Get/detail context body**: 5000–10000 chars (enough for almost any real issue or PR description)
-- **Code diffs (patch)**: 3000–5000 chars per file
-- **Commit messages**: 500 chars in lists, 2000 chars in full commit views
-- **Short descriptive fields** (repo description, search fragments): 300–500 chars
+- **Content of one item in a list** (issue body, comment, commit message): no rule; the default applies, and the agent opens the item when it needs the rest
+- **A single item or a whole document** (issue or PR body, Jira description, file contents, Confluence page body, a page of Slack messages returned as one string): 25000 chars. The agent nearly always needs all of it, so a cut only adds a `read`. Above ~25K, clients cut the result themselves; see [Large MCP responses](large-mcp-responses.md)
+- **Code diffs (patch)**: 5000 chars per file
 
 These are starting points, not rules. If a field is important and the limit is causing second API calls, raise it.
 
-### Include lists vs exclude_always
+### `include_only` vs `exclude`
 
-**Use `include` lists on list operations.** They define a whitelist of fields to pass through — everything else is dropped. This is the right tool when a response contains many objects and you can clearly enumerate what's needed.
+**`include_only`** keeps only the listed top-level fields. Use it on a list operation only when you can name everything an agent needs; a missed field is silently gone.
 
-**Use `exclude_always` sparingly, only for field-level exclusion that applies regardless of context.** The only appropriate use is for URL template strings and deprecated fields. Never use `exclude_always` on content fields (body, description, message, etc.) — use `string_limits` instead.
+**`exclude`** uses exact dotted object paths relative to the response document root. `user.avatar_url` removes that field while retaining the user object and its other fields; `description` removes only a root-level description. It does not match repository descriptions nested under a pull request. Never exclude content fields (`body`, `description`, `message`); cap them with `string_limits`.
 
-**Never use a wildcard `exclude_always` to broadly suppress categories of fields** — this is too blunt and will silently drop useful data. If a field is noisy in one tool but useful in another, handle it per-tool.
+See [Exclude paths](#exclude-paths) for stepping into array items with `[]`. Keep an array when its items contain useful context; do not remove it just to discard metadata on each item.
 
 ### `depth_limit`
 
@@ -75,12 +86,12 @@ Do not set `auto_strip_threshold` inside a projection YAML — `ProjectionConfig
 
 ### Response shape matters
 
-Some MCPs return flat arrays for list operations; others (particularly GraphQL-based ones like the GitHub MCP's issue tools) return wrapped objects like `{issues: [], totalCount, pageInfo}`. The projection `include` list operates at the **top level** of the response. An include list like `[number, title, state]` on a `{issues: []}` response would drop the `issues` array entirely.
+Some MCPs return flat arrays for list operations; others (particularly GraphQL-based ones like the GitHub MCP's issue tools) return wrapped objects like `{issues: [], totalCount, pageInfo}`. `include_only` operates at the **top level** of the response. A list like `[number, title, state]` on a `{issues: []}` response would drop the `issues` array entirely.
 
 Before writing a projection config:
 1. Fetch a live raw response (`mini call -r <server> <tool>`) to see the actual shape.
-2. Match the `include` list to top-level keys if you use one.
-3. For wrapped responses, either include the wrapper key (`issues`, `items`, `nodes`) or use no include list and rely on depth_limit.
+2. Match `include_only` to top-level keys if you use it.
+3. For wrapped responses, either include the wrapper key (`issues`, `items`, `nodes`) or don't use `include_only`.
 
 ### Exclude paths
 
@@ -102,16 +113,16 @@ When an agent creates a PR, posts a comment, or pushes files, the response typic
 ### Building a config for a new server
 
 1. Fetch live raw responses for each tool: `mini call -r <server> <tool>`
-2. Look at every field and ask: "Can I make a strong case that no agent would ever want this?"
-3. Use `include` lists only for list operations
-4. Set string limits generously — 1–5K depending on context
-5. Exclude URL template strings (fields with `{placeholder}` syntax) via per-tool `exclude_always`
+2. For each proposed exclusion, identify the tool-specific workflow reason it is almost never useful during a typical month of development; do not infer that from a field name or a null sample.
+3. Use `include_only` only for list operations, and only when you can name everything an agent needs
+4. Set string limits generously, using the guidance above
+5. For each tool, justify API URL, URL template or node ID exclusions against the workflow and the information retained
 6. Add `depth_limit: 2-3` only on specific tools where you've confirmed deep nesting is noise
 7. Use `strip_markup: true` on a specific tool only if the response embeds raw HTML that adds no value
 
 ### Validating configs
 
-Check your config against live fixture data, not just schema files. The actual fields returned by a live MCP can differ significantly from what the API documentation implies — especially for MCPs that use GraphQL internally.
+Inspect live payloads to confirm actual response shapes and add regression checks for the projection behavior that matters. Payload samples do not establish that a field is never useful, especially when values are null or collections are empty. Validate workflow outcomes separately with agent-flow evals; token savings are not proof of task success.
 
 ---
 
