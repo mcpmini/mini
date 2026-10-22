@@ -43,6 +43,7 @@ Read [Go engineering in mini](docs/go-guidelines.md) when writing or reviewing G
 
 - Functions: aim for ≤ 18 lines; anything > 25 lines must be broken into smaller functions
 - Files: aim for ≤ 300 lines; > 450 lines warrants a refactor; > 500 lines is a critical priority
+- Split an oversized file by regrouping its concepts into files named after them; don't add a file for the newest behavior beside it. Name files after the concept they hold, never after a protocol version or the change that added them.
 
 ### Function signatures
 
