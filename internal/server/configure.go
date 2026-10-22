@@ -7,10 +7,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/registry"
-	"github.com/mcpmini/mini/internal/transport"
 )
-
-var toolsChangedNotif = json.RawMessage(`{"jsonrpc":"2.0","method":"` + transport.NotificationToolsChanged + `"}`)
 
 type configureParams struct {
 	Action      string                   `json:"action"`

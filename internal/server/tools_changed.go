@@ -8,6 +8,14 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
+var toolsChangedNotif = json.RawMessage(`{"jsonrpc":"2.0","method":"` + transport.NotificationToolsChanged + `"}`)
+
+func (s *Server) notifyAllSessions() {
+	for _, sess := range s.sessions.snapshotSessions() {
+		sess.notifyToolsChanged()
+	}
+}
+
 type toolsChangedOutbox struct {
 	mu      sync.Mutex
 	streams map[uint64]chan json.RawMessage
