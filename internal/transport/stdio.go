@@ -82,7 +82,7 @@ func startSubprocess(ctx context.Context, p StdioCommand) (*StdioConnection, err
 	if p.Clock != nil {
 		c.clock = p.Clock
 	}
-	go c.readLoop()
+	go c.readLoop(ctx)
 	return c, nil
 }
 

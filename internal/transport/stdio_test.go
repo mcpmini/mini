@@ -25,7 +25,7 @@ func makePipeConn(t *testing.T) (conn *StdioConnection, serverW *io.PipeWriter, 
 		cmd: new(exec.Cmd), stdin: connOutW, stdout: srvOutR,
 		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
-	go conn.readLoop()
+	go conn.readLoop(context.Background())
 	t.Cleanup(func() {
 		conn.closeDone()
 		connOutW.Close()
