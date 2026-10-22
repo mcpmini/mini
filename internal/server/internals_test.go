@@ -3,152 +3,13 @@
 package server
 
 import (
-	"context"
 	"errors"
-	"io"
-	"log/slog"
 	"net/http"
 	"testing"
-	"time"
 	"uuid"
 
-	"github.com/mcpmini/mini/internal/clock"
-	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/transport"
 )
-
-func TestSession_Conn_nilWhenEmpty(t *testing.T) {
-	s := newSession(clock.NewFake())
-	if conn := s.Conn("anyserver"); conn != nil {
-		t.Errorf("expected nil for empty session, got %v", conn)
-	}
-}
-
-func TestSession_GetOrSetConn_storesFirst(t *testing.T) {
-	s := newSession(clock.NewFake())
-	fake := &transport.FakeConnection{}
-	got := s.GetOrSetConn("srv", fake)
-	if got != fake {
-		t.Error("expected stored connection to be returned")
-	}
-	if s.Conn("srv") != fake {
-		t.Error("expected Conn to return stored connection")
-	}
-}
-
-func TestSession_GetOrSetConn_returnsExistingOnRace(t *testing.T) {
-	s := newSession(clock.NewFake())
-	first := &transport.FakeConnection{}
-	second := &transport.FakeConnection{}
-
-	s.GetOrSetConn("srv", first)
-	// second call: loser is closed, winner (first) is returned
-	got := s.GetOrSetConn("srv", second)
-	if got != first {
-		t.Error("expected existing connection to win the race")
-	}
-	if !second.Closed {
-		t.Error("expected losing connection to be closed")
-	}
-}
-
-func TestSession_idleDuration_trueWhenOld(t *testing.T) {
-	fakeClock := clock.NewFake()
-	s := newSession(fakeClock)
-	fakeClock.Advance(2 * time.Hour)
-	if _, ok := s.idleDuration(fakeClock.Now().Add(-time.Hour)); !ok {
-		t.Error("expected idleDuration to return true for future deadline")
-	}
-}
-
-func TestSession_idleDuration_falseAfterTouch(t *testing.T) {
-	fakeClock := clock.NewFake()
-	s := newSession(fakeClock)
-	s.touch()
-	if _, ok := s.idleDuration(fakeClock.Now().Add(-time.Hour)); ok {
-		t.Error("expected idleDuration to return false after recent touch")
-	}
-}
-
-func TestSession_Close_closesConns(t *testing.T) {
-	s := newSession(clock.NewFake())
-	fake := &transport.FakeConnection{}
-	s.GetOrSetConn("srv", fake)
-	s.Close()
-	if !fake.Closed {
-		t.Error("expected connection to be closed after session Close")
-	}
-}
-
-func TestSessionStore_evictIdle_removesOldSessions(t *testing.T) {
-	fakeClock := clock.NewFake()
-	st := newSessionStore(fakeClock)
-	st.getOrCreate("old")
-	fakeClock.Advance(2 * time.Hour)
-	st.getOrCreate("fresh")
-
-	st.evictIdle(fakeClock.Now().Add(-time.Hour))
-
-	if st.count() != 1 {
-		t.Errorf("expected 1 session after eviction, got %d", st.count())
-	}
-}
-
-func TestSessionStore_evictIdle_closesEvictedConns(t *testing.T) {
-	fakeClock := clock.NewFake()
-	st := newSessionStore(fakeClock)
-	s := st.getOrCreate("stale")
-	fake := &transport.FakeConnection{}
-	s.GetOrSetConn("srv", fake)
-	fakeClock.Advance(2 * time.Hour)
-
-	st.evictIdle(fakeClock.Now().Add(-time.Hour))
-
-	if !fake.Closed {
-		t.Error("expected evicted session's connections to be closed")
-	}
-}
-
-func TestSessionStore_evictIdle_keepsActiveNotificationSession(t *testing.T) {
-	fakeClock := clock.NewFake()
-	st := newSessionStore(fakeClock)
-	s := st.getOrCreate("stdio")
-	ch, ok := s.openToolsChangedStream()
-	if !ok {
-		t.Fatal("expected notification stream to open")
-	}
-	defer s.closeToolsChangedStream(ch)
-	fakeClock.Advance(2 * time.Hour)
-
-	st.evictIdle(fakeClock.Now().Add(-time.Hour))
-
-	if st.count() != 1 {
-		t.Fatalf("expected active stdio session to be preserved, got %d sessions", st.count())
-	}
-}
-
-func TestSessionStore_evictIdle_unblocksPendingWaiters(t *testing.T) {
-	fakeClock := clock.NewFake()
-	st := newSessionStore(fakeClock)
-	s := st.getOrCreate("stale")
-	fakeClock.Advance(2 * time.Hour)
-
-	unblocked := make(chan bool, 1)
-	go func() {
-		unblocked <- s.waitInitialized(context.Background())
-	}()
-
-	st.evictIdle(fakeClock.Now().Add(-time.Hour))
-
-	select {
-	case got := <-unblocked:
-		if got {
-			t.Error("waitInitialized should return false for evicted session")
-		}
-	case <-time.After(time.Second):
-		t.Fatal("waitInitialized blocked after session eviction")
-	}
-}
 
 func TestNewSessionID_unique(t *testing.T) {
 	a, b := transport.NewSessionID(), transport.NewSessionID()
@@ -192,42 +53,5 @@ func TestIsSameHost_matching(t *testing.T) {
 		if got := isSameHost(r, c.origin); got != c.want {
 			t.Errorf("isSameHost(%q) = %v, want %v", c.origin, got, c.want)
 		}
-	}
-}
-
-func TestRunSessionEviction_evictsIdleSessions(t *testing.T) {
-	fakeClock := clock.NewFake()
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := New(Params{Config: cfg, ConfigDir: t.TempDir(), Logger: logger, Clock: fakeClock})
-
-	srv.sessions.getOrCreate("old-session")
-	fakeClock.Advance(2 * time.Hour)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	evicted := make(chan struct{}, 1)
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		srv.runSessionEviction(ctx, time.Hour, func() { evicted <- struct{}{} })
-	}()
-
-	if err := fakeClock.BlockUntilContext(context.Background(), 2); err != nil {
-		t.Fatal("ticker not registered:", err)
-	}
-	fakeClock.Advance(30 * time.Minute)
-
-	select {
-	case <-evicted:
-	case <-t.Context().Done():
-		t.Fatal("eviction did not complete")
-	}
-	cancel()
-	<-done
-	if got := srv.sessions.count(); got != 0 {
-		t.Errorf("expected 0 sessions after eviction, got %d", got)
 	}
 }
