@@ -7,7 +7,7 @@
 ## Overview
 
 Codex defers **every** MCP tool behind a client-side `tool_search` tool whenever the model
-supports tool search, which every model Codex ships does. No tool schema is sent upfront,
+supports tool search, which recent frontier models do. No tool schema is sent upfront,
 and there is no tool-count threshold. MCP tools are sent eagerly only for models that cannot
 search.
 
@@ -47,10 +47,11 @@ let exposure = if search_tool_enabled {
 };
 ```
 
-`supports_search_tool` is `true` for all 11 models in
+`supports_search_tool` is `true` for every model in the bundled
 [`models.json`](https://github.com/openai/codex/blob/61f34c35af/codex-rs/models-manager/models.json#L160). The old `search_tool` feature
 flag is marked
 [`Stage::Removed`](https://github.com/openai/codex/blob/61f34c35af/codex-rs/features/src/lib.rs#L1303-L1308), so users cannot turn search off.
+The models an account can use depend on its plan and may differ from this bundled list.
 
 Exceptions:
 
@@ -94,7 +95,7 @@ Default result limit: [8](https://github.com/openai/codex/blob/61f34c35af/codex-
 
 | Setup | Upfront schema cost | Per-search cost |
 |---|---|---|
-| Model supports search (all shipped models) | `tool_search` spec plus one line per server; no tool names or schemas | ~100 tokens (query) + ~200–2000 per schema expanded on discovery |
+| Model supports search (recent frontier models) | `tool_search` spec plus one line per server; no tool names or schemas | ~100 tokens (query) + ~200–2000 per schema expanded on discovery |
 | Model without search, or Codex before 0.142.2 below 100 tools | Full schemas for all tools | n/a |
 
 Prompt cache: the initial tool list is stable and cacheable per session, but adding or
