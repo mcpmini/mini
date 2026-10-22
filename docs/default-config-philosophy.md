@@ -1,35 +1,12 @@
 # Default Configuration Philosophy
 
-This document explains the principles behind mini's bundled default visibility and projection configs. Anyone adding or updating a bundled default should read this first.
+This document explains the principles behind mini's bundled projection configs. Anyone adding or updating a bundled default should read this first.
 
 ---
 
-## Tool visibility defaults
+## Tool visibility
 
-### The core rule
-
-**If a developer could plausibly use a tool once a week, it should be included.**
-
-That's the bar. Not "could it ever be useful" — lots of things could ever be useful. The question is whether it belongs in a typical weekly agent workflow.
-
-### Visibility tiers
-
-**Visible (open):** Tools a developer might use any week. The visible list should feel like a natural API surface.
-
-**Protected:** Write operations that could reasonably happen weekly. This only changes enforcement in compact mode and the direct CLI, where `call` refuses protected tools and `perm_call` can run them. In proxy mode, client approval settings are the gate.
-
-**Hidden:** Very rarely used tools. They do not appear in normal discovery and do not consume schema tokens. Default stance: if used less than once a month, hide it.
-
-### Applying the rules
-
-1. **Read?** Visible, unless genuinely niche (monthly or less).
-2. **Write used weekly?** Protected for compact/CLI users; configure client approvals separately for proxy mode.
-3. **Write used rarely** (repo creation, forks, org management)? Hidden.
-4. **Platform-specific or admin-level?** Hidden.
-
-### Why this matters
-
-Schema tokens are paid on every conversation. A server with 44 tools where 20 are irrelevant wastes tokens on every single agent turn. Good defaults mean agents start with a clean, focused surface.
+mini ships no visibility defaults: every upstream tool is visible, and none is protected. Approval is the client's job, and mini passes each tool's `readOnlyHint` and `destructiveHint` through unchanged so the client can use them. Users who want a tool hidden or protected list it under `permissions:` in their own server file.
 
 ---
 
@@ -134,15 +111,6 @@ Check your config against live fixture data, not just schema files. The actual f
 
 ## Overriding defaults
 
-Users can always override bundled defaults in their server YAML:
+Use the MCP `config` tool with `action: get_projection` to read a tool's current rule, then `action: set_projection` to replace it mid-session, or edit `projections:` in `~/.mini/servers/<server>.yaml` directly.
 
-```yaml
-permissions:
-  protected: []          # remove compact/CLI protected gates
-  hidden:
-    - delete_file        # add individual tools to hidden
-```
-
-For projections, use the MCP `config` tool with `action: get_projection` to read a tool's current rule, then `action: set_projection` to replace it mid-session, or edit `projections:` in `~/.mini/servers/<server>.yaml` directly.
-
-Bundled defaults are only applied when `mini add` first installs the server and the user has not set explicit visibility settings or projections. They are never re-applied on subsequent runs.
+Bundled projections are only applied when `mini add` first installs the server and the user has not set projections. They are never re-applied on subsequent runs.
