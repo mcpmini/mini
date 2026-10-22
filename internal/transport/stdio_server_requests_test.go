@@ -37,7 +37,7 @@ func TestStdioAnswersServerRequestsDuringACall(t *testing.T) {
 			request := nextServerRequest(t, lines)
 			writeServerRequest(serverW, `"server-health-probe"`, tt.method)
 
-			want := wantReply{id: `"server-health-probe"`, code: tt.wantCode}
+			want := wantReply{id: `"server-health-probe"`, errorCode: tt.wantCode}
 			assertServerRequestReply(t, nextServerReply(t, lines), want)
 			sendResponse(serverW, request.ID, map[string]any{"tools": []any{}})
 			if err := awaitStdioCall(t, call); err != nil {
@@ -55,7 +55,7 @@ func TestStdioServerRequestSharingACallsIDIsNotItsResponse(t *testing.T) {
 	callID := string(mustJSONID(t, request.ID))
 	writeServerRequest(serverW, callID, "roots/list")
 
-	assertServerRequestReply(t, nextServerReply(t, lines), wantReply{id: callID, code: CodeMethodNotFound})
+	assertServerRequestReply(t, nextServerReply(t, lines), wantReply{id: callID, errorCode: CodeMethodNotFound})
 	select {
 	case err := <-call:
 		t.Fatalf("the server's request completed mini's call: %v", err)
@@ -179,10 +179,9 @@ func nextServerReply(t *testing.T, lines <-chan []byte) Response {
 	return response
 }
 
-// A zero code wants the empty result that answers a ping.
 type wantReply struct {
-	id   string
-	code int
+	id        string
+	errorCode int
 }
 
 func assertServerRequestReply(t *testing.T, reply Response, want wantReply) {
@@ -190,13 +189,13 @@ func assertServerRequestReply(t *testing.T, reply Response, want wantReply) {
 	if got := string(mustJSONID(t, reply.ID)); got != want.id {
 		t.Fatalf("reply id = %s, want %s", got, want.id)
 	}
-	if want.code == 0 {
+	if want.errorCode == 0 {
 		if reply.Error != nil || string(reply.Result) != `{}` {
 			t.Fatalf("reply = result %s, error %v; want an empty result", reply.Result, reply.Error)
 		}
 		return
 	}
-	if reply.Error == nil || reply.Error.Code != want.code {
-		t.Fatalf("reply error = %v, want code %d", reply.Error, want.code)
+	if reply.Error == nil || reply.Error.Code != want.errorCode {
+		t.Fatalf("reply error = %v, want code %d", reply.Error, want.errorCode)
 	}
 }
