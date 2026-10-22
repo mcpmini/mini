@@ -9,23 +9,6 @@ import (
 	"net/http"
 )
 
-func (c *HTTPConnection) ListTools(ctx context.Context) ([]ToolDefinition, error) {
-	// Judged by how each page was sent, not the shared era, which a concurrent reset can change mid-listing.
-	anyLegacyPage := false
-	tools, err := paginateToolsList(ctx, func(ctx context.Context, cursor string) (ToolsListResult, error) {
-		page, modernVersion, err := c.callToolsPage(ctx, cursor)
-		anyLegacyPage = anyLegacyPage || (err == nil && modernVersion == "")
-		return page, err
-	})
-	if err != nil {
-		return nil, err
-	}
-	if anyLegacyPage {
-		return tools, nil
-	}
-	return c.rebuildToolHeaders(tools), nil
-}
-
 func (c *HTTPConnection) ensureReady(ctx context.Context) (modernVersion string, err error) {
 	modernVersion, err = c.probeOnce(ctx)
 	if err != nil || modernVersion != "" {
@@ -57,23 +40,6 @@ func (c *HTTPConnection) initializeOnce(ctx context.Context) (renewed bool, err 
 	renewed = c.initializedBefore
 	c.initialized, c.initializedBefore = true, true
 	return renewed, nil
-}
-
-func (c *HTTPConnection) callToolsPage(ctx context.Context, cursor string) (ToolsListResult, string, error) {
-	var params json.RawMessage
-	if cursor != "" {
-		//nolint:errcheck // cursor map contains only strings.
-		params, _ = json.Marshal(map[string]string{"cursor": cursor})
-	}
-	raw, modernVersion, err := c.callAndReportVersion(ctx, "tools/list", params)
-	if err != nil {
-		return ToolsListResult{}, "", err
-	}
-	r, err := decodeToolsListPage(raw)
-	if err != nil {
-		return ToolsListResult{}, "", err
-	}
-	return r, modernVersion, nil
 }
 
 func (c *HTTPConnection) initHandshake(ctx context.Context) error {

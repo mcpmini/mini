@@ -79,3 +79,10 @@ func TestValidateModernRequestMeta(t *testing.T) {
 		})
 	}
 }
+
+func TestModernRequestRejectsNonObjectParams(t *testing.T) {
+	if _, err := prepareModernParams(json.RawMessage(`[]`), ModernVersions[0]); err == nil ||
+		err.Error() != "modern request params must be a JSON object" {
+		t.Fatalf("prepareModernParams error = %v", err)
+	}
+}
