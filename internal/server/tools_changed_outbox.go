@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log/slog"
 	"sync"
+
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 type toolsChangedOutbox struct {
@@ -129,4 +131,14 @@ func (s *Session) forwardToolsChanged(raw json.RawMessage, writeOut func(any)) {
 		return
 	}
 	s.writeTaggedToolsChanged(writeOut)
+}
+
+func (s *Session) writeTaggedToolsChanged(writeOut func(any)) {
+	s.listensMu.Lock()
+	defer s.listensMu.Unlock()
+	for id, wantsToolChanges := range s.listenTools {
+		if wantsToolChanges {
+			writeOut(transport.NewToolsListChangedNotification(json.RawMessage(id)))
+		}
+	}
 }
