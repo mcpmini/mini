@@ -54,3 +54,48 @@ type Server struct {
 func (s *Server) ToolCount(serverName string) int {
 	return s.reg.ToolCount(serverName)
 }
+
+func (s *Server) Close() {
+	s.reloadLoop.stop()
+	s.ReleaseStartupHolds()
+	cancelAuthFlows(s.takeAuthFlows())
+	s.connector.stop()
+	s.authWg.Wait()
+	s.providerRegistry.Close()
+	s.connector.wait()
+	closeUpstreams(s.snapshotUpstreams())
+	s.sessions.closeAll()
+	s.refreshWg.Wait()
+	s.reconnectWg.Wait()
+	s.store.Close()
+}
+
+func (s *Server) takeAuthFlows() map[string]*authFlowState {
+	s.authMu.Lock()
+	defer s.authMu.Unlock()
+	flows := s.authFlows
+	s.authFlows = make(map[string]*authFlowState)
+	return flows
+}
+
+func cancelAuthFlows(flows map[string]*authFlowState) {
+	for _, f := range flows {
+		f.cancel()
+	}
+}
+
+func (s *Server) snapshotUpstreams() []*upstreamServer {
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
+	upstreams := make([]*upstreamServer, 0, len(s.upstreams))
+	for _, u := range s.upstreams {
+		upstreams = append(upstreams, u)
+	}
+	return upstreams
+}
+
+func closeUpstreams(upstreams []*upstreamServer) {
+	for _, u := range upstreams {
+		u.shutdownAndClose()
+	}
+}
