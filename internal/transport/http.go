@@ -2,8 +2,6 @@ package transport
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"sync"
@@ -158,33 +156,6 @@ func applySsrfTransport(client *http.Client) {
 	}
 }
 
-func (c *HTTPConnection) withSessionRecovery(
-	ctx context.Context,
-	do func() (json.RawMessage, error),
-) (json.RawMessage, error) {
-	result, err := do()
-	var expiredErr *SessionExpiredError
-	if !errors.As(err, &expiredErr) {
-		return result, err
-	}
-	c.compareAndResetSession(expiredErr.SessionID)
-	if _, initErr := c.ensureReady(ctx); initErr != nil {
-		return nil, initErr
-	}
-	return do()
-}
-
-func (c *HTTPConnection) compareAndResetSession(expiredID string) {
-	c.initMu.Lock()
-	defer c.initMu.Unlock()
-	c.mu.Lock()
-	match := c.sessionID == expiredID
-	c.mu.Unlock()
-	if match {
-		c.initialized = false
-	}
-}
-
 func (c *HTTPConnection) Health(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url, nil)
 	if err != nil {
@@ -204,5 +175,14 @@ func (c *HTTPConnection) Health(ctx context.Context) error {
 	if resp.StatusCode >= 500 {
 		return fmt.Errorf("server error: %d", resp.StatusCode)
 	}
+	return nil
+}
+
+func (c *HTTPConnection) Close() error {
+	c.listenerMu.Lock()
+	c.closed = true
+	c.listenerMu.Unlock()
+	c.listenerCancel()
+	c.listenerWG.Wait()
 	return nil
 }
