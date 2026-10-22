@@ -4,12 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
-	"time"
 )
 
 func (c *HTTPConnection) ListTools(ctx context.Context) ([]ToolDefinition, error) {
@@ -95,57 +92,6 @@ func (c *HTTPConnection) initHandshake(ctx context.Context) error {
 	return nil
 }
 
-type sessionListener struct {
-	cancel context.CancelFunc
-	done   chan struct{}
-}
-
-func (l *sessionListener) stopped() bool {
-	select {
-	case <-l.done:
-		return true
-	default:
-		return false
-	}
-}
-
-func (c *HTTPConnection) restartListener(listen bool) {
-	// Each session negotiates its own capabilities, including whether it sends list-changed
-	// notifications, so each session gets its own listener:
-	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/ab3a39c13bd23be691c2760e1c6c5c15a64582e1/docs/specification/2025-11-25/basic/lifecycle.mdx#L186-L187
-	// The server MAY leave the old session's stream open, so the old listener is stopped here:
-	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/ab3a39c13bd23be691c2760e1c6c5c15a64582e1/docs/specification/2025-11-25/basic/transports.mdx#L150
-	if old := c.listener; old != nil {
-		old.cancel()
-		<-old.done
-		c.listener = nil
-	}
-	if !listen {
-		return
-	}
-	c.startListener()
-}
-
-func (c *HTTPConnection) startListener() {
-	// A listener that stopped for good (say the upstream refused subscriptions/listen) is replaced:
-	// discovery advertising tool changes again is the upstream saying it can now send them.
-	if c.listener != nil && !c.listener.stopped() {
-		return
-	}
-	c.listenerMu.Lock()
-	defer c.listenerMu.Unlock()
-	if c.closed {
-		return
-	}
-	if c.listener != nil {
-		c.listener.cancel()
-	}
-	listenerCtx, cancel := context.WithCancel(c.listenerCtx)
-	c.listener = &sessionListener{cancel: cancel, done: make(chan struct{})}
-	c.listenerWG.Add(1)
-	go c.listenForNotifications(listenerCtx, c.listener.done, c.isModern())
-}
-
 func (c *HTTPConnection) sendInitialize(ctx context.Context) (InitializeResult, error) {
 	//nolint:errcheck // fixed handshake fields contain only JSON-serializable values.
 	params, _ := json.Marshal(newInitializeParams())
@@ -194,106 +140,6 @@ func (c *HTTPConnection) buildInitializedNotifRequest(
 		c.attachSessionID(req)
 		return req, sentAuth, err
 	}
-}
-
-func (c *HTTPConnection) SetNotificationHandler(handler func(Notification)) {
-	c.toolsChanged.SetHandler(handler)
-}
-
-func (c *HTTPConnection) dispatchNotification(notification Notification) {
-	if notification.Method == NotificationToolsChanged {
-		c.toolsChanged.NotifyToolsChanged()
-		return
-	}
-	if handler := c.toolsChanged.Handler(); handler != nil {
-		handler(notification)
-	}
-}
-
-const maxListenerBackoff = 60 * time.Second
-
-type listenerState struct {
-	// Fixed for the listener's life: a legacy upstream gets a new listener from its own handshake.
-	modern       bool
-	backoff      time.Duration
-	rejectedAuth string
-}
-
-func (c *HTTPConnection) listenForNotifications(ctx context.Context, done chan struct{}, modern bool) {
-	defer c.listenerWG.Done()
-	defer close(done)
-	state := listenerState{modern: modern, backoff: time.Second}
-	for ctx.Err() == nil {
-		if state.rejectedAuth != "" && c.currentAuth(ctx) == state.rejectedAuth {
-			if !c.sleepCtx(ctx, maxListenerBackoff) {
-				return
-			}
-			continue
-		}
-		if c.runListenerCycle(ctx, &state) {
-			return
-		}
-	}
-}
-
-func (c *HTTPConnection) runListenerCycle(ctx context.Context, state *listenerState) (stop bool) {
-	if state.modern && !c.isModern() {
-		// The era was reset; listen again once the next call's probe settles it.
-		return !c.sleepCtx(ctx, time.Second)
-	}
-	status, err := c.consumeNotificationStream(ctx, state)
-	if errors.Is(err, errUnsupportedListenFilter) {
-		slog.Debug("upstream did not acknowledge tool-change subscription", "url", c.url)
-		return true
-	}
-	if errors.Is(err, errListenComplete) {
-		err = nil
-	}
-	if shouldStopListener(ctx, c.url, status) {
-		return true
-	}
-	if err != nil {
-		slog.Warn("upstream notification stream interrupted", "url", c.url, "err", err)
-	}
-	state.rejectedAuth = c.rejectedAuthAfter(ctx, err)
-	delay, next := listenerDelay(status, err, state.backoff)
-	state.backoff = next
-	return !c.sleepCtx(ctx, delay)
-}
-
-func (c *HTTPConnection) currentAuth(ctx context.Context) string {
-	if c.authProvider == nil {
-		return ""
-	}
-	//nolint:errcheck // this read fingerprints rejection; buildStreamRequest reports request credential errors.
-	v, _ := c.authProvider.Authorization(ctx)
-	return v
-}
-
-func shouldStopListener(ctx context.Context, url string, status int) bool {
-	if status == http.StatusMethodNotAllowed {
-		slog.Debug("upstream advertises tool changes but rejects notification stream", "url", url)
-		return true
-	}
-	return ctx.Err() != nil
-}
-
-func (c *HTTPConnection) rejectedAuthAfter(ctx context.Context, err error) string {
-	// A failed refresh never sent a credential, so only an upstream 401 marks the current one rejected.
-	if errors.Is(err, ErrReauthRequired) && isUnauthorized(err) {
-		return c.currentAuth(ctx)
-	}
-	return ""
-}
-
-func listenerDelay(status int, err error, backoff time.Duration) (delay, next time.Duration) {
-	if status == http.StatusOK && !errors.Is(err, errListenRejected) {
-		return time.Second, time.Second
-	}
-	if errors.Is(err, ErrReauthRequired) {
-		return maxListenerBackoff, maxListenerBackoff
-	}
-	return backoff, min(backoff*2, maxListenerBackoff)
 }
 
 func (c *HTTPConnection) Close() error {
