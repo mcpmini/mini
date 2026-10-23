@@ -187,7 +187,7 @@ func TestAddModernResultFieldsDecoratesPerMethod(t *testing.T) {
 }
 
 func TestActivateModern(t *testing.T) {
-	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), toolMode: transport.ToolModeCompact}
+	s := newRouteTestServer(transport.ToolModeCompact)
 	t.Run("stdio session needs no initialize", func(t *testing.T) {
 		session := newSession(clock.NewFake())
 		s.activateModern(session)
@@ -233,9 +233,17 @@ func TestModernVersionError(t *testing.T) {
 }
 
 func TestHandleDiscoverFollowsSessionToolMode(t *testing.T) {
-	session := newSession(clock.NewFake())
-	session.setToolModeOnce(transport.ToolModeCompact)
-	if got := (&Server{}).handleDiscover(session).Instructions; got != compactInitInstructions {
-		t.Fatalf("compact session discover instructions = %q", got)
+	for _, tc := range []struct {
+		session, server transport.ToolMode
+		want            string
+	}{
+		{session: transport.ToolModeProxy, server: transport.ToolModeCompact, want: proxyInitInstructions},
+		{session: transport.ToolModeCompact, server: transport.ToolModeProxy, want: compactInitInstructions},
+	} {
+		session := newSession(clock.NewFake())
+		session.setToolModeOnce(tc.session)
+		if got := newRouteTestServer(tc.server).handleDiscover(session).Instructions; got != tc.want {
+			t.Errorf("%v session on a %v server: discover instructions = %q, want %q", tc.session, tc.server, got, tc.want)
+		}
 	}
 }

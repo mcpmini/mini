@@ -7,10 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"log/slog"
 	"strings"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/response"
@@ -19,7 +19,7 @@ import (
 
 func newRouteTestServer(mode transport.ToolMode) *Server {
 	return &Server{
-		logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+		logger:   discardLogger(),
 		toolMode: mode,
 		sessions: newSessionStore(clock.NewFake()),
 	}
@@ -74,6 +74,9 @@ func TestHandleCancelledCancelsTheNamedRequestAndListen(t *testing.T) {
 	}
 	if _, open := session.listenTools["7"]; open {
 		t.Fatal("listen 7 still receives tool changes after cancellation")
+	}
+	if _, open := session.listens["7"]; open {
+		t.Fatal("listen 7 is still registered after cancellation")
 	}
 }
 
@@ -171,20 +174,27 @@ func TestAwaitInitializationGatesRequests(t *testing.T) {
 			t.Fatal("HTTP server/discover passed the initialization gate uninitialized")
 		}
 	})
-	t.Run("request proceeds once initialize completes", func(t *testing.T) {
-		session := newSession(clock.NewFake())
-		passed := make(chan bool, 1)
-		go func() { passed <- srv.awaitInitialization(t.Context(), request("tools/list"), session) }()
-		session.markInitialized()
-		if !<-passed {
-			t.Fatal("request waiting on initialization was rejected after initialize")
+	waiting := func(t *testing.T, end func(*Session)) (passed bool, waited time.Duration) {
+		t.Helper()
+		synctest.Test(t, func(t *testing.T) {
+			session := newSession(clock.NewFake())
+			done := make(chan bool, 1)
+			start := time.Now()
+			go func() { done <- srv.awaitInitialization(context.Background(), request("tools/list"), session) }()
+			synctest.Wait()
+			end(session)
+			passed, waited = <-done, time.Since(start)
+		})
+		return passed, waited
+	}
+	t.Run("a waiting request proceeds once initialize completes", func(t *testing.T) {
+		if passed, waited := waiting(t, (*Session).markInitialized); !passed || waited != 0 {
+			t.Fatalf("passed = %v after %v, want passed as soon as initialize completed", passed, waited)
 		}
 	})
-	t.Run("request fails when serving ends first", func(t *testing.T) {
-		session := newSession(clock.NewFake())
-		session.markAborted()
-		if srv.awaitInitialization(t.Context(), request("tools/list"), session) {
-			t.Fatal("request passed the gate on an aborted session")
+	t.Run("a waiting request fails as soon as serving ends", func(t *testing.T) {
+		if passed, waited := waiting(t, (*Session).markAborted); passed || waited != 0 {
+			t.Fatalf("passed = %v after %v, want rejected as soon as serving ended, not at the timeout", passed, waited)
 		}
 	})
 }
