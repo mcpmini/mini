@@ -36,6 +36,23 @@ func (s *Server) requestToolRefresh(u *upstreamServer, conn transport.Connection
 	}
 }
 
+func (s *Server) awaitCurrentToolLists(ctx context.Context) error {
+	wait, cancel := context.WithTimeout(ctx, discoveryWait)
+	defer cancel()
+	if err := s.waitForStartup(ctx); err != nil {
+		return err
+	}
+	s.awaitFreshToolLists(wait, s.snapshotUpstreams())
+	return ctx.Err()
+}
+
+func (s *Server) awaitCurrentToolList(ctx context.Context, u *upstreamServer) error {
+	wait, cancel := context.WithTimeout(ctx, discoveryWait)
+	defer cancel()
+	s.awaitFreshToolLists(wait, []*upstreamServer{u})
+	return ctx.Err()
+}
+
 func (s *Server) awaitFreshToolLists(wait context.Context, upstreams []*upstreamServer) {
 	refreshes := make([]<-chan struct{}, 0, len(upstreams))
 	for _, u := range upstreams {

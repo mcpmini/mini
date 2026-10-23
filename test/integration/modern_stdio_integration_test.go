@@ -348,3 +348,13 @@ func modernProxyCall(name string, responses, state json.RawMessage) modernInputR
 		RequestState:   state,
 	}
 }
+
+func (h *modernStdioHelper) listTTLTools(req transport.Request) {
+	h.lists++
+	name := "old"
+	if h.lists > 1 {
+		name = "new"
+	}
+	result := transport.ToolsListResult{Tools: []transport.ToolDefinition{{Name: name}}, TTLMs: json.RawMessage(`0`)}
+	h.write(modernHelperResponse(req.ID, result))
+}

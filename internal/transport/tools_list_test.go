@@ -1,12 +1,17 @@
+//go:build test
+
 package transport
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/mcpmini/mini/internal/clock"
 )
 
 func makeTool(name string) ToolDefinition {
@@ -201,5 +206,159 @@ func TestPaginationReturnsOnlyVerifiedEarlierPages(t *testing.T) {
 	})
 	if err != nil || !slices.Equal(toolNames(got.Tools), []string{"verified"}) {
 		t.Fatalf("pagination = %v, %v; want only verified first page", toolNames(got.Tools), err)
+	}
+}
+
+func TestDecodeToolsListPageFreshness(t *testing.T) {
+	received := time.Unix(100, 0)
+	expired := Freshness{managed: true, until: received}
+	for _, tc := range []struct {
+		ttl           string
+		modernVersion string
+		want          Freshness
+	}{
+		{ttl: "1000", modernVersion: ModernVersions[0], want: Freshness{managed: true, until: received.Add(time.Second)}},
+		{ttl: "1000", want: Freshness{}},
+		{ttl: "", modernVersion: ModernVersions[0], want: expired},
+		{ttl: "0", modernVersion: ModernVersions[0], want: expired},
+		{ttl: "-1", modernVersion: ModernVersions[0], want: expired},
+		{ttl: "null", modernVersion: ModernVersions[0], want: expired},
+		{ttl: `"bad"`, modernVersion: ModernVersions[0], want: expired},
+		{ttl: "1.5", modernVersion: ModernVersions[0], want: expired},
+		{ttl: "9223372036854775807", modernVersion: ModernVersions[0], want: expired},
+		{ttl: "9223372036854775808", modernVersion: ModernVersions[0], want: expired},
+	} {
+		t.Run(tc.ttl+" "+tc.modernVersion, func(t *testing.T) {
+			raw := `{"tools":[{"name":"kept","inputSchema":{}}]`
+			if tc.ttl != "" {
+				raw += `,"ttlMs":` + tc.ttl
+			}
+			page, err := decodeToolsListPage(json.RawMessage(raw+`}`), received, tc.modernVersion)
+			if err != nil || len(page.Tools) != 1 || page.freshness != tc.want {
+				t.Fatalf("page = %+v, %v; want the kept tool with freshness %+v", page, err, tc.want)
+			}
+		})
+	}
+}
+
+func TestToolsListFreshnessAcrossPages(t *testing.T) {
+	base := time.Unix(100, 0)
+	freshFor := func(seconds int) Freshness {
+		return Freshness{managed: true, until: base.Add(time.Duration(seconds) * time.Second)}
+	}
+	expired := Freshness{managed: true}
+	page := func(next string, freshness Freshness) toolsListPage {
+		return toolsListPage{Tools: []ToolDefinition{{Name: "kept"}}, NextCursor: next, freshness: freshness}
+	}
+	everyPageContinues := func(call int) toolsListPage { return page(string(rune('a'+call)), freshFor(1)) }
+	for _, tc := range []struct {
+		name  string
+		pages []toolsListPage
+		after func(call int) toolsListPage
+		want  Freshness
+	}{
+		{name: "earliest page wins", pages: []toolsListPage{page("b", freshFor(2)), page("", freshFor(1))}, want: freshFor(1)},
+		{name: "empty list", pages: []toolsListPage{{freshness: freshFor(1)}}, want: freshFor(1)},
+		{name: "later page fails", pages: []toolsListPage{page("b", freshFor(1))}, want: expired},
+		{name: "duplicate cursor", pages: []toolsListPage{page("b", freshFor(1)), page("b", freshFor(1))}, want: expired},
+		{name: "page cap", after: everyPageContinues, want: expired},
+		{name: "legacy page", pages: []toolsListPage{page("b", freshFor(1)), page("", Freshness{})}},
+		{name: "legacy then failure", pages: []toolsListPage{page("b", Freshness{})}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			toolList, err := paginateToolsList(
+				context.Background(),
+				func(context.Context, string) (toolsListPage, error) {
+					calls++
+					switch {
+					case tc.after != nil:
+						return tc.after(calls), nil
+					case calls > len(tc.pages):
+						return toolsListPage{}, errors.New("page failed")
+					default:
+						return tc.pages[calls-1], nil
+					}
+				},
+			)
+			if err != nil || toolList.Freshness != tc.want {
+				t.Fatalf("freshness = %+v, %v; want %+v", toolList.Freshness, err, tc.want)
+			}
+		})
+	}
+}
+
+func TestToolsListPagesUseTheirOwnReceiptTimes(t *testing.T) {
+	for _, kind := range []string{"stdio", "http"} {
+		t.Run(kind, func(t *testing.T) {
+			fc := clock.NewFake()
+			start := fc.Now()
+			calls := 0
+			page := func() json.RawMessage {
+				calls++
+				if calls == 1 {
+					return json.RawMessage(`{"tools":[],"ttlMs":10000,"nextCursor":"next"}`)
+				}
+				fc.Advance(2 * time.Second)
+				return json.RawMessage(`{"tools":[{"name":"kept","inputSchema":{}}],"ttlMs":1000}`)
+			}
+			var toolList ToolList
+			var err error
+			if kind == "stdio" {
+				conn, w, r := makePipeConn(t)
+				conn.clock = fc
+				conn.setModern(ModernVersions[0])
+				reply := func(req Request) { replyResult(w, page())(req) }
+				scriptStdioUpstream(w, r, reply, reply)
+				toolList, err = conn.ListTools(t.Context())
+			} else {
+				reply := func(w http.ResponseWriter, r *http.Request, req Request) {
+					writeRPCResult(t, rpcResultParams{Writer: w, ID: req.ID, Result: page()})
+				}
+				srv := newModernServer(t, modernUpstream{Handle: reply})
+				toolList, err = mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Clock: fc}).ListTools(t.Context())
+			}
+			want := Freshness{managed: true, until: start.Add(3 * time.Second)}
+			if err != nil || len(toolList.Tools) != 1 || toolList.Freshness != want {
+				t.Fatalf("tool list = %+v, %v; want the kept tool with freshness %+v", toolList, err, want)
+			}
+		})
+	}
+}
+
+func TestToolsListHTTPKeepsRequestEraAcrossReset(t *testing.T) {
+	fc := clock.NewFake()
+	entered, release := make(chan struct{}), make(chan struct{})
+	srv := newModernServer(t, modernUpstream{Handle: func(w http.ResponseWriter, r *http.Request, req Request) {
+		close(entered)
+		<-release
+		result := json.RawMessage(`{"tools":[{"name":"kept","inputSchema":{}}],"ttlMs":1000}`)
+		writeRPCResult(t, rpcResultParams{Writer: w, ID: req.ID, Result: result})
+	}})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Clock: fc})
+	done := make(chan ToolList, 1)
+	go func() {
+		toolList, _ := conn.ListTools(t.Context())
+		done <- toolList
+	}()
+	<-entered
+	conn.resetModernEra()
+	close(release)
+	if got, want := (<-done).Freshness, (Freshness{managed: true, until: fc.Now().Add(time.Second)}); got != want {
+		t.Fatalf("freshness after an era reset mid-request = %+v, want %+v", got, want)
+	}
+}
+
+func TestFreshnessStaleAndExpire(t *testing.T) {
+	now := time.Unix(100, 0)
+	managed := Freshness{managed: true, until: now.Add(time.Second)}
+	if (Freshness{}).Stale(now.Add(time.Hour)) || (Freshness{}).Expire() != (Freshness{}) {
+		t.Fatal("an unmanaged list became stale")
+	}
+	if managed.Stale(now) || !managed.Stale(now.Add(time.Second)) {
+		t.Fatal("a managed list was stale before its deadline or fresh at it")
+	}
+	if !managed.Expire().Stale(now) {
+		t.Fatal("an expired list was still fresh")
 	}
 }

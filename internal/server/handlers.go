@@ -91,23 +91,10 @@ var errListHiddenDisabled = errors.New(
 	"listing hidden tools is disabled by server configuration (disable_list_hidden: true)",
 )
 
-func (s *Server) awaitCurrentToolLists(ctx context.Context) error {
-	wait, cancel := context.WithTimeout(ctx, discoveryWait)
-	defer cancel()
-	if err := s.waitForStartup(ctx); err != nil {
-		return err
-	}
-	s.awaitFreshToolLists(wait, s.snapshotUpstreams())
-	return ctx.Err()
-}
-
 func (s *Server) listFreshDetail(ctx context.Context, fullName string) (any, error) {
 	server, tool, _ := strings.Cut(fullName, ".")
 	if u := s.detailUpstream(server, tool); u != nil {
-		wait, cancel := context.WithTimeout(ctx, discoveryWait)
-		defer cancel()
-		s.awaitFreshToolLists(wait, []*upstreamServer{u})
-		if err := ctx.Err(); err != nil {
+		if err := s.awaitCurrentToolList(ctx, u); err != nil {
 			return nil, err
 		}
 	}
