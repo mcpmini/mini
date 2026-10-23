@@ -44,24 +44,6 @@ func (c *HTTPConnection) ensureToolHeaders(ctx context.Context) error {
 	return err
 }
 
-func (c *HTTPConnection) negotiatedModernVersion() string {
-	if v := c.modernVersion.Load(); v != nil {
-		return *v
-	}
-	return ""
-}
-
-func (c *HTTPConnection) isModern() bool {
-	return c.negotiatedModernVersion() != ""
-}
-
-func (c *HTTPConnection) resetModernEra() {
-	c.initMu.Lock()
-	c.eraKnown = false
-	c.modernVersion.Store(nil)
-	c.initMu.Unlock()
-}
-
 func encodeModernHeaderValue(value string) string {
 	plain := !strings.HasPrefix(value, "=?base64?") || !strings.HasSuffix(value, "?=")
 	plain = plain && strings.Trim(value, " \t") == value
