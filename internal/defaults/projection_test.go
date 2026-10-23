@@ -122,16 +122,12 @@ func firstObject(t *testing.T, value any) map[string]any {
 }
 
 func TestPullRequestProjectionPreservesForkContext(t *testing.T) {
-	var value any
-	err := json.Unmarshal([]byte(`{
+	value := decodeJSON(t, `{
 		"number": 42, "body": "Review the fork's implementation",
 		"user": {"login": "contributor", "id": 7, "profile_url": "https://github.com/contributor", "avatar_url": "https://example.test/avatar"},
 		"head": {"ref": "feature", "sha": "abc123", "repo": {"full_name": "contributor/project", "description": "Experimental fork"}},
 		"base": {"ref": "main", "sha": "def456", "repo": {"full_name": "upstream/project", "description": "Upstream project"}}
-	}`), &value)
-	if err != nil {
-		t.Fatal(err)
-	}
+	}`)
 	rule := loadBundledProjection(t, projectionFixtureCase{server: "github", tool: "pull_request_read"})
 	result := projection.Apply(value, rule, defaultProjectionDefaults())
 	want := firstObject(t, value)
