@@ -86,3 +86,70 @@ func TestModernRequestRejectsNonObjectParams(t *testing.T) {
 		t.Fatalf("prepareModernParams error = %v", err)
 	}
 }
+
+func TestValidateModernRequestMetaParamsShapes(t *testing.T) {
+	if err := ValidateModernRequestMeta(json.RawMessage(`{"_meta":`)); err == nil {
+		t.Fatal("invalid JSON params passed validation")
+	}
+	if err := ValidateModernRequestMeta(json.RawMessage(`[1]`)); err != nil {
+		t.Fatalf("positional params rejected: %v", err)
+	}
+}
+
+func TestHasModernRequestIntent(t *testing.T) {
+	tests := []struct {
+		params string
+		want   bool
+	}{
+		{``, false},
+		{`{"cursor":"x"}`, false},
+		{`{"_meta":{"trace":"abc"}}`, false},
+		{`[{"_meta":{"io.modelcontextprotocol/clientInfo":{}}}]`, false},
+		{`{"_meta":`, false},
+		{`{"_meta":{"io.modelcontextprotocol/clientInfo":{}}}`, true},
+		{`{"_meta":{"io.modelcontextprotocol/protocolVersion":"x"}}`, true},
+		{`{"_meta":"modern"}`, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.params, func(t *testing.T) {
+			if got := HasModernRequestIntent(json.RawMessage(tc.params)); got != tc.want {
+				t.Fatalf("HasModernRequestIntent(%s) = %v, want %v", tc.params, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPrepareModernParamsAddsMissingMetadata(t *testing.T) {
+	prepare := func(params string) map[string]json.RawMessage {
+		t.Helper()
+		prepared, err := prepareModernParams(json.RawMessage(params), ModernVersions[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		var fields struct {
+			Meta map[string]json.RawMessage `json:"_meta"`
+		}
+		if err := json.Unmarshal(prepared, &fields); err != nil {
+			t.Fatal(err)
+		}
+		return fields.Meta
+	}
+	for _, params := range []string{``, `null`, `{}`} {
+		meta := prepare(params)
+		if string(meta[protocolVersionMeta]) != `"`+ModernVersions[0]+`"` || meta[clientInfoMeta] == nil ||
+			string(meta[clientCapabilitiesMeta]) != `{}` {
+			t.Errorf(
+				"params %q prepared metadata = %v, want version, mini's client info and empty capabilities",
+				params,
+				meta,
+			)
+		}
+	}
+	meta := prepare(`{"_meta":{"io.modelcontextprotocol/clientInfo":{"name":"agent"},"trace":1}}`)
+	if string(meta[clientInfoMeta]) != `{"name":"agent"}` || string(meta["trace"]) != `1` {
+		t.Fatalf("prepared metadata = %v, want the caller's client info and trace kept", meta)
+	}
+	if _, err := prepareModernParams(json.RawMessage(`{"_meta":[]}`), ModernVersions[0]); err == nil {
+		t.Fatal("non-object _meta was accepted")
+	}
+}

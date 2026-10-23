@@ -362,3 +362,31 @@ func TestFreshnessStaleAndExpire(t *testing.T) {
 		t.Fatal("an expired list was still fresh")
 	}
 }
+
+func TestDecodeToolsListPageRejectsUnusablePages(t *testing.T) {
+	for name, raw := range map[string]string{
+		"input required": `{"resultType":"input_required","tools":[]}`,
+		"malformed":      `{"tools":"none"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if page, err := decodeToolsListPage(json.RawMessage(raw)); err == nil {
+				t.Fatalf("page %s decoded as %+v, want an error", raw, page)
+			}
+		})
+	}
+}
+
+func TestPaginateToolsList_errorAfterOnlyEmptyPages(t *testing.T) {
+	sentinel := errors.New("page 2 failed")
+	calls := 0
+	callPage := func(context.Context, string) (ToolsListResult, error) {
+		calls++
+		if calls == 1 {
+			return ToolsListResult{NextCursor: "page2"}, nil
+		}
+		return ToolsListResult{}, sentinel
+	}
+	if got, err := paginateToolsList(context.Background(), callPage); !errors.Is(err, sentinel) || got != nil {
+		t.Fatalf("pagination = %v, %v; want the error when no tools were listed", got, err)
+	}
+}
