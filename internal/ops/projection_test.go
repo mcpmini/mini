@@ -24,6 +24,11 @@ func TestEveryBundledProjectionFileDecodesAsProjections(t *testing.T) {
 		if err := yaml.Unmarshal(defaults.ProjectionFor(name), &projections); err != nil || len(projections) == 0 {
 			t.Errorf("%s: %d projections, %v", name, len(projections), err)
 		}
+		for tool, rule := range projections {
+			if err := config.ValidateProjection(rule); err != nil {
+				t.Errorf("%s/%s: %v", name, tool, err)
+			}
+		}
 	}
 }
 

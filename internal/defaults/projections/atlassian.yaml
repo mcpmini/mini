@@ -1,69 +1,20 @@
-jira_search:
-  array_limits:
-    issues: 25
-  exclude: [renderedFields, changelog, names, schema, editmeta, operations, versionedRepresentations]
+# Philosophy: docs/default-config-philosophy.md
+
+getJiraIssue:
   string_limits:
-    summary: 1000
-    description: 1500
+    description: 25000
+    body: 25000
 
-jira_get_issue:
-  exclude: [renderedFields, changelog, schema, editmeta, operations, versionedRepresentations, transitions, watchers]
+editJiraIssue:
   string_limits:
-    description: 5000
+    description: 25000
+    body: 25000
 
-jira_get_project_issues:
-  array_limits:
-    issues: 25
-  exclude: [renderedFields, changelog, names, schema, editmeta, operations, versionedRepresentations]
+getConfluenceContent:
   string_limits:
-    summary: 1000
-    description: 1500
+    value: 25000
 
-jira_get_all_projects:
-  array_limits:
-    values: 30
-  exclude: [avatarUrls, projectTypeKey, issueTypes, simplified, style, expand]
+# Keeps the ~35K-char Confluence format guide whole; Codex cuts results past ~40K chars.
+executeRead:
   string_limits:
-    description: 1000
-
-jira_get_project:
-  exclude: [avatarUrls, expand, permissions, issueTypeHierarchy, insight, simplified, style]
-  string_limits:
-    description: 5000
-
-jira_get_agile_boards:
-  array_limits:
-    values: 20
-
-jira_get_sprint_issues:
-  array_limits:
-    issues: 25
-  exclude: [renderedFields, changelog, names, schema, editmeta, operations, versionedRepresentations]
-  string_limits:
-    summary: 1000
-    description: 1500
-
-confluence_search:
-  array_limits:
-    results: 20
-  exclude: [metadata, extensions, _links, _expandable, body.view, body.export_view, body.anonymous_export_view, history, descendants, children]
-  string_limits:
-    excerpt: 1000
-
-confluence_get_page:
-  exclude: [extensions, _expandable, body.view, body.export_view, body.anonymous_export_view, descendants, children]
-  string_limits:
-    value: 10000
-
-confluence_get_page_children:
-  array_limits:
-    results: 30
-  exclude: [body, metadata, extensions, _links, _expandable]
-
-confluence_get_comments:
-  array_limits:
-    results: 30
-  exclude: [metadata, extensions, _expandable, _links, ancestors]
-  string_limits:
-    value: 2000
-
+    body: 40000

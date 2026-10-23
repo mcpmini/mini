@@ -22,6 +22,7 @@ func TestMatchKnownServer_knownVendors(t *testing.T) {
 		{name: "slack url", command: "", args: nil, url: "https://slack.com/mcp", want: "slack"},
 		{name: "slack command", command: "npx", args: []string{"server-slack"}, url: "", want: "slack"},
 		{name: "atlassian url", command: "", args: nil, url: "https://myco.atlassian.net/mcp", want: "atlassian"},
+		{name: "atlassian remote v2", url: "https://mcp.atlassian.com/v2/mcp", want: "atlassian"},
 		{name: "atlassian command", command: "uvx", args: []string{"mcp-atlassian"}, url: "", want: "atlassian"},
 		{name: "linear url", command: "", args: nil, url: "https://linear.app/mcp", want: "linear"},
 		{name: "sentry legacy url", command: "", args: nil, url: "https://mcp.sentry.io", want: "sentry"},

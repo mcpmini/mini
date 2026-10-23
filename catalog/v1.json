@@ -25,7 +25,7 @@
     {"name": "wolfram", "title": "Wolfram", "url": "https://agenttools.wolfram.com/mcp", "description": "Compute math, data, and facts with Wolfram Alpha and Wolfram Language", "category": "Docs & research", "auth": "none"},
     {"name": "apify", "title": "Apify", "url": "https://mcp.apify.com", "description": "Run web scrapers and automation actors and fetch results", "category": "Docs & research", "auth": "oauth2"},
     {"name": "linear", "title": "Linear", "url": "https://mcp.linear.app/mcp", "description": "Search, create, and update issues, projects, and cycles", "category": "Project management", "auth": "oauth2"},
-    {"name": "atlassian", "title": "Atlassian", "url": "https://mcp.atlassian.com/v1/mcp", "description": "Search and update Jira issues and Confluence pages", "category": "Project management", "auth": "oauth2"},
+    {"name": "atlassian", "title": "Atlassian", "url": "https://mcp.atlassian.com/v2/mcp", "description": "Search and update Jira issues and Confluence pages", "category": "Project management", "auth": "oauth2"},
     {"name": "asana", "title": "Asana", "url": "https://mcp.asana.com/v2/mcp", "description": "Create and update tasks, projects, and goals", "category": "Project management", "auth": "oauth2-app", "setup_url": "https://app.asana.com/0/my-apps"},
     {"name": "monday", "title": "monday.com", "url": "https://mcp.monday.com/mcp", "description": "Create and query boards, items, and updates", "category": "Project management", "auth": "oauth2"},
     {"name": "clickup", "title": "ClickUp", "url": "https://mcp.clickup.com/mcp", "description": "Create and update tasks, lists, and docs", "category": "Project management", "auth": "oauth2"},
