@@ -84,10 +84,13 @@ func TestValidateModernRequestMeta(t *testing.T) {
 	}
 }
 
-func TestModernRequestRejectsNonObjectParams(t *testing.T) {
+func TestModernRequestRejectsNonObjectParamsAndMeta(t *testing.T) {
 	if _, err := prepareModernParams(json.RawMessage(`[]`), ModernVersions[0]); err == nil ||
 		err.Error() != "modern request params must be a JSON object" {
 		t.Fatalf("prepareModernParams error = %v", err)
+	}
+	if _, err := prepareModernParams(json.RawMessage(`{"_meta":[]}`), ModernVersions[0]); err == nil {
+		t.Fatal("non-object _meta was accepted")
 	}
 }
 
@@ -149,8 +152,5 @@ func TestPrepareModernParamsAddsMissingMetadata(t *testing.T) {
 	meta := prepare(`{"_meta":{"io.modelcontextprotocol/clientInfo":{"name":"agent"},"trace":1}}`)
 	if string(meta[clientInfoMeta]) != `{"name":"agent"}` || string(meta["trace"]) != `1` {
 		t.Fatalf("prepared metadata = %v, want the caller's client info and trace kept", meta)
-	}
-	if _, err := prepareModernParams(json.RawMessage(`{"_meta":[]}`), ModernVersions[0]); err == nil {
-		t.Fatal("non-object _meta was accepted")
 	}
 }

@@ -187,15 +187,20 @@ func (s *writeStartSignal) SetWriteDeadline(deadline time.Time) error {
 }
 
 func TestIntegrationStartSubprocess_prefixesUpstreamStderr(t *testing.T) {
-	var logs syncBuffer
+	t.Parallel()
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("needs sh")
+	}
+	logs := &logSink{}
 	conn, err := startSubprocess(context.Background(), StdioCommand{
 		Command: "sh",
 		Args:    []string{"-c", "echo from-upstream >&2"},
-		Logger:  slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
+		Logger:  slog.New(logs),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { conn.Close() }) //nolint:errcheck // only reaps the child if the test fails first.
 	select {
 	case <-conn.done:
 	case <-time.After(5 * time.Second):
@@ -204,12 +209,16 @@ func TestIntegrationStartSubprocess_prefixesUpstreamStderr(t *testing.T) {
 	if err := conn.Close(); err != nil {
 		t.Fatalf("subprocess failed: %v", err)
 	}
-	if !strings.Contains(logs.String(), "[sh] from-upstream") {
-		t.Fatalf("stderr logs = %q, want the upstream stderr with the command prefix", logs.String())
+	if !slices.Contains(logs.msgs, "[sh] from-upstream") {
+		t.Fatalf("logged %q, want the upstream stderr with the command prefix", logs.msgs)
 	}
 }
 
 func TestIntegrationStdioClose_killsTheUpstreamOnceAndRepeatsItsResult(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("sleep"); err != nil {
+		t.Skip("needs sleep")
+	}
 	conn, err := startSubprocess(context.Background(), StdioCommand{
 		Command: "sleep",
 		Args:    []string{"30"},
@@ -218,6 +227,7 @@ func TestIntegrationStdioClose_killsTheUpstreamOnceAndRepeatsItsResult(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { conn.Close() }) //nolint:errcheck // only reaps the child if the test fails first.
 	closed := make(chan error, 1)
 	go func() { closed <- conn.Close() }()
 	var first error
@@ -232,21 +242,4 @@ func TestIntegrationStdioClose_killsTheUpstreamOnceAndRepeatsItsResult(t *testin
 	if conn.Health(context.Background()) == nil {
 		t.Fatal("closed connection still reports healthy")
 	}
-}
-
-type syncBuffer struct {
-	mu  sync.Mutex
-	buf strings.Builder
-}
-
-func (b *syncBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.Write(p)
-}
-
-func (b *syncBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.String()
 }
