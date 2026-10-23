@@ -45,15 +45,14 @@ type discoverClassifierCase struct {
 	result    string
 	rejection *RPCError
 	want      discoverVerdictWant
-	stdioWant *discoverVerdictWant
 }
 
-func TestDiscoverClassifiersByTransportPolicy(t *testing.T) {
+func TestDiscoverClassifiers(t *testing.T) {
 	modern := discoverVerdictWant{era: EraModern}
 	legacy := discoverVerdictWant{era: EraLegacy}
-	refused := func(supported string) *discoverVerdictWant {
+	refused := func(supported string) discoverVerdictWant {
 		message := `upstream does not support requested modern protocol "2026-07-28" (supported: ` + supported + `)`
-		return &discoverVerdictWant{err: message}
+		return discoverVerdictWant{err: message}
 	}
 	unsupported := func(data string) *RPCError {
 		return &RPCError{Code: CodeUnsupportedProtocolVersion, Data: json.RawMessage(data)}
@@ -61,7 +60,10 @@ func TestDiscoverClassifiersByTransportPolicy(t *testing.T) {
 	for _, tc := range []discoverClassifierCase{
 		{name: "modern result with tool changes", result: `{"supportedVersions":["2026-07-28"],"capabilities":{"tools":{"listChanged":true}}}`, want: discoverVerdictWant{era: EraModern, listen: true}},
 		{name: "modern result without tool changes", result: `{"supportedVersions":["2026-07-28"],"capabilities":{"tools":{"listChanged":false}}}`, want: modern},
-		{name: "result listing only legacy versions", result: `{"supportedVersions":["2025-11-25"]}`, want: legacy, stdioWant: refused("[2025-11-25]")},
+		{name: "result preferring a shared modern version over a shared legacy one", result: `{"supportedVersions":["2025-11-25","2026-07-28"]}`, want: modern},
+		{name: "result listing only a shared legacy version", result: `{"supportedVersions":["2025-11-25"]}`, want: legacy},
+		{name: "result listing no shared version", result: `{"supportedVersions":["2099-01-01"]}`, want: refused("[2099-01-01]")},
+		{name: "result listing no versions", result: `{"supportedVersions":[]}`, want: refused("[]")},
 		{name: "result without supported versions", result: `{}`, want: legacy},
 		{name: "malformed result", result: `not json`, want: legacy},
 		{name: "result asking for input", result: `{"supportedVersions":["2026-07-28"],"resultType":"input_required"}`, want: discoverVerdictWant{err: "validate modern discovery result: upstream asked for input during server/discover, which mini cannot relay"}},
@@ -69,21 +71,13 @@ func TestDiscoverClassifiersByTransportPolicy(t *testing.T) {
 		{name: "method not found", rejection: &RPCError{Code: CodeMethodNotFound, Message: "Method not found"}, want: legacy},
 		{name: "header mismatch", rejection: &RPCError{Code: CodeHeaderMismatch, Message: "header mismatch"}, want: discoverVerdictWant{err: "modern discovery rejected: header mismatch"}},
 		{name: "missing client capability", rejection: &RPCError{Code: CodeMissingRequiredClientCapability, Message: "client mismatch"}, want: discoverVerdictWant{err: "modern discovery rejected: client mismatch"}},
-		{name: "unsupported version naming a shared one", rejection: unsupported(`{"supported":["2026-07-28","2025-11-25"]}`), want: modern},
-		{name: "unsupported version naming only legacy", rejection: unsupported(`{"supported":["2025-11-25"]}`), want: legacy, stdioWant: refused("[2025-11-25]")},
-		{name: "unsupported version with undecodable data", rejection: unsupported(`"none"`), want: legacy, stdioWant: refused("[]")},
-		{name: "unsupported version without data", rejection: unsupported(""), want: legacy, stdioWant: refused("[]")},
+		{name: "unsupported version naming a shared modern one", rejection: unsupported(`{"supported":["2026-07-28","2025-11-25"]}`), want: modern},
+		{name: "unsupported version naming only a shared legacy one", rejection: unsupported(`{"supported":["2025-11-25"]}`), want: legacy},
+		{name: "unsupported version naming no shared one", rejection: unsupported(`{"supported":["2099-01-01"],"requested":"2026-07-28"}`), want: refused("[2099-01-01]")},
+		{name: "unsupported version with undecodable data", rejection: unsupported(`"none"`), want: refused("[]")},
+		{name: "unsupported version without data", rejection: unsupported(""), want: refused("[]")},
 	} {
-		stdioWant := tc.want
-		if tc.stdioWant != nil {
-			stdioWant = *tc.stdioWant
-		}
-		stdioPolicy := stdioDiscoverPolicy(ModernVersions[0])
-		t.Run(
-			tc.name+"/http",
-			func(t *testing.T) { assertDiscoverVerdict(t, tc.classify(httpDiscoverPolicy), tc.want) },
-		)
-		t.Run(tc.name+"/stdio", func(t *testing.T) { assertDiscoverVerdict(t, tc.classify(stdioPolicy), stdioWant) })
+		t.Run(tc.name, func(t *testing.T) { assertDiscoverVerdict(t, tc.classify(), tc.want) })
 	}
 }
 
@@ -92,12 +86,12 @@ type discoverOutcome struct {
 	err     error
 }
 
-func (tc discoverClassifierCase) classify(policy discoverPolicy) discoverOutcome {
+func (tc discoverClassifierCase) classify() discoverOutcome {
 	if tc.rejection != nil {
-		verdict, err := classifyDiscoverRejection(tc.rejection, policy)
+		verdict, err := classifyDiscoverRejection(tc.rejection, ModernVersions[0])
 		return discoverOutcome{verdict: verdict, err: err}
 	}
-	verdict, err := classifyDiscoverResult(json.RawMessage(tc.result), policy)
+	verdict, err := classifyDiscoverResult(json.RawMessage(tc.result), ModernVersions[0])
 	return discoverOutcome{verdict: verdict, err: err}
 }
 
