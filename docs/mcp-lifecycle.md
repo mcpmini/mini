@@ -216,7 +216,9 @@ mini supports both eras on each side:
   connection. A modern server gets modern requests (per-request `_meta`, the
   `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` headers, and `Mcp-Param-*` headers for
   annotated arguments); anything else gets the `initialize` handshake at the negotiated legacy
-  version. Stdio upstreams always use `initialize`.
+  version. Stdio upstreams get the same probe. One that rejects `server/discover` as an unknown
+  method gets `initialize`; one that doesn't answer within 5 seconds, or exits during setup, is
+  restarted once and gets `initialize`.
 - **Input requests.** A modern upstream can answer `tools/call` with
   `resultType: "input_required"`. mini passes it unchanged to a modern agent in proxy mode, and
   forwards the agent's retry with its answers. Legacy agents, compact mode and `mini call` get a

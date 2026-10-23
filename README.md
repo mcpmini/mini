@@ -301,16 +301,16 @@ Compact mode (`mini connect --tool-mode compact`) exposes exactly 4 tools regard
 
 The `open`/`protected` split only matters in compact mode and the `mini call` / `mini perm-call` CLI. In the default proxy mode, upstream tools are exposed directly and approval is handled by your MCP client, not by mini. Use your client's native per-tool approval settings for writes. `hidden` tools are filtered from normal discovery, but that is visibility control, not a security boundary.
 
-Use compact mode when your client loads every MCP tool schema eagerly at session start and a large catalog of servers is costing you context on every turn. Clients that defer schemas, like Claude Code, get no benefit from compact mode and lose native tool schemas, so stick with the default there. [How Claude Code loads MCP schemas →](docs/claude-code-mcp-loading.md)
+Use compact mode when your client loads every MCP tool schema eagerly at session start and a large catalog of servers is costing you context on every turn. Clients that defer schemas, like Claude Code and Codex, get no benefit from compact mode and lose native tool schemas, so stick with the default there. How [Claude Code](docs/claude-code-mcp-loading.md) and [Codex](docs/codex-mcp-loading.md) load MCP schemas.
 
 ## Commands
 
 ```
-mini connect [--http ADDR] [--standalone] [--tool-mode proxy|compact]   Connect an agent (stdio MCP)
+mini connect [--standalone] [--tool-mode proxy|compact]   Connect an agent (stdio MCP)
 mini daemon                               Run as a shared background daemon
 mini daemon status                        Check whether the daemon is running
 
-mini ls                                   List servers and check connections
+mini ls [SERVER [TOOL]]                   List servers and check connections, or a server's tools
 mini add NAME (--url URL | -- CMD [ARGS...])  Add a server
 mini rm NAME                              Remove a server
 mini status                               Server health and tool counts
