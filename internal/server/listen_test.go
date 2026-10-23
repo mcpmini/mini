@@ -96,6 +96,47 @@ func TestModernListenRejectsWrongJSONRPCVersion(t *testing.T) {
 	}
 }
 
+func TestModernListenRejectsInvalidRequests(t *testing.T) {
+	tests := []struct {
+		name string
+		line []byte
+		code int
+	}{
+		{
+			"malformed params",
+			transporttest.ModernRequest(4, transport.MethodSubscriptionsListen, map[string]any{"notifications": "all"}),
+			transport.CodeInvalidParams,
+		},
+		{
+			"invalid request metadata",
+			transporttest.ModernRequest(4, transport.MethodSubscriptionsListen, map[string]any{
+				"_meta": map[string]any{"io.modelcontextprotocol/clientCapabilities": []any{}},
+			}),
+			transport.CodeInvalidParams,
+		},
+		{
+			"unsupported version",
+			transporttest.ModernRequestVersion(transporttest.ModernRequestVersionParams{
+				Version: "1900-01-01", ID: 4, Method: transport.MethodSubscriptionsListen,
+				Params: transport.ListenParams{Notifications: transport.ListenNotifications{ToolsListChanged: true}},
+			}),
+			transport.CodeUnsupportedProtocolVersion,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			lines := rawServe(t, newTestServer(t, server.Params{}), tc.line)
+			if len(lines) != 1 {
+				t.Fatalf("got %d messages, want one error: %s", len(lines), bytes.Join(lines, []byte("\n")))
+			}
+			response := decodeMessage(t, lines[0])
+			if string(response.ID) != "4" || response.Error == nil || response.Error.Code != tc.code {
+				t.Fatalf("response = %s, want error %d for id 4", lines[0], tc.code)
+			}
+		})
+	}
+}
+
 func newServerWithRemovableUpstream(t *testing.T) *server.Server {
 	t.Helper()
 	srv := newTestServer(t, server.Params{})

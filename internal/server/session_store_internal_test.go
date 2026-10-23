@@ -181,3 +181,93 @@ func TestRunSessionEviction_evictsIdleSessions(t *testing.T) {
 		t.Errorf("expected 0 sessions after eviction, got %d", got)
 	}
 }
+
+func TestSessionIDPrefixKeepsFullIDsOutOfLogs(t *testing.T) {
+	if got := sessionIDPrefix("abcdefghijklmnop"); got != "abcdefgh" {
+		t.Fatalf("prefix = %q, want the first 8 characters", got)
+	}
+	if got := sessionIDPrefix("short"); got != "short" {
+		t.Fatalf("prefix of a short id = %q", got)
+	}
+}
+
+func TestSessionStore_get_doesNotCreate(t *testing.T) {
+	st := newSessionStore(clock.NewFake())
+	if s := st.get("missing"); s != nil || st.count() != 0 {
+		t.Fatalf("get created a session: %v, count %d", s, st.count())
+	}
+	created := st.getOrCreate("present")
+	if st.get("present") != created {
+		t.Fatal("get did not return the stored session")
+	}
+}
+
+func TestSessionStore_delete_closesTheSession(t *testing.T) {
+	st := newSessionStore(clock.NewFake())
+	conn := &transport.FakeConnection{}
+	st.getOrCreate("gone").GetOrSetConn("srv", conn)
+	st.delete("gone")
+	st.delete("never-existed")
+	if !conn.Closed || st.get("gone") != nil {
+		t.Fatalf("after delete: conn closed=%v, session kept=%v", conn.Closed, st.get("gone") != nil)
+	}
+}
+
+func TestSessionStore_closeAll_closesAndForgetsEverySession(t *testing.T) {
+	st := newSessionStore(clock.NewFake())
+	first, second := &transport.FakeConnection{}, &transport.FakeConnection{}
+	st.getOrCreate("a").GetOrSetConn("srv", first)
+	st.getOrCreate("b").GetOrSetConn("srv", second)
+	st.closeAll()
+	if !first.Closed || !second.Closed || st.count() != 0 {
+		t.Fatalf("closed = %v/%v, sessions left = %d", first.Closed, second.Closed, st.count())
+	}
+}
+
+func TestSessionStore_closeServerConnections_onlyClosesTheNamedServer(t *testing.T) {
+	st := newSessionStore(clock.NewFake())
+	removed, kept := &transport.FakeConnection{}, &transport.FakeConnection{}
+	session := st.getOrCreate("a")
+	session.GetOrSetConn("removed", removed)
+	session.GetOrSetConn("kept", kept)
+	other := st.getOrCreate("b")
+	otherRemoved := &transport.FakeConnection{}
+	other.GetOrSetConn("removed", otherRemoved)
+
+	st.closeServerConnections("removed")
+
+	if !removed.Closed || !otherRemoved.Closed || session.Conn("removed") != nil || other.Conn("removed") != nil {
+		t.Fatal("a removed server's per-session connection survived")
+	}
+	if kept.Closed || session.Conn("kept") != kept {
+		t.Fatal("another server's per-session connection was closed")
+	}
+}
+
+func TestSessionStore_aggregateMetrics(t *testing.T) {
+	st := newSessionStore(clock.NewFake())
+	a, b := st.getOrCreate("a"), st.getOrCreate("b")
+	if got := st.aggregateMetrics(); got["active"] != 2 || got["avg_latency_ms"] != nil {
+		t.Fatalf("metrics before any call = %v, want two active sessions and no average", got)
+	}
+	a.totalCalls.Store(1)
+	a.totalErrors.Store(1)
+	a.totalLatencyMs.Store(100)
+	a.estTokensSaved.Store(5)
+	b.totalCalls.Store(3)
+	b.totalErrors.Store(1)
+	b.totalLatencyMs.Store(300)
+	b.estTokensSaved.Store(7)
+	got := st.aggregateMetrics()
+	want := map[string]any{
+		"active": 2, "calls": int64(4), "errors": int64(2), "est_tokens_saved": int64(12), "avg_latency_ms": int64(100),
+	}
+	if len(got) != len(want) {
+		t.Fatalf("metrics = %v, want %v", got, want)
+	}
+	for key, value := range want {
+		if got[key] != value {
+			t.Fatalf("metrics[%q] = %v, want %v (all: %v)", key, got[key], value, got)
+		}
+	}
+}
