@@ -271,36 +271,6 @@ func TestRun_multipleRequestsAllForwarded(t *testing.T) {
 	}
 }
 
-func TestRun_proxy_doesNotInjectFlag(t *testing.T) {
-	var gotBody []byte
-	client := serveSocket(t, func(w http.ResponseWriter, r *http.Request) {
-		gotBody, _ = io.ReadAll(r.Body)
-		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{}}`)
-	})
-
-	initMsg := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26"}}` + "\n"
-	p := RunParams{
-		Client:    client,
-		SessionID: "sess",
-		In:        strings.NewReader(initMsg),
-		Out:       io.Discard,
-		Clock:     clock.NewFake(),
-	}
-	if err := Run(p); err != nil {
-		t.Fatalf("Run error: %v", err)
-	}
-
-	var msg struct {
-		Params map[string]json.RawMessage `json:"params"`
-	}
-	if err := json.Unmarshal(gotBody, &msg); err != nil {
-		t.Fatalf("unmarshal forwarded body: %v", err)
-	}
-	if msg.Params["_mini_tool_mode"] != nil {
-		t.Errorf("proxy mode should not inject _mini_tool_mode; params: %v", msg.Params)
-	}
-}
-
 func TestIsNotInitialized_trueForNotInitializedError(t *testing.T) {
 	resp := []byte(
 		`{"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"not initialized: send initialize first"}}`,

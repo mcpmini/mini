@@ -167,11 +167,6 @@ func TestIntegrationProxy_initialize(t *testing.T) {
 			t.Errorf("proxy tools/list missing %q, got: %v", want, names)
 		}
 	}
-	for _, absent := range []string{"list", "call", "perm_call"} {
-		if names[absent] {
-			t.Errorf("proxy tools/list should not expose standard tool %q", absent)
-		}
-	}
 }
 
 // TestIntegrationProxy_callUpstreamTool verifies that a proxy-mode tool call routes

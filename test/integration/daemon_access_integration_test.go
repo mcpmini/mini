@@ -250,8 +250,8 @@ func assertInlineGetItem(t *testing.T, env nativeCallResult) {
 	if env.IsError {
 		t.Fatalf("expected ok=true envelope, got %+v", env)
 	}
-	if env.Notice.File != nil {
-		t.Fatalf("expected inline response, got file %q", *env.Notice.File)
+	if env.Notice.File != "" {
+		t.Fatalf("expected inline response, got file %q", env.Notice.File)
 	}
 	data, ok := env.Data.(map[string]any)
 	if !ok {

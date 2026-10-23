@@ -121,7 +121,7 @@ func TestProxyToolsList_notHeldForAServerThatFailedForGood(t *testing.T) {
 	r := connectWithFakeClock(t, httpServer("svc", needsAuth.URL))
 	r.srv.WaitForStartupConnects()
 
-	if got := responseText(serveProxy(t, r.srv, rpc("tools/list", nil))); strings.Contains(got, `"error"`) {
+	if got := responseText(serve(t, r.srv, rpc("tools/list", nil))); strings.Contains(got, `"error"`) {
 		t.Errorf("tools/list = %s, want the list", got)
 	}
 }
@@ -144,7 +144,7 @@ func TestProxyToolsList_aServerThatNeverConnectsReleasesTheListAtItsWindowEnd(t 
 	if got := held.answer(t); !strings.Contains(got, "ready__ping") || strings.Contains(got, "svc__") {
 		t.Errorf("tools/list at the window end = %s, want the connected servers' tools", got)
 	}
-	if got := responseText(serveProxy(t, r.srv, rpc("tools/list", nil))); !strings.Contains(got, "ready__ping") {
+	if got := responseText(serve(t, r.srv, rpc("tools/list", nil))); !strings.Contains(got, "ready__ping") {
 		t.Errorf("a later tools/list = %s, want it answered at once", got)
 	}
 }

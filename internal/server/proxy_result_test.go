@@ -38,7 +38,7 @@ func newProxyServer(t *testing.T, upstream string, projection map[string]any) (s
 	conn.Responses["tools/call"] = json.RawMessage(upstream)
 	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 	if projection != nil {
-		serveProxy(t, srv, callTool("config", map[string]any{
+		serve(t, srv, callTool("config", map[string]any{
 			"action": "set_projection", "server": "svc", "tool": "tool", "projection": projection,
 		}))
 	}
@@ -47,7 +47,7 @@ func newProxyServer(t *testing.T, upstream string, projection map[string]any) (s
 
 func callProxyTool(t *testing.T, srv *server.Server, args map[string]any) map[string]any {
 	t.Helper()
-	resp := serveProxy(t, srv, callTool("svc__tool", args))
+	resp := serve(t, srv, callTool("svc__tool", args))
 	result, ok := resp["result"].(map[string]any)
 	if !ok {
 		t.Fatalf("no result: %v", resp)
@@ -72,7 +72,7 @@ func TestProxyResult_aTrimmedResultIsRecoverableWithRead(t *testing.T) {
 	}
 	notice := decodeJSON(t, content[1].(map[string]any)["text"].(string)).(map[string]any)["__mini"].(map[string]any)
 	path := notice["truncated"].([]any)[0].(map[string]any)["path"].(string)
-	resp := serveProxy(t, srv, callTool("read", map[string]any{"file": notice["file"], "filter": path}))
+	resp := serve(t, srv, callTool("read", map[string]any{"file": notice["file"], "filter": path}))
 	assertDeepEqual(t, decodeJSON(t, toolResultText(t, resp)), []any{1.0, 2.0, 3.0, 4.0})
 }
 

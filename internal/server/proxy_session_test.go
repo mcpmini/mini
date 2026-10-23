@@ -44,29 +44,6 @@ func initMsg() map[string]any {
 	return map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": 0, "method": "initialize", "params": params}
 }
 
-func toolsListMsg() map[string]any {
-	return map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "tools/list"}
-}
-
-func extractToolNames(resp map[string]any) []string {
-	res, _ := resp["result"].(map[string]any)
-	tools, _ := res["tools"].([]any)
-	names := make([]string, len(tools))
-	for i, tool := range tools {
-		names[i] = tool.(map[string]any)["name"].(string)
-	}
-	return names
-}
-
-func hasToolName(names []string, name string) bool {
-	for _, n := range names {
-		if n == name {
-			return true
-		}
-	}
-	return false
-}
-
 func TestProxy_SessionProjection_FieldExclusionPersistsAcrossCalls(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
@@ -193,40 +170,5 @@ func TestProxy_Reload_PreservesSessionProjections(t *testing.T) {
 	text, _ := content[0].(map[string]any)["text"].(string)
 	if strings.Contains(text, "topsecret") {
 		t.Errorf("session projection wiped by reload: %s", text)
-	}
-}
-
-func TestHTTPSessionIgnoresRemovedCompactSignal(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	fake := fakeConn("echo")
-	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"ok"}]}`)
-	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: fake})
-	const sid = "11111111-1111-1111-1111-111111111111"
-	init := initMsg()
-	init["params"].(map[string]any)["_mini_tool_mode"] = "compact"
-	resp := postMCP(postMCPParams{T: t, Server: srv, SessionID: sid, Msg: init})
-	if resp["error"] != nil {
-		t.Fatalf("initialize: %v", resp)
-	}
-	names := extractToolNames(postMCP(postMCPParams{T: t, Server: srv, SessionID: sid, Msg: toolsListMsg()}))
-	if !hasToolName(names, "svc__echo") || !hasToolName(names, "config") || !hasToolName(names, "read") {
-		t.Fatalf("native tools missing: %v", names)
-	}
-	for _, name := range []string{"list", "call", "perm_call"} {
-		if hasToolName(names, name) {
-			t.Fatalf("removed tool advertised: %s", name)
-		}
-		var request map[string]any
-		if err := json.Unmarshal(
-			callTool(name, map[string]any{"server": "svc", "tool": "echo"}),
-			&request,
-		); err != nil {
-			t.Fatal(err)
-		}
-		got := postMCP(postMCPParams{T: t, Server: srv, SessionID: sid, Msg: request})
-		requireRPCError(requireRPCErrorParams{T: t, Resp: got, WantCode: transport.CodeInvalidParams})
-	}
-	if len(fake.LastParams) != 0 {
-		t.Fatal("removed interface reached upstream")
 	}
 }

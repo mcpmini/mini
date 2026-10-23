@@ -276,7 +276,7 @@ func TestHealthStats_upstreamToolErrorRecorded(t *testing.T) {
 		srv := newTestServer(t, server.Params{})
 		t.Cleanup(srv.Close)
 		addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: failing()})
-		resp := serveProxy(t, srv, callTool("svc__ping", map[string]any{}))
+		resp := serve(t, srv, callTool("svc__ping", map[string]any{}))
 		assertIsErrorResult(t, resp)
 		assertFailedCallRecorded(
 			assertFailedCallRecordedParams{

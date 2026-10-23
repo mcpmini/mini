@@ -19,8 +19,8 @@ func TestIntegrationResponse_inlineSmallResponse(t *testing.T) {
 	if e.IsError {
 		t.Fatalf("expected ok=true, got: %+v", e)
 	}
-	if e.Notice.File != nil {
-		t.Errorf("small response should be inline, got file=%q", *e.Notice.File)
+	if e.Notice.File != "" {
+		t.Errorf("small response should be inline, got file=%q", e.Notice.File)
 	}
 }
 
@@ -46,11 +46,11 @@ func TestIntegrationResponse_projectedResponseWrittenToRawFile(t *testing.T) {
 	})
 
 	e := startServer(t, cfg).execResult("svc", "get_item", nil)
-	if e.Notice.File == nil {
+	if e.Notice.File == "" {
 		t.Fatal("projected response should have written a raw file")
 	}
-	if _, err := os.Stat(filepath.Join(respDir, *e.Notice.File+".json")); err != nil {
-		t.Errorf("response file %q should exist: %v", *e.Notice.File, err)
+	if _, err := os.Stat(filepath.Join(respDir, e.Notice.File+".json")); err != nil {
+		t.Errorf("response file %q should exist: %v", e.Notice.File, err)
 	}
 }
 
@@ -76,10 +76,10 @@ func TestIntegrationResponse_responseFileIsValidJSON(t *testing.T) {
 	})
 
 	e := startServer(t, cfg).execResult("svc", "get_item", nil)
-	if e.Notice.File == nil {
+	if e.Notice.File == "" {
 		t.Fatal("expected file response")
 	}
-	data := testutil.ReadFile(t, filepath.Join(respDir, *e.Notice.File+".json"))
+	data := testutil.ReadFile(t, filepath.Join(respDir, e.Notice.File+".json"))
 	var parsed any
 	if err := json.Unmarshal(data, &parsed); err != nil {
 		t.Errorf("response file is not valid JSON: %v", err)

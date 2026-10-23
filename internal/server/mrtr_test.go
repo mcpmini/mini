@@ -228,7 +228,7 @@ func TestInputRequiredBecomesToolErrorForLegacyAgents(t *testing.T) {
 	t.Run("proxy mode", func(t *testing.T) {
 		srv := newTestServer(t, server.Params{})
 		conn := addInputRequiredUpstream(t, srv)
-		resp := serveProxy(t, srv, rpc("tools/call", mrtrRetry("svc__confirm", map[string]any{})))
+		resp := serve(t, srv, rpc("tools/call", mrtrRetry("svc__confirm", map[string]any{})))
 		assertInputRequiredToolError(t, legacyToolCallResult(t, resp))
 		if string(conn.LastParams) != legacyToolCallParams {
 			t.Errorf("legacy agent forwarded %s, want %s", conn.LastParams, legacyToolCallParams)

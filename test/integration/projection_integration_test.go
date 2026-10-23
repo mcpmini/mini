@@ -115,7 +115,7 @@ func TestIntegrationProjection_omittedEnvelope(t *testing.T) {
 		t.Fatalf("expected success, got error: %s", env.Text)
 	}
 
-	if len(env.Notice.Truncated) != 1 || env.Notice.Truncated[0].JQPath != ".content[0].text | fromjson | .body" ||
+	if len(env.Notice.Truncated) != 1 || env.Notice.Truncated[0].Path != ".content[0].text | fromjson | .body" ||
 		env.Notice.Truncated[0].Chars <= 0 {
 		t.Fatalf("expected one truncated .body entry, got %v", env.Notice.Truncated)
 	}
@@ -124,12 +124,12 @@ func TestIntegrationProjection_omittedEnvelope(t *testing.T) {
 		t.Errorf("expected at least 300 chars removed from body, got %d", env.Notice.Truncated[0].Chars)
 	}
 	for _, o := range env.Notice.Truncated {
-		if o.JQPath == ".content[0].text | fromjson | .title" {
+		if o.Path == ".content[0].text | fromjson | .title" {
 			t.Errorf("short field 'title' should not appear in truncated")
 		}
 	}
 	// file written because truncation counts as projection
-	if env.Notice.File == nil {
+	if env.Notice.File == "" {
 		t.Error("expected file path in envelope when truncation applied")
 	}
 }

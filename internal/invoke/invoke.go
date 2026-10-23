@@ -47,7 +47,7 @@ func Invoke(ctx context.Context, p InvokeParams) (*InvokeResult, error) {
 }
 
 func buildEnvelopeFromParams(raw json.RawMessage, p InvokeParams) (*response.Envelope, error) {
-	env, _, err := BuildEnvelope(BuildEnvelopeParams{
+	return BuildEnvelope(BuildEnvelopeParams{
 		Server:   p.Server,
 		Tool:     p.Tool,
 		Raw:      raw,
@@ -55,7 +55,6 @@ func buildEnvelopeFromParams(raw json.RawMessage, p InvokeParams) (*response.Env
 		ProjDefs: p.ProjDefs,
 		Builder:  p.Builder,
 	})
-	return env, err
 }
 
 type InvokeRawParams struct {
@@ -90,12 +89,12 @@ type BuildEnvelopeParams struct {
 	Builder  *response.Builder
 }
 
-func BuildEnvelope(p BuildEnvelopeParams) (*response.Envelope, response.CallStats, error) {
+func BuildEnvelope(p BuildEnvelopeParams) (*response.Envelope, error) {
 	var value any
 	dec := json.NewDecoder(bytes.NewReader(p.Raw))
 	dec.UseNumber()
 	if err := dec.Decode(&value); err != nil {
-		return nil, response.CallStats{}, fmt.Errorf("parse upstream response: %w", err)
+		return nil, fmt.Errorf("parse upstream response: %w", err)
 	}
 	result := projection.Apply(value, p.ProjCfg, p.ProjDefs)
 	return p.Builder.Build(buildResponseParams(p, result))

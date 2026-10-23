@@ -61,12 +61,6 @@ func (e Envelope) WireMap() map[string]any {
 	return out
 }
 
-// CallStats tracks per-call size info internally — never sent to agents.
-type CallStats struct {
-	RawTokens     int
-	SummaryTokens int
-}
-
 const ProxyMsg = "Response filtered, some fields were excluded or truncated, use read(<file>, <jq filter>) to fetch full values."
 
 type ProjectionMeta struct {

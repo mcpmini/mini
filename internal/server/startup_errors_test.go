@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
-	"github.com/mcpmini/mini/internal/server"
 )
 
 type missingToolError struct {
@@ -18,17 +17,6 @@ type missingToolError struct {
 	Message   string `json:"message"`
 	Retryable bool   `json:"retryable"`
 	Action    string `json:"action"`
-}
-
-type toolSurface struct {
-	name string
-	call func(t *testing.T, srv *server.Server) map[string]any
-}
-
-var missingToolSurfaces = []toolSurface{
-	{name: "proxy call", call: func(t *testing.T, srv *server.Server) map[string]any {
-		return serve(t, srv, callTool("svc__ping", nil))
-	}},
 }
 
 func missingToolErrorOf(t *testing.T, resp map[string]any) missingToolError {
@@ -102,19 +90,6 @@ func TestMissingTool_aConfiguredServerThatIsNotConnectedSaysWhy(t *testing.T) {
 	}
 }
 
-func TestMissingTool_everyToolLookupReportsTheServerState(t *testing.T) {
-	for _, surface := range missingToolSurfaces {
-		t.Run(surface.name, func(t *testing.T) {
-			url, _ := gatedUpstream(t)
-			r := connectWithFakeClock(t, httpServer("svc", url))
-
-			if got := missingToolErrorOf(t, surface.call(t, r.srv)); got.Error != "server_starting" {
-				t.Errorf("error = %+v, want server_starting", got)
-			}
-		})
-	}
-}
-
 func settledStartup(t *testing.T, sc config.ServerConfig) startupRetry {
 	t.Helper()
 	r := connectWithFakeClock(t, sc)
@@ -134,7 +109,7 @@ func TestMissingTool_staysNotFoundWhenTheServerCanNotExplainIt(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := settledStartup(t, httpServer("ready", newMCPTestServer(t, pingTools).URL)).srv
 
-			proxy := serveProxy(t, srv, callTool(tc.server+"__missing", map[string]any{}))
+			proxy := serve(t, srv, callTool(tc.server+"__missing", map[string]any{}))
 			if code := rpcErrorCode(proxy); code != -32602 {
 				t.Errorf("proxy call = %v, want JSON-RPC invalid params", proxy)
 			}

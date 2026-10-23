@@ -586,17 +586,7 @@ type nativeCallResult struct {
 	Data    any
 	Text    string
 	IsError bool
-	Notice  struct {
-		File      *string      `json:"file"`
-		Excluded  []string     `json:"excluded"`
-		Truncated []truncation `json:"truncated"`
-	}
-}
-
-type truncation struct {
-	JQPath string `json:"path"`
-	Chars  int    `json:"chars"`
-	Items  int    `json:"items"`
+	Notice  miniEnv
 }
 
 type miniEnv struct {
@@ -795,14 +785,18 @@ func (c *mcpClient) listTools() string {
 
 func (c *mcpClient) execResult(server, tool string, args map[string]any) nativeCallResult {
 	c.t.Helper()
-	raw := c.mustCall("tools/call", map[string]any{"name": server + "__" + tool, "arguments": args})
-	return decodeNativeCall(c.t, raw)
+	return nativeCallFrom(c.t, c.execProxyTool(server+"__"+tool, args, nil))
 }
 
 func decodeNativeCall(t *testing.T, raw json.RawMessage) nativeCallResult {
 	t.Helper()
 	var wire proxyResult
 	mustUnmarshal(t, raw, &wire)
+	return nativeCallFrom(t, wire)
+}
+
+func nativeCallFrom(t *testing.T, wire proxyResult) nativeCallResult {
+	t.Helper()
 	result := nativeCallResult{IsError: wire.IsError}
 	if len(wire.Content) == 0 {
 		return result

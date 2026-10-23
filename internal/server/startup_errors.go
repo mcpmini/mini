@@ -17,11 +17,7 @@ func (s *Server) lookupTool(server, tool string) (*registry.ToolEntry, error) {
 	if env, notReady := s.serverNotReadyError(server); notReady {
 		return nil, errServerNotReady{env}
 	}
-	entry, err := s.reg.Lookup(toolFullName(server, tool))
-	if err != nil {
-		return nil, err
-	}
-	return entry, nil
+	return s.reg.Lookup(toolFullName(server, tool))
 }
 
 func (s *Server) serverNotReadyError(server string) (*response.Envelope, bool) {

@@ -150,27 +150,13 @@ func fakeMCPHandle(w http.ResponseWriter, r *http.Request, tools []map[string]an
 }
 
 func serveAll(t *testing.T, srv *server.Server, lines ...[]byte) []map[string]any {
-	return serveAllProxy(t, srv, lines...)
-}
-
-func serveAllProxy(t *testing.T, srv *server.Server, lines ...[]byte) []map[string]any {
-	return serveAllMode(serveAllModeParams{T: t, Server: srv, Lines: lines})
-}
-
-type serveAllModeParams struct {
-	T      *testing.T
-	Server *server.Server
-	Lines  [][]byte
-}
-
-func serveAllMode(params serveAllModeParams) []map[string]any {
-	params.T.Helper()
-	input := buildServeInput(params.Lines)
+	t.Helper()
+	input := buildServeInput(lines)
 	var out bytes.Buffer
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := params.Server.Serve(ctx, bytes.NewReader(input), &out); err != nil {
-		params.T.Fatalf("Serve: %v", err)
+	if err := srv.Serve(ctx, bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
 	}
 	return parseMessages(out.Bytes())
 }
@@ -250,23 +236,9 @@ func initParams() map[string]any {
 }
 
 func serve(t *testing.T, srv *server.Server, input []byte) map[string]any {
-	return serveProxy(t, srv, input)
-}
-
-func serveProxy(t *testing.T, srv *server.Server, input []byte) map[string]any {
-	return serveMode(serveModeParams{T: t, Server: srv, Input: input})
-}
-
-type serveModeParams struct {
-	T      *testing.T
-	Server *server.Server
-	Input  []byte
-}
-
-func serveMode(params serveModeParams) map[string]any {
-	params.T.Helper()
-	session := newTestSession(params.T, params.Input)
-	return session.response(params.T, session.run(params.Server))
+	t.Helper()
+	session := newTestSession(t, input)
+	return session.response(t, session.run(srv))
 }
 
 type testSession struct {

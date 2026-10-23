@@ -21,14 +21,14 @@ func TestProxy_MiniRead_ReadsFile(t *testing.T) {
 	)
 	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
-	serveProxy(t, srv, callTool("config", map[string]any{
+	serve(t, srv, callTool("config", map[string]any{
 		"action":     "set_projection",
 		"server":     "svc",
 		"tool":       "get_item",
 		"projection": map[string]any{"exclude": []string{"secret"}},
 	}))
 
-	resp1 := serveProxy(t, srv, callTool("svc__get_item", map[string]any{}))
+	resp1 := serve(t, srv, callTool("svc__get_item", map[string]any{}))
 	text1 := toolResultText(t, resp1)
 	t.Logf("initial response: %s", text1)
 
@@ -45,7 +45,7 @@ func TestProxy_MiniRead_ReadsFile(t *testing.T) {
 		t.Fatalf("expected __mini.file to be set, got: %s", text1)
 	}
 
-	resp2 := serveProxy(t, srv, callTool("read", map[string]any{"file": key}))
+	resp2 := serve(t, srv, callTool("read", map[string]any{"file": key}))
 	text2 := toolResultText(t, resp2)
 	t.Logf("read response: %s", text2)
 
@@ -68,14 +68,14 @@ func TestProxy_MiniRead_WithFilter(t *testing.T) {
 	)
 	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
-	serveProxy(t, srv, callTool("config", map[string]any{
+	serve(t, srv, callTool("config", map[string]any{
 		"action":     "set_projection",
 		"server":     "svc",
 		"tool":       "get_data",
 		"projection": map[string]any{"exclude": []string{"secret"}},
 	}))
 
-	resp1 := serveProxy(t, srv, callTool("svc__get_data", map[string]any{}))
+	resp1 := serve(t, srv, callTool("svc__get_data", map[string]any{}))
 	text1 := toolResultText(t, resp1)
 	var env map[string]any
 	_ = json.Unmarshal([]byte(text1), &env)
@@ -84,7 +84,7 @@ func TestProxy_MiniRead_WithFilter(t *testing.T) {
 		t.Fatalf("expected file key in __mini, got: %s", text1)
 	}
 
-	resp2 := serveProxy(
+	resp2 := serve(
 		t,
 		srv,
 		callTool("read", map[string]any{"file": key, "filter": ".content[0].text | fromjson | .name"}),
@@ -103,14 +103,14 @@ func TestProxy_MiniRead_InvalidFilterReturnsError(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"x\"}"}]}`)
 	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
-	serveProxy(t, srv, callTool("config", map[string]any{
+	serve(t, srv, callTool("config", map[string]any{
 		"action":     "set_projection",
 		"server":     "svc",
 		"tool":       "get_data2",
 		"projection": map[string]any{"exclude": []string{"secret"}},
 	}))
 
-	resp1 := serveProxy(t, srv, callTool("svc__get_data2", map[string]any{}))
+	resp1 := serve(t, srv, callTool("svc__get_data2", map[string]any{}))
 	text1 := toolResultText(t, resp1)
 	var env map[string]any
 	_ = json.Unmarshal([]byte(text1), &env)
@@ -119,7 +119,7 @@ func TestProxy_MiniRead_InvalidFilterReturnsError(t *testing.T) {
 		t.Fatalf("expected file key in __mini, got: %s", text1)
 	}
 
-	resp2 := serveProxy(t, srv, callTool("read", map[string]any{"file": key, "filter": "!!!invalid_jq!!!"}))
+	resp2 := serve(t, srv, callTool("read", map[string]any{"file": key, "filter": "!!!invalid_jq!!!"}))
 	if resp2["error"] != nil {
 		return // RPC-level error is correct
 	}
@@ -137,14 +137,14 @@ func TestProxy_MiniRead_FilenameOnly(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":5,\"secret\":\"x\"}"}]}`)
 	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
-	serveProxy(t, srv, callTool("config", map[string]any{
+	serve(t, srv, callTool("config", map[string]any{
 		"action":     "set_projection",
 		"server":     "svc",
 		"tool":       "get_thing",
 		"projection": map[string]any{"exclude": []string{"secret"}},
 	}))
 
-	resp1 := serveProxy(t, srv, callTool("svc__get_thing", map[string]any{}))
+	resp1 := serve(t, srv, callTool("svc__get_thing", map[string]any{}))
 	text1 := toolResultText(t, resp1)
 	var env map[string]any
 	_ = json.Unmarshal([]byte(text1), &env)
@@ -156,7 +156,7 @@ func TestProxy_MiniRead_FilenameOnly(t *testing.T) {
 		t.Errorf("__mini.file should be a bare key with no path or extension, got: %s", key)
 	}
 
-	resp2 := serveProxy(t, srv, callTool("read", map[string]any{"file": key}))
+	resp2 := serve(t, srv, callTool("read", map[string]any{"file": key}))
 	text2 := toolResultText(t, resp2)
 	if text2 == "" {
 		t.Error("read returned empty content using bare key")
@@ -172,7 +172,7 @@ func TestProxy_MiniRead_RejectsPathTraversal(t *testing.T) {
 	defer srv.Close()
 
 	for _, path := range []string{"../../etc/passwd", "../secrets.json", "../../etc/shadow.json"} {
-		resp := serveProxy(t, srv, callTool("read", map[string]any{"file": path}))
+		resp := serve(t, srv, callTool("read", map[string]any{"file": path}))
 		if resp["error"] != nil {
 			continue
 		}
@@ -189,7 +189,7 @@ func TestProxy_MiniRead_FileNotFound(t *testing.T) {
 	srv := newTestServer(t, server.Params{Config: cfg})
 	defer srv.Close()
 
-	resp := serveProxy(t, srv, callTool("read", map[string]any{"file": "9999999999999"}))
+	resp := serve(t, srv, callTool("read", map[string]any{"file": "9999999999999"}))
 	if resp["error"] != nil {
 		return // RPC-level error is also acceptable
 	}
@@ -207,7 +207,7 @@ func TestProxy_MiniRead_RequiresPath(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 
-	resp := serveProxy(t, srv, callTool("read", map[string]any{}))
+	resp := serve(t, srv, callTool("read", map[string]any{}))
 	if resp["error"] != nil {
 		return // RPC-level error is correct
 	}
@@ -221,7 +221,7 @@ func TestProxy_UnknownTool_ReturnsError(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 
-	resp := serveProxy(t, srv, callTool("nonexistent__tool", map[string]any{}))
+	resp := serve(t, srv, callTool("nonexistent__tool", map[string]any{}))
 	if resp["error"] == nil {
 		result, ok := resp["result"].(map[string]any)
 		if !ok || result["isError"] != true {
@@ -234,7 +234,7 @@ func TestProxy_NoDoubleUnderscore_ReturnsError(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 
-	resp := serveProxy(t, srv, callTool("notaproxytool", map[string]any{}))
+	resp := serve(t, srv, callTool("notaproxytool", map[string]any{}))
 	if resp["error"] == nil {
 		result, ok := resp["result"].(map[string]any)
 		if !ok || result["isError"] != true {

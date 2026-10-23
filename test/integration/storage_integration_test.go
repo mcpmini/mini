@@ -48,11 +48,11 @@ func TestIntegrationStorage_rawFileExists(t *testing.T) {
 	t.Parallel()
 	client, respDir, _ := projectedResponseClient(t, projectedResponseParams{})
 	e := client.execResult("svc", "get_item", nil)
-	if e.Notice.File == nil {
+	if e.Notice.File == "" {
 		t.Fatal("expected file response for projected payload")
 	}
-	if _, err := os.Stat(filepath.Join(respDir, *e.Notice.File+".json")); err != nil {
-		t.Errorf("raw file %q should exist: %v", *e.Notice.File, err)
+	if _, err := os.Stat(filepath.Join(respDir, e.Notice.File+".json")); err != nil {
+		t.Errorf("raw file %q should exist: %v", e.Notice.File, err)
 	}
 }
 
@@ -71,8 +71,8 @@ func TestIntegrationStorage_unprojectedResponseDoesNotWriteFile(t *testing.T) {
 	client := startServer(t, cfg)
 
 	e := client.execResult("svc", "get_item", nil)
-	if e.Notice.File != nil {
-		t.Errorf("unprojected response must not write a file, got %q", *e.Notice.File)
+	if e.Notice.File != "" {
+		t.Errorf("unprojected response must not write a file, got %q", e.Notice.File)
 	}
 }
 
@@ -80,10 +80,10 @@ func TestIntegrationStorage_rawFileIsPrettyPrinted(t *testing.T) {
 	t.Parallel()
 	client, respDir, _ := projectedResponseClient(t, projectedResponseParams{})
 	e := client.execResult("svc", "get_item", nil)
-	if e.Notice.File == nil {
+	if e.Notice.File == "" {
 		t.Fatal("expected file response")
 	}
-	data := testutil.ReadFile(t, filepath.Join(respDir, *e.Notice.File+".json"))
+	data := testutil.ReadFile(t, filepath.Join(respDir, e.Notice.File+".json"))
 	if !strings.Contains(string(data), "\n") || !strings.Contains(string(data), "  ") {
 		t.Errorf("raw file should be pretty-printed JSON, got first 100 chars: %s", data[:min(100, len(data))])
 	}
@@ -118,8 +118,8 @@ func TestIntegrationStorage_responseDirAutoCreated(t *testing.T) {
 	if _, err := os.Stat(respDir); err != nil {
 		t.Errorf("response dir should be auto-created: %v", err)
 	}
-	if e.Notice.File != nil {
-		t.Errorf("include_only projection with no excluded fields should not write a file, got %q", *e.Notice.File)
+	if e.Notice.File != "" {
+		t.Errorf("include_only projection with no excluded fields should not write a file, got %q", e.Notice.File)
 	}
 }
 
@@ -148,10 +148,10 @@ func TestIntegrationStorage_cleanupDeletesExpired(t *testing.T) {
 	client, respDir, cfg := projectedResponseClient(t, projectedResponseParams{})
 
 	e := client.execResult("svc", "get_item", nil)
-	if e.Notice.File == nil {
+	if e.Notice.File == "" {
 		t.Fatal("expected file response")
 	}
-	rawPath := filepath.Join(respDir, *e.Notice.File+".json")
+	rawPath := filepath.Join(respDir, e.Notice.File+".json")
 	backdateFile(t, rawPath, 8*24*time.Hour)
 
 	runCLI(t, cfg, "cleanup")
@@ -165,10 +165,10 @@ func TestIntegrationStorage_cleanupRetainsNonExpired(t *testing.T) {
 	client, respDir, cfg := projectedResponseClient(t, projectedResponseParams{})
 
 	e := client.execResult("svc", "get_item", nil)
-	if e.Notice.File == nil {
+	if e.Notice.File == "" {
 		t.Fatal("expected file response")
 	}
-	rawPath := filepath.Join(respDir, *e.Notice.File+".json")
+	rawPath := filepath.Join(respDir, e.Notice.File+".json")
 	runCLI(t, cfg, "cleanup")
 	if _, err := os.Stat(rawPath); err != nil {
 		t.Errorf("non-expired file should not be deleted by cleanup: %v", err)
@@ -186,8 +186,8 @@ func TestIntegrationStorage_unprojectedLargeResponseInlines(t *testing.T) {
 	client := startServer(t, cfg)
 
 	e := client.execResult("github", "list_pull_requests", nil)
-	if e.Notice.File != nil {
-		t.Errorf("unprojected large response should inline without file, got file=%q", *e.Notice.File)
+	if e.Notice.File != "" {
+		t.Errorf("unprojected large response should inline without file, got file=%q", e.Notice.File)
 	}
 	if e.Data == nil {
 		t.Error("expected data field to be present for inline response")
