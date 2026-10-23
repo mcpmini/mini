@@ -208,3 +208,39 @@ func TestProxySession_rejectsMalformedModernDiscoverWithoutPoisoningBridge(t *te
 			daemon.initializes, daemon.methods)
 	}
 }
+
+func TestProxySession_modernInputLeftForTheDaemon(t *testing.T) {
+	invalidMeta := `"params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}`
+	tests := map[string]struct {
+		line   string
+		modern bool
+	}{
+		"malformed JSON":             {`{"jsonrpc":`, false},
+		"legacy request":             {`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`, false},
+		"notification with bad meta": {`{"jsonrpc":"2.0","method":"notifications/progress",` + invalidMeta + `}`, true},
+		"null id with bad meta":      {`{"jsonrpc":"2.0","id":null,"method":"tools/list",` + invalidMeta + `}`, true},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			session, out := newReadyProxySession(t, transport.ToolModeProxy)
+			handled, err := session.handleModernInput([]byte(tc.line))
+			if err != nil || handled || out.Len() != 0 {
+				t.Fatalf("handled=%t error=%v output=%q, want the line forwarded untouched", handled, err, out.String())
+			}
+			if got := session.subs.modern.Load(); got != tc.modern {
+				t.Fatalf("session modern = %t, want %t", got, tc.modern)
+			}
+		})
+	}
+}
+
+func TestProxySession_modernRequestOnAReadySessionMarksItModern(t *testing.T) {
+	session, out := newReadyProxySession(t, transport.ToolModeProxy)
+	handled, err := session.handleModernInput(transporttest.ModernRequest(1, "tools/list", nil))
+	if err != nil || handled || out.Len() != 0 {
+		t.Fatalf("handled=%t error=%v output=%q, want the request forwarded", handled, err, out.String())
+	}
+	if !session.subs.modern.Load() {
+		t.Fatal("modern request did not switch notification forwarding to modern")
+	}
+}
