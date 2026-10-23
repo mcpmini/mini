@@ -48,6 +48,7 @@ type discoverPolicy struct {
 	// stdio sets this: a server that answers discover, or returns -32022, is modern, so sharing no
 	// version with mini is an error there, and naming the versions it does support tells the user
 	// what to change.
+	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/80041ab0a139a8f4fb3adbc99f7ae9113ea59671/docs/specification/2026-07-28/basic/transports/stdio.mdx?plain=1#L131-L134
 	refuseLegacyFallback bool
 }
 
@@ -75,7 +76,10 @@ func classifyDiscoverResult(result json.RawMessage, p discoverPolicy) (probeVerd
 }
 
 // A modern verdict here comes from -32022 naming a version both sides support; the caller decides
-// whether to probe again with it.
+// whether to probe again with it. Any other code means legacy, since legacy servers answer with
+// whatever error they like.
+// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/80041ab0a139a8f4fb3adbc99f7ae9113ea59671/docs/specification/2026-07-28/basic/versioning.mdx?plain=1#L69-L71
+// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/80041ab0a139a8f4fb3adbc99f7ae9113ea59671/docs/specification/2026-07-28/basic/transports/stdio.mdx?plain=1#L139-L141
 func classifyDiscoverRejection(err *RPCError, p discoverPolicy) (probeVerdict, error) {
 	if isModernRejection(err.Code) {
 		return probeVerdict{}, fmt.Errorf("modern discovery rejected: %w", err)
@@ -117,6 +121,7 @@ func requireCompleteResult(raw json.RawMessage, method string) error {
 }
 
 // A different protocol version can't fix these, so falling back to initialize would only hide them.
+// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/80041ab0a139a8f4fb3adbc99f7ae9113ea59671/docs/specification/2026-07-28/basic/transports/streamable-http.mdx?plain=1#L660-L662
 func isModernRejection(code int) bool {
 	return code == CodeHeaderMismatch || code == CodeMissingRequiredClientCapability
 }

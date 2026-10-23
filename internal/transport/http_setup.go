@@ -193,6 +193,7 @@ func (c *HTTPConnection) probe(ctx context.Context) (json.RawMessage, error) {
 
 // httpDiscoverPolicy falls back on any version mismatch, even after -32022 where the spec says not
 // to: servers that list only legacy versions (Atlassian v2) still accept initialize over HTTP.
+// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/80041ab0a139a8f4fb3adbc99f7ae9113ea59671/docs/specification/2026-07-28/basic/versioning.mdx?plain=1#L143-L146
 var httpDiscoverPolicy = discoverPolicy{}
 
 func classifyDiscover(result json.RawMessage, err error) (probeVerdict, error) {
@@ -204,6 +205,7 @@ func classifyDiscover(result json.RawMessage, err error) (probeVerdict, error) {
 
 func classifyDiscoverError(err error) (probeVerdict, error) {
 	// The spec reads anything other than a recognized modern answer as legacy, including a reply that answers nothing.
+	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/80041ab0a139a8f4fb3adbc99f7ae9113ea59671/docs/specification/2026-07-28/basic/transports/streamable-http.mdx?plain=1#L663-L665
 	var unusable unusableResponseError
 	if errors.As(err, &unusable) {
 		return legacyProbeVerdict()
@@ -224,6 +226,9 @@ func classifyDiscoverError(err error) (probeVerdict, error) {
 	return probeVerdict{}, err
 }
 
+// The spec falls back on a 4xx without a modern error body. 403, 408 and 429 are auth, timeout and
+// rate-limit failures, which say nothing about the server's protocol version.
+// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/80041ab0a139a8f4fb3adbc99f7ae9113ea59671/docs/specification/2026-07-28/basic/transports/versioning.mdx?plain=1#L169
 func isLegacyProbeStatus(status int) bool {
 	return status >= 400 && status < 500 && status != 403 && status != 408 && status != 429
 }
