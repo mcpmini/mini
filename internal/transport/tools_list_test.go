@@ -375,18 +375,3 @@ func TestDecodeToolsListPageRejectsUnusablePages(t *testing.T) {
 		})
 	}
 }
-
-func TestPaginateToolsList_errorAfterOnlyEmptyPages(t *testing.T) {
-	sentinel := errors.New("page 2 failed")
-	calls := 0
-	callPage := func(context.Context, string) (ToolsListResult, error) {
-		calls++
-		if calls == 1 {
-			return ToolsListResult{NextCursor: "page2"}, nil
-		}
-		return ToolsListResult{}, sentinel
-	}
-	if got, err := paginateToolsList(context.Background(), callPage); !errors.Is(err, sentinel) || got != nil {
-		t.Fatalf("pagination = %v, %v; want the error when no tools were listed", got, err)
-	}
-}

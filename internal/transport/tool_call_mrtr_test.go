@@ -4,8 +4,10 @@ package transport
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -96,6 +98,29 @@ func TestLegacyHTTPToolCallDropsModernFields(t *testing.T) {
 	}
 	if string(got) != `{"arguments":{"x":1},"name":"confirm"}` {
 		t.Fatalf("legacy upstream received %s", got)
+	}
+}
+
+func TestStdioLegacyToolCallDropsModernOnlyFields(t *testing.T) {
+	conn, serverW, serverR := makePipeConn(t)
+	seen := scriptStdioUpstream(serverW, serverR,
+		replyResult(serverW, json.RawMessage(`{"content":[]}`)),
+		replyResult(serverW, json.RawMessage(`{}`)))
+	if _, err := conn.Call(context.Background(), "tools/call", json.RawMessage(modernContinuationCall)); err != nil {
+		t.Fatal(err)
+	}
+	call := <-seen
+	for _, modernOnly := range []string{"inputResponses", "requestState", clientCapabilitiesMeta} {
+		if strings.Contains(string(call.Params), modernOnly) {
+			t.Errorf("legacy tools/call params %s still carry %s", call.Params, modernOnly)
+		}
+	}
+	other := json.RawMessage(`{"requestState":1}`)
+	if _, err := conn.Call(context.Background(), "prompts/get", other); err != nil {
+		t.Fatal(err)
+	}
+	if got := (<-seen).Params; string(got) != string(other) {
+		t.Fatalf("legacy prompts/get params = %s, want %s untouched", got, other)
 	}
 }
 

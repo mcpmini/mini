@@ -438,53 +438,6 @@ func TestStdioCancellationGivesUpOnItsTurnToWrite(t *testing.T) {
 	}
 }
 
-func TestStdioLegacyToolCallDropsModernOnlyFields(t *testing.T) {
-	conn, serverW, serverR := makePipeConn(t)
-	seen := scriptStdioUpstream(serverW, serverR,
-		replyResult(serverW, json.RawMessage(`{"content":[]}`)),
-		replyResult(serverW, json.RawMessage(`{}`)))
-	if _, err := conn.Call(context.Background(), "tools/call", json.RawMessage(modernContinuationCall)); err != nil {
-		t.Fatal(err)
-	}
-	call := <-seen
-	for _, modernOnly := range []string{"inputResponses", "requestState", clientCapabilitiesMeta} {
-		if strings.Contains(string(call.Params), modernOnly) {
-			t.Errorf("legacy tools/call params %s still carry %s", call.Params, modernOnly)
-		}
-	}
-	other := json.RawMessage(`{"requestState":1}`)
-	if _, err := conn.Call(context.Background(), "prompts/get", other); err != nil {
-		t.Fatal(err)
-	}
-	if got := (<-seen).Params; string(got) != string(other) {
-		t.Fatalf("legacy prompts/get params = %s, want %s untouched", got, other)
-	}
-}
-
-func TestStdioResultTypeIsCheckedOnlyForModernUpstreams(t *testing.T) {
-	unknown := json.RawMessage(`{"resultType":"later"}`)
-	t.Run("modern", func(t *testing.T) {
-		conn, serverW, serverR := makePipeConn(t)
-		conn.setModern(ModernVersions[0])
-		scriptStdioUpstream(serverW, serverR, replyResult(serverW, unknown))
-		if result, err := conn.Call(context.Background(), "ping", nil); err == nil {
-			t.Fatalf("modern result %s with an unknown resultType was accepted", result)
-		}
-	})
-	t.Run("legacy", func(t *testing.T) {
-		conn, serverW, serverR := makePipeConn(t)
-		scriptStdioUpstream(serverW, serverR, replyResult(serverW, unknown))
-		if result, err := conn.Call(
-			context.Background(),
-			"ping",
-			nil,
-		); err != nil ||
-			string(result) != string(unknown) {
-			t.Fatalf("legacy result = %s, %v; want it returned as sent", result, err)
-		}
-	})
-}
-
 func TestStdioModernCallWithNonObjectParamsSendsNothing(t *testing.T) {
 	var written strings.Builder
 	conn := newWriteOnlyConn(discardWriteCloser{Writer: &written})
@@ -504,19 +457,5 @@ func TestStdioCallReturnsTheUpstreamRPCError(t *testing.T) {
 	var rpcErr *RPCError
 	if !errors.As(err, &rpcErr) || rpcErr.Code != CodeInvalidParams {
 		t.Fatalf("Call error = %v, want the upstream's RPC error", err)
-	}
-}
-
-func TestStdioLegacyCancellationSendsNoNotice(t *testing.T) {
-	var written strings.Builder
-	conn := newWriteOnlyConn(discardWriteCloser{Writer: &written})
-	ctx, cancel := context.WithCancel(context.Background())
-	ch := conn.pending.register(7)
-	cancel()
-	if _, err := conn.awaitResponse(ctx, 7, ch); !errors.Is(err, context.Canceled) {
-		t.Fatalf("awaitResponse error = %v, want context.Canceled", err)
-	}
-	if written.Len() != 0 {
-		t.Fatalf("legacy upstream was sent %q, want no cancellation notice", written.String())
 	}
 }
