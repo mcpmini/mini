@@ -283,3 +283,48 @@ func writeHeaderMismatch(t *testing.T, w http.ResponseWriter, id any) {
 		t.Errorf("write mismatch response: %v", err)
 	}
 }
+
+func TestIsHeaderMismatch(t *testing.T) {
+	mismatch := &RPCError{Code: CodeHeaderMismatch}
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"rpc error", mismatch, true},
+		{"wrapped rpc error", fmt.Errorf("call: %w", mismatch), true},
+		{"http status carrying the rpc error", &HTTPStatusError{StatusCode: 400, RPC: mismatch}, true},
+		{"http status without rpc error", &HTTPStatusError{StatusCode: 400}, false},
+		{"other rpc error", &RPCError{Code: CodeInvalidParams}, false},
+		{"plain error", errors.New("boom"), false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isHeaderMismatch(tc.err); got != tc.want {
+				t.Fatalf("isHeaderMismatch(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestModernServerErrorKeepsTheEra(t *testing.T) {
+	conn := &HTTPConnection{}
+	version := ModernVersions[0]
+	conn.modernVersion.Store(&version)
+	failure := &HTTPStatusError{StatusCode: http.StatusBadGateway}
+	err := conn.modernError(failure)
+	if !errors.Is(err, failure) || IsConnectionError(err) || !conn.isModern() {
+		t.Fatalf("5xx became %v (connection error: %v), modern = %v; want it returned as is with the era kept",
+			err, IsConnectionError(err), conn.isModern())
+	}
+}
+
+func TestModernCallRejectsAnUnknownResultType(t *testing.T) {
+	srv := newModernServer(t, modernUpstream{Handle: func(w http.ResponseWriter, _ *http.Request, req Request) {
+		writeRPCResult(t, rpcResultParams{Writer: w, ID: req.ID, Result: map[string]string{"resultType": "later"}})
+	}})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	if result, err := conn.Call(t.Context(), "ping", nil); err == nil {
+		t.Fatalf("result %s with an unknown resultType was accepted", result)
+	}
+}

@@ -426,3 +426,82 @@ func TestNewStreamClient_redirect_notFollowed(t *testing.T) {
 		)
 	}
 }
+
+func TestListenResponseOutcome(t *testing.T) {
+	rejection := &RPCError{Code: CodeInvalidParams, Message: "no"}
+	if err := listenResponseOutcome(Response{ID: 1, Error: rejection}); !errors.Is(err, errListenRejected) ||
+		!errors.Is(err, rejection) {
+		t.Fatalf("error response outcome = %v, want a rejected listen carrying the RPC error", err)
+	}
+	if err := listenResponseOutcome(
+		Response{ID: 1, Result: json.RawMessage(`{}`)},
+	); !errors.Is(
+		err,
+		errListenComplete,
+	) {
+		t.Fatalf("result response outcome = %v, want the subscription completed", err)
+	}
+	if err := listenResponseOutcome(Response{ID: 1}); err != nil {
+		t.Fatalf("empty response outcome = %v, want none", err)
+	}
+}
+
+func TestHandleSubscriptionMessageIgnoresUnrecognizedMessages(t *testing.T) {
+	conn := &HTTPConnection{}
+	for _, message := range []string{`{}`, `[1]`, `"text"`, `{"id":null,"error":{"code":1}}`} {
+		if err := conn.handleSubscriptionMessage(json.RawMessage(message)); err != nil {
+			t.Errorf("message %s ended the subscription: %v", message, err)
+		}
+	}
+}
+
+func TestHandleNotificationRoutesByMethod(t *testing.T) {
+	conn := &HTTPConnection{}
+	logMessage := Notification{
+		JsonRPC: JsonRPCVersion,
+		Method:  "notifications/message",
+		Params:  json.RawMessage(`{"a":1}`),
+	}
+	conn.handleNotification(logMessage)
+	conn.handleNotification(Notification{Method: NotificationToolsChanged, Params: json.RawMessage(`{"_meta":{}}`)})
+	var got []Notification
+	conn.SetNotificationHandler(func(n Notification) { got = append(got, n) })
+	conn.handleNotification(logMessage)
+	want := []Notification{
+		{JsonRPC: JsonRPCVersion, Method: NotificationToolsChanged},
+		logMessage,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("handled = %+v, want the buffered bare tool change then the message", got)
+	}
+	for i := range want {
+		if got[i].Method != want[i].Method || string(got[i].Params) != string(want[i].Params) {
+			t.Fatalf("handled[%d] = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
+func TestRestartListenerWithoutListenStopsTheRunningListener(t *testing.T) {
+	conn := &HTTPConnection{}
+	ctx, cancel := context.WithCancel(context.Background())
+	running := &sessionListener{cancel: cancel, done: make(chan struct{})}
+	go func() {
+		<-ctx.Done()
+		close(running.done)
+	}()
+	conn.listener = running
+	restarted := make(chan struct{})
+	go func() {
+		conn.restartListener(false)
+		close(restarted)
+	}()
+	select {
+	case <-restarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("restartListener did not stop the running listener")
+	}
+	if !running.stopped() || conn.listener != nil {
+		t.Fatalf("old listener stopped = %v, current listener = %v; want it stopped and none started",
+			running.stopped(), conn.listener)
+	}
+}
