@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"maps"
@@ -183,4 +184,62 @@ func (s *writeStartSignal) Close() error { return s.pipe.Close() }
 
 func (s *writeStartSignal) SetWriteDeadline(deadline time.Time) error {
 	return s.pipe.(deadlineWriter).SetWriteDeadline(deadline)
+}
+
+func TestIntegrationStartSubprocess_prefixesUpstreamStderr(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("needs sh")
+	}
+	logs := &logSink{}
+	conn, err := startSubprocess(context.Background(), StdioCommand{
+		Command: "sh",
+		Args:    []string{"-c", "echo from-upstream >&2"},
+		Logger:  slog.New(logs),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() }) //nolint:errcheck // only reaps the child if the test fails first.
+	select {
+	case <-conn.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("subprocess did not exit")
+	}
+	if err := conn.Close(); err != nil {
+		t.Fatalf("subprocess failed: %v", err)
+	}
+	if !slices.Contains(logs.msgs, "[sh] from-upstream") {
+		t.Fatalf("logged %q, want the upstream stderr with the command prefix", logs.msgs)
+	}
+}
+
+func TestIntegrationStdioClose_killsTheUpstreamOnceAndRepeatsItsResult(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("sleep"); err != nil {
+		t.Skip("needs sleep")
+	}
+	conn, err := startSubprocess(context.Background(), StdioCommand{
+		Command: "sleep",
+		Args:    []string{"30"},
+		Logger:  slog.New(slog.DiscardHandler),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() }) //nolint:errcheck // only reaps the child if the test fails first.
+	closed := make(chan error, 1)
+	go func() { closed <- conn.Close() }()
+	var first error
+	select {
+	case first = <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close waited for an upstream that ignores stdin EOF")
+	}
+	if second := conn.Close(); fmt.Sprint(second) != fmt.Sprint(first) {
+		t.Fatalf("second Close = %v, want the first result %v", second, first)
+	}
+	if conn.Health(context.Background()) == nil {
+		t.Fatal("closed connection still reports healthy")
+	}
 }

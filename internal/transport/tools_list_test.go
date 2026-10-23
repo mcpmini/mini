@@ -362,3 +362,9 @@ func TestFreshnessStaleAndExpire(t *testing.T) {
 		t.Fatal("an expired list was still fresh")
 	}
 }
+
+func TestDecodeToolsListPageRejectsAMalformedPage(t *testing.T) {
+	if page, err := decodeToolsListPage(json.RawMessage(`{"tools":"none"}`), time.Time{}, ""); err == nil {
+		t.Fatalf("malformed page decoded as %+v, want an error", page)
+	}
+}

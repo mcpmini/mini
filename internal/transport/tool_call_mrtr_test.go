@@ -3,7 +3,6 @@
 package transport
 
 import (
-	"bufio"
 	"encoding/json"
 	"net/http"
 	"testing"
@@ -101,24 +100,20 @@ func TestLegacyHTTPToolCallDropsModernFields(t *testing.T) {
 
 func TestStdioToolCallDropsModernFields(t *testing.T) {
 	conn, serverW, serverR := makePipeConn(t)
-	received := make(chan Request, 1)
-	go func() {
-		scanner := bufio.NewScanner(serverR)
-		if !scanner.Scan() {
-			return
-		}
-		var req Request
-		if err := json.Unmarshal(scanner.Bytes(), &req); err != nil {
-			t.Errorf("decode stdio request: %v", err)
-			return
-		}
-		received <- req
-		sendResponse(serverW, 1, map[string]any{"content": []any{}})
-	}()
+	seen := scriptStdioUpstream(serverW, serverR,
+		replyResult(serverW, json.RawMessage(`{"content":[]}`)),
+		replyResult(serverW, json.RawMessage(`{}`)))
 	if _, err := conn.Call(t.Context(), "tools/call", json.RawMessage(modernToolCallParams)); err != nil {
 		t.Fatal(err)
 	}
-	if got := (<-received).Params; string(got) != `{"arguments":{"x":1},"name":"confirm"}` {
+	if got := (<-seen).Params; string(got) != `{"arguments":{"x":1},"name":"confirm"}` {
 		t.Fatalf("stdio upstream received %s", got)
+	}
+	other := json.RawMessage(`{"requestState":1}`)
+	if _, err := conn.Call(t.Context(), "prompts/get", other); err != nil {
+		t.Fatal(err)
+	}
+	if got := (<-seen).Params; string(got) != string(other) {
+		t.Fatalf("legacy prompts/get params = %s, want %s untouched", got, other)
 	}
 }

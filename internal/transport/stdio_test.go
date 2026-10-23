@@ -95,3 +95,13 @@ type failingWriteCloser struct{}
 
 func (failingWriteCloser) Write([]byte) (int, error) { return 0, errors.New("broken pipe") }
 func (failingWriteCloser) Close() error              { return nil }
+
+func TestStartSubprocessReportsAMissingCommand(t *testing.T) {
+	_, err := startSubprocess(context.Background(), StdioCommand{
+		Command: "mini-no-such-command",
+		Logger:  slog.New(slog.DiscardHandler),
+	})
+	if err == nil || !strings.Contains(err.Error(), "start mini-no-such-command") {
+		t.Fatalf("error = %v, want a start failure naming the command", err)
+	}
+}

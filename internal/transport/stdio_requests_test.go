@@ -437,3 +437,27 @@ func TestStdioCancellationGivesUpOnItsTurnToWrite(t *testing.T) {
 		t.Fatal("a cancellation that never started writing ended the connection")
 	}
 }
+
+func TestStdioModernCallWithNonObjectParamsSendsNothing(t *testing.T) {
+	var written strings.Builder
+	conn := newWriteOnlyConn(discardWriteCloser{Writer: &written})
+	conn.setModern(ModernVersions[0])
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	if _, err := conn.Call(ctx, "tools/call", json.RawMessage(`[1]`)); err == nil {
+		t.Fatal("modern call with array params succeeded")
+	}
+	if written.Len() != 0 {
+		t.Fatalf("invalid modern call wrote %q to the upstream", written.String())
+	}
+}
+
+func TestStdioCallReturnsTheUpstreamRPCError(t *testing.T) {
+	conn, serverW, serverR := makePipeConn(t)
+	scriptStdioUpstream(serverW, serverR, replyError(serverW, CodeInvalidParams, nil))
+	_, err := conn.Call(context.Background(), "tools/call", json.RawMessage(`{}`))
+	var rpcErr *RPCError
+	if !errors.As(err, &rpcErr) || rpcErr.Code != CodeInvalidParams {
+		t.Fatalf("Call error = %v, want the upstream's RPC error", err)
+	}
+}

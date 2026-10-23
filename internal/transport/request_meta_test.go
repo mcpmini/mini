@@ -5,6 +5,8 @@ package transport
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/version"
 )
 
 func TestValidateModernRequestMeta(t *testing.T) {
@@ -14,6 +16,8 @@ func TestValidateModernRequestMeta(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "absent legacy metadata", params: `null`},
+		{name: "positional params", params: `[1]`},
+		{name: "invalid JSON params", params: `{"_meta":`, wantErr: true},
 		{name: "unrelated legacy metadata", params: `{"_meta":{"trace":"abc"}}`},
 		{
 			name: "empty modern capabilities",
@@ -80,9 +84,73 @@ func TestValidateModernRequestMeta(t *testing.T) {
 	}
 }
 
-func TestModernRequestRejectsNonObjectParams(t *testing.T) {
+func TestModernRequestRejectsNonObjectParamsAndMeta(t *testing.T) {
 	if _, err := prepareModernParams(json.RawMessage(`[]`), ModernVersions[0]); err == nil ||
 		err.Error() != "modern request params must be a JSON object" {
 		t.Fatalf("prepareModernParams error = %v", err)
+	}
+	if _, err := prepareModernParams(json.RawMessage(`{"_meta":[]}`), ModernVersions[0]); err == nil {
+		t.Fatal("non-object _meta was accepted")
+	}
+}
+
+func TestHasModernRequestIntent(t *testing.T) {
+	tests := []struct {
+		name   string
+		params string
+		want   bool
+	}{
+		{"empty params", ``, false},
+		{"no metadata", `{"cursor":"x"}`, false},
+		{"unrelated metadata", `{"_meta":{"trace":"abc"}}`, false},
+		{"positional params", `[{"_meta":{"io.modelcontextprotocol/clientInfo":{}}}]`, false},
+		{"invalid JSON", `{"_meta":`, false},
+		{"client info", `{"_meta":{"io.modelcontextprotocol/clientInfo":{}}}`, true},
+		{"protocol version", `{"_meta":{"io.modelcontextprotocol/protocolVersion":"x"}}`, true},
+		{"non-object metadata", `{"_meta":"modern"}`, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := HasModernRequestIntent(json.RawMessage(tc.params)); got != tc.want {
+				t.Fatalf("HasModernRequestIntent(%s) = %v, want %v", tc.params, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPrepareModernParamsAddsMissingMetadata(t *testing.T) {
+	prepare := func(params string) map[string]json.RawMessage {
+		t.Helper()
+		prepared, err := prepareModernParams(json.RawMessage(params), ModernVersions[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		var fields struct {
+			Meta map[string]json.RawMessage `json:"_meta"`
+		}
+		if err := json.Unmarshal(prepared, &fields); err != nil {
+			t.Fatal(err)
+		}
+		return fields.Meta
+	}
+	miniInfo, err := json.Marshal(ClientInfo{Name: "mini", Version: version.Version})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, params := range []string{``, `null`, `{}`} {
+		meta := prepare(params)
+		gotVersion, info, capabilities := meta[protocolVersionMeta], meta[clientInfoMeta], meta[clientCapabilitiesMeta]
+		wantVersion := `"` + ModernVersions[0] + `"`
+		if string(gotVersion) != wantVersion || string(info) != string(miniInfo) || string(capabilities) != `{}` {
+			t.Errorf(
+				"params %q prepared metadata = %v, want version, mini's client info and empty capabilities",
+				params,
+				meta,
+			)
+		}
+	}
+	meta := prepare(`{"_meta":{"io.modelcontextprotocol/clientInfo":{"name":"agent"},"trace":1}}`)
+	if string(meta[clientInfoMeta]) != `{"name":"agent"}` || string(meta["trace"]) != `1` {
+		t.Fatalf("prepared metadata = %v, want the caller's client info and trace kept", meta)
 	}
 }
