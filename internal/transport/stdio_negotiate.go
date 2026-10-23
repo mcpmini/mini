@@ -144,28 +144,18 @@ func (c *StdioConnection) classifyDiscoveryRPCError(
 	if !errors.As(err, &rpcErr) {
 		return probeVerdict{}, false, nil
 	}
-	if rpcErr.Code == CodeUnsupportedProtocolVersion {
-		return c.retrySupportedDiscovery(probeCtx, rpcErr, version)
+	verdict, err := classifyDiscoverRejection(rpcErr, stdioDiscoverPolicy(version))
+	if err != nil {
+		return probeVerdict{}, true, explicitModernProbeError{err}
 	}
-	if isModernRejection(rpcErr.Code) {
-		return probeVerdict{}, true, explicitModernProbeError{fmt.Errorf("modern discovery rejected: %w", rpcErr)}
+	if verdict.era == EraModern {
+		verdict, err = c.discoverCorrected(probeCtx, verdict.version)
 	}
-	return probeVerdict{era: EraLegacy}, true, nil
+	return verdict, true, err
 }
 
-func (c *StdioConnection) retrySupportedDiscovery(
-	probeCtx context.Context,
-	rpcErr *RPCError,
-	version string,
-) (probeVerdict, bool, error) {
-	data, ok := decodeUnsupportedVersionData(rpcErr.Data)
-	mutual := modernVersionVerdict(data.Supported)
-	if ok && mutual.era == EraModern {
-		verdict, err := c.discoverCorrected(probeCtx, mutual.version)
-		return verdict, true, err
-	}
-	err := explicitModernProbeError{unsupportedStdioVersion(data, version)}
-	return probeVerdict{}, true, err
+func stdioDiscoverPolicy(requested string) discoverPolicy {
+	return discoverPolicy{requested: requested, refuseLegacyFallback: true}
 }
 
 func (c *StdioConnection) discoverOnce(ctx context.Context, protocolVersion string) (json.RawMessage, error) {
@@ -195,43 +185,12 @@ func (c *StdioConnection) discoverCorrected(ctx context.Context, protocolVersion
 	return verdict, err
 }
 
-func legacyProbeVerdict() (probeVerdict, error) {
-	return probeVerdict{era: EraLegacy}, nil
-}
-
 func classifyStdioDiscover(result json.RawMessage, requested string) (probeVerdict, error) {
-	versions, recognized := discoverSupportedVersions(result)
-	if !recognized {
-		return legacyProbeVerdict()
+	verdict, err := classifyDiscoverResult(result, stdioDiscoverPolicy(requested))
+	if err != nil {
+		return probeVerdict{}, explicitModernProbeError{err}
 	}
-	verdict := modernVersionVerdict(versions)
-	if verdict.era != EraModern {
-		// Unlike HTTP, don't fall back: a server that answers discover is modern, so initialize would
-		// fail too, and naming the versions it does support tells the user what to change.
-		return probeVerdict{}, explicitModernProbeError{unsupportedStdioVersion(
-			UnsupportedVersionData{Supported: versions}, requested,
-		)}
-	}
-	if err := requireCompleteResult(result, "server/discover"); err != nil {
-		return probeVerdict{}, explicitModernProbeError{fmt.Errorf("validate modern discovery result: %w", err)}
-	}
-	var discovered DiscoverResult
-	if err := json.Unmarshal(result, &discovered); err != nil {
-		return legacyProbeVerdict()
-	}
-	verdict.listen = discovered.Capabilities.ToolsListChanged()
 	return verdict, nil
-}
-
-func unsupportedStdioVersion(data UnsupportedVersionData, requested string) error {
-	if data.Requested != "" {
-		requested = data.Requested
-	}
-	return fmt.Errorf(
-		"upstream does not support requested modern protocol %q (supported: %v)",
-		requested,
-		data.Supported,
-	)
 }
 
 func (c *StdioConnection) restartWithInitialize(ctx context.Context, probeFailure string) (*StdioConnection, error) {

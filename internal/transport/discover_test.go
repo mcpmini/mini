@@ -16,38 +16,108 @@ import (
 	"time"
 )
 
-func TestClassifyDiscover(t *testing.T) {
+func TestClassifyDiscoverPassesTransportFailuresThrough(t *testing.T) {
 	for _, tc := range []struct {
-		name       string
-		result     string
-		err        error
-		wantEra    Era
-		wantVer    string
-		wantListen bool
-		wantErr    bool
+		name string
+		err  error
 	}{
-		{name: "modern result with tool changes", result: `{"supportedVersions":["2026-07-28"],"capabilities":{"tools":{"listChanged":true}}}`, wantEra: EraModern, wantVer: "2026-07-28", wantListen: true},
-		{name: "modern result without tool changes", result: `{"supportedVersions":["2026-07-28"],"capabilities":{"tools":{"listChanged":false}}}`, wantEra: EraModern, wantVer: "2026-07-28"},
-		{name: "legacy result with tool changes", result: `{"supportedVersions":["2025-11-25"],"capabilities":{"tools":{"listChanged":true}}}`, wantEra: EraLegacy},
-		{name: "malformed result", result: `not json`, wantEra: EraLegacy},
-		{name: "unsupported without data", err: &RPCError{Code: -32022}, wantEra: EraLegacy},
-		{name: "connection", err: &ConnectionError{Err: errors.New("dropped")}, wantErr: true},
-		{name: "reauthorization", err: ReauthorizationError("server", ErrReauthRequired), wantErr: true},
-		{name: "retry exhaustion", err: errors.New("exceeded max retries"), wantErr: true},
-		{name: "context", err: context.Canceled, wantErr: true},
+		{name: "connection", err: &ConnectionError{Err: errors.New("dropped")}},
+		{name: "reauthorization", err: ReauthorizationError("server", ErrReauthRequired)},
+		{name: "retry exhaustion", err: errors.New("exceeded max retries")},
+		{name: "context", err: context.Canceled},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := classifyDiscover(json.RawMessage(tc.result), tc.err)
-			if (err != nil) != tc.wantErr {
-				t.Fatalf("error = %v, want error %v", err, tc.wantErr)
-			}
-			if tc.wantErr && !errors.Is(err, tc.err) {
-				t.Errorf("error = %v, want unchanged input error %v", err, tc.err)
-			}
-			if got.era != tc.wantEra || got.version != tc.wantVer || got.listen != tc.wantListen {
-				t.Errorf("verdict = %+v, want era %v version %q listen %v", got, tc.wantEra, tc.wantVer, tc.wantListen)
+			if _, err := classifyDiscover(nil, tc.err); !errors.Is(err, tc.err) {
+				t.Fatalf("error = %v, want unchanged input error %v", err, tc.err)
 			}
 		})
+	}
+}
+
+type discoverVerdictWant struct {
+	era    Era
+	listen bool
+	err    string
+}
+
+type discoverClassifierCase struct {
+	name      string
+	result    string
+	rejection *RPCError
+	want      discoverVerdictWant
+	stdioWant *discoverVerdictWant
+}
+
+func TestDiscoverClassifiersByTransportPolicy(t *testing.T) {
+	modern := discoverVerdictWant{era: EraModern}
+	legacy := discoverVerdictWant{era: EraLegacy}
+	refused := func(supported string) *discoverVerdictWant {
+		message := `upstream does not support requested modern protocol "2026-07-28" (supported: ` + supported + `)`
+		return &discoverVerdictWant{err: message}
+	}
+	unsupported := func(data string) *RPCError {
+		return &RPCError{Code: CodeUnsupportedProtocolVersion, Data: json.RawMessage(data)}
+	}
+	for _, tc := range []discoverClassifierCase{
+		{name: "modern result with tool changes", result: `{"supportedVersions":["2026-07-28"],"capabilities":{"tools":{"listChanged":true}}}`, want: discoverVerdictWant{era: EraModern, listen: true}},
+		{name: "modern result without tool changes", result: `{"supportedVersions":["2026-07-28"],"capabilities":{"tools":{"listChanged":false}}}`, want: modern},
+		{name: "result listing only legacy versions", result: `{"supportedVersions":["2025-11-25"]}`, want: legacy, stdioWant: refused("[2025-11-25]")},
+		{name: "result without supported versions", result: `{}`, want: legacy},
+		{name: "malformed result", result: `not json`, want: legacy},
+		{name: "result asking for input", result: `{"supportedVersions":["2026-07-28"],"resultType":"input_required"}`, want: discoverVerdictWant{err: "validate modern discovery result: upstream asked for input during server/discover, which mini cannot relay"}},
+		{name: "result of unknown type", result: `{"supportedVersions":["2026-07-28"],"resultType":"future"}`, want: discoverVerdictWant{err: `validate modern discovery result: upstream returned unknown resultType "future"`}},
+		{name: "method not found", rejection: &RPCError{Code: CodeMethodNotFound, Message: "Method not found"}, want: legacy},
+		{name: "header mismatch", rejection: &RPCError{Code: CodeHeaderMismatch, Message: "header mismatch"}, want: discoverVerdictWant{err: "modern discovery rejected: header mismatch"}},
+		{name: "missing client capability", rejection: &RPCError{Code: CodeMissingRequiredClientCapability, Message: "client mismatch"}, want: discoverVerdictWant{err: "modern discovery rejected: client mismatch"}},
+		{name: "unsupported version naming a shared one", rejection: unsupported(`{"supported":["2026-07-28","2025-11-25"]}`), want: modern},
+		{name: "unsupported version naming only legacy", rejection: unsupported(`{"supported":["2025-11-25"]}`), want: legacy, stdioWant: refused("[2025-11-25]")},
+		{name: "unsupported version with undecodable data", rejection: unsupported(`"none"`), want: legacy, stdioWant: refused("[]")},
+		{name: "unsupported version without data", rejection: unsupported(""), want: legacy, stdioWant: refused("[]")},
+	} {
+		stdioWant := tc.want
+		if tc.stdioWant != nil {
+			stdioWant = *tc.stdioWant
+		}
+		stdioPolicy := stdioDiscoverPolicy(ModernVersions[0])
+		t.Run(
+			tc.name+"/http",
+			func(t *testing.T) { assertDiscoverVerdict(t, tc.classify(httpDiscoverPolicy), tc.want) },
+		)
+		t.Run(tc.name+"/stdio", func(t *testing.T) { assertDiscoverVerdict(t, tc.classify(stdioPolicy), stdioWant) })
+	}
+}
+
+type discoverOutcome struct {
+	verdict probeVerdict
+	err     error
+}
+
+func (tc discoverClassifierCase) classify(policy discoverPolicy) discoverOutcome {
+	if tc.rejection != nil {
+		verdict, err := classifyDiscoverRejection(tc.rejection, policy)
+		return discoverOutcome{verdict: verdict, err: err}
+	}
+	verdict, err := classifyDiscoverResult(json.RawMessage(tc.result), policy)
+	return discoverOutcome{verdict: verdict, err: err}
+}
+
+func assertDiscoverVerdict(t *testing.T, got discoverOutcome, want discoverVerdictWant) {
+	t.Helper()
+	if want.err != "" {
+		if got.err == nil || got.err.Error() != want.err {
+			t.Fatalf("error = %v, want %q", got.err, want.err)
+		}
+		return
+	}
+	if got.err != nil {
+		t.Fatalf("error = %v, want era %v", got.err, want.era)
+	}
+	wantVersion := ""
+	if want.era == EraModern {
+		wantVersion = ModernVersions[0]
+	}
+	if v := got.verdict; v.era != want.era || v.version != wantVersion || v.listen != want.listen {
+		t.Fatalf("verdict = %+v, want era %v version %q listen %v", v, want.era, wantVersion, want.listen)
 	}
 }
 
@@ -178,7 +248,11 @@ func testStdioDiscoveryResult(t *testing.T, p stdioDiscoveryResultParams) {
 	} else if err != nil || !conn.isModern() {
 		t.Fatalf("negotiate = %v, modern=%v; want modern discovery", err, conn.isModern())
 	}
-	for _, method := range receiveMethods(seen, len(replies)) {
+	methods := receiveMethods(seen, len(replies))
+	if len(methods) != len(replies) {
+		t.Fatalf("discovery sent %v, want %d requests", methods, len(replies))
+	}
+	for _, method := range methods {
 		if method != "server/discover" {
 			t.Fatalf("discovery sent %s, want server/discover", method)
 		}
