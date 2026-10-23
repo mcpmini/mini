@@ -414,8 +414,8 @@ func TestProxy_Call_GlobalFormatToon_RendersToon(t *testing.T) {
 
 	resp := serveProxy(t, srv, callTool("svc__get_user", map[string]any{}))
 	text := toolResultText(t, resp)
-	if strings.HasPrefix(text, "{") {
-		t.Errorf("global response_format:toon should produce TOON in proxy mode, got JSON: %s", text)
+	if strings.HasPrefix(text, "{") || !strings.Contains(text, "name: alice") {
+		t.Errorf("global response_format:toon should produce TOON in proxy mode, got: %s", text)
 	}
 }
 

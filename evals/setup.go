@@ -52,28 +52,6 @@ type miniConfigParams struct {
 	format     format
 }
 
-func (r *Runner) miniMCPConfig(p miniConfigParams) (string, error) {
-	configDir, err := r.buildMiniConfigDir(p)
-	if err != nil {
-		return "", err
-	}
-	return writeMCPConfig(p.env, map[string]any{
-		"mcpServers": map[string]any{
-			"mini": map[string]any{
-				"command": r.MiniBin,
-				"args": []string{
-					"--config",
-					configDir,
-					"connect",
-					"--standalone",
-					"--log-level",
-					"error",
-				},
-			},
-		},
-	})
-}
-
 func (r *Runner) miniCLIConfigDir(p miniConfigParams) (string, error) {
 	return r.buildMiniConfigDir(p)
 }

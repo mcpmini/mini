@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"strings"
 	"testing"
 	"testing/synctest"
@@ -213,4 +215,8 @@ func TestNormalizeToolCallResult(t *testing.T) {
 			t.Fatalf("upstream result = %v, want it unchanged", got)
 		}
 	})
+}
+
+func discardLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }

@@ -77,27 +77,19 @@ func readToolsList(s *Server) string {
 	return fmt.Sprint(string(raw), err)
 }
 
-func TestToolListExpiryRefreshesEveryDiscoveryEntryPoint(t *testing.T) {
-	for entry, read := range map[string]func(*Server) (any, error){
-		"proxy": func(s *Server) (any, error) { return s.handleToolsList(context.Background()) },
-	} {
-		t.Run(entry, func(t *testing.T) {
-			s, fc := newToolListTestServer(t)
-			c := newToolListConnection("svc", func(_ context.Context, n int32) (transport.ToolList, error) {
-				return toolListNamed(oldThenNew(n), transport.FreshUntil(fc.Now().Add(time.Second))), nil
-			})
-			addToolListConnection(t, s, c)
-			if got := readToolsList(s); !strings.Contains(got, "svc__old") || c.calls.Load() != 1 {
-				t.Fatalf("read before expiry = %s after %d fetches; want the installed list", got, c.calls.Load())
-			}
-			fc.Advance(time.Second)
-			result, err := read(s)
-			raw, _ := json.Marshal(result)
-			if err != nil || !strings.Contains(string(raw), "new") || strings.Contains(string(raw), "old") ||
-				c.calls.Load() != 2 {
-				t.Fatalf("%s after expiry = %s, %v after %d fetches; want one refetch", entry, raw, err, c.calls.Load())
-			}
-		})
+func TestToolListExpiryRefetchesOnTheNextRead(t *testing.T) {
+	s, fc := newToolListTestServer(t)
+	c := newToolListConnection("svc", func(_ context.Context, n int32) (transport.ToolList, error) {
+		return toolListNamed(oldThenNew(n), transport.FreshUntil(fc.Now().Add(time.Second))), nil
+	})
+	addToolListConnection(t, s, c)
+	if got := readToolsList(s); !strings.Contains(got, "svc__old") || c.calls.Load() != 1 {
+		t.Fatalf("read before expiry = %s after %d fetches; want the installed list", got, c.calls.Load())
+	}
+	fc.Advance(time.Second)
+	if got := readToolsList(s); !strings.Contains(got, "svc__new") || strings.Contains(got, "svc__old") ||
+		c.calls.Load() != 2 {
+		t.Fatalf("read after expiry = %s after %d fetches; want one refetch", got, c.calls.Load())
 	}
 }
 

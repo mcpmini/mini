@@ -140,9 +140,6 @@ func TestCallStatsReduction(t *testing.T) {
 	if stats.SummaryTokens >= stats.RawTokens {
 		t.Errorf("summary should be smaller: summary=%d raw=%d", stats.SummaryTokens, stats.RawTokens)
 	}
-	if stats.ReductionPct() <= 0 {
-		t.Errorf("expected positive reduction, got %.1f%%", stats.ReductionPct())
-	}
 }
 
 func TestBuildError(t *testing.T) {

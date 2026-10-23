@@ -17,7 +17,6 @@ import (
 	"github.com/mcpmini/mini/internal/invoke"
 	"github.com/mcpmini/mini/internal/projection"
 	"github.com/mcpmini/mini/internal/response"
-	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -331,9 +330,7 @@ func resolveCallProjection(sc *config.ServerConfig, toolName string) *config.Pro
 
 func printCallOutput(p printCallOutputParams) error {
 	if p.mode == callOutputToon {
-		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})).
-			With("server", p.serverName, "tool", p.toolName)
-		text, err := server.EncodeToon(logger, p.env)
+		text, err := p.env.Toon()
 		if err != nil {
 			return fmt.Errorf("encode TOON response: %w", err)
 		}

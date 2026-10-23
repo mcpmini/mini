@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/transport"
@@ -149,5 +150,18 @@ func TestMarkOAuthIfRequired_secondCallSkipsRewrite(t *testing.T) {
 			"second call: err = %v, want the oauth-required error (a rewrite attempt would have failed and returned the bare connErr instead)",
 			err,
 		)
+	}
+}
+
+func TestNextBackoffDoublesUpTo64Seconds(t *testing.T) {
+	for _, c := range []struct{ in, want time.Duration }{
+		{time.Second, 2 * time.Second},
+		{32 * time.Second, 64 * time.Second},
+		{64 * time.Second, 64 * time.Second},
+		{128 * time.Second, 128 * time.Second},
+	} {
+		if got := nextBackoff(c.in); got != c.want {
+			t.Errorf("nextBackoff(%v) = %v, want %v", c.in, got, c.want)
+		}
 	}
 }

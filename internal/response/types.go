@@ -67,13 +67,6 @@ type CallStats struct {
 	SummaryTokens int
 }
 
-func (s CallStats) ReductionPct() float64 {
-	if s.RawTokens == 0 {
-		return 0
-	}
-	return float64(s.RawTokens-s.SummaryTokens) / float64(s.RawTokens) * 100
-}
-
 const ProxyMsg = "Response filtered, some fields were excluded or truncated, use read(<file>, <jq filter>) to fetch full values."
 
 type ProjectionMeta struct {

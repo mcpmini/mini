@@ -216,7 +216,6 @@ func (r *Runner) buildRepSetups(ec evalCtx, i format, rep int) ([]runSetup, erro
 
 func (r *Runner) repCandidates(ec evalCtx, i format, rep int) []setupCandidate {
 	return []setupCandidate{
-		{"mcp-" + fmtLabel[i], func() (runSetup, error) { return r.mcpSetup(ec, i, rep) }},
 		{"cli-" + fmtLabel[i], func() (runSetup, error) { return r.cliSetup(ec, i, rep) }},
 		{"proxy-" + fmtLabel[i], func() (runSetup, error) { return r.proxySetup(ec, i, rep) }},
 	}
@@ -271,22 +270,6 @@ func (r *Runner) rawSetup(ec evalCtx, rep int) (runSetup, error) {
 	}
 	return newMCPRunSetup(
 		mcpRunSetupParams{"direct", 0, rep, callDir, workDir, cfg, rawAllowedTools(p.Servers, p.AllowedTools), ec.Task},
-	), nil
-}
-
-func (r *Runner) mcpSetup(ec evalCtx, i format, rep int) (runSetup, error) {
-	env, p := ec.Env, ec.Params
-	callDir := env.DebugDir(fmt.Sprintf("mcp-%s-%d", fmtLabel[i], rep+1))
-	cfg, err := r.miniMCPConfig(miniConfigParams{env: env, servers: p.Servers, callLogDir: callDir, format: i})
-	if err != nil {
-		return runSetup{}, err
-	}
-	workDir, err := freshWorkDir(env, p.WorkSrcDir)
-	if err != nil {
-		return runSetup{}, err
-	}
-	return newMCPRunSetup(
-		mcpRunSetupParams{"mcp", i, rep, callDir, workDir, cfg, proxyAllowedTools(p.Servers, p.AllowedTools), ec.Task},
 	), nil
 }
 
@@ -384,14 +367,13 @@ func (r *Runner) runOne(s runSetup) jobResult {
 }
 
 type runBuckets struct {
-	direct          []ClaudeResult
-	mcp, cli, proxy [numFormats][]ClaudeResult
+	direct     []ClaudeResult
+	cli, proxy [numFormats][]ClaudeResult
 }
 
 func newRunBuckets(reps int) runBuckets {
 	b := runBuckets{direct: make([]ClaudeResult, reps)}
 	for i := range numFormats {
-		b.mcp[i] = make([]ClaudeResult, reps)
 		b.cli[i] = make([]ClaudeResult, reps)
 		b.proxy[i] = make([]ClaudeResult, reps)
 	}
@@ -402,8 +384,6 @@ func (b *runBuckets) assign(res jobResult) {
 	switch res.kind {
 	case "direct":
 		b.direct[res.rep] = res.r
-	case "mcp":
-		b.mcp[res.idx][res.rep] = res.r
 	case "cli":
 		b.cli[res.idx][res.rep] = res.r
 	case "proxy":
@@ -426,7 +406,6 @@ func assignEvalResults(eval *EvalResult, b runBuckets, want func(string) bool) {
 		eval.Direct = RunStats{Runs: b.direct}
 	}
 	for i := range numFormats {
-		assignIndexedRunStat(&eval.MCP[i], b.mcp[i], want(modeLabel("mcp", format(i))))
 		assignIndexedRunStat(&eval.CLI[i], b.cli[i], want(modeLabel("cli", format(i))))
 		assignIndexedRunStat(&eval.Proxy[i], b.proxy[i], want(modeLabel("proxy", format(i))))
 	}

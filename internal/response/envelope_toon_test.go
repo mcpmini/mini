@@ -1,11 +1,9 @@
 //go:build test
 
-package server
+package response_test
 
 import (
 	"fmt"
-	"io"
-	"log/slog"
 	"strings"
 	"testing"
 
@@ -14,18 +12,14 @@ import (
 
 func mustEncodeToon(t *testing.T, env *response.Envelope) string {
 	t.Helper()
-	out, err := EncodeToon(discardLogger(), env)
+	out, err := env.Toon()
 	if err != nil {
-		t.Fatalf("EncodeToon failed: %v", err)
+		t.Fatalf("Toon failed: %v", err)
 	}
 	return out
 }
 
-func discardLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
-}
-
-func TestEncodeToon(t *testing.T) {
+func TestEnvelopeToon(t *testing.T) {
 	t.Run("uniform array renders a tabular block", func(t *testing.T) {
 		env := &response.Envelope{Data: []any{
 			map[string]any{"id": float64(1), "name": "alice"},
@@ -79,13 +73,13 @@ func TestEncodeToon(t *testing.T) {
 	})
 }
 
-func TestEncodeToonRejectsDepthLimit(t *testing.T) {
+func TestEnvelopeToonRejectsDepthLimit(t *testing.T) {
 	t.Run("depth cap is returned to the caller", func(t *testing.T) {
 		nested := map[string]any{"leaf": "value"}
 		for i := 0; i < 1025; i++ {
 			nested = map[string]any{"level": nested, "other": i}
 		}
-		out, err := EncodeToon(discardLogger(), &response.Envelope{Data: nested})
+		out, err := (&response.Envelope{Data: nested}).Toon()
 		if out != "" {
 			t.Errorf("failed TOON encode must not return partial output: %q", out)
 		}
@@ -95,7 +89,7 @@ func TestEncodeToonRejectsDepthLimit(t *testing.T) {
 	})
 }
 
-func TestEncodeToonRejectsSizeLimit(t *testing.T) {
+func TestEnvelopeToonRejectsSizeLimit(t *testing.T) {
 	const entryCount = 110000
 	longVal := strings.Repeat("x", 30) // keyed tabular compresses rows; longer values ensure 4MB cap is hit
 	entries := make(map[string]any, entryCount)
@@ -104,7 +98,7 @@ func TestEncodeToonRejectsSizeLimit(t *testing.T) {
 	}
 	data := map[string]any{"entries": entries}
 
-	out, err := EncodeToon(discardLogger(), &response.Envelope{Data: data})
+	out, err := (&response.Envelope{Data: data}).Toon()
 	if out != "" {
 		t.Errorf("failed TOON encode must not return partial output: %q", out[:min(len(out), 50)])
 	}

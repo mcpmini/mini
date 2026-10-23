@@ -26,10 +26,3 @@ func TestEstimateTokensText(t *testing.T) {
 		t.Fatalf("EstimateTokensText() = %d, want 2", got)
 	}
 }
-
-func TestCallStatsReductionPctWithZeroRawTokens(t *testing.T) {
-	stats := response.CallStats{RawTokens: 0, SummaryTokens: 10}
-	if got := stats.ReductionPct(); got != 0 {
-		t.Fatalf("ReductionPct() = %v, want 0", got)
-	}
-}

@@ -36,7 +36,6 @@ func allRunStats(r EvalResult) []LabeledRunStats {
 	all := []LabeledRunStats{{"direct", r.Direct}}
 	for i := range numFormats {
 		all = append(all,
-			LabeledRunStats{"mcp-" + fmtLabel[i], r.MCP[i]},
 			LabeledRunStats{"cli-" + fmtLabel[i], r.CLI[i]},
 		)
 	}

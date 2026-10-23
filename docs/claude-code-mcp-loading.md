@@ -72,8 +72,6 @@ keeps the prompt cache stable and prevents paying for schemas the model never en
 
 ## Why this matters for mini
 
-`mini connect` exposes native upstream tools:
-
 mini exposes upstream tools directly (`github__list_pull_requests`, `sentry__list_issues`,
 etc.). Claude Code's deferred loading works exactly as designed: schemas defer through the
 `defer_loading` + `tool_reference` mechanism, one round-trip per call, responses still

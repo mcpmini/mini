@@ -126,15 +126,11 @@ func newConfigServer(t *testing.T) *server.Server {
 func execGetFileInfo(t *testing.T, srv *server.Server) map[string]any {
 	t.Helper()
 	resp := serve(t, srv, callTool("fs__get_file_info", map[string]any{}))
-	env := parseEnvelope(t, toolResultText(t, resp))
-	if env["error"] != nil {
-		t.Fatalf("get_file_info failed: %v", env)
+	result := parseEnvelope(t, toolResultText(t, resp))
+	if result["error"] != nil {
+		t.Fatalf("get_file_info failed: %v", result)
 	}
-	summary := env
-	if summary == nil {
-		t.Fatalf("nil summary: %v", env)
-	}
-	return summary
+	return result
 }
 
 func assertExcluded(t *testing.T, obj map[string]any, keys ...string) {
