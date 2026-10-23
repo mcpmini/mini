@@ -1,5 +1,5 @@
 # Philosophy: docs/default-config-philosophy.md
-# Each result is one string holding a whole page; the 2000-char default would cut it.
+# Each result is one string holding a whole page.
 
 slack_read_channel:
   string_limits:
