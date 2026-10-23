@@ -43,25 +43,16 @@ type probeVerdict struct {
 	listen  bool
 }
 
-type discoverPolicy struct {
-	requested string
-	// stdio sets this: a server that answers discover, or returns -32022, is modern, so sharing no
-	// version with mini is an error there, and naming the versions it does support tells the user
-	// what to change.
-	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/80041ab0a139a8f4fb3adbc99f7ae9113ea59671/docs/specification/2026-07-28/basic/transports/stdio.mdx?plain=1#L131-L134
-	refuseLegacyFallback bool
-}
-
-func classifyDiscoverResult(result json.RawMessage, p discoverPolicy) (probeVerdict, error) {
+func classifyDiscoverResult(result json.RawMessage, requested string) (probeVerdict, error) {
 	versions, recognized := discoverSupportedVersions(result)
 	if !recognized {
 		return legacyProbeVerdict()
 	}
-	verdict := modernVersionVerdict(versions)
+	verdict, shared := sharedVersionVerdict(versions)
+	if !shared {
+		return probeVerdict{}, unsupportedVersionError(UnsupportedVersionData{Supported: versions}, requested)
+	}
 	if verdict.era != EraModern {
-		if p.refuseLegacyFallback {
-			return probeVerdict{}, unsupportedVersionError(UnsupportedVersionData{Supported: versions}, p.requested)
-		}
 		return verdict, nil
 	}
 	if err := requireCompleteResult(result, "server/discover"); err != nil {
@@ -75,28 +66,22 @@ func classifyDiscoverResult(result json.RawMessage, p discoverPolicy) (probeVerd
 	return verdict, nil
 }
 
-// A modern verdict here comes from -32022 naming a version both sides support; the caller decides
-// whether to probe again with it. Any other code means legacy, since legacy servers answer with
-// whatever error they like.
-// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/80041ab0a139a8f4fb3adbc99f7ae9113ea59671/docs/specification/2026-07-28/basic/versioning.mdx?plain=1#L69-L71
+// A -32022 is answered from its supported list, so it can mean modern, legacy or an error; for a
+// modern version the caller decides whether to probe again with it. Any other code means legacy,
+// since legacy servers answer with whatever error they like.
 // https://github.com/modelcontextprotocol/modelcontextprotocol/blob/80041ab0a139a8f4fb3adbc99f7ae9113ea59671/docs/specification/2026-07-28/basic/transports/stdio.mdx?plain=1#L139-L141
-func classifyDiscoverRejection(err *RPCError, p discoverPolicy) (probeVerdict, error) {
+func classifyDiscoverRejection(err *RPCError, requested string) (probeVerdict, error) {
 	if isModernRejection(err.Code) {
 		return probeVerdict{}, fmt.Errorf("modern discovery rejected: %w", err)
 	}
 	if err.Code != CodeUnsupportedProtocolVersion {
 		return legacyProbeVerdict()
 	}
-	data, ok := decodeUnsupportedVersionData(err.Data)
-	if ok {
-		if verdict := modernVersionVerdict(data.Supported); verdict.era == EraModern {
-			return verdict, nil
-		}
+	data := decodeUnsupportedVersionData(err.Data)
+	if verdict, shared := sharedVersionVerdict(data.Supported); shared {
+		return verdict, nil
 	}
-	if p.refuseLegacyFallback {
-		return probeVerdict{}, unsupportedVersionError(data, p.requested)
-	}
-	return legacyProbeVerdict()
+	return probeVerdict{}, unsupportedVersionError(data, requested)
 }
 
 func discoverSupportedVersions(raw json.RawMessage) ([]string, bool) {
@@ -126,10 +111,11 @@ func isModernRejection(code int) bool {
 	return code == CodeHeaderMismatch || code == CodeMissingRequiredClientCapability
 }
 
-func decodeUnsupportedVersionData(raw json.RawMessage) (UnsupportedVersionData, bool) {
+func decodeUnsupportedVersionData(raw json.RawMessage) UnsupportedVersionData {
 	var data UnsupportedVersionData
-	err := json.Unmarshal(raw, &data)
-	return data, err == nil
+	//nolint:errcheck // whatever versions decoded are still usable; none decoded means none shared
+	_ = json.Unmarshal(raw, &data)
+	return data
 }
 
 func unsupportedVersionError(data UnsupportedVersionData, requested string) error {
@@ -143,13 +129,21 @@ func unsupportedVersionError(data UnsupportedVersionData, requested string) erro
 	)
 }
 
-func modernVersionVerdict(supported []string) probeVerdict {
+// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/80041ab0a139a8f4fb3adbc99f7ae9113ea59671/docs/specification/2026-07-28/basic/versioning.mdx?plain=1#L69-L71
+func sharedVersionVerdict(supported []string) (probeVerdict, bool) {
 	for _, version := range ModernVersions {
 		if slices.Contains(supported, version) {
-			return probeVerdict{era: EraModern, version: version}
+			return probeVerdict{era: EraModern, version: version}, true
 		}
 	}
-	return probeVerdict{era: EraLegacy}
+	// Legacy versions are only reached through initialize. After -32022 this departs from stdio's
+	// "do not fall back to initialize": the spec's own supported lists include legacy versions, and
+	// initialize is the only way to use one.
+	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/80041ab0a139a8f4fb3adbc99f7ae9113ea59671/docs/specification/2026-07-28/basic/transports/stdio.mdx?plain=1#L131-L134
+	if slices.ContainsFunc(supported, IsLegacyVersion) {
+		return probeVerdict{era: EraLegacy}, true
+	}
+	return probeVerdict{}, false
 }
 
 func legacyProbeVerdict() (probeVerdict, error) {

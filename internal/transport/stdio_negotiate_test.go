@@ -49,6 +49,12 @@ func TestStdioDiscoveryFallsBackToLegacy(t *testing.T) {
 		{name: "result without supported versions", reply: func(w io.Writer) func(Request) {
 			return replyResult(w, json.RawMessage(`{}`))
 		}},
+		{name: "result listing only shared legacy versions", reply: func(w io.Writer) func(Request) {
+			return replyResult(w, DiscoverResult{SupportedVersions: LegacyVersions})
+		}},
+		{name: "unsupported version naming only a shared legacy one", reply: func(w io.Writer) func(Request) {
+			return replyError(w, CodeUnsupportedProtocolVersion, json.RawMessage(`{"supported":["2025-06-18"]}`))
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			conn, serverW, serverR := makePipeConn(t)
@@ -57,7 +63,9 @@ func TestStdioDiscoveryFallsBackToLegacy(t *testing.T) {
 				replyResult(serverW, InitializeResult{ProtocolVersion: LatestLegacyVersion}),
 				noReply,
 			)
-			if _, err := conn.negotiate(context.Background()); err != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if _, err := conn.negotiate(ctx); err != nil {
 				t.Fatalf("negotiate legacy server: %v", err)
 			}
 			want := []string{"server/discover", "initialize", NotificationInitialized}
@@ -68,12 +76,15 @@ func TestStdioDiscoveryFallsBackToLegacy(t *testing.T) {
 	}
 }
 
-func TestStdioDiscoveryRejectsValidDisjointModernVersions(t *testing.T) {
+func TestStdioDiscoveryRejectsAListSharingNoVersion(t *testing.T) {
 	conn, serverW, serverR := makePipeConn(t)
-	scriptStdioUpstream(serverW, serverR, replyResult(serverW, DiscoverResult{SupportedVersions: LegacyVersions}))
-	_, err := conn.negotiate(context.Background())
+	unknown := []string{"2099-01-01", "2098-01-01"}
+	scriptStdioUpstream(serverW, serverR, replyResult(serverW, DiscoverResult{SupportedVersions: unknown}), noReply)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := conn.negotiate(ctx)
 	if err == nil || !strings.Contains(err.Error(), ModernVersions[0]) ||
-		!strings.Contains(err.Error(), strings.Join(LegacyVersions, " ")) {
+		!strings.Contains(err.Error(), strings.Join(unknown, " ")) {
 		t.Fatalf("negotiate error = %v, want requested and supported versions", err)
 	}
 	if conn.isModern() {
@@ -110,7 +121,7 @@ func TestStdioOnlyAnUnexplainedExitBeforeSetupGetsAReplacement(t *testing.T) {
 }
 
 func TestStdioDiscoveryExplicitRejectionFailsWithoutInitialize(t *testing.T) {
-	noMutualVersion := json.RawMessage(`{"requested":"2026-07-28","supported":["2025-06-18"]}`)
+	noMutualVersion := json.RawMessage(`{"requested":"2026-07-28","supported":["2099-01-01"]}`)
 	for _, tc := range []struct {
 		name string
 		code int
@@ -147,8 +158,8 @@ func TestStdioDiscoveryRefusalsAreExplicit(t *testing.T) {
 	refusals := map[string]func() error{
 		"header mismatch":   rejected(CodeHeaderMismatch),
 		"no shared version": rejected(CodeUnsupportedProtocolVersion),
-		"legacy-only result": func() error {
-			_, err := classifyStdioDiscover(json.RawMessage(`{"supportedVersions":["2025-11-25"]}`), ModernVersions[0])
+		"result sharing no version": func() error {
+			_, err := classifyStdioDiscover(json.RawMessage(`{"supportedVersions":["2099-01-01"]}`), ModernVersions[0])
 			return err
 		},
 	}
@@ -180,19 +191,33 @@ func TestStdioDiscoveryRetriesSupportedVersionErrorOnce(t *testing.T) {
 	}
 }
 
-func TestStdioDiscoveryMalformedRetryNeverFallsBack(t *testing.T) {
-	conn, serverW, serverR := makePipeConn(t)
-	supported := json.RawMessage(`{"requested":"2026-07-28","supported":["2026-07-28"]}`)
-	scriptStdioUpstream(serverW, serverR,
-		replyError(serverW, CodeUnsupportedProtocolVersion, supported),
-		replyResult(serverW, json.RawMessage(`{}`)),
-		noReply,
-	)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	_, err := conn.negotiate(ctx)
-	if err == nil || !strings.Contains(err.Error(), "returned no supported versions") {
-		t.Fatalf("negotiate error = %v, want the malformed retry reported and no legacy initialize", err)
+func TestStdioDiscoveryRetryWithoutAModernVersionNeverFallsBack(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		retry json.RawMessage
+		want  string
+	}{
+		{name: "malformed retry", retry: json.RawMessage(`{}`), want: "returned no supported versions"},
+		{
+			name:  "retry listing only legacy versions",
+			retry: json.RawMessage(`{"supportedVersions":["2025-11-25"]}`),
+			want:  `does not support requested modern protocol "2026-07-28" (supported: [2025-11-25])`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conn, serverW, serverR := makePipeConn(t)
+			supported := json.RawMessage(`{"requested":"2026-07-28","supported":["2026-07-28"]}`)
+			scriptStdioUpstream(serverW, serverR,
+				replyError(serverW, CodeUnsupportedProtocolVersion, supported),
+				replyResult(serverW, tc.retry),
+				noReply,
+			)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if _, err := conn.negotiate(ctx); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("negotiate error = %v, want %q and no legacy initialize", err, tc.want)
+			}
+		})
 	}
 }
 

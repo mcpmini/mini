@@ -191,14 +191,9 @@ func (c *HTTPConnection) probe(ctx context.Context) (json.RawMessage, error) {
 	return c.rpc(ctx, "server/discover", params)
 }
 
-// httpDiscoverPolicy falls back on any version mismatch, even after -32022 where the spec says not
-// to: servers that list only legacy versions (Atlassian v2) still accept initialize over HTTP.
-// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/80041ab0a139a8f4fb3adbc99f7ae9113ea59671/docs/specification/2026-07-28/basic/versioning.mdx?plain=1#L143-L146
-var httpDiscoverPolicy = discoverPolicy{}
-
 func classifyDiscover(result json.RawMessage, err error) (probeVerdict, error) {
 	if err == nil {
-		return classifyDiscoverResult(result, httpDiscoverPolicy)
+		return classifyDiscoverResult(result, ModernVersions[0])
 	}
 	return classifyDiscoverError(err)
 }
@@ -212,12 +207,12 @@ func classifyDiscoverError(err error) (probeVerdict, error) {
 	}
 	var rpcErr *RPCError
 	if errors.As(err, &rpcErr) {
-		return classifyDiscoverRejection(rpcErr, httpDiscoverPolicy)
+		return classifyDiscoverRejection(rpcErr, ModernVersions[0])
 	}
 	var statusErr *HTTPStatusError
 	if errors.As(err, &statusErr) {
 		if statusErr.RPC != nil {
-			return classifyDiscoverRejection(statusErr.RPC, httpDiscoverPolicy)
+			return classifyDiscoverRejection(statusErr.RPC, ModernVersions[0])
 		}
 		if isLegacyProbeStatus(statusErr.StatusCode) {
 			return legacyProbeVerdict()

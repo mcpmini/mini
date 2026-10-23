@@ -144,7 +144,7 @@ func (c *StdioConnection) classifyDiscoveryRPCError(
 	if !errors.As(err, &rpcErr) {
 		return probeVerdict{}, false, nil
 	}
-	verdict, err := classifyDiscoverRejection(rpcErr, stdioDiscoverPolicy(version))
+	verdict, err := classifyDiscoverRejection(rpcErr, version)
 	if err != nil {
 		return probeVerdict{}, true, explicitModernProbeError{err}
 	}
@@ -152,10 +152,6 @@ func (c *StdioConnection) classifyDiscoveryRPCError(
 		verdict, err = c.discoverCorrected(probeCtx, verdict.version)
 	}
 	return verdict, true, err
-}
-
-func stdioDiscoverPolicy(requested string) discoverPolicy {
-	return discoverPolicy{requested: requested, refuseLegacyFallback: true}
 }
 
 func (c *StdioConnection) discoverOnce(ctx context.Context, protocolVersion string) (json.RawMessage, error) {
@@ -178,15 +174,21 @@ func (c *StdioConnection) discoverCorrected(ctx context.Context, protocolVersion
 	}
 	verdict, err := classifyStdioDiscover(result, protocolVersion)
 	if err == nil && verdict.era != EraModern {
-		return probeVerdict{}, explicitModernProbeError{
-			fmt.Errorf("modern discovery retry for %q returned no supported versions", protocolVersion),
-		}
+		return probeVerdict{}, explicitModernProbeError{retryWithoutModernVersion(result, protocolVersion)}
 	}
 	return verdict, err
 }
 
+func retryWithoutModernVersion(result json.RawMessage, protocolVersion string) error {
+	if versions, listed := discoverSupportedVersions(result); listed {
+		data := UnsupportedVersionData{Supported: versions}
+		return fmt.Errorf("modern discovery retry: %w", unsupportedVersionError(data, protocolVersion))
+	}
+	return fmt.Errorf("modern discovery retry for %q returned no supported versions", protocolVersion)
+}
+
 func classifyStdioDiscover(result json.RawMessage, requested string) (probeVerdict, error) {
-	verdict, err := classifyDiscoverResult(result, stdioDiscoverPolicy(requested))
+	verdict, err := classifyDiscoverResult(result, requested)
 	if err != nil {
 		return probeVerdict{}, explicitModernProbeError{err}
 	}
