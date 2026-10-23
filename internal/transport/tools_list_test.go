@@ -364,7 +364,7 @@ func TestFreshnessStaleAndExpire(t *testing.T) {
 }
 
 func TestDecodeToolsListPageRejectsAMalformedPage(t *testing.T) {
-	if page, err := decodeToolsListPage(json.RawMessage(`{"tools":"none"}`)); err == nil {
+	if page, err := decodeToolsListPage(json.RawMessage(`{"tools":"none"}`), time.Time{}, ""); err == nil {
 		t.Fatalf("malformed page decoded as %+v, want an error", page)
 	}
 }
