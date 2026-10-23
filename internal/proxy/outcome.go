@@ -61,8 +61,6 @@ func isDialError(err error) bool {
 
 func classifyResponse(resp *http.Response, body []byte) forwardOutcome {
 	if resp.StatusCode == http.StatusUnauthorized {
-		//nolint:errcheck // the 401 determines retry; draining only permits connection reuse.
-		io.Copy(io.Discard, resp.Body)
 		return forwardOutcome{kind: outcomeUnauthorized, resp: daemonErrorResponse(body, "daemon unauthorized")}
 	}
 	if resp.StatusCode >= 400 {
