@@ -26,7 +26,7 @@ func (s *Server) attachNotificationHandler(u *upstreamServer, conn transport.Con
 
 func (s *Server) requestToolRefresh(u *upstreamServer, conn transport.Connection) {
 	if s.isCurrentUpstreamConn(u, conn) {
-		u.refresher.request(func() { s.refreshWg.Go(func() { s.runToolRefreshes(u) }) })
+		u.refresher.request()
 	}
 }
 

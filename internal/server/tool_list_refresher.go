@@ -3,13 +3,15 @@ package server
 import "sync"
 
 type toolListRefresher struct {
+	startWorker func()
+
 	mu      sync.Mutex
 	stopped bool
 	running bool
 	pending bool
 }
 
-func (r *toolListRefresher) request(startWorker func()) {
+func (r *toolListRefresher) request() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.stopped {
@@ -21,7 +23,7 @@ func (r *toolListRefresher) request(startWorker func()) {
 	}
 	r.running = true
 	// Under the lock, so a worker is registered before stop returns and shutdown can wait for it.
-	startWorker()
+	r.startWorker()
 }
 
 func (r *toolListRefresher) next() bool {

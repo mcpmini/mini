@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/invoke"
 	"github.com/mcpmini/mini/internal/ops"
@@ -225,7 +224,7 @@ func (s *Server) installUpstreamLocked(
 	conn transport.Connection,
 	toolList transport.ToolList,
 ) {
-	u := newUpstreamServer(sc, conn, s.clock)
+	u := s.newUpstreamServer(sc, conn)
 	u.lastDefs = toolList.Tools
 	old := s.swapUpstream(sc.Name, u)
 	s.seedProjectionsIfNone(sc)
@@ -246,9 +245,10 @@ func (s *Server) seedProjectionsIfNone(sc config.ServerConfig) {
 	}
 }
 
-func newUpstreamServer(sc config.ServerConfig, conn transport.Connection, clock clock.Clock) *upstreamServer {
+func (s *Server) newUpstreamServer(sc config.ServerConfig, conn transport.Connection) *upstreamServer {
 	ctx, cancel := context.WithCancel(context.Background())
-	u := &upstreamServer{cfg: sc, conn: conn, ctx: ctx, cancel: cancel, clock: clock}
+	u := &upstreamServer{cfg: sc, conn: conn, ctx: ctx, cancel: cancel, clock: s.clock}
+	u.refresher.startWorker = func() { s.refreshWg.Go(func() { s.runToolRefreshes(u) }) }
 	if sc.MaxPendingRequests > 0 {
 		u.sem = make(chan struct{}, sc.MaxPendingRequests)
 	}
