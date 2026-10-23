@@ -417,10 +417,7 @@ func TestExecuteRoutesToUpstream(t *testing.T) {
 	}
 }
 
-func TestExecuteUnknownServer(t *testing.T) {
-	// Unknown server/tool → tool result with isError:true, not an MCP protocol error.
-	// The agent called mini's "call" tool successfully; the tool itself failed to
-	// find the upstream tool. Surfacing as isError lets the agent recover gracefully.
+func TestCallOnUnknownServerIsInvalidParams(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	resp := serve(t, srv, callTool("nobody__doThing", map[string]any{}))
 	requireRPCError(
@@ -460,7 +457,7 @@ func TestPing_ReturnsEmptyResult(t *testing.T) {
 	}
 }
 
-func mustDiscoverResults(t *testing.T, srv *server.Server) []map[string]any {
+func mustListTools(t *testing.T, srv *server.Server) []map[string]any {
 	t.Helper()
 	resp := serve(t, srv, rpc("tools/list", nil))
 	result := resp["result"].(map[string]any)

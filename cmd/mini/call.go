@@ -98,13 +98,6 @@ type executeProjectedParams struct {
 	mode callOutput
 }
 
-type printCallOutputParams struct {
-	serverName string
-	toolName   string
-	env        *response.Envelope
-	mode       callOutput
-}
-
 func (f callFlags) enabledCount() int {
 	count := 0
 	for _, enabled := range []bool{f.json, f.toon, f.raw} {
@@ -234,9 +227,7 @@ func executeProjected(p executeProjectedParams) {
 	result, err := invoke.Invoke(p.ctx, buildInvokeParams(p.conn, p.call, store))
 	exitOnCallError(err)
 	exitOnEnvelopeError(result.Envelope)
-	exitOnCallError(printCallOutput(printCallOutputParams{
-		serverName: p.call.serverName, toolName: p.call.toolName, env: result.Envelope, mode: p.mode,
-	}))
+	exitOnCallError(printCallOutput(result.Envelope, p.mode))
 }
 
 func openCallStore(cfg *config.Config, configDir string, clock clock.Clock) (*response.Store, error) {
@@ -328,16 +319,16 @@ func resolveCallProjection(sc *config.ServerConfig, toolName string) *config.Pro
 	return sc.Projections["*"]
 }
 
-func printCallOutput(p printCallOutputParams) error {
-	if p.mode == callOutputToon {
-		text, err := p.env.Toon()
+func printCallOutput(env *response.Envelope, mode callOutput) error {
+	if mode == callOutputToon {
+		text, err := env.Toon()
 		if err != nil {
 			return fmt.Errorf("encode TOON response: %w", err)
 		}
 		fmt.Println(text)
 		return nil
 	}
-	b, err := json.MarshalIndent(p.env, "", "  ")
+	b, err := json.MarshalIndent(env, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode JSON response: %w", err)
 	}

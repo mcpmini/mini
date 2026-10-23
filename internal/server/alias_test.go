@@ -27,7 +27,7 @@ func lastCalledTool(t *testing.T, fake *transport.FakeConnection) string {
 
 func listNames(t *testing.T, srv *server.Server) map[string]bool {
 	t.Helper()
-	results := mustDiscoverResults(t, srv)
+	results := mustListTools(t, srv)
 	names := map[string]bool{}
 	for _, e := range results {
 		names[e["name"].(string)] = true
