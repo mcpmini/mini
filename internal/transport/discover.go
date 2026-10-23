@@ -113,7 +113,7 @@ func isModernRejection(code int) bool {
 
 func decodeUnsupportedVersionData(raw json.RawMessage) UnsupportedVersionData {
 	var data UnsupportedVersionData
-	//nolint:errcheck // undecodable data lists no versions, which reports as sharing none with mini
+	//nolint:errcheck // whatever versions decoded are still usable; none decoded means none shared
 	_ = json.Unmarshal(raw, &data)
 	return data
 }
@@ -129,7 +129,6 @@ func unsupportedVersionError(data UnsupportedVersionData, requested string) erro
 	)
 }
 
-// A shared legacy version means the server also accepts initialize; sharing none is an error.
 // https://github.com/modelcontextprotocol/modelcontextprotocol/blob/80041ab0a139a8f4fb3adbc99f7ae9113ea59671/docs/specification/2026-07-28/basic/versioning.mdx?plain=1#L69-L71
 func sharedVersionVerdict(supported []string) (probeVerdict, bool) {
 	for _, version := range ModernVersions {
@@ -137,6 +136,7 @@ func sharedVersionVerdict(supported []string) (probeVerdict, bool) {
 			return probeVerdict{era: EraModern, version: version}, true
 		}
 	}
+	// Legacy versions are only reached through initialize.
 	if slices.ContainsFunc(supported, IsLegacyVersion) {
 		return probeVerdict{era: EraLegacy}, true
 	}
