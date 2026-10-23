@@ -24,7 +24,7 @@ type HTTPConnection struct {
 	client                  *http.Client
 	clock                   clock.Clock
 	nextID                  atomic.Int64
-	mu                      sync.Mutex
+	sessionMu               sync.Mutex
 	sessionID               string
 	protocolVersion         string
 	setupMu                 sync.Mutex

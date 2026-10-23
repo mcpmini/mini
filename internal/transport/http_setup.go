@@ -49,9 +49,9 @@ func (c *HTTPConnection) initHandshake(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	c.mu.Lock()
+	c.sessionMu.Lock()
 	c.protocolVersion = result.ProtocolVersion
-	c.mu.Unlock()
+	c.sessionMu.Unlock()
 	if err := c.sendInitializedNotification(ctx); err != nil {
 		return err
 	}
@@ -129,9 +129,9 @@ func (c *HTTPConnection) withSessionRecovery(
 func (c *HTTPConnection) compareAndResetSession(expiredID string) {
 	c.setupMu.Lock()
 	defer c.setupMu.Unlock()
-	c.mu.Lock()
+	c.sessionMu.Lock()
 	match := c.sessionID == expiredID
-	c.mu.Unlock()
+	c.sessionMu.Unlock()
 	if match {
 		c.initialized = false
 	}
