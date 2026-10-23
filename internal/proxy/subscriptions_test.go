@@ -5,6 +5,7 @@ package proxy
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"strconv"
 	"strings"
 	"testing"
@@ -119,4 +120,60 @@ func proxyListenCount(session *proxySession) int {
 		return nil
 	})
 	return count
+}
+
+func TestSubscriptions_acknowledgeRegistersOnlyAfterTheAckIsWritten(t *testing.T) {
+	subs := newSubscriptions()
+	want := errors.New("client gone")
+	ack := transport.NewSubscriptionAck(json.RawMessage(`1`), transport.ListenNotifications{ToolsListChanged: true})
+	if err := subs.acknowledge(ack, func(transport.SubscriptionAck) error { return want }); !errors.Is(err, want) {
+		t.Fatalf("acknowledge error = %v, want the write failure", err)
+	}
+	if subs.remove(json.RawMessage(`1`)) {
+		t.Fatal("listen registered although its acknowledgement was never written")
+	}
+}
+
+func TestSubscriptions_forEachStopsAtTheFirstError(t *testing.T) {
+	subs := newSubscriptions()
+	for _, id := range []string{`1`, `2`} {
+		ack := transport.NewSubscriptionAck(json.RawMessage(id), transport.ListenNotifications{ToolsListChanged: true})
+		if err := subs.acknowledge(ack, func(transport.SubscriptionAck) error { return nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := errors.New("write failed")
+	calls := 0
+	err := subs.forEach(func(json.RawMessage) error {
+		calls++
+		return want
+	})
+	if !errors.Is(err, want) || calls != 1 {
+		t.Fatalf("forEach error = %v after %d calls, want the first error after 1 call", err, calls)
+	}
+}
+
+func TestProxySession_listenGoesToDaemonUntilItCanBeAnsweredLocally(t *testing.T) {
+	tests := map[string]struct {
+		line  []byte
+		ready bool
+	}{
+		"client not ready": {listenLine(5), false},
+		"legacy version": {transporttest.ModernRequestVersion(transporttest.ModernRequestVersionParams{
+			Version: transport.LatestLegacyVersion, ID: 5, Method: transport.MethodSubscriptionsListen,
+		}), true},
+		"null id": {bytes.Replace(listenLine(5), []byte(`"id":5`), []byte(`"id":null`), 1), true},
+		"no id":   {bytes.Replace(listenLine(5), []byte(`"id":5,`), nil, 1), true},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			session, out := newTestProxySession(t, transport.ToolModeProxy)
+			session.clientReady.Store(tc.ready)
+			handled, err := handleLocal(t, session, tc.line)
+			if err != nil || handled || out.Len() != 0 || proxyListenCount(session) != 0 {
+				t.Fatalf("handled=%t error=%v output=%q listens=%d, want it left for the daemon",
+					handled, err, out.String(), proxyListenCount(session))
+			}
+		})
+	}
 }
