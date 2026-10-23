@@ -124,7 +124,3 @@ get_commit:
   exclude:
     - "author.avatar_url"
     - "committer.avatar_url"
-
-get_file_contents:
-  string_limits:
-    text: 25000

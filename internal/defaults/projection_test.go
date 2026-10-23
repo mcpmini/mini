@@ -221,13 +221,12 @@ func TestBundledProjectionsKeepWholeDocumentsPastTheDefaultLimit(t *testing.T) {
 		server, tool, shape string
 		chars               int
 	}{
-		{server: "github", tool: "get_file_contents", shape: `[{"type": "resource", "resource": {"text": %q}}]`, chars: 25000},
 		{server: "github", tool: "issue_read", shape: `{"body": %q}`, chars: 25000},
 		{server: "slack", tool: "slack_read_channel", shape: `{"messages": %q}`, chars: 25000},
 		{server: "atlassian", tool: "getConfluenceContent", shape: `{"data": {"body": {"value": %q}}}`, chars: 25000},
 		{server: "atlassian", tool: "getJiraIssue", shape: `{"fields": {"description": %q}}`, chars: 25000},
 		{server: "linear", tool: "get_issue", shape: `{"description": %q}`, chars: 25000},
-		{server: "atlassian", tool: "executeRead", shape: `{"data": {"body": %q}}`, chars: 36000},
+		{server: "atlassian", tool: "executeRead", shape: `{"data": {"body": %q}}`, chars: 40000},
 	} {
 		t.Run(tc.server+"/"+tc.tool, func(t *testing.T) {
 			value := decodeJSON(t, fmt.Sprintf(tc.shape, strings.Repeat("x", tc.chars)))

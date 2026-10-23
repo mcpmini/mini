@@ -58,7 +58,7 @@ Every string without a limit is capped by the global `default_string_limit` (200
 
 Rough guidance:
 - **Content of one item in a list** (issue body, comment, commit message): no rule; the default applies, and the agent opens the item when it needs the rest
-- **A single item or a whole document** (issue or PR body, Jira description, file contents, Confluence page body, a page of Slack messages returned as one string): 25000 chars. The agent nearly always needs all of it, so a cut only adds a `read`. Above ~25K, clients cut the result themselves; see [Large MCP responses](large-mcp-responses.md)
+- **A single item or a whole document** (issue or PR body, Jira description, Confluence page body, a page of Slack messages returned as one string): 25000 chars. The agent nearly always needs all of it, so a cut only adds a `read`. Above ~25K, clients cut the result themselves; see [Large MCP responses](large-mcp-responses.md)
 - **Code diffs (patch)**: 5000 chars per file
 
 These are starting points, not rules. If a field is important and the limit is causing second API calls, raise it.

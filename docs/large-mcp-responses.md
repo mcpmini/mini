@@ -36,7 +36,7 @@ truncation policy, OpenCode `packages/core/src/tool-output.ts`, pi-mcp-adapter
 - Bundled rules therefore cap whole documents and single-item gets at 25K chars (~8K tokens),
   which leaves room for the rest of the result and the notice. 25K is the 90th percentile of
   sampled public Confluence pages.
-- Strings with no rule get the 5K default (~1.25–1.7K tokens). A cut only saves tokens when the
+- Strings with no rule get the 2K default (~500–700 tokens). A cut only saves tokens when the
   agent usually stops at it, which holds for lists and search but not for single-item gets.
 - `read` returns the stored field unprojected. A jq string slice (`.body[5000:]`) fetches only
   the part that was cut.

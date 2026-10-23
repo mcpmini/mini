@@ -14,7 +14,7 @@ getConfluenceContent:
   string_limits:
     value: 25000
 
-# The Confluence format guide (~35K chars) arrives here as body.
+# Keeps the ~35K-char Confluence format guide whole; Codex cuts results past ~40K chars.
 executeRead:
   string_limits:
-    body: 50000
+    body: 40000
