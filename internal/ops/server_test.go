@@ -113,48 +113,6 @@ func TestAddServer_writtenFile(t *testing.T) {
 			t.Errorf("LoadServer projections = %#v, %v; want bundled defaults inline", got.Projections, err)
 		}
 	})
-
-	t.Run("known server installs bundled permissions when none specified", func(t *testing.T) {
-		dir := tempDir(t)
-		sc := config.ServerConfig{Name: "gh", Transport: "http", URL: "https://api.github.com/mcp"}
-		if _, err := ops.AddServer(dir, sc); err != nil {
-			t.Fatalf("AddServer: %v", err)
-		}
-		var got config.ServerConfig
-		readYAML(t, filepath.Join(dir, "servers", "gh.yaml"), &got)
-		if got.Permissions == nil {
-			t.Fatal("expected bundled permissions to be applied")
-		}
-		if len(got.Permissions.Hidden) == 0 {
-			t.Error("expected hidden tools in bundled github permissions")
-		}
-	})
-
-	t.Run("explicit permissions take precedence over bundled", func(t *testing.T) {
-		dir := tempDir(t)
-		sc := config.ServerConfig{
-			Name:      "gh",
-			Transport: "http",
-			URL:       "https://api.github.com/mcp",
-			Permissions: &config.PermissionsConfig{
-				Protected: []string{"my_tool"},
-			},
-		}
-		if _, err := ops.AddServer(dir, sc); err != nil {
-			t.Fatalf("AddServer: %v", err)
-		}
-		var got config.ServerConfig
-		readYAML(t, filepath.Join(dir, "servers", "gh.yaml"), &got)
-		if got.Permissions == nil || len(got.Permissions.Protected) != 1 {
-			t.Fatalf("expected explicit permissions preserved, got %+v", got.Permissions)
-		}
-		if got.Permissions.Protected[0] != "my_tool" {
-			t.Errorf("Protected = %v, want [my_tool]", got.Permissions.Protected)
-		}
-		if len(got.Permissions.Hidden) != 0 {
-			t.Errorf("bundled hidden applied despite explicit permissions: %v", got.Permissions.Hidden)
-		}
-	})
 }
 
 func TestAddServer(t *testing.T) {
@@ -169,8 +127,8 @@ func TestAddServer(t *testing.T) {
 		if added.Path != filepath.Join(dir, "servers", "gh.yaml") || !added.DefaultProjections {
 			t.Errorf("added = %+v, want inline defaults in %s", added, filepath.Join(dir, "servers", "gh.yaml"))
 		}
-		if !added.DefaultPermissions || added.Config.Permissions == nil {
-			t.Errorf("added = %+v, want github's bundled permissions applied and reported", added)
+		if added.Config.Permissions != nil {
+			t.Errorf("added permissions = %+v, want none: mini ships no default visibility", added.Config.Permissions)
 		}
 		if got, err := config.LoadServer(dir, "gh"); err != nil || got.URL != github.URL {
 			t.Errorf("LoadServer(gh) = %#v, %v; want gh with URL %q", got, err, github.URL)

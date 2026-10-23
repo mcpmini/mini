@@ -88,9 +88,6 @@ func printAdded(w io.Writer, added ops.AddedServer) {
 	} else {
 		printNotice(w, "added %s → %s\n", added.Config.Name, added.Path)
 	}
-	if added.DefaultPermissions {
-		printNotice(w, "applied default permissions → %s\n", added.Path)
-	}
 }
 
 // Names the differing fields but never their values: headers and env usually hold tokens.

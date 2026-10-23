@@ -87,7 +87,7 @@ func TestRunAdd(t *testing.T) {
 		}
 	})
 
-	t.Run("reports the server file, bundled projection and default permissions it wrote", func(t *testing.T) {
+	t.Run("reports the server file and bundled projection it wrote", func(t *testing.T) {
 		dir := t.TempDir()
 		var out bytes.Buffer
 		if err := runAdd(dir, []string{"gh", "--", "npx", "-y", "server-github"}, &out); err != nil {
@@ -97,7 +97,6 @@ func TestRunAdd(t *testing.T) {
 		serverPath := filepath.Join(dir, "servers", "gh.yaml")
 		for _, want := range []string{
 			"added gh → " + serverPath + " (with default projections)",
-			"applied default permissions → " + serverPath,
 		} {
 			if !strings.Contains(printed, want) {
 				t.Errorf("output %q is missing %q", printed, want)
