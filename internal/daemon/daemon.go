@@ -53,11 +53,12 @@ func SocketClient(socket string, timeout time.Duration) *http.Client {
 
 func socketTransport(socket string) *http.Transport {
 	return &http.Transport{
-		// A reused connection to a daemon that has since exited fails a POST with "server closed idle
-		// connection", which can't be told apart from a request the daemon received, so the proxy
-		// can't retry it without risking a tool call running twice. Dialing per request makes an
-		// exited daemon fail at dial, before anything is sent, which is safe to retry. The cost is
-		// one local socket dial per message, microseconds next to the upstream call it carries.
+		// Go keeps connections alive by default. When the daemon exits, its pooled connections die,
+		// but the client only notices once it sends the next request down one: the POST fails with
+		// "server closed idle connection". Neither Go nor the proxy can tell whether the daemon read
+		// it, so neither retries, and the agent's call fails although nothing ran. Without keep-alive
+		// every request dials, so an exited daemon fails at dial, before anything is sent, and the
+		// proxy restarts it and retries. The cost is one local socket dial per message.
 		DisableKeepAlives: true,
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			// network and address come from the request URL; ignored because the daemon listens on a Unix socket
