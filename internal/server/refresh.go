@@ -45,14 +45,14 @@ func (s *Server) refreshTools(u *upstreamServer) error {
 	}
 	ctx, cancel := context.WithTimeout(u.ctx, refreshTimeout)
 	defer cancel()
-	list, err := conn.ListTools(ctx)
+	toolList, err := conn.ListTools(ctx)
 	if err != nil {
 		if transport.IsConnectionError(err) {
 			s.maybeReconnect(u, connError{err: err})
 		}
 		return err
 	}
-	if !s.publishRefreshedTools(u, conn, list) {
+	if !s.publishRefreshedTools(u, conn, toolList) {
 		return context.Canceled
 	}
 	return nil
@@ -61,18 +61,18 @@ func (s *Server) refreshTools(u *upstreamServer) error {
 func (s *Server) publishRefreshedTools(
 	u *upstreamServer,
 	conn transport.Connection,
-	list transport.ToolList,
+	toolList transport.ToolList,
 ) bool {
 	s.serverOpMu.Lock()
 	defer s.serverOpMu.Unlock()
 	if !s.isCurrentUpstreamConn(u, conn) {
 		return false
 	}
-	changed := !reflect.DeepEqual(u.lastDefs, list.Tools)
-	u.lastDefs = list.Tools
+	changed := !reflect.DeepEqual(u.lastDefs, toolList.Tools)
+	u.lastDefs = toolList.Tools
 	s.reg.ReplaceServer(registry.ServerParams{
 		Name:            u.cfg.Name,
-		Defs:            list.Tools,
+		Defs:            toolList.Tools,
 		Perm:            u.cfg.Permissions,
 		AliasByToolName: s.currentAliasesFor(u.cfg.Name),
 	})

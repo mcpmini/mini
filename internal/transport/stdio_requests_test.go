@@ -120,12 +120,12 @@ func TestListTools_viaPipe(t *testing.T) {
 			},
 		})
 	}()
-	list, err := conn.ListTools(context.Background())
+	toolList, err := conn.ListTools(context.Background())
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
-	if len(list.Tools) != 1 || list.Tools[0].Name != "ping" {
-		t.Errorf("unexpected tools: %+v", list.Tools)
+	if len(toolList.Tools) != 1 || toolList.Tools[0].Name != "ping" {
+		t.Errorf("unexpected tools: %+v", toolList.Tools)
 	}
 }
 
