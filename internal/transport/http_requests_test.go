@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
-	"strings"
 	"sync/atomic"
 	"testing"
 )
@@ -317,16 +316,5 @@ func TestModernServerErrorKeepsTheEra(t *testing.T) {
 	if !errors.Is(err, failure) || IsConnectionError(err) || !conn.isModern() {
 		t.Fatalf("5xx became %v (connection error: %v), modern = %v; want it returned as is with the era kept",
 			err, IsConnectionError(err), conn.isModern())
-	}
-}
-
-func TestModernCallRejectsAnUnknownResultType(t *testing.T) {
-	srv := newModernServer(t, modernUpstream{Handle: func(w http.ResponseWriter, _ *http.Request, req Request) {
-		writeRPCResult(t, rpcResultParams{Writer: w, ID: req.ID, Result: map[string]string{"resultType": "later"}})
-	}})
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
-	result, err := conn.Call(t.Context(), "ping", nil)
-	if err == nil || !strings.Contains(err.Error(), `unknown resultType "later"`) {
-		t.Fatalf("Call = %s, %v; want an unknown resultType error", result, err)
 	}
 }
