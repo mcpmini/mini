@@ -41,7 +41,6 @@ func (c *StdioConnection) handleMessage(ctx context.Context, line []byte) {
 
 const MethodPing = "ping"
 
-// Bounds a reply to a server that has stopped reading stdin; nothing in mini waits on it.
 const stdioReplyWriteTimeout = 5 * time.Second
 
 // Legacy servers may ping mini and drop a connection that never answers. mini declares no client
