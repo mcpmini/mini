@@ -10,7 +10,13 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-const refreshTimeout = 15 * time.Second
+// Some upstreams take well over 30 seconds to list their tools. A refresh that outlasts the
+// discovery wait still publishes, and agents learn of the new list through list_changed.
+const refreshTimeout = 60 * time.Second
+
+// Codex gives each server 30 seconds to start and list its tools, so a discovery read answers
+// within that, startup hold included, and serves the list it has.
+const discoveryWait = 25 * time.Second
 
 func (s *Server) attachNotificationHandler(u *upstreamServer, conn transport.Connection) {
 	source, ok := conn.(transport.NotificationSource)
@@ -27,6 +33,39 @@ func (s *Server) attachNotificationHandler(u *upstreamServer, conn transport.Con
 func (s *Server) requestToolRefresh(u *upstreamServer, conn transport.Connection) {
 	if s.isCurrentUpstreamConn(u, conn) {
 		u.refresher.request()
+	}
+}
+
+func (s *Server) awaitCurrentToolLists(ctx context.Context) error {
+	wait, cancel := context.WithTimeout(ctx, discoveryWait)
+	defer cancel()
+	if err := s.waitForStartup(ctx); err != nil {
+		return err
+	}
+	s.awaitFreshToolLists(wait, s.snapshotUpstreams())
+	return ctx.Err()
+}
+
+func (s *Server) awaitCurrentToolList(ctx context.Context, u *upstreamServer) error {
+	wait, cancel := context.WithTimeout(ctx, discoveryWait)
+	defer cancel()
+	s.awaitFreshToolLists(wait, []*upstreamServer{u})
+	return ctx.Err()
+}
+
+func (s *Server) awaitFreshToolLists(wait context.Context, upstreams []*upstreamServer) {
+	refreshes := make([]<-chan struct{}, 0, len(upstreams))
+	for _, u := range upstreams {
+		refreshes = append(refreshes, u.refresher.refreshIfStale(s.clock.Now()))
+	}
+	for _, done := range refreshes {
+		select {
+		case <-done:
+		case <-wait.Done():
+			return
+		case <-s.stopWaiting:
+			return
+		}
 	}
 }
 
@@ -69,7 +108,7 @@ func (s *Server) publishRefreshedTools(
 		return false
 	}
 	changed := !reflect.DeepEqual(u.lastDefs, toolList.Tools)
-	u.lastDefs = toolList.Tools
+	u.adoptToolList(toolList)
 	s.reg.ReplaceServer(registry.ServerParams{
 		Name:            u.cfg.Name,
 		Defs:            toolList.Tools,

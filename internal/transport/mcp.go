@@ -66,6 +66,7 @@ type ServerInfo struct {
 type ToolsListResult struct {
 	Tools      []ToolDefinition `json:"tools"`
 	NextCursor string           `json:"nextCursor,omitempty"`
+	TTLMs      json.RawMessage  `json:"ttlMs,omitempty"`
 }
 
 type ToolCallParams struct {

@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/transport"
 	"github.com/mcpmini/mini/internal/transport/transporttest"
 )
@@ -177,6 +179,36 @@ func putFakeTool(t *testing.T, p fakeToolParams) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("put fake tool status = %d", resp.StatusCode)
+	}
+}
+
+func TestIntegrationToolListTTLRefreshesWithoutNotification(t *testing.T) {
+	for _, mode := range []string{"standalone", "daemon"} {
+		t.Run(mode, func(t *testing.T) {
+			cfg := shortConfigDir(t)
+			bin, err := os.Executable()
+			if err != nil {
+				t.Fatal(err)
+			}
+			configtest.WriteServer(t, cfg, config.ServerConfig{
+				Name:    "svc",
+				Command: bin,
+				Args: []string{
+					"-test.run=^TestIntegrationModernStdioHelper$",
+					"--",
+					"modern-stdio-helper",
+					"ttl-only",
+				},
+			})
+			client := startModernClientWithoutInitialize(t, cfg, mode)
+			// The helper's list expires at once and it never sends list_changed, so only honoring the
+			// TTL shows the agent the helper's second listing.
+			got := client.callModern(t, "tools/list", nil)
+			if !strings.Contains(string(got), `"name":"svc__new"`) ||
+				strings.Contains(string(got), `"name":"svc__old"`) {
+				t.Fatalf("tool list after expiry %s", got)
+			}
+		})
 	}
 }
 

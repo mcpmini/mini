@@ -62,11 +62,10 @@ func (c *StdioConnection) awaitResponse(ctx context.Context, id int64, ch chan *
 }
 
 func (c *StdioConnection) ListTools(ctx context.Context) (ToolList, error) {
-	tools, err := paginateToolsList(ctx, c.callToolsPage)
-	return ToolList{Tools: tools}, err
+	return paginateToolsList(ctx, c.callToolsPage)
 }
 
-func (c *StdioConnection) callToolsPage(ctx context.Context, cursor string) (ToolsListResult, error) {
+func (c *StdioConnection) callToolsPage(ctx context.Context, cursor string) (toolsListPage, error) {
 	var params json.RawMessage
 	if cursor != "" {
 		//nolint:errcheck // cursor map contains only strings.
@@ -74,9 +73,9 @@ func (c *StdioConnection) callToolsPage(ctx context.Context, cursor string) (Too
 	}
 	raw, err := c.Call(ctx, "tools/list", params)
 	if err != nil {
-		return ToolsListResult{}, err
+		return toolsListPage{}, err
 	}
-	return decodeToolsListPage(raw)
+	return decodeToolsListPage(raw, c.clock.Now(), c.negotiatedModernVersion())
 }
 
 // A best-effort notice for a caller that has already given up, so it gets only a short bound.

@@ -153,7 +153,7 @@ func (s *Server) publishReconnectedTools(
 	if !s.isCurrentUpstreamConn(u, conn) {
 		return false
 	}
-	u.lastDefs = toolList.Tools
+	u.adoptToolList(toolList)
 	s.reg.ReplaceServer(registry.ServerParams{
 		Name:            u.cfg.Name,
 		Defs:            toolList.Tools,

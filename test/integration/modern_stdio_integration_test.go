@@ -137,7 +137,7 @@ func TestIntegrationModernStdioHelper(t *testing.T) {
 	if !hasModernHelperArg("modern-stdio-helper") {
 		return
 	}
-	helper := &modernStdioHelper{}
+	helper := &modernStdioHelper{ttlOnly: hasModernHelperArg("ttl-only")}
 	scanner := transport.NewScanner(os.Stdin)
 	for scanner.Scan() {
 		var req transport.Request
@@ -151,6 +151,8 @@ func TestIntegrationModernStdioHelper(t *testing.T) {
 type modernStdioHelper struct {
 	writeMu     sync.Mutex
 	listChanged bool
+	ttlOnly     bool
+	lists       int
 	listenID    json.RawMessage
 }
 
@@ -190,11 +192,15 @@ func (h *modernStdioHelper) write(value any) {
 func (h *modernStdioHelper) discover(req transport.Request) {
 	h.write(modernHelperResponse(req.ID, transport.DiscoverResult{
 		SupportedVersions: transport.ModernVersions,
-		Capabilities:      transport.ServerCapabilities{Tools: &transport.ToolsCapability{ListChanged: true}},
+		Capabilities:      transport.ServerCapabilities{Tools: &transport.ToolsCapability{ListChanged: !h.ttlOnly}},
 	}))
 }
 
 func (h *modernStdioHelper) listTools(req transport.Request) {
+	if h.ttlOnly {
+		h.listTTLTools(req)
+		return
+	}
 	tools := []transport.ToolDefinition{
 		{
 			Name:         "confirm",
@@ -341,4 +347,14 @@ func modernProxyCall(name string, responses, state json.RawMessage) modernInputR
 		InputResponses: responses,
 		RequestState:   state,
 	}
+}
+
+func (h *modernStdioHelper) listTTLTools(req transport.Request) {
+	h.lists++
+	name := "old"
+	if h.lists > 1 {
+		name = "new"
+	}
+	result := transport.ToolsListResult{Tools: []transport.ToolDefinition{{Name: name}}, TTLMs: json.RawMessage(`0`)}
+	h.write(modernHelperResponse(req.ID, result))
 }

@@ -7,7 +7,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 )
+
+func FreshUntil(deadline time.Time) Freshness {
+	return Freshness{managed: true, until: deadline}
+}
 
 // FakeConnection is a test double for Connection.
 type FakeConnection struct {

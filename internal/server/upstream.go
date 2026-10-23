@@ -50,6 +50,11 @@ type upstreamServer struct {
 	lastErrMsg     atomic.Pointer[string]
 }
 
+func (u *upstreamServer) adoptToolList(toolList transport.ToolList) {
+	u.lastDefs = toolList.Tools
+	u.refresher.published(toolList.Freshness)
+}
+
 func (u *upstreamServer) shutdown() {
 	u.refresher.stop()
 	u.cancel()
