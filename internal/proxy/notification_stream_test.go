@@ -3,6 +3,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -72,8 +73,9 @@ func toolsChangedLine(t *testing.T) json.RawMessage {
 }
 
 func TestNotificationStream_forwardDropsInvalidJSON(t *testing.T) {
-	session, out := newTestProxySession(t, transport.ToolModeProxy)
-	if err := session.notificationStream.forward(json.RawMessage(`{"jsonrpc":`)); err != nil || out.Len() != 0 {
+	var out bytes.Buffer
+	stream, _, _ := startNotificationStream(t, &out)
+	if err := stream.forward(json.RawMessage(`{"jsonrpc":`)); err != nil || out.Len() != 0 {
 		t.Fatalf("invalid notification: error=%v output=%q, want it dropped", err, out.String())
 	}
 }
@@ -130,7 +132,6 @@ func TestNotificationStream_retriesARejectedStreamWithoutReadingIt(t *testing.T)
 	nextDaemonStream(t, daemon)
 }
 
-// Just short of the delay, the retry timer must still be pending and no stream reopened.
 func advanceThroughRetryDelay(t *testing.T, fake *clock.Fake, daemon *streamDaemon) {
 	t.Helper()
 	awaitRetryTimer(t, fake)
