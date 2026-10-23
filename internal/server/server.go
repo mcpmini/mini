@@ -51,12 +51,6 @@ type Server struct {
 	reloadLoop  backgroundLoop
 }
 
-func (s *Server) notifyAllSessions() {
-	for _, sess := range s.sessions.snapshotSessions() {
-		sess.notifyToolsChanged()
-	}
-}
-
 func (s *Server) ToolCount(serverName string) int {
 	return s.reg.ToolCount(serverName)
 }
