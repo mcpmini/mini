@@ -164,8 +164,8 @@ func TestConcurrentAddRemove_RegistryConsistency(t *testing.T) {
 	// After the storm, call list and check the result is coherent.
 	// "contested.toolX" should either be present or absent — never in a
 	// broken state that would cause a panic or data corruption.
-	resp := serve(t, srv, callTool("list", map[string]any{}))
-	text := toolResultText(t, resp)
+	resp := serve(t, srv, rpc("tools/list", nil))
+	text := resultJSONText(t, resp)
 	// If the server is present, "contested" should appear in the list.
 	// The important thing is that the call doesn't panic or return garbage.
 	_ = text // success = no panic, no race-detector violation
@@ -184,8 +184,8 @@ func TestAddRemoveSameServer_ToolsDoNotLeak(t *testing.T) {
 	}
 
 	// Verify the tool is visible.
-	resp := serve(t, srv, callTool("list", map[string]any{}))
-	if !strings.Contains(toolResultText(t, resp), "tempserver.secret_tool") {
+	resp := serve(t, srv, rpc("tools/list", nil))
+	if !strings.Contains(resultJSONText(t, resp), "tempserver__secret_tool") {
 		t.Fatal("expected secret_tool to be listed after add")
 	}
 
@@ -196,16 +196,16 @@ func TestAddRemoveSameServer_ToolsDoNotLeak(t *testing.T) {
 	}))
 
 	// The tool must no longer be discoverable.
-	resp = serve(t, srv, callTool("list", map[string]any{}))
-	if strings.Contains(toolResultText(t, resp), "tempserver") {
+	resp = serve(t, srv, rpc("tools/list", nil))
+	if strings.Contains(resultJSONText(t, resp), "tempserver") {
 		t.Errorf("tempserver tools still visible after remove_server")
 	}
 
 	// Calling the removed tool returns a tool error (isError:true), not an MCP protocol error.
-	resp = serve(t, srv, callTool("call", map[string]any{
-		"server": "tempserver", "tool": "secret_tool", "params": map[string]any{},
-	}))
-	requireToolError(t, resp, "not found")
+	resp = serve(t, srv, callTool("tempserver__secret_tool", map[string]any{}))
+	requireRPCError(
+		requireRPCErrorParams{T: t, Resp: resp, WantCode: transport.CodeInvalidParams, WantSubstr: "not found"},
+	)
 }
 
 // ---------------------------------------------------------------------------
@@ -271,9 +271,7 @@ func TestRemoveServer_ClearsProjections(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resp = serve(t, srv, callTool("call", map[string]any{
-		"server": "svc", "tool": "search", "params": map[string]any{},
-	}))
+	resp = serve(t, srv, callTool("svc__search", map[string]any{}))
 	text := toolResultText(t, resp)
 	if !strings.Contains(text, strings.Repeat("x", 200)) {
 		t.Errorf("stale projection still active after server removal and re-add: %s", text)
@@ -340,8 +338,8 @@ func TestGenerationCounter_RemoveWinsRace(t *testing.T) {
 	<-addDone            // wait for add to finish
 
 	// After remove returned ok, "racing" must NOT be in the registry.
-	resp := serve(t, srv, callTool("list", map[string]any{}))
-	if strings.Contains(toolResultText(t, resp), "racing") {
+	resp := serve(t, srv, rpc("tools/list", nil))
+	if strings.Contains(resultJSONText(t, resp), "racing") {
 		t.Error("remove_server returned ok:true but server is still registered (generation counter not working)")
 	}
 }
@@ -379,9 +377,7 @@ func TestInlineProjections_AppliedOnAddConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "svc", "tool": "get_item", "params": map[string]any{},
-	}))
+	resp := serve(t, srv, callTool("svc__get_item", map[string]any{}))
 	text := toolResultText(t, resp)
 	t.Logf("inline projection response: %s", text)
 

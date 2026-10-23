@@ -169,53 +169,23 @@ func TestAddServer_invalidName_rejected(t *testing.T) {
 	}
 }
 
-func TestPathTraversal_exec_rejected(t *testing.T) {
+func TestNativeCallRejectsUnknownServerNames(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
-	defer srv.Close()
-
-	// Per spec, invalid params → -32602, not a soft tool error.
 	for _, name := range []string{"../escape", "../../etc/passwd", "bad name!", "server\x00null"} {
-		for _, tool := range []string{"call", "perm_call"} {
-			resp := serve(t, srv, callTool(tool, map[string]any{
-				"server": name,
-				"tool":   "anything",
-				"params": map[string]any{},
-			}))
-			requireRPCError(
-				requireRPCErrorParams{
-					T:          t,
-					Resp:       resp,
-					WantCode:   transport.CodeInvalidParams,
-					WantSubstr: "invalid server name",
-				},
-			)
-		}
+		resp := serve(t, srv, callTool(name+"__anything", map[string]any{}))
+		requireRPCError(
+			requireRPCErrorParams{T: t, Resp: resp, WantCode: transport.CodeInvalidParams, WantSubstr: "not found"},
+		)
 	}
 }
 
-// TestExec_invalidToolName_rejected verifies that tool names with invalid
-// characters are rejected before registry lookup in both call and perm_call.
-func TestExec_invalidToolName_rejected(t *testing.T) {
+func TestNativeCallRejectsUnknownToolNames(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
-	defer srv.Close()
-
-	// Per spec, invalid params → -32602, not a soft tool error.
-	for _, badTool := range []string{"bad tool!", "tool\x00null", "tool@host"} {
-		for _, method := range []string{"call", "perm_call"} {
-			resp := serve(t, srv, callTool(method, map[string]any{
-				"server": "validserver",
-				"tool":   badTool,
-				"params": map[string]any{},
-			}))
-			requireRPCError(
-				requireRPCErrorParams{
-					T:          t,
-					Resp:       resp,
-					WantCode:   transport.CodeInvalidParams,
-					WantSubstr: "invalid tool name",
-				},
-			)
-		}
+	for _, name := range []string{"bad tool!", "tool\x00null", "tool@host"} {
+		resp := serve(t, srv, callTool("validserver__"+name, map[string]any{}))
+		requireRPCError(
+			requireRPCErrorParams{T: t, Resp: resp, WantCode: transport.CodeInvalidParams, WantSubstr: "not found"},
+		)
 	}
 }
 

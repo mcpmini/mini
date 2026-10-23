@@ -57,12 +57,7 @@ func inBackground(srv *server.Server, session testSession) heldRequest {
 
 func proxySession(t *testing.T, input []byte) testSession {
 	t.Helper()
-	return newTestSession(t, false, input)
-}
-
-func compactSession(t *testing.T, input []byte) testSession {
-	t.Helper()
-	return newTestSession(t, true, input)
+	return newTestSession(t, input)
 }
 
 func responseText(resp map[string]any) string {
@@ -151,48 +146,6 @@ func TestProxyToolsList_aServerThatNeverConnectsReleasesTheListAtItsWindowEnd(t 
 	}
 	if got := responseText(serveProxy(t, r.srv, rpc("tools/list", nil))); !strings.Contains(got, "ready__ping") {
 		t.Errorf("a later tools/list = %s, want it answered at once", got)
-	}
-}
-
-func TestCompactDiscovery_fullListingsAreHeldWhileAServerIsConnecting(t *testing.T) {
-	cases := map[string]map[string]any{
-		"list":   {},
-		"search": {"query": "ping"},
-		"hidden": {"hidden": true},
-	}
-	for name, args := range cases {
-		t.Run(name, func(t *testing.T) {
-			url, release := gatedUpstream(t)
-			r := connectWithFakeClock(t, httpServer("svc", url))
-
-			held := inBackground(r.srv, compactSession(t, callTool("list", args)))
-			r.waitUntilHeld(t, held, 0)
-			release()
-
-			if got := held.answer(t); !strings.Contains(got, "svc.ping") {
-				t.Errorf("list(%v) = %s, want svc's tools", args, got)
-			}
-		})
-	}
-}
-
-func TestCompactDiscovery_metaToolsAndDetailLookupsAreNotHeld(t *testing.T) {
-	url, _ := gatedUpstream(t)
-	r := connectWithFakeClock(t, httpServer("svc", url))
-	if err := r.srv.AddConnection(
-		context.Background(),
-		config.ServerConfig{Name: "ready"},
-		fakeConn("ping"),
-	); err != nil {
-		t.Fatal(err)
-	}
-
-	if got := responseText(serve(t, r.srv, rpc("tools/list", nil))); !strings.Contains(got, `"perm_call"`) {
-		t.Errorf("compact tools/list = %s, want the meta-tools", got)
-	}
-	detail := callTool("list", map[string]any{"tool": "ready.ping", "detail": true})
-	if got := responseText(serve(t, r.srv, detail)); !strings.Contains(got, "ready.ping") {
-		t.Errorf("detail lookup = %s, want ready.ping", got)
 	}
 }
 

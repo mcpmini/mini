@@ -430,7 +430,7 @@ func TestProxy_Call_SessionFormatToon_RendersToon(t *testing.T) {
 	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
 	const sessionID = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
-	postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: initMsg(false)})
+	postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: initMsg()})
 
 	postMCP(postMCPParams{
 		T: t, Server: srv, SessionID: sessionID, Msg: map[string]any{

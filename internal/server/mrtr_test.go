@@ -234,27 +234,6 @@ func TestInputRequiredBecomesToolErrorForLegacyAgents(t *testing.T) {
 			t.Errorf("legacy agent forwarded %s, want %s", conn.LastParams, legacyToolCallParams)
 		}
 	})
-	t.Run("compact mode", func(t *testing.T) {
-		srv := newTestServer(t, server.Params{})
-		conn := addInputRequiredUpstream(t, srv)
-		resp := serve(
-			t,
-			srv,
-			callTool("call", map[string]any{"server": "svc", "tool": "confirm", "params": map[string]any{}}),
-		)
-		assertInputRequiredToolError(t, legacyToolCallResult(t, resp))
-		if string(conn.LastParams) != legacyToolCallParams {
-			t.Errorf("compact call forwarded %s, want %s", conn.LastParams, legacyToolCallParams)
-		}
-	})
-}
-
-func TestModernCompactInputRequiredBecomesToolError(t *testing.T) {
-	srv := newTestServer(t, server.Params{ToolMode: transport.ToolModeCompact})
-	addInputRequiredUpstream(t, srv)
-	call := modernMRTRCall(1, "call", map[string]any{"server": "svc", "tool": "confirm"})
-	response := responsesByID(serveModern(t, srv, call))[1]
-	assertInputRequiredToolError(t, decodeResult[transport.ToolCallResult](t, response))
 }
 
 func assertInputRequiredToolError(t *testing.T, result transport.ToolCallResult) {

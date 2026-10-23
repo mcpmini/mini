@@ -21,12 +21,12 @@ func TestIntegrationSession_configureIndependentTools(t *testing.T) {
 		SessionOnly: true,
 	})
 
-	bA, _ := json.Marshal(client.execEnvelope("svc", "tool_a", nil).Data)
+	bA, _ := json.Marshal(client.execResult("svc", "tool_a", nil).Data)
 	if strings.Contains(string(bA), "secret") {
 		t.Errorf("tool_a: secret should be excluded, got: %s", bA)
 	}
 
-	bB, _ := json.Marshal(client.execEnvelope("svc", "tool_b", nil).Data)
+	bB, _ := json.Marshal(client.execResult("svc", "tool_b", nil).Data)
 	if !strings.Contains(string(bB), "secret") {
 		t.Errorf("tool_b: secret should be visible (different tool config), got: %s", bB)
 	}
@@ -43,7 +43,7 @@ func TestIntegrationSession_multipleExecCallsShareProjection(t *testing.T) {
 	})
 
 	for i := range 3 {
-		b, _ := json.Marshal(client.execEnvelope("svc", "get_item", nil).Data)
+		b, _ := json.Marshal(client.execResult("svc", "get_item", nil).Data)
 		if strings.Contains(string(b), "noise") {
 			t.Errorf("call %d: 'noise' should be excluded by sticky projection", i+1)
 		}

@@ -27,27 +27,14 @@ func fakeToolConn(name string) *transport.FakeConnection {
 	}
 }
 
-func assertEnvelopeOkFalse(t *testing.T, text string) {
-	t.Helper()
-	var env map[string]any
-	if err := json.Unmarshal([]byte(text), &env); err != nil {
-		t.Fatalf("expected JSON envelope, got: %s", text)
-	}
-	if env["error"] == nil {
-		t.Errorf("expected ok=false, got: %v", env)
-	}
-}
-
 func TestUpstream_connectionErrorReturnsEnvelope(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	fake := fakeToolConn("ping")
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fake)
 	fake.Err = errors.New("broken pipe")
 
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "svc", "tool": "ping", "params": map[string]any{},
-	}))
-	assertEnvelopeOkFalse(t, toolResultText(t, resp))
+	resp := serve(t, srv, callTool("svc__ping", map[string]any{}))
+	requireToolError(t, resp, "")
 	if resp["error"] != nil {
 		t.Errorf("connection error should not become RPC error, got: %v", resp["error"])
 	}
@@ -67,14 +54,17 @@ func TestUpstream_allCallsFail_discoverStillWorks(t *testing.T) {
 	fake.Err = errors.New("subprocess crashed")
 
 	// discover should still work even when upstream is down
-	resp := serve(t, srv, callTool("list", map[string]any{}))
-	text := toolResultText(t, resp)
+	resp := serve(t, srv, rpc("tools/list", nil))
+	text := resultJSONText(t, resp)
 	var tools []any
 	if err := json.Unmarshal([]byte(text), &tools); err != nil {
 		t.Fatalf("expected JSON array from list, got: %s", text)
 	}
-	if len(tools) != 2 {
-		t.Errorf("expected 2 tools in discover even when upstream is down, got %d", len(tools))
+	if len(tools) != 4 {
+		t.Errorf(
+			"expected two upstream tools and two builtins in discovery even when upstream is down, got %d",
+			len(tools),
+		)
 	}
 }
 
@@ -92,10 +82,8 @@ func newSlowServer(t *testing.T, delay time.Duration, timeout string) *server.Se
 func TestHTTPUpstream_timeoutReturnsGracefulError(t *testing.T) {
 	srv := newSlowServer(t, 200*time.Millisecond, "50ms")
 
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "svc", "tool": "slowOp", "params": map[string]any{},
-	}))
-	assertEnvelopeOkFalse(t, toolResultText(t, resp))
+	resp := serve(t, srv, callTool("svc__slowOp", map[string]any{}))
+	requireToolError(t, resp, "")
 }
 
 // slowConnection simulates a connection that takes time to respond.
@@ -141,9 +129,7 @@ func TestUpstream_concurrentCalls_noPanic(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			resp := serve(t, srv, callTool("call", map[string]any{
-				"server": "svc", "tool": "work", "params": map[string]any{},
-			}))
+			resp := serve(t, srv, callTool("svc__work", map[string]any{}))
 			if resp["error"] != nil {
 				errs <- "rpc error: " + mustMarshal(resp["error"])
 			}
@@ -169,18 +155,9 @@ func TestUpstream_toolReturnsIsError_gracefulEnvelope(t *testing.T) {
 	}
 	srv.AddConnection(ctx, config.ServerConfig{Name: "svc"}, fake)
 
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "svc", "tool": "op", "params": map[string]any{},
-	}))
+	resp := serve(t, srv, callTool("svc__op", map[string]any{}))
 
-	text := toolResultText(t, resp)
-	var env map[string]any
-	if err := json.Unmarshal([]byte(text), &env); err != nil {
-		t.Fatalf("expected JSON envelope for tool error, got: %s", text)
-	}
-	if env["error"] == nil {
-		t.Errorf("expected ok=false when upstream tool returns isError, got: %v", env)
-	}
+	requireToolError(t, resp, "not found: resource XYZ")
 }
 
 func TestHTTPUpstream_429_returnsError(t *testing.T) {
@@ -190,9 +167,7 @@ func TestHTTPUpstream_429_returnsError(t *testing.T) {
 	}
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "api"}, fake)
 	fake.Err = errors.New("http tools/call: status 429: rate limited — try again in 60s")
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "api", "tool": "search", "params": map[string]any{},
-	}))
+	resp := serve(t, srv, callTool("api__search", map[string]any{}))
 	text := toolResultText(t, resp)
 	var env map[string]any
 	if err := json.Unmarshal([]byte(text), &env); err != nil {
@@ -217,9 +192,7 @@ func TestUpstream_malformedJSONResponse_gracefulError(t *testing.T) {
 	}
 	srv.AddConnection(ctx, config.ServerConfig{Name: "svc"}, fake)
 
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "svc", "tool": "op", "params": map[string]any{},
-	}))
+	resp := serve(t, srv, callTool("svc__op", map[string]any{}))
 
 	// Should get some response — not a panic or hang
 	if resp["result"] == nil && resp["error"] == nil {
@@ -240,17 +213,13 @@ func TestUpstream_oneFailsOthersWork(t *testing.T) {
 	srv.AddConnection(ctx, config.ServerConfig{Name: "good"}, goodFake)
 	srv.AddConnection(ctx, config.ServerConfig{Name: "bad"}, badFake)
 	badFake.Err = errors.New("bad upstream is dead")
-	badEnv := parseEnvelope(t, toolResultText(t, serve(t, srv, callTool("call", map[string]any{
-		"server": "bad", "tool": "fail", "params": map[string]any{},
-	}))))
+	badEnv := parseEnvelope(t, toolResultText(t, serve(t, srv, callTool("bad__fail", map[string]any{}))))
 	if badEnv["error"] == nil {
 		t.Errorf("expected ok=false for bad upstream, got: %v", badEnv)
 	}
-	goodEnv := parseEnvelope(t, toolResultText(t, serve(t, srv, callTool("call", map[string]any{
-		"server": "good", "tool": "ping", "params": map[string]any{},
-	}))))
-	if goodEnv["error"] != nil {
-		t.Errorf("expected ok=true for good upstream after bad upstream failed, got: %v", goodEnv)
+	good := serve(t, srv, callTool("good__ping", nil))
+	if text := toolResultText(t, good); text != "pong" {
+		t.Errorf("healthy upstream result = %q, want pong", text)
 	}
 }
 
@@ -285,9 +254,7 @@ func TestUpstream_contextCancelledDuringCall(t *testing.T) {
 	}
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc", ToolTimeout: "50ms"}, slow)
 	start := time.Now()
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "svc", "tool": "op", "params": map[string]any{},
-	}))
+	resp := serve(t, srv, callTool("svc__op", map[string]any{}))
 	if elapsed := time.Since(start); elapsed > 2*time.Second {
 		t.Errorf("tool call with 50ms timeout took too long: %v", elapsed)
 	}

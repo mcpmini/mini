@@ -4,13 +4,11 @@ package server_test
 
 import (
 	"encoding/json"
-	"net/http/httptest"
-	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
-	"github.com/mcpmini/mini/internal/config/configtest"
+
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
 )
@@ -44,16 +42,12 @@ func newSrvWithResponse(t *testing.T, format config.ResponseFormat, payload stri
 
 func TestToonFormatRendersTabularBlock(t *testing.T) {
 	srv := newSrvWithFormat(t, "toon")
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "gh", "tool": "list_issues", "params": map[string]any{},
-	}))
+	resp := serve(t, srv, callTool("gh__list_issues", map[string]any{}))
 	text := toolResultText(t, resp)
 	if strings.HasPrefix(text, "{") {
 		t.Fatalf("expected TOON format, got JSON: %s", text)
 	}
-	// Envelope data passes through Go maps (sorted key order on marshal), so the
-	// tabular header is alphabetical, not source JSON order.
-	if !strings.HasPrefix(text, "data[2]{number,state,title}:") {
+	if !strings.HasPrefix(text, "[2]{number,title,state}:") {
 		t.Fatalf("expected a TOON tabular header for data, got: %s", text)
 	}
 	for _, want := range []string{"1,", "bug one", "2,", "feat two"} {
@@ -66,9 +60,7 @@ func TestToonFormatRendersTabularBlock(t *testing.T) {
 func TestToonFormatOmitsInternalTokenStats(t *testing.T) {
 	srv := newSrvWithFormat(t, "toon")
 
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "gh", "tool": "list_issues", "params": map[string]any{},
-	}))
+	resp := serve(t, srv, callTool("gh__list_issues", map[string]any{}))
 
 	text := toolResultText(t, resp)
 	if strings.Contains(text, "tokens:") {
@@ -79,12 +71,10 @@ func TestToonFormatOmitsInternalTokenStats(t *testing.T) {
 func TestJSONFormatDefault(t *testing.T) {
 	srv := newSrvWithFormat(t, "json")
 
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "gh", "tool": "list_issues", "params": map[string]any{},
-	}))
+	resp := serve(t, srv, callTool("gh__list_issues", map[string]any{}))
 
 	text := toolResultText(t, resp)
-	var env map[string]any
+	var env []any
 	if err := json.Unmarshal([]byte(text), &env); err != nil {
 		t.Fatalf("expected JSON envelope, got: %s", text)
 	}
@@ -115,232 +105,14 @@ func TestToonFormatPerToolOverride(t *testing.T) {
 		"action": "set_projection", "server": "gh", "tool": "list_issues",
 		"projection": map[string]any{"format": "toon"},
 	}))
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "gh", "tool": "list_issues", "params": map[string]any{},
-	}))
+	resp := serve(t, srv, callTool("gh__list_issues", map[string]any{}))
 	text := toolResultText(t, resp)
 	if strings.HasPrefix(text, "{") {
 		t.Errorf("expected TOON format (per-tool override), got JSON: %s", text)
 	}
-	if !strings.HasPrefix(text, "data[2]{number,title}:") {
+	if !strings.HasPrefix(text, "[2]{number,title}:") {
 		t.Errorf("expected TOON tabular block for per-tool override: %s", text)
 	}
-}
-
-func TestToonFormatIncludesFileFieldWhenElisionOccurs(t *testing.T) {
-	payload := `{"items":[{"number":1,"title":"bug one"},{"number":2,"title":"feat two"}],"secret":"hidden"}`
-	text := elisionToonResponse(t, payload)
-	assertElisionToonFormat(t, text)
-}
-
-func elisionToonResponse(t *testing.T, payload string) string {
-	t.Helper()
-	srv := newSrvWithResponse(t, "toon", payload)
-	serve(t, srv, callTool("config", map[string]any{
-		"action": "set_projection", "server": "gh", "tool": "list_issues",
-		"projection": map[string]any{"format": "toon", "exclude": []string{"secret"}},
-	}))
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "gh", "tool": "list_issues", "params": map[string]any{},
-	}))
-	text := toolResultText(t, resp)
-	if strings.HasPrefix(text, "{") {
-		t.Fatalf("expected TOON format, got JSON: %s", text)
-	}
-	return text
-}
-
-func assertElisionToonFormat(t *testing.T, text string) {
-	t.Helper()
-	if strings.Contains(text, "hidden") {
-		t.Errorf("excluded field value must not appear in TOON output: %s", text)
-	}
-	key := extractToonFileKey(t, text)
-	if strings.ContainsAny(key, "/\\") || strings.HasSuffix(key, ".json") || len(key) < 13 {
-		t.Fatalf("expected bare recovery key in file field (no path, no extension), got: %s", key)
-	}
-}
-
-func extractToonFileKey(t *testing.T, text string) string {
-	t.Helper()
-	m := regexp.MustCompile(`(?m)^file: (\S+)$`).FindStringSubmatch(text)
-	if m == nil {
-		t.Fatalf("expected a file field in TOON output, got: %s", text)
-	}
-	// Recovery keys are all-digit unix_ms timestamps, so TOON's numeric-like
-	// quoting rule always wraps them in double quotes.
-	// https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md?plain=1#L414
-	return strings.Trim(m[1], `"`)
-}
-
-func TestReadTool_ResolvesFileWrittenByCompactModeToonFormat(t *testing.T) {
-	payload := `{"items":[{"id":1,"title":"bug"}],"secret":"hidden"}`
-	cfg := config.DefaultConfig()
-	cfg.ResponseFormat = "toon"
-	srv := newTestServer(t, server.Params{Config: cfg})
-	defer srv.Close()
-
-	conn := fakeConn("list_issues")
-	payloadJSON, _ := json.Marshal(payload)
-	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":` + string(payloadJSON) + `}]}`)
-	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "gh", Connection: conn})
-
-	serve(t, srv, callTool("config", map[string]any{
-		"action": "set_projection", "server": "gh", "tool": "list_issues",
-		"projection": map[string]any{"exclude": []string{"secret"}},
-	}))
-
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "gh", "tool": "list_issues", "params": map[string]any{},
-	}))
-	text := toolResultText(t, resp)
-	key := extractToonFileKey(t, text)
-
-	resp2 := serveProxy(t, srv, callTool("read", map[string]any{"file": key}))
-	content := toolResultText(t, resp2)
-	if content == "" {
-		t.Fatal("read returned empty content for bare key from TOON format")
-	}
-	var parsed map[string]any
-	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
-		t.Errorf("read via TOON-format bare key should return valid JSON: %s", content)
-	}
-}
-
-func toolErrFakeConn() *transport.FakeConnection {
-	return &transport.FakeConnection{
-		Tools: []transport.ToolDefinition{
-			{Name: "list_issues", Description: "list", InputSchema: json.RawMessage(`{}`)},
-		},
-		Responses: map[string]json.RawMessage{
-			"tools/call": json.RawMessage(`{"content":[{"type":"text","text":"upstream failed"}],"isError":true}`),
-		},
-	}
-}
-
-func newSrvConfigDirAndToolErr(t *testing.T, globalFormat config.ResponseFormat) *server.Server {
-	t.Helper()
-	cfg := config.DefaultConfig()
-	cfg.ResponseFormat = globalFormat
-	srv := newTestServer(t, server.Params{Config: cfg})
-	addEdgeConn(
-		addConnectionParams{T: t, Server: srv, Config: config.ServerConfig{Name: "gh"}, Connection: toolErrFakeConn()},
-	)
-	return srv
-}
-
-func assertToonFormat(t *testing.T, text string) {
-	t.Helper()
-	if strings.HasPrefix(text, "{") {
-		t.Fatalf("expected TOON format, got JSON: %.200s", text)
-	}
-	if !strings.Contains(text, "error:") {
-		t.Errorf("expected error field in TOON output: %s", text)
-	}
-}
-
-func TestErrorEnvelopeHonorsFormat(t *testing.T) {
-	t.Run("global toon renders tool_error as TOON", func(t *testing.T) {
-		srv := newSrvConfigDirAndToolErr(t, "toon")
-		resp := serve(t, srv, callTool("call", map[string]any{
-			"server": "gh", "tool": "list_issues", "params": map[string]any{},
-		}))
-		assertIsErrorResult(t, resp)
-		assertToonFormat(t, toolResultText(t, resp))
-	})
-
-	t.Run("exact-tool toon projection renders tool_error as TOON", func(t *testing.T) {
-		srv := newSrvConfigDirAndToolErr(t, "")
-		serve(t, srv, callTool("config", map[string]any{
-			"action": "set_projection", "server": "gh", "tool": "list_issues",
-			"projection": map[string]any{"format": "toon"},
-		}))
-		text := toolResultText(t, serve(t, srv, callTool("call", map[string]any{
-			"server": "gh", "tool": "list_issues", "params": map[string]any{},
-		})))
-		assertToonFormat(t, text)
-	})
-
-	t.Run("wildcard toon projection renders tool_error as TOON", func(t *testing.T) {
-		configDir := t.TempDir()
-		// Wildcard projections require a server config file to be present.
-		configtest.WriteServer(t, configDir, config.ServerConfig{Name: "gh", Command: "unused"})
-		configtest.WriteProjections(t, configDir, configtest.ProjectionFile{
-			ServerName: "gh",
-			Tools: map[string]*config.ProjectionConfig{
-				"*": {
-					Format: "toon",
-				},
-			},
-		})
-		srv := newTestServer(t, server.Params{ConfigDir: configDir})
-		addEdgeConn(
-			addConnectionParams{
-				T:          t,
-				Server:     srv,
-				Config:     config.ServerConfig{Name: "gh"},
-				Connection: toolErrFakeConn(),
-			},
-		)
-		text := toolResultText(t, serve(t, srv, callTool("call", map[string]any{
-			"server": "gh", "tool": "list_issues", "params": map[string]any{},
-		})))
-		assertToonFormat(t, text)
-	})
-
-	t.Run("session-override toon projection renders tool_error as TOON", func(t *testing.T) {
-		// HTTP gives request ordering that stdio doesn't guarantee.
-		srv := newSrvConfigDirAndToolErr(t, "")
-		ts := httptest.NewServer(srv)
-		t.Cleanup(ts.Close)
-		sessionID := initCompactSession(t, ts)
-		setSessionProjection(t, sessionProjectionParams{
-			TS: ts, SessionID: sessionID, SrvName: "gh", Tool: "list_issues",
-			Proj: map[string]any{"format": "toon"},
-		})
-		assertToonFormat(
-			t,
-			httpExecToolText(
-				httpExecToolTextParams{
-					T:          t,
-					HTTPServer: ts,
-					SessionID:  sessionID,
-					ServerName: "gh",
-					Tool:       "list_issues",
-				},
-			),
-		)
-	})
-
-	t.Run("not_found under global toon renders as TOON", func(t *testing.T) {
-		srv := newSrvConfigDirAndToolErr(t, "toon")
-		resp := serve(t, srv, callTool("call", map[string]any{
-			"server": "gh", "tool": "nonexistent_tool", "params": map[string]any{},
-		}))
-		assertIsErrorResult(t, resp)
-		text := toolResultText(t, resp)
-		if strings.HasPrefix(text, "{") {
-			t.Fatalf("expected TOON for not_found under global toon, got JSON: %.200s", text)
-		}
-		if !strings.Contains(text, "error:") {
-			t.Errorf("expected error field in TOON not_found output: %s", text)
-		}
-	})
-
-	t.Run("per-tool json projection overrides global toon for tool_error", func(t *testing.T) {
-		srv := newSrvConfigDirAndToolErr(t, "toon")
-		serve(t, srv, callTool("config", map[string]any{
-			"action": "set_projection", "server": "gh", "tool": "list_issues",
-			"projection": map[string]any{"format": "json"},
-		}))
-		resp := serve(t, srv, callTool("call", map[string]any{
-			"server": "gh", "tool": "list_issues", "params": map[string]any{},
-		}))
-		assertIsErrorResult(t, resp)
-		if text := toolResultText(t, resp); !strings.HasPrefix(text, "{") {
-			t.Fatalf("expected JSON for tool_error when per-tool json overrides global toon, got: %.200s", text)
-		}
-	})
 }
 
 func TestToonFormatWithUpstream(t *testing.T) {
@@ -353,14 +125,12 @@ func TestToonFormatWithUpstream(t *testing.T) {
 		"action": "set_projection", "server": "fs", "tool": "list_directory",
 		"projection": map[string]any{"format": "toon"},
 	}))
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "fs", "tool": "list_directory", "params": map[string]any{"path": "/dir"},
-	}))
+	resp := serve(t, srv, callTool("fs__list_directory", map[string]any{"path": "/dir"}))
 	text := toolResultText(t, resp)
 	if strings.HasPrefix(text, "{") {
 		t.Fatalf("expected TOON format, got JSON: %s", text)
 	}
-	if !strings.HasPrefix(text, "data") {
+	if !strings.HasPrefix(text, "entries") {
 		t.Errorf("expected TOON output to start with the data field, got: %s", text)
 	}
 }

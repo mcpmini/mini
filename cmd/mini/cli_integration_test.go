@@ -339,16 +339,22 @@ func TestIntegrationCLI_bareMini_printsHelpAndExitsZero(t *testing.T) {
 	}
 }
 
-func TestIntegrationCLI_connect_invalidToolMode(t *testing.T) {
+func TestIntegrationCLI_connect_removedModeFlag(t *testing.T) {
 	t.Parallel()
-	bin := miniBin(t)
-	cfg := t.TempDir()
-	_, stderr, code := run(runParams{T: t, Bin: bin, ConfigDir: cfg, Args: []string{"connect", "--tool-mode", "bogus"}})
-	if code == 0 {
-		t.Error("connect with invalid --tool-mode should exit non-zero")
-	}
-	if !strings.Contains(stderr, "tool-mode") {
-		t.Errorf("expected --tool-mode validation error in stderr, got: %q", stderr)
+	for _, value := range []string{"compact", "proxy"} {
+		t.Run(value, func(t *testing.T) {
+			_, stderr, code := run(
+				runParams{
+					T:         t,
+					Bin:       miniBin(t),
+					ConfigDir: t.TempDir(),
+					Args:      []string{"connect", "--tool-mode", value},
+				},
+			)
+			if code == 0 || !strings.Contains(stderr, "unknown flag: --tool-mode") {
+				t.Fatalf("removed flag: code=%d stderr=%q", code, stderr)
+			}
+		})
 	}
 }
 

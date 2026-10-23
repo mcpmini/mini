@@ -7,39 +7,7 @@ import (
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
-	"github.com/mcpmini/mini/internal/config/configtest"
 )
-
-func TestIntegrationPermissions_defaultProtected(t *testing.T) {
-	t.Parallel()
-	cfg := t.TempDir()
-	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
-	writeFakeServer(t, cfg, fakeServerParams{
-		ServerName: "svc",
-		Fixtures:   dir,
-		Permissions: &config.PermissionsConfig{
-			Default: "protected",
-		},
-	})
-	client := startServer(t, cfg)
-
-	_, isErr := client.execToolAllowError("svc", "get_item", nil)
-	if !isErr {
-		t.Error("call on default-protected server should fail")
-	}
-
-	raw := client.mustCall("tools/call", map[string]any{
-		"name":      "perm_call",
-		"arguments": map[string]any{"server": "svc", "tool": "get_item", "args": map[string]any{}},
-	})
-	var r struct {
-		IsError bool `json:"isError"`
-	}
-	mustUnmarshal(t, raw, &r)
-	if r.IsError {
-		t.Error("perm_call on default-protected server should succeed")
-	}
-}
 
 func TestIntegrationPermissions_defaultHidden(t *testing.T) {
 	t.Parallel()
@@ -54,12 +22,12 @@ func TestIntegrationPermissions_defaultHidden(t *testing.T) {
 	})
 	client := startServer(t, cfg)
 
-	text := client.listTools("svc")
+	text := client.listTools()
 	if strings.Contains(text, "get_item") {
 		t.Errorf("default-hidden server: get_item should not appear in list, got: %q", text)
 	}
 
-	_, isErr := client.execToolAllowError("svc", "get_item", nil)
+	_, isErr := client.nativeCallError("svc", "get_item")
 	if !isErr {
 		t.Error("call on hidden tool should fail")
 	}
@@ -76,79 +44,11 @@ func TestIntegrationPermissions_hiddenBeatsDefaultProtected(t *testing.T) {
 	})
 	client := startServer(t, cfg)
 
-	text := client.listTools("svc")
+	text := client.listTools()
 	if !strings.Contains(text, "protected_tool") {
 		t.Errorf("default-protected tool should appear in list, got: %q", text)
 	}
 	if strings.Contains(text, "hidden_tool") {
 		t.Errorf("explicitly hidden tool should not appear in list, got: %q", text)
-	}
-}
-
-func TestIntegrationPermissions_listHiddenShowsHiddenTools(t *testing.T) {
-	t.Parallel()
-	cfg := t.TempDir()
-	dir := mockFixtureDir(t, map[string]string{"open_tool": `{"id":1}`, "secret_tool": `{"id":2}`})
-	writeFakeServer(t, cfg, fakeServerParams{
-		ServerName: "svc",
-		Fixtures:   dir,
-		Permissions: &config.PermissionsConfig{
-			Hidden: []string{"secret_tool"},
-		},
-	})
-	client := startServer(t, cfg)
-
-	// Normal list should not include secret_tool.
-	if strings.Contains(client.listTools("svc"), "secret_tool") {
-		t.Error("hidden tool should not appear in normal list")
-	}
-
-	// list(hidden:true) should include it.
-	raw := client.mustCall("tools/call", map[string]any{
-		"name":      "list",
-		"arguments": map[string]any{"hidden": true},
-	})
-	text := toolCallText(t, raw)
-	if !strings.Contains(text, "secret_tool") {
-		t.Errorf("list(hidden:true) should include hidden tool, got: %q", text)
-	}
-	if !strings.Contains(text, "open_tool") {
-		t.Errorf("list(hidden:true) should still include open tools, got: %q", text)
-	}
-}
-
-func TestIntegrationPermissions_disableListHidden(t *testing.T) {
-	t.Parallel()
-	cfg := t.TempDir()
-	dir := mockFixtureDir(t, map[string]string{"secret_tool": `{"id":2}`})
-	writeFakeServer(t, cfg, fakeServerParams{
-		ServerName: "svc",
-		Fixtures:   dir,
-		Permissions: &config.PermissionsConfig{
-			Hidden: []string{"secret_tool"},
-		},
-	})
-	fixtureConfig := config.DefaultConfig()
-	fixtureConfig.DisableListHidden = true
-	configtest.WriteConfig(t, cfg, fixtureConfig)
-
-	client := startServer(t, cfg)
-
-	raw := client.mustCall("tools/call", map[string]any{
-		"name":      "list",
-		"arguments": map[string]any{"hidden": true},
-	})
-	var result struct {
-		IsError bool `json:"isError"`
-		Content []struct {
-			Text string `json:"text"`
-		} `json:"content"`
-	}
-	mustUnmarshal(t, raw, &result)
-	if !result.IsError {
-		t.Error("list(hidden:true) should fail when disable_list_hidden:true")
-	}
-	if len(result.Content) > 0 && !strings.Contains(result.Content[0].Text, "disable_list_hidden") {
-		t.Errorf("error should mention disable_list_hidden, got: %q", result.Content[0].Text)
 	}
 }

@@ -37,7 +37,7 @@ func TestIntegrationLifecycle_addServerAtRuntime(t *testing.T) {
 		t.Fatalf("add_server failed: %s", raw)
 	}
 
-	if !strings.Contains(client.listTools("svc"), "get_item") {
+	if !strings.Contains(client.listTools(), "get_item") {
 		t.Error("expected get_item in list after add_server")
 	}
 }
@@ -49,7 +49,7 @@ func TestIntegrationLifecycle_removeServerAtRuntime(t *testing.T) {
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
 	client := startServer(t, cfg)
 
-	if !strings.Contains(client.listTools("svc"), "get_item") {
+	if !strings.Contains(client.listTools(), "get_item") {
 		t.Fatal("setup: expected get_item in list before remove")
 	}
 
@@ -58,7 +58,7 @@ func TestIntegrationLifecycle_removeServerAtRuntime(t *testing.T) {
 		"arguments": map[string]any{"action": "remove_server", "server": "svc"},
 	})
 
-	_, isErr := client.execToolAllowError("svc", "get_item", nil)
+	_, isErr := client.nativeCallError("svc", "get_item")
 	if !isErr {
 		t.Error("expected error after server removed")
 	}
@@ -97,11 +97,11 @@ func TestIntegrationLifecycle_disabledServerNotLoaded(t *testing.T) {
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "disabled", Fixtures: dir, Enabled: &disabled})
 
 	client := startServer(t, cfg)
-	_, isErr := client.execToolAllowError("disabled", "get_item", nil)
+	_, isErr := client.nativeCallError("disabled", "get_item")
 	if !isErr {
 		t.Error("call to disabled server should return error")
 	}
-	if strings.Contains(client.listTools(""), "disabled") {
+	if strings.Contains(client.listTools(), "disabled") {
 		t.Error("disabled server tools should not appear in list")
 	}
 }
@@ -116,7 +116,7 @@ func TestIntegrationLifecycle_tenServersSimultaneously(t *testing.T) {
 	}
 
 	client := startServer(t, cfg)
-	listing := client.listTools("")
+	listing := client.listTools()
 	if !strings.Contains(listing, "svc0") || !strings.Contains(listing, "svc9") {
 		t.Errorf("expected svc0..svc9 in listing, got: %s", listing[:min(200, len(listing))])
 	}

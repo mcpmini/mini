@@ -35,7 +35,7 @@ func startModernClientWithoutInitialize(t *testing.T, cfg, mode string) *mcpClie
 	t.Helper()
 	if mode == "daemon" {
 		startDaemon(t, cfg)
-		stdin, scanner := startProxyCmd(t, cfg, "")
+		stdin, scanner := startProxyCmd(t, cfg)
 		return newMCPClient(t, stdin, scanner)
 	}
 	stdin, stdout := startMiniConnectStandalone(t, cfg)

@@ -38,9 +38,7 @@ func TestExecuteReturnsEnvelope(t *testing.T) {
 	srv, fake := newPipelineServer(t, "getBuild",
 		`{"content":[{"type":"text","text":"{\"build_number\":1234,\"status\":\"failed\",\"branch\":\"main\"}"}]}`)
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "ci"}, fake)
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "ci", "tool": "getBuild", "params": map[string]any{"id": "1234"},
-	}))
+	resp := serve(t, srv, callTool("ci__getBuild", map[string]any{"id": "1234"}))
 	env := verifyEnvelope(t, toolResultText(t, resp))
 	if env["error"] != nil {
 		t.Errorf("expected success, got error: %v", env["error"])
@@ -50,9 +48,7 @@ func TestExecuteReturnsEnvelope(t *testing.T) {
 func TestExecuteInlineForSmallResponse(t *testing.T) {
 	srv, fake := newPipelineServer(t, "ping", `{"content":[{"type":"text","text":"{\"pong\":true}"}]}`)
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fake)
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "svc", "tool": "ping", "params": map[string]any{},
-	}))
+	resp := serve(t, srv, callTool("svc__ping", map[string]any{}))
 	var env map[string]any
 	json.Unmarshal([]byte(toolResultText(t, resp)), &env) //nolint:errcheck
 	if env["file"] != nil {

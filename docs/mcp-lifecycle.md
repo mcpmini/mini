@@ -180,7 +180,7 @@ it sits in the middle — surface upstream health to the *model*, which the agen
   each time-boxed), and announce tools as they arrive via `notifications/tools/list_changed`
   (capability already advertised).
 - **Hold the first tool list while upstreams are still connecting.** Codex ignores `list_changed`
-  and keeps the first `tools/list` it gets, so mini holds `tools/list` and the compact `list`
+  and keeps the first `tools/list` it gets, so mini holds `tools/list`
   until no upstream is inside its 10 s startup window (#322). An upstream that is still down after
   its window reaches clients through `list_changed`.
 - **A per-upstream connect timeout** bounds when a server is marked degraded, so one slow

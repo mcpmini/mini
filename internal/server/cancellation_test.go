@@ -64,7 +64,7 @@ func TestCancellation_CancelsInFlightCall(t *testing.T) {
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Serve(ctx, pr, &out) }()
 
-	pw.Write(buildServeInput(true, [][]byte{slowCallReq(42)})) //nolint:errcheck
+	pw.Write(buildServeInput([][]byte{slowCallReq(42)})) //nolint:errcheck
 
 	if !waitTimeout(&callStarted, 3*time.Second) {
 		pw.Close()
@@ -89,7 +89,7 @@ func TestCancellation_CancelsInFlightCall_OverHTTP(t *testing.T) {
 	var callCtx context.Context
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "s"}, newSlowBlockingConn(&callStarted, &callCtx))
 
-	sessionID := initCompactSession(t, ts)
+	sessionID := initSession(t, ts)
 	go drainMCPPost(mcpPostParams{T: t, HTTPServer: ts, Body: slowCallReq(42), SessionID: sessionID})
 
 	if !waitTimeout(&callStarted, 3*time.Second) {
@@ -165,11 +165,7 @@ func newSlowBlockingConn(callStarted *sync.WaitGroup, callCtx *context.Context) 
 }
 
 func slowCallReq(id int) []byte {
-	return callToolWithID(id, "call", map[string]any{
-		"server": "s",
-		"tool":   "slow",
-		"params": map[string]any{},
-	})
+	return callToolWithID(id, "s__slow", nil)
 }
 
 func assertContextCanceled(t *testing.T, ctx context.Context, msg string) {

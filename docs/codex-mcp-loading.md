@@ -154,9 +154,7 @@ when its transport stream closes or the child exits.
 
 ---
 
-## Which mini mode
+## Using mini
 
-`mini connect` (proxy) is the default and works everywhere. Codex 0.142.2 and later defers
-every MCP schema, so proxy costs nothing upfront at any catalog size, and compact mode saves
-no schema tokens. Compact mode (`mini connect --tool-mode compact`) only helps older Codex
-versions, which send every schema eagerly below 100 tools.
+`mini connect` exposes native upstream tools. Codex 0.142.2 and later defers every MCP
+schema, so the tool schemas cost nothing upfront at any catalog size.

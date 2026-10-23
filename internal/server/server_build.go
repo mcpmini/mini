@@ -11,7 +11,6 @@ import (
 	"github.com/mcpmini/mini/internal/projection"
 	"github.com/mcpmini/mini/internal/registry"
 	"github.com/mcpmini/mini/internal/response"
-	"github.com/mcpmini/mini/internal/transport"
 )
 
 // Params configures a new Server. Config, ConfigDir, and Logger are required.
@@ -20,7 +19,6 @@ type Params struct {
 	ConfigDir       string
 	Logger          *slog.Logger
 	Clock           clock.Clock
-	ToolMode        transport.ToolMode
 	DaemonAuthToken string
 }
 
@@ -37,7 +35,6 @@ func New(p Params) *Server {
 	applyParams(s, p)
 	store := mustStore(storeInitParams{Config: p.Config, ConfigDir: p.ConfigDir, Logger: p.Logger, Clock: s.clock})
 	s.store = store
-	s.envelope = response.NewBuilder(store)
 	s.sessions = newSessionStore(s.clock)
 	return s
 }
@@ -58,7 +55,6 @@ func applyParams(s *Server, p Params) {
 	if p.Clock != nil {
 		s.clock = p.Clock
 	}
-	s.toolMode = p.ToolMode
 	s.daemonAuthToken = p.DaemonAuthToken
 }
 
@@ -81,7 +77,6 @@ func newServer(p serverInitParams) *Server {
 		removeGen:        make(map[string]uint64),
 		projections:      p.Projections,
 		projDefaults:     projection.DefaultsFrom(p.Config),
-		toolSchemas:      compactToolSchemas(),
 		authFlows:        make(map[string]*authFlowState),
 		logger:           p.Logger,
 		clock:            clock.System(),

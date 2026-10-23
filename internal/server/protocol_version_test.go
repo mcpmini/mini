@@ -51,15 +51,6 @@ func TestModernDiscoverToolsListAndCallWithoutInitialize(t *testing.T) {
 	}
 }
 
-func TestModernCompactModeWithoutInitialize(t *testing.T) {
-	srv := newTestServer(t, server.Params{ToolMode: transport.ToolModeCompact})
-	response := responsesByID(serveModern(t, srv, transporttest.ModernRequest(1, "tools/list", nil)))[1]
-	list := decodeResult[transport.ToolsListResult](t, response)
-	if len(list.Tools) != 4 || decodeResult[modernResultFields](t, response).ResultType != transport.ResultComplete {
-		t.Fatalf("compact tools/list result = %s", response.Result)
-	}
-}
-
 func TestModernUnsupportedVersion(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	response := responsesByID(serveModern(t, srv, transporttest.ModernRequestVersion(transporttest.ModernRequestVersionParams{
@@ -91,14 +82,14 @@ func TestModernRejectedVersionLeavesTheSessionFreeToInitialize(t *testing.T) {
 			Method:  "server/discover",
 			Params:  nil,
 		}),
-		legacyRequest(legacyRequestParams{T: t, ID: 2, Method: "initialize", Params: initParams(true)}),
+		legacyRequest(legacyRequestParams{T: t, ID: 2, Method: "initialize", Params: initParams()}),
 		legacyRequest(legacyRequestParams{T: t, ID: 3, Method: "tools/list", Params: nil}),
 	))
 	if responses[1].Error == nil || responses[1].Error.Code != transport.CodeUnsupportedProtocolVersion {
 		t.Fatalf("discover with an unsupported version = %+v, want -32022", responses[1].Error)
 	}
-	if tools := decodeResult[transport.ToolsListResult](t, responses[3]).Tools; len(tools) != 4 {
-		t.Fatalf("compact initialize after the rejected probe listed %d tools, want the 4 compact tools", len(tools))
+	if tools := decodeResult[transport.ToolsListResult](t, responses[3]).Tools; len(tools) != 2 {
+		t.Fatalf("initialize after the rejected probe listed %d tools, want config and read", len(tools))
 	}
 }
 
@@ -207,7 +198,7 @@ func responsesByID(messages []modernMessage) map[int]modernMessage {
 }
 
 func TestModernMetadataRejectedBeforeActivationOrDispatch(t *testing.T) {
-	srv := newTestServer(t, server.Params{ToolMode: transport.ToolModeProxy})
+	srv := newTestServer(t, server.Params{})
 	conn := fakeConn("ping")
 	if err := srv.AddConnection(t.Context(), config.ServerConfig{Name: "svc"}, conn); err != nil {
 		t.Fatal(err)
@@ -226,7 +217,7 @@ func TestModernMetadataRejectedBeforeActivationOrDispatch(t *testing.T) {
 				`"io.modelcontextprotocol/clientCapabilities":[]}}`),
 		}),
 		legacyRequest(legacyRequestParams{T: t, ID: 3, Method: "tools/call", Params: callParams}),
-		legacyRequest(legacyRequestParams{T: t, ID: 4, Method: "initialize", Params: initParams(true)}),
+		legacyRequest(legacyRequestParams{T: t, ID: 4, Method: "initialize", Params: initParams()}),
 		legacyRequest(legacyRequestParams{T: t, ID: 5, Method: "tools/list", Params: nil}),
 	}
 	responses := responsesByID(serveModern(t, srv, lines...))
@@ -235,8 +226,8 @@ func TestModernMetadataRejectedBeforeActivationOrDispatch(t *testing.T) {
 			t.Errorf("request %d error = %+v, want -32602", id, responses[id].Error)
 		}
 	}
-	if got := len(decodeResult[transport.ToolsListResult](t, responses[5]).Tools); got != 4 {
-		t.Fatalf("legacy tools/list after invalid probes returned %d tools, want compact mode's 4", got)
+	if got := len(decodeResult[transport.ToolsListResult](t, responses[5]).Tools); got != 3 {
+		t.Fatalf("legacy tools/list after invalid probes returned %d tools, want config, read and svc__ping", got)
 	}
 	if len(conn.LastParams) != 0 {
 		t.Fatalf("invalid tools/call reached upstream with params %s", conn.LastParams)

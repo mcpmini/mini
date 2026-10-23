@@ -27,7 +27,7 @@ func lastCalledTool(t *testing.T, fake *transport.FakeConnection) string {
 
 func listNames(t *testing.T, srv *server.Server) map[string]bool {
 	t.Helper()
-	results := mustDiscoverResults(t, srv, map[string]any{})
+	results := mustDiscoverResults(t, srv)
 	names := map[string]bool{}
 	for _, e := range results {
 		names[e["name"].(string)] = true
@@ -52,13 +52,13 @@ func TestAlias_listShowsAliasName(t *testing.T) {
 	)
 
 	names := listNames(t, srv)
-	if names["gh.list_pull_requests"] {
+	if names["gh__list_pull_requests"] {
 		t.Error("real name should not appear in list when aliased")
 	}
-	if !names["gh.list_prs"] {
+	if !names["gh__list_prs"] {
 		t.Error("alias should appear in list")
 	}
-	if !names["gh.get_issue"] {
+	if !names["gh__get_issue"] {
 		t.Error("non-aliased tool should still appear under real name")
 	}
 }
@@ -80,11 +80,7 @@ func TestAlias_callRoutesToRealTool(t *testing.T) {
 		},
 	)
 
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "gh",
-		"tool":   "list_prs",
-		"params": map[string]any{},
-	}))
+	resp := serve(t, srv, callTool("gh__list_prs", map[string]any{}))
 
 	if text := toolResultText(t, resp); text == "" {
 		t.Fatal("expected non-empty response")
@@ -110,22 +106,14 @@ func TestAlias_callByRealNameFails(t *testing.T) {
 		},
 	)
 
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "gh",
-		"tool":   "list_pull_requests",
-		"params": map[string]any{},
-	}))
+	resp := serve(t, srv, callTool("gh__list_pull_requests", map[string]any{}))
 
-	env, ok := resp["result"].(map[string]any)
-	if !ok {
-		t.Fatal("expected result envelope")
-	}
-	if env["ok"] == true {
-		t.Error("calling by real name when aliased should fail")
-	}
+	requireRPCError(
+		requireRPCErrorParams{T: t, Resp: resp, WantCode: transport.CodeInvalidParams, WantSubstr: "not found"},
+	)
 }
 
-func TestAlias_permCallRoutesToRealTool(t *testing.T) {
+func TestAlias_protectedToolRoutesToRealTool(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 
 	fake := fakeConn("delete_repo")
@@ -143,14 +131,10 @@ func TestAlias_permCallRoutesToRealTool(t *testing.T) {
 		},
 	)
 
-	resp := serve(t, srv, callTool("perm_call", map[string]any{
-		"server": "gh",
-		"tool":   "rm_repo",
-		"params": map[string]any{},
-	}))
+	resp := serve(t, srv, callTool("gh__rm_repo", map[string]any{}))
 
 	if text := toolResultText(t, resp); text == "" {
-		t.Fatal("expected non-empty response from perm_call via alias")
+		t.Fatal("expected non-empty response from the protected tool's alias")
 	}
 	if got := lastCalledTool(t, fake); got != "delete_repo" {
 		t.Errorf("upstream should have received real tool name, got %q", got)
@@ -174,7 +158,7 @@ func TestAlias_invalidAliasUsesRealName(t *testing.T) {
 	)
 
 	names := listNames(t, srv)
-	if !names["svc.my_tool"] {
+	if !names["svc__my_tool"] {
 		t.Error("tool should appear under real name when alias is invalid")
 	}
 }
@@ -186,7 +170,7 @@ func TestAlias_noProjectionAlias(t *testing.T) {
 	addTestConnection(addConnectionParams{T: t, Server: srv, Config: config.ServerConfig{Name: "gh"}, Connection: fake})
 
 	names := listNames(t, srv)
-	if !names["gh.get_issue"] {
+	if !names["gh__get_issue"] {
 		t.Errorf("non-aliased tool should appear under real name, got: %v", names)
 	}
 }
@@ -244,9 +228,7 @@ func TestAlias_serverSetProjectionTakesEffect(t *testing.T) {
 		t.Fatalf("set_projection failed: %s", configText)
 	}
 
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "gh", "tool": "get_pr", "params": map[string]any{},
-	}))
+	resp := serve(t, srv, callTool("gh__get_pr", map[string]any{}))
 	if text := toolResultText(t, resp); strings.Contains(text, "hidden") {
 		t.Errorf("server projection for alias should exclude secret field; got: %s", text)
 	}
@@ -318,7 +300,7 @@ func TestAlias_reloadUpdatesAliases(t *testing.T) {
 			serve(t, srv, callTool("config", map[string]any{"action": "reload"}))
 
 			names := listNames(t, srv)
-			if !names["gh.list_prs"] {
+			if !names["gh__list_prs"] {
 				t.Errorf("alias should appear after reload, got: %v", names)
 			}
 			if names[tt.wantGoneAfter] {
@@ -338,9 +320,7 @@ func TestAlias_toonFormatDoesNotExposeRealToolName(t *testing.T) {
 	proj := map[string]*config.ProjectionConfig{"list_pull_requests": {Alias: "list_prs"}}
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "gh", Projections: proj}, fake)
 
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "gh", "tool": "list_prs", "params": map[string]any{},
-	}))
+	resp := serve(t, srv, callTool("gh__list_prs", map[string]any{}))
 	text := toolResultText(t, resp)
 	if strings.Contains(text, "list_pull_requests") {
 		t.Errorf("TOON output should not expose real tool name, got: %s", text)
@@ -371,10 +351,10 @@ func TestAlias_setProjectionPreservesAliasOnReload(t *testing.T) {
 	serve(t, srv, callTool("config", map[string]any{"action": "reload"}))
 
 	names := listNames(t, srv)
-	if !names["gh.pr"] {
+	if !names["gh__pr"] {
 		t.Errorf("alias should survive set_projection+reload, got: %v", names)
 	}
-	if names["gh.get_pr"] {
+	if names["gh__get_pr"] {
 		t.Errorf("real name should not reappear after set_projection+reload, got: %v", names)
 	}
 }

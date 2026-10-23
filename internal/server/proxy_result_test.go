@@ -105,7 +105,7 @@ func TestProxyResult_isReturnedAsSentWhenNothingIsTrimmed(t *testing.T) {
 func proxyStatsAfterCall(t *testing.T, srv *server.Server) (servers, sessions, result map[string]any) {
 	t.Helper()
 	const sessionID = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
-	postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: initMsg(false)})
+	postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: initMsg()})
 	callResp := postMCP(postMCPParams{
 		T: t, Server: srv, SessionID: sessionID, Msg: map[string]any{
 			"jsonrpc": transport.JsonRPCVersion, "id": 2, "method": "tools/call",

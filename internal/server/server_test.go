@@ -150,23 +150,22 @@ func fakeMCPHandle(w http.ResponseWriter, r *http.Request, tools []map[string]an
 }
 
 func serveAll(t *testing.T, srv *server.Server, lines ...[]byte) []map[string]any {
-	return serveAllMode(serveAllModeParams{T: t, Server: srv, Compact: true, Lines: lines})
+	return serveAllProxy(t, srv, lines...)
 }
 
 func serveAllProxy(t *testing.T, srv *server.Server, lines ...[]byte) []map[string]any {
-	return serveAllMode(serveAllModeParams{T: t, Server: srv, Compact: false, Lines: lines})
+	return serveAllMode(serveAllModeParams{T: t, Server: srv, Lines: lines})
 }
 
 type serveAllModeParams struct {
-	T       *testing.T
-	Server  *server.Server
-	Compact bool
-	Lines   [][]byte
+	T      *testing.T
+	Server *server.Server
+	Lines  [][]byte
 }
 
 func serveAllMode(params serveAllModeParams) []map[string]any {
 	params.T.Helper()
-	input := buildServeInput(params.Compact, params.Lines)
+	input := buildServeInput(params.Lines)
 	var out bytes.Buffer
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -176,8 +175,8 @@ func serveAllMode(params serveAllModeParams) []map[string]any {
 	return parseMessages(out.Bytes())
 }
 
-func buildServeInput(compact bool, lines [][]byte) []byte {
-	input := rpc("initialize", initParams(compact))
+func buildServeInput(lines [][]byte) []byte {
+	input := rpc("initialize", initParams())
 	for _, l := range lines {
 		input = append(input, l...)
 		if len(l) > 0 && l[len(l)-1] != '\n' {
@@ -241,36 +240,32 @@ func parseResponse(t *testing.T, data []byte) map[string]any {
 	return resp
 }
 
-func initParams(compact bool) map[string]any {
+func initParams() map[string]any {
 	params := map[string]any{
 		"protocolVersion": transport.LegacyVersions[0],
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "test", "version": "0"},
 	}
-	if compact {
-		params[transport.ToolModeParam] = transport.ToolModeCompactValue
-	}
 	return params
 }
 
 func serve(t *testing.T, srv *server.Server, input []byte) map[string]any {
-	return serveMode(serveModeParams{T: t, Server: srv, Compact: true, Input: input})
+	return serveProxy(t, srv, input)
 }
 
 func serveProxy(t *testing.T, srv *server.Server, input []byte) map[string]any {
-	return serveMode(serveModeParams{T: t, Server: srv, Compact: false, Input: input})
+	return serveMode(serveModeParams{T: t, Server: srv, Input: input})
 }
 
 type serveModeParams struct {
-	T       *testing.T
-	Server  *server.Server
-	Compact bool
-	Input   []byte
+	T      *testing.T
+	Server *server.Server
+	Input  []byte
 }
 
 func serveMode(params serveModeParams) map[string]any {
 	params.T.Helper()
-	session := newTestSession(params.T, params.Compact, params.Input)
+	session := newTestSession(params.T, params.Input)
 	return session.response(params.T, session.run(params.Server))
 }
 
@@ -279,7 +274,7 @@ type testSession struct {
 	wantID string
 }
 
-func newTestSession(t *testing.T, compact bool, input []byte) testSession {
+func newTestSession(t *testing.T, input []byte) testSession {
 	t.Helper()
 	var callReq struct {
 		ID json.RawMessage `json:"id"`
@@ -287,7 +282,7 @@ func newTestSession(t *testing.T, compact bool, input []byte) testSession {
 	if err := json.Unmarshal(bytes.TrimSpace(input), &callReq); err != nil || len(callReq.ID) == 0 {
 		t.Fatalf("serve: could not extract id from input: %s", input)
 	}
-	initRaw, _ := json.Marshal(initParams(compact))
+	initRaw, _ := json.Marshal(initParams())
 	initReq, _ := json.Marshal(
 		map[string]any{
 			"jsonrpc": transport.JsonRPCVersion,
@@ -437,98 +432,16 @@ func requireToolError(t *testing.T, resp map[string]any, wantSubstr string) {
 	}
 }
 
-func mustDiscoverResults(t *testing.T, srv *server.Server, args map[string]any) []map[string]any {
-	t.Helper()
-	text := toolResultText(t, serve(t, srv, callTool("list", args)))
-	var results []map[string]any
-	if err := json.Unmarshal([]byte(text), &results); err != nil {
-		t.Fatalf("discover result not JSON array: %v\n%s", err, text)
-	}
-	return results
-}
-
-func TestDiscoverEmpty(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	results := mustDiscoverResults(t, srv, map[string]any{})
-	if len(results) != 0 {
-		t.Errorf("expected empty discover, got %d tools", len(results))
-	}
-}
-
-func TestDiscoverListsTools(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	addTestConnection(
-		addConnectionParams{
-			T:          t,
-			Server:     srv,
-			Config:     config.ServerConfig{Name: "ci"},
-			Connection: fakeConn("getBuild", "listPipelines"),
-		},
-	)
-	results := mustDiscoverResults(t, srv, map[string]any{})
-	if len(results) != 2 {
-		t.Errorf("expected 2 tools, got %d", len(results))
-	}
-}
-
-func TestDiscoverSearch(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	addTestConnection(
-		addConnectionParams{
-			T:          t,
-			Server:     srv,
-			Config:     config.ServerConfig{Name: "ci"},
-			Connection: fakeConn("getBuild", "listPipelines"),
-		},
-	)
-	results := mustDiscoverResults(t, srv, map[string]any{"query": "build"})
-	if len(results) != 1 || results[0]["name"] != "ci.getBuild" {
-		t.Errorf("unexpected search results: %v", results)
-	}
-}
-
 func TestExecuteRoutesToUpstream(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	fake := fakeConn("getBuild")
 	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"build ok"}]}`)
 	addTestConnection(addConnectionParams{T: t, Server: srv, Config: config.ServerConfig{Name: "ci"}, Connection: fake})
 
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "ci",
-		"tool":   "getBuild",
-		"params": map[string]any{"id": "123"},
-	}))
+	resp := serve(t, srv, callTool("ci__getBuild", map[string]any{"id": "123"}))
 
 	if resp["error"] != nil {
 		t.Fatalf("unexpected error: %v", resp["error"])
-	}
-}
-
-func TestExecuteRejectsProtectedTools(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	perm := &config.PermissionsConfig{Protected: []string{"deleteProject"}}
-	addTestConnection(
-		addConnectionParams{
-			T:          t,
-			Server:     srv,
-			Config:     config.ServerConfig{Name: "ci", Permissions: perm},
-			Connection: fakeConn("deleteProject"),
-		},
-	)
-
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "ci",
-		"tool":   "deleteProject",
-		"params": map[string]any{},
-	}))
-
-	text := toolResultText(t, resp)
-	if text == "" {
-		t.Fatal("expected error message in content")
-	}
-	// Should mention perm_call
-	if !bytes.Contains([]byte(text), []byte("perm_call")) {
-		t.Errorf("error should mention perm_call, got: %s", text)
 	}
 }
 
@@ -537,12 +450,10 @@ func TestExecuteUnknownServer(t *testing.T) {
 	// The agent called mini's "call" tool successfully; the tool itself failed to
 	// find the upstream tool. Surfacing as isError lets the agent recover gracefully.
 	srv := newTestServer(t, server.Params{})
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "nobody",
-		"tool":   "doThing",
-		"params": map[string]any{},
-	}))
-	requireToolError(t, resp, "not found")
+	resp := serve(t, srv, callTool("nobody__doThing", map[string]any{}))
+	requireRPCError(
+		requireRPCErrorParams{T: t, Resp: resp, WantCode: transport.CodeInvalidParams, WantSubstr: "not found"},
+	)
 }
 
 func TestConfigureStatus(t *testing.T) {
@@ -575,4 +486,31 @@ func TestPing_ReturnsEmptyResult(t *testing.T) {
 	if !ok || len(result) != 0 {
 		t.Errorf("ping result must be {}, got: %v", resp["result"])
 	}
+}
+
+func mustDiscoverResults(t *testing.T, srv *server.Server) []map[string]any {
+	t.Helper()
+	resp := serve(t, srv, rpc("tools/list", nil))
+	result := resp["result"].(map[string]any)
+	var tools []map[string]any
+	for _, value := range result["tools"].([]any) {
+		tools = append(tools, value.(map[string]any))
+	}
+	return tools
+}
+
+func resultJSONText(t *testing.T, resp map[string]any) string {
+	t.Helper()
+	result, ok := resp["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing result: %v", resp)
+	}
+	if tools, ok := result["tools"]; ok {
+		raw, err := json.Marshal(tools)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(raw)
+	}
+	return toolResultText(t, resp)
 }

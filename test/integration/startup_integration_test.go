@@ -58,7 +58,7 @@ func TestIntegrationStartup_ServesInitializeBeforeSlowUpstreamConnects(t *testin
 
 	waitForServersConnected(t, c, []string{"healthy"})
 
-	healthyTools := c.listTools("healthy")
+	healthyTools := c.listTools()
 	if !strings.Contains(healthyTools, "get_item") {
 		t.Errorf("expected healthy server's tools callable, got: %q", healthyTools)
 	}
@@ -98,8 +98,6 @@ func startMiniCmdCapturingStderr(
 		configDir,
 		"connect",
 		"--standalone",
-		"--tool-mode",
-		"compact",
 		"--log-level",
 		"warn",
 	)
@@ -150,7 +148,7 @@ func TestIntegrationStartup_aBrokenServerDoesNotStopTheOthers(t *testing.T) {
 
 	waitForServersConnected(t, c, []string{"healthy"})
 
-	if !strings.Contains(c.listTools("healthy"), "get_item") {
+	if !strings.Contains(c.listTools(), "get_item") {
 		t.Error("healthy's tools are missing: a broken server stopped the others")
 	}
 	waitForStderrContains(t, stderr, "MINI_TEST_UNSET_TOKEN isn't set where mini runs")

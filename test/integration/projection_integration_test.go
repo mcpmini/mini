@@ -21,7 +21,7 @@ func TestIntegrationProjection_excludeAlways(t *testing.T) {
 		},
 	})
 
-	e := client.execEnvelope("svc", "get_item", nil)
+	e := client.execResult("svc", "get_item", nil)
 
 	b, _ := json.Marshal(e.Data)
 	if strings.Contains(string(b), "node_id") || strings.Contains(string(b), "internal_ref") {
@@ -43,17 +43,17 @@ func TestIntegrationProjection_elidedFieldsReported(t *testing.T) {
 		},
 	})
 
-	e := client.execEnvelope("svc", "get_item", nil)
+	e := client.execResult("svc", "get_item", nil)
 
 	found := false
-	for _, v := range e.Excluded {
-		if v == ".node_id" {
+	for _, v := range e.Notice.Excluded {
+		if v == ".content[0].text | fromjson | .node_id" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected '.node_id' in excluded list, got: %v", e.Excluded)
+		t.Errorf("expected '.node_id' in excluded list, got: %v", e.Notice.Excluded)
 	}
 }
 
@@ -70,7 +70,7 @@ func TestIntegrationProjection_includeOnly(t *testing.T) {
 		},
 	})
 
-	b, _ := json.Marshal(client.execEnvelope("svc", "get_item", nil).Data)
+	b, _ := json.Marshal(client.execResult("svc", "get_item", nil).Data)
 	data := string(b)
 	if strings.Contains(data, "body") || strings.Contains(data, "created_at") {
 		t.Errorf("non-included fields should be absent, got: %s", data)
@@ -92,7 +92,7 @@ func TestIntegrationProjection_stringLimit(t *testing.T) {
 		},
 	})
 
-	b, _ := json.Marshal(client.execEnvelope("svc", "get_item", nil).Data)
+	b, _ := json.Marshal(client.execResult("svc", "get_item", nil).Data)
 	if strings.Contains(string(b), longStr) {
 		t.Errorf("string_limit should have truncated the body field")
 	}
@@ -110,25 +110,26 @@ func TestIntegrationProjection_omittedEnvelope(t *testing.T) {
 		},
 	})
 
-	env := client.execEnvelope("svc", "get_item", nil)
-	if env.Error != "" {
-		t.Fatalf("expected success, got error: %s", env.Error)
+	env := client.execResult("svc", "get_item", nil)
+	if env.IsError {
+		t.Fatalf("expected success, got error: %s", env.Text)
 	}
 
-	if len(env.Truncated) != 1 || env.Truncated[0].JQPath != ".body" || env.Truncated[0].Chars <= 0 {
-		t.Fatalf("expected one truncated .body entry, got %v", env.Truncated)
+	if len(env.Notice.Truncated) != 1 || env.Notice.Truncated[0].JQPath != ".content[0].text | fromjson | .body" ||
+		env.Notice.Truncated[0].Chars <= 0 {
+		t.Fatalf("expected one truncated .body entry, got %v", env.Notice.Truncated)
 	}
 	// 400 chars → limit 60, so at least 300 chars removed
-	if env.Truncated[0].Chars < 300 {
-		t.Errorf("expected at least 300 chars removed from body, got %d", env.Truncated[0].Chars)
+	if env.Notice.Truncated[0].Chars < 300 {
+		t.Errorf("expected at least 300 chars removed from body, got %d", env.Notice.Truncated[0].Chars)
 	}
-	for _, o := range env.Truncated {
-		if o.JQPath == ".title" {
+	for _, o := range env.Notice.Truncated {
+		if o.JQPath == ".content[0].text | fromjson | .title" {
 			t.Errorf("short field 'title' should not appear in truncated")
 		}
 	}
 	// file written because truncation counts as projection
-	if env.File == nil {
+	if env.Notice.File == nil {
 		t.Error("expected file path in envelope when truncation applied")
 	}
 }
@@ -146,7 +147,7 @@ func TestIntegrationProjection_arrayLimit(t *testing.T) {
 		},
 	})
 
-	b, _ := json.Marshal(client.execEnvelope("svc", "get_repo", nil).Data)
+	b, _ := json.Marshal(client.execResult("svc", "get_repo", nil).Data)
 	data := string(b)
 	for _, id := range []string{`"id":5`, `"id":4`} {
 		if strings.Contains(data, id) {
@@ -166,7 +167,7 @@ func TestIntegrationProjection_wildcardAppliesAllTools(t *testing.T) {
 	})
 
 	for _, tool := range []string{"get_a", "get_b"} {
-		b, _ := json.Marshal(client.execEnvelope("svc", tool, nil).Data)
+		b, _ := json.Marshal(client.execResult("svc", tool, nil).Data)
 		if strings.Contains(string(b), "node_id") {
 			t.Errorf("tool %s: wildcard exclude should remove node_id, got: %s", tool, b)
 		}
@@ -183,7 +184,7 @@ func TestIntegrationProjection_inlineInServerYAML(t *testing.T) {
 		Projections: map[string]*config.ProjectionConfig{"get_item": {Exclude: []string{"node_id"}}},
 	})
 
-	b, _ := json.Marshal(startServer(t, cfg).execEnvelope("svc", "get_item", nil).Data)
+	b, _ := json.Marshal(startServer(t, cfg).execResult("svc", "get_item", nil).Data)
 	if strings.Contains(string(b), "node_id") {
 		t.Errorf("inline server YAML projection should exclude node_id, got: %s", b)
 	}
@@ -206,7 +207,7 @@ func TestIntegrationProjection_sessionOverridesServerLevel(t *testing.T) {
 		SessionOnly: true,
 	})
 
-	b, _ := json.Marshal(client.execEnvelope("svc", "get_item", nil).Data)
+	b, _ := json.Marshal(client.execResult("svc", "get_item", nil).Data)
 	if strings.Contains(string(b), "title") {
 		t.Errorf("session override should suppress 'title', got: %s", b)
 	}
@@ -223,7 +224,7 @@ func TestIntegrationProjection_configurePersistsAcrossCalls(t *testing.T) {
 	})
 
 	for i := range 2 {
-		b, _ := json.Marshal(client.execEnvelope("svc", "get_item", nil).Data)
+		b, _ := json.Marshal(client.execResult("svc", "get_item", nil).Data)
 		if strings.Contains(string(b), "secret") {
 			t.Errorf("call %d: projection should persist — 'secret' should be excluded, got: %s", i+1, b)
 		}
@@ -244,12 +245,12 @@ func TestIntegrationProjection_toolSpecificOverridesWildcard(t *testing.T) {
 		}},
 	})
 
-	bA, _ := json.Marshal(client.execEnvelope("svc", "get_a", nil).Data)
+	bA, _ := json.Marshal(client.execResult("svc", "get_a", nil).Data)
 	if strings.Contains(string(bA), "node_id") {
 		t.Errorf("get_a: wildcard should exclude node_id, got: %s", bA)
 	}
 
-	bB, _ := json.Marshal(client.execEnvelope("svc", "get_b", nil).Data)
+	bB, _ := json.Marshal(client.execResult("svc", "get_b", nil).Data)
 	if !strings.Contains(string(bB), "node_id") {
 		t.Errorf("get_b: tool-specific config should retain node_id, got: %s", bB)
 	}
@@ -270,7 +271,7 @@ func TestIntegrationProjection_persistToDisk(t *testing.T) {
 	})
 
 	client2 := startServer(t, cfg)
-	b, _ := json.Marshal(client2.execEnvelope("svc", "get_item", nil).Data)
+	b, _ := json.Marshal(client2.execResult("svc", "get_item", nil).Data)
 	if strings.Contains(string(b), "secret") {
 		t.Errorf("persisted projection should suppress 'secret' for new session, got: %s", b)
 	}
@@ -287,7 +288,7 @@ func TestIntegrationProjection_depthLimit(t *testing.T) {
 		},
 	})
 
-	b, _ := json.Marshal(client.execEnvelope("svc", "get_item", nil).Data)
+	b, _ := json.Marshal(client.execResult("svc", "get_item", nil).Data)
 	if strings.Contains(string(b), `"deep"`) {
 		t.Errorf("depth_limit should have replaced deep field, got: %s", b)
 	}
@@ -309,7 +310,7 @@ func TestIntegrationProjection_includeAndExclude(t *testing.T) {
 		},
 	})
 
-	b, _ := json.Marshal(client.execEnvelope("svc", "get_item", nil).Data)
+	b, _ := json.Marshal(client.execResult("svc", "get_item", nil).Data)
 	data := string(b)
 	if strings.Contains(data, "node_id") {
 		t.Errorf("exclude should remove node_id even if it's in include, got: %s", data)
@@ -328,7 +329,7 @@ func TestIntegrationProjection_globalDefaultsApply(t *testing.T) {
 		Config:   cfg,
 	})
 
-	b, _ := json.Marshal(client.execEnvelope("svc", "get_item", nil).Data)
+	b, _ := json.Marshal(client.execResult("svc", "get_item", nil).Data)
 	data := string(b)
 	if strings.Contains(data, strings.Repeat("x", 100)) {
 		t.Errorf("global default_string_limit:50 should truncate long strings, got: %s", data[:min(200, len(data))])
@@ -344,7 +345,7 @@ type toolExcludesParams struct {
 
 func assertToolExcludes(t *testing.T, p toolExcludesParams) {
 	t.Helper()
-	b, _ := json.Marshal(p.Client.execEnvelope(p.Server, p.Tool, nil).Data)
+	b, _ := json.Marshal(p.Client.execResult(p.Server, p.Tool, nil).Data)
 	if strings.Contains(string(b), p.Field) {
 		t.Errorf("%s.%s should exclude field %q", p.Server, p.Tool, p.Field)
 	}
@@ -394,7 +395,7 @@ func TestIntegrationProjection_persistDoesNotAffectRunningSession(t *testing.T) 
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
 	c1 := startServer(t, cfg)
 	c2 := startServer(t, cfg)
-	b2, _ := json.Marshal(c2.execEnvelope("svc", "get_item", nil).Data)
+	b2, _ := json.Marshal(c2.execResult("svc", "get_item", nil).Data)
 	if !strings.Contains(string(b2), "secret") {
 		t.Fatal("expected secret field before projection")
 	}
@@ -419,8 +420,8 @@ func TestIntegrationProjection_toonFormat(t *testing.T) {
 	})
 
 	text := client.execTool("svc", "list_items", nil)
-	if !strings.Contains(text, "data[2]{id,name}:") {
-		t.Errorf("toon format should render a tabular data block, got: %s", text)
+	if !strings.Contains(text, "[2]{id,name}:") {
+		t.Errorf("toon format should render a tabular block, got: %s", text)
 	}
 }
 
@@ -434,7 +435,7 @@ func TestIntegrationProjection_toonFormatGlobal(t *testing.T) {
 	})
 
 	text := client.execTool("svc", "list_items", nil)
-	if !strings.Contains(text, "data[2]{id,name}:") {
-		t.Errorf("global response_format:toon should render a tabular data block, got: %s", text)
+	if !strings.Contains(text, "[2]{id,name}:") {
+		t.Errorf("global response_format:toon should render a tabular block, got: %s", text)
 	}
 }

@@ -88,13 +88,12 @@ Treat review findings as input, not instructions. For each one, decide whether i
 
 mini is a context-optimizing MCP proxy. Agents talk to it via stdio; it routes calls to one or more upstream MCP servers (stdio or HTTP/SSE).
 
-**Default (proxy) mode:** mini re-exposes each upstream tool directly (`github__list_pull_requests`, etc.). **Compact mode** (`--tool-mode compact`): 4 meta-tools — `list` (discover), `call` (execute open tools), `perm_call` (execute protected tools), `config` (runtime admin)
+mini re-exposes each upstream tool directly (`github__list_pull_requests`, etc.), alongside `read` for response recovery and `config` for runtime administration.
 
 **Request flow:**
 
 ```
-proxy:   agent → Serve() → routeProxyTool → handleProxyCall / handleRead / handleConfigure
-compact: agent → Serve() → handleList / handleExecute / handleExecuteProtected / handleConfigure
+         agent → Serve() → routeProxyTool → handleProxyCall / handleRead / handleConfigure
                                          ↓
                                    lookupTool()        — resolves server+tool, checks permission
                                          ↓
@@ -102,11 +101,10 @@ compact: agent → Serve() → handleList / handleExecute / handleExecuteProtect
                                          ↓
                                    projection.Apply()  — trim/strip/limit the response
                                          ↓
-                    proxy: buildProxyResult()  — the upstream result, trimmed in place
-                    compact, mini call: response.Builder.Build() — the {data, …} envelope
+                           buildProxyResult()  — the upstream result, trimmed in place
 ```
 
-Either path writes the raw upstream response to the store when projection cut something.
+The direct CLI uses `internal/invoke` and `response.Builder.Build()` for its `{data, …}` envelope. Both interfaces write the raw response to the store when projection cuts something.
 
 ### Key packages
 
@@ -134,7 +132,7 @@ Either path writes the raw upstream response to the store when projection cut so
 ```
 Its paths are `read` filters against the stored upstream result. An unchanged result, an `isError` result and a raw call are returned exactly as the upstream sent them. With `response_format: toon`, JSON text blocks are re-encoded as TOON.
 
-**Compact `call`/`perm_call` and `mini call`** return an envelope with the recovery fields alongside `data`:
+**`mini call` and `mini perm-call`** return an envelope with the recovery fields alongside `data`:
 ```json
 {
   "data": { ... },
@@ -164,9 +162,9 @@ In both shapes:
 
 Projections live in the server's YAML under `projections:`. A `"*"` key is a wildcard applying to all tools on that server.
 
-### Tool visibility and compact-mode gates
+### Tool visibility and CLI permissions
 
-`hidden` filters tools from normal discovery. The `open`/`protected` split is enforced only in compact mode and the direct CLI: `call` refuses protected tools, while `perm_call` can run them. In default proxy mode, protected tools are exposed directly and approval must be handled by the MCP client.
+`hidden` filters tools from discovery. The `open`/`protected` split is enforced only in the direct CLI: `mini call` refuses protected tools, while `mini perm-call` can run them. Over MCP, protected tools are exposed directly and approval must be handled by the MCP client.
 
 ### Security defaults
 
@@ -182,7 +180,7 @@ fake := fakeConn("toolA", "toolB")
 fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"ok"}]}`)
 srv.AddConnection(context.Background(), config.ServerConfig{Name: "myserver"}, fake)
 
-resp := serve(t, srv, callTool("call", map[string]any{"server": "myserver", "tool": "toolA"}))
+resp := serve(t, srv, callTool("myserver__toolA", map[string]any{}))
 text := toolResultText(t, resp)
 ```
 
@@ -192,6 +190,6 @@ text := toolResultText(t, resp)
 
 `mini [--config DIR] <command>`: `connect`, `daemon`, `ls`, `add`, `rm`, `status`, `cleanup`, `auth`, `test`, `init`
 
-- `connect [--standalone] [--tool-mode compact]` — connect an agent via stdio; proxy mode by default; `--tool-mode compact` for the 4-meta-tool interface
+- `connect [--standalone]` — connect an agent via stdio with native upstream tools
 - `daemon` — run as shared Unix socket daemon (background)
 - `daemon status` — show whether the daemon is running

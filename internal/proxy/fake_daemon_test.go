@@ -15,9 +15,7 @@ import (
 type daemonRequest struct {
 	ID     json.RawMessage `json:"id"`
 	Method string          `json:"method"`
-	Params struct {
-		ToolMode string `json:"_mini_tool_mode"`
-	} `json:"params"`
+	Params struct{}        `json:"params"`
 }
 
 func readDaemonRequest(req *http.Request) (daemonRequest, error) {

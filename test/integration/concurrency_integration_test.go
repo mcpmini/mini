@@ -14,8 +14,8 @@ func TestIntegrationConcurrency_20SequentialCalls(t *testing.T) {
 	client := quickServer(t, map[string]string{"get_item": `{"id":1,"name":"ok"}`})
 
 	for i := range 20 {
-		e := client.execEnvelope("svc", "get_item", nil)
-		if e.Error != "" {
+		e := client.execResult("svc", "get_item", nil)
+		if e.IsError {
 			t.Errorf("call %d returned ok=false: %+v", i+1, e)
 		}
 	}
@@ -25,7 +25,7 @@ func TestIntegrationConcurrency_100RapidSequential(t *testing.T) {
 	t.Parallel()
 	client := quickServer(t, map[string]string{"get_item": `{"id":1}`})
 	for i := range 100 {
-		if client.execEnvelope("svc", "get_item", nil).Error != "" {
+		if client.execResult("svc", "get_item", nil).IsError {
 			t.Errorf("call %d failed", i+1)
 		}
 	}
@@ -46,7 +46,7 @@ func TestIntegrationConcurrency_20ParallelClients(t *testing.T) {
 	results := make(chan bool, n)
 	for _, c := range clients {
 		c := c
-		go func() { results <- c.execEnvelope("svc", "get_item", nil).Error == "" }()
+		go func() { results <- !c.execResult("svc", "get_item", nil).IsError }()
 	}
 	for range clients {
 		if !<-results {
@@ -70,7 +70,7 @@ func TestIntegrationConcurrency_parallelHTTPUpstream(t *testing.T) {
 	results := make(chan bool, n)
 	for _, c := range clients {
 		c := c
-		go func() { results <- c.execEnvelope("svc", "get_item", nil).Error == "" }()
+		go func() { results <- !c.execResult("svc", "get_item", nil).IsError }()
 	}
 	for range clients {
 		if !<-results {
@@ -84,12 +84,7 @@ func countRejected(client *mcpClient, n int) int {
 	for range n {
 		go func() {
 			// Use AllowError path to avoid t.Fatalf in goroutines (would deadlock the channel).
-			text, isErr := client.execToolAllowError("svc", "get_item", nil)
-			if !isErr {
-				var e envelope
-				json.Unmarshal([]byte(text), &e) //nolint:errcheck
-				isErr = e.Error != ""
-			}
+			_, isErr := client.execToolAllowError("svc", "get_item", nil)
 			results <- isErr
 		}()
 	}
@@ -135,7 +130,7 @@ func TestIntegrationConcurrency_parallel(t *testing.T) {
 	results := make(chan bool, n)
 	for _, c := range clients {
 		c := c
-		go func() { results <- c.execEnvelope("svc", "get_item", nil).Error == "" }()
+		go func() { results <- !c.execResult("svc", "get_item", nil).IsError }()
 	}
 	for range clients {
 		if !<-results {
@@ -148,7 +143,7 @@ func runNParallelExecs(client *mcpClient, n int) ([]bool, time.Duration) {
 	results := make(chan bool, n)
 	start := time.Now()
 	for range n {
-		go func() { results <- client.execEnvelope("svc", "get_item", nil).Error == "" }()
+		go func() { results <- !client.execResult("svc", "get_item", nil).IsError }()
 	}
 	oks := make([]bool, n)
 	for i := range n {
@@ -179,12 +174,12 @@ func TestIntegrationConcurrency_pipelinedRequests(t *testing.T) {
 
 func assertSessionIsolation(t *testing.T, cfg string, existing *mcpClient) {
 	t.Helper()
-	b2, _ := json.Marshal(existing.execEnvelope("svc", "get_item", nil).Data)
+	b2, _ := json.Marshal(existing.execResult("svc", "get_item", nil).Data)
 	if !strings.Contains(string(b2), "secret") {
 		t.Error("existing session should not be affected by persisted projection")
 	}
 	c3 := startServer(t, cfg)
-	b3, _ := json.Marshal(c3.execEnvelope("svc", "get_item", nil).Data)
+	b3, _ := json.Marshal(c3.execResult("svc", "get_item", nil).Data)
 	if strings.Contains(string(b3), "secret") {
 		t.Error("new session should apply persisted projection")
 	}
@@ -197,7 +192,7 @@ func TestIntegrationConcurrency_twoClientsSessionIsolation(t *testing.T) {
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
 	c1 := startServer(t, cfg)
 	c2 := startServer(t, cfg)
-	b2, _ := json.Marshal(c2.execEnvelope("svc", "get_item", nil).Data)
+	b2, _ := json.Marshal(c2.execResult("svc", "get_item", nil).Data)
 	if !strings.Contains(string(b2), "secret") {
 		t.Fatal("c2 should see secret before any projection")
 	}

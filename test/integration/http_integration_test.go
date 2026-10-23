@@ -11,8 +11,8 @@ import (
 func TestIntegrationHTTP_basicToolCall(t *testing.T) {
 	t.Parallel()
 	_, client := httpServer(t, nil)
-	e := client.execEnvelope("svc", "get_item", nil)
-	if e.Error != "" {
+	e := client.execResult("svc", "get_item", nil)
+	if e.IsError {
 		t.Fatalf("expected ok=true, got: %+v", e)
 	}
 }

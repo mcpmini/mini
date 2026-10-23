@@ -100,15 +100,8 @@ type envelopeCallParams struct {
 
 func envelopeOK(t *testing.T, p envelopeCallParams) bool {
 	t.Helper()
-	text, isRPCErr := p.Client.execToolAllowError(p.Server, p.Tool, nil)
-	if isRPCErr {
-		return false
-	}
-	var e envelope
-	if err := json.Unmarshal([]byte(text), &e); err != nil {
-		return false
-	}
-	return e.Error == ""
+	_, isErr := p.Client.execToolAllowError(p.Server, p.Tool, nil)
+	return !isErr
 }
 
 // authCapturingMCP wraps a fakeHTTPMCP to capture a specific request header on each call.

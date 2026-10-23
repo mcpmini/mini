@@ -286,7 +286,7 @@ func (r *Runner) mcpSetup(ec evalCtx, i format, rep int) (runSetup, error) {
 		return runSetup{}, err
 	}
 	return newMCPRunSetup(
-		mcpRunSetupParams{"mcp", i, rep, callDir, workDir, cfg, miniMCPAllowedTools(p.AllowedTools), ec.Task},
+		mcpRunSetupParams{"mcp", i, rep, callDir, workDir, cfg, proxyAllowedTools(p.Servers, p.AllowedTools), ec.Task},
 	), nil
 }
 

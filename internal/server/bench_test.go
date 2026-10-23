@@ -48,9 +48,7 @@ func BenchmarkExec_inline(b *testing.B) {
 	ctx := context.Background()
 	srv.AddConnection(ctx, config.ServerConfig{Name: "svc"}, fake)
 
-	input := buildBenchInput(callTool("call", map[string]any{
-		"server": "svc", "tool": "toolA", "params": map[string]any{},
-	}))
+	input := buildBenchInput(callTool("svc__toolA", map[string]any{}))
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -64,9 +62,7 @@ func BenchmarkExec_concurrent(b *testing.B) {
 	ctx := context.Background()
 	srv.AddConnection(ctx, config.ServerConfig{Name: "svc"}, fake)
 
-	input := buildBenchInput(callTool("call", map[string]any{
-		"server": "svc", "tool": "toolA", "params": map[string]any{},
-	}))
+	input := buildBenchInput(callTool("svc__toolA", map[string]any{}))
 
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {

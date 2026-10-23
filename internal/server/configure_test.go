@@ -80,16 +80,16 @@ func TestConfigureAddServer_viaHTTP(t *testing.T) {
 		"config": map[string]any{"name": "dynamic", "transport": "http", "url": mcp.URL},
 	}))
 	var result map[string]any
-	json.Unmarshal([]byte(toolResultText(t, resp)), &result)
+	json.Unmarshal([]byte(resultJSONText(t, resp)), &result)
 	if result["error"] != nil || result["server"] != "dynamic" {
 		t.Errorf("expected ok add_server, got: %v", result)
 	}
 
-	listText := toolResultText(t, serve(t, srv, callTool("list", map[string]any{})))
+	listText := resultJSONText(t, serve(t, srv, rpc("tools/list", nil)))
 	var tools []any
 	json.Unmarshal([]byte(listText), &tools)
-	if len(tools) != 1 {
-		t.Errorf("expected 1 tool after add_server, got %d: %s", len(tools), listText)
+	if len(tools) != 3 {
+		t.Errorf("expected native tool and two builtins after add_server, got %d: %s", len(tools), listText)
 	}
 }
 
@@ -110,30 +110,9 @@ func TestExecuteProtected_callsProtectedTool(t *testing.T) {
 	fake, perm := fakeProtectedConn()
 	srv.AddConnection(t.Context(), config.ServerConfig{Name: "db", Permissions: perm}, fake)
 
-	resp := serve(t, srv, callTool("perm_call", map[string]any{
-		"server": "db", "tool": "deleteAll", "params": map[string]any{},
-	}))
-	text := toolResultText(t, resp)
-	var env map[string]any
-	if err := json.Unmarshal([]byte(text), &env); err != nil {
-		t.Fatalf("expected JSON envelope: %s", text)
-	}
-	if env["error"] != nil {
-		t.Errorf("expected ok=true for valid protected call, got: %v", env)
-	}
-}
-
-func TestToolsList_returnsProxySchemas(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	resp := serve(t, srv, []byte(`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`+"\n"))
-
-	result, ok := resp["result"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected result, got: %v", resp)
-	}
-	tools, ok := result["tools"].([]any)
-	if !ok || len(tools) < 4 {
-		t.Errorf("expected at least 4 proxy tools, got: %v", result)
+	resp := serve(t, srv, callTool("db__deleteAll", map[string]any{}))
+	if text := toolResultText(t, resp); text != "deleted" {
+		t.Fatalf("protected tool result = %q, want deleted", text)
 	}
 }
 
@@ -146,14 +125,12 @@ func newConfigServer(t *testing.T) *server.Server {
 
 func execGetFileInfo(t *testing.T, srv *server.Server) map[string]any {
 	t.Helper()
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "fs", "tool": "get_file_info", "params": map[string]any{},
-	}))
+	resp := serve(t, srv, callTool("fs__get_file_info", map[string]any{}))
 	env := parseEnvelope(t, toolResultText(t, resp))
 	if env["error"] != nil {
 		t.Fatalf("get_file_info failed: %v", env)
 	}
-	summary, _ := env["data"].(map[string]any)
+	summary := env
 	if summary == nil {
 		t.Fatalf("nil summary: %v", env)
 	}
@@ -212,20 +189,21 @@ func TestProjectionTruncation_fieldNameAndChars(t *testing.T) {
 		"projection": map[string]any{"string_limits": map[string]any{"body": 50}},
 	}))
 
-	resp := serve(t, srv, callTool("call", map[string]any{"server": "svc", "tool": "get_doc"}))
+	resp := serve(t, srv, callTool("svc__get_doc", nil))
 	env := parseEnvelope(t, toolResultText(t, resp))
 	if env["error"] != nil {
 		t.Fatalf("get_doc failed: %v", env)
 	}
 
-	truncated, _ := env["truncated"].([]any)
+	notice := env["__mini"].(map[string]any)
+	truncated, _ := notice["truncated"].([]any)
 	if len(truncated) == 0 {
 		t.Errorf("expected truncated entries, got %v", env["truncated"])
 	}
 	var bodyChars float64
 	for _, o := range truncated {
 		om, _ := o.(map[string]any)
-		if om["path"] == ".body" {
+		if om["path"] == ".content[0].text | fromjson | .body" {
 			bodyChars, _ = om["chars"].(float64)
 		}
 	}
@@ -236,7 +214,7 @@ func TestProjectionTruncation_fieldNameAndChars(t *testing.T) {
 	if int(bodyChars) < 200 {
 		t.Errorf("expected at least 200 chars removed from body, got %v", bodyChars)
 	}
-	if env["file"] == nil {
+	if notice["file"] == nil {
 		t.Error("expected file to be written when truncation occurred")
 	}
 }
@@ -286,12 +264,12 @@ func TestHealthStatsAfterCalls(t *testing.T) {
 	}
 	addEdgeConn(addConnectionParams{T: t, Server: srv, Config: config.ServerConfig{Name: "svc"}, Connection: fake})
 	for i := 0; i < nCalls; i++ {
-		serve(t, srv, callTool("call", map[string]any{"server": "svc", "tool": "ping", "params": map[string]any{}}))
+		serve(t, srv, callTool("svc__ping", map[string]any{}))
 	}
 	assertHealthStats(assertHealthStatsParams{T: t, Server: srv, ServerName: "svc", WantCalls: nCalls})
 }
 
-func TestHealthStats_upstreamToolErrorRecordedInProxyAndCompactMode(t *testing.T) {
+func TestHealthStats_upstreamToolErrorRecorded(t *testing.T) {
 	failing := func() *transport.FakeConnection {
 		conn := fakeConn("ping")
 		conn.Responses["tools/call"] = json.RawMessage(`{"isError":true,"content":[{"type":"text","text":"boom"}]}`)
@@ -303,26 +281,6 @@ func TestHealthStats_upstreamToolErrorRecordedInProxyAndCompactMode(t *testing.T
 		t.Cleanup(srv.Close)
 		addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: failing()})
 		resp := serveProxy(t, srv, callTool("svc__ping", map[string]any{}))
-		assertIsErrorResult(t, resp)
-		assertFailedCallRecorded(
-			assertFailedCallRecordedParams{
-				T:             t,
-				Server:        srv,
-				ServerName:    "svc",
-				WantLastError: "tool returned error: boom",
-			},
-		)
-	})
-
-	t.Run("compact mode", func(t *testing.T) {
-		srv := newTestServer(t, server.Params{})
-		t.Cleanup(srv.Close)
-		addEdgeConn(
-			addConnectionParams{T: t, Server: srv, Config: config.ServerConfig{Name: "svc"}, Connection: failing()},
-		)
-		resp := serve(t, srv, callTool("call", map[string]any{
-			"server": "svc", "tool": "ping", "params": map[string]any{},
-		}))
 		assertIsErrorResult(t, resp)
 		assertFailedCallRecorded(
 			assertFailedCallRecordedParams{
@@ -442,7 +400,7 @@ func TestConfigureSetProjection_aFailedSaveKeepsTheLiveRuleAndSessionOnlyStillAp
 			breakFile(t, path)
 			before := serverFileText(t, path)
 			const sessionID = "cccccccc-cccc-cccc-cccc-000000000004"
-			postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: initMsg(true)})
+			postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: initMsg()})
 
 			saved := postMCP(
 				postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: setGetDataProjection(2, false)},
@@ -515,7 +473,7 @@ func callGetData(id int) map[string]any {
 		"id":      id,
 		"method":  "tools/call",
 		"params": map[string]any{
-			"name": "call", "arguments": map[string]any{"server": "svc", "tool": "getData", "params": map[string]any{}},
+			"name": "svc__getData", "arguments": map[string]any{},
 		},
 	}
 }
@@ -606,7 +564,7 @@ func TestConfigureRemoveServer_clearsDiscover(t *testing.T) {
 	}
 	assertRemoveOk(t, srv, "svc")
 
-	discoverText := toolResultText(t, serve(t, srv, callTool("list", map[string]any{})))
+	discoverText := resultJSONText(t, serve(t, srv, rpc("tools/list", nil)))
 	if strings.Contains(discoverText, "ping") {
 		t.Errorf("removed server's tools should not appear in discover, got: %s", discoverText)
 	}
@@ -626,9 +584,7 @@ func TestSessionScopedProjectionNotPersistedAcrossCalls(t *testing.T) {
 		"session_only": true,
 	}))
 
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "svc", "tool": "getData", "params": map[string]any{},
-	}))
+	resp := serve(t, srv, callTool("svc__getData", map[string]any{}))
 	text := toolResultText(t, resp)
 	if strings.Contains(text, `"b":2`) {
 		t.Logf("note: session projection applied within same session: %s", text)

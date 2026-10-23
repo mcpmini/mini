@@ -66,7 +66,7 @@ func TestIntegrationDaemonProxyTagsToolsListChangedForModernListen(t *testing.T)
 	})
 	startDaemon(t, cfg)
 
-	stdin, scanner := startProxyCmd(t, cfg, "")
+	stdin, scanner := startProxyCmd(t, cfg)
 	lines := scanProxyLines(scanner)
 	listen := transport.ListenParams{Notifications: transport.ListenNotifications{ToolsListChanged: true}}
 	writeProxyLine(t, stdin, transporttest.ModernRequest("L", transport.MethodSubscriptionsListen, listen))

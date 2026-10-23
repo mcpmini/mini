@@ -54,7 +54,7 @@ func TestIntegrationServer_toolsList(t *testing.T) {
 	for _, tool := range result.Tools {
 		names[tool.Name] = true
 	}
-	for _, want := range []string{"list", "call", "perm_call", "config"} {
+	for _, want := range []string{"config", "read", "github__list_pull_requests"} {
 		if !names[want] {
 			t.Errorf("expected tool %q in tools/list, got: %v", want, names)
 		}
@@ -65,7 +65,7 @@ func TestIntegrationServer_listUpstreamTools(t *testing.T) {
 	t.Parallel()
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "github", Fixtures: filepath.Join(fixturesDir, "github")})
-	text := startServer(t, cfg).listTools("github")
+	text := startServer(t, cfg).listTools()
 	for _, want := range []string{"list_pull_requests", "list_issues", "get_file_contents", "search_code"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("expected %q in list output, got: %q", want, text)
@@ -78,7 +78,7 @@ func TestIntegrationServer_execReturnsResponse(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "github", Fixtures: filepath.Join(fixturesDir, "github")})
 	text := startServer(t, cfg).execTool("github", "list_pull_requests", nil)
-	if !strings.Contains(text, `"data"`) {
+	if !strings.Contains(text, `"number"`) {
 		t.Errorf("expected data envelope in response, got: %q", text[:min(200, len(text))])
 	}
 }
@@ -103,39 +103,6 @@ func TestIntegrationServer_execWithProjection(t *testing.T) {
 	}
 	if !strings.Contains(projected, "number") {
 		t.Errorf("projected response should contain 'number', got: %q", projected[:min(200, len(projected))])
-	}
-}
-
-func TestIntegrationServer_execUnknownTool(t *testing.T) {
-	t.Parallel()
-	cfg := t.TempDir()
-	writeFakeServer(t, cfg, fakeServerParams{ServerName: "github", Fixtures: filepath.Join(fixturesDir, "github")})
-	raw := startServer(t, cfg).mustCall("tools/call", map[string]any{
-		"name":      "call",
-		"arguments": map[string]any{"server": "github", "tool": "nonexistent_tool", "args": map[string]any{}},
-	})
-	var result struct {
-		IsError bool `json:"isError"`
-	}
-	json.Unmarshal(raw, &result)
-	if !result.IsError {
-		t.Error("expected isError=true for unknown tool")
-	}
-}
-
-func TestIntegrationServer_execUnknownServer(t *testing.T) {
-	t.Parallel()
-	cfg := t.TempDir()
-	raw := startServer(t, cfg).mustCall("tools/call", map[string]any{
-		"name":      "call",
-		"arguments": map[string]any{"server": "doesnotexist", "tool": "list_pull_requests", "args": map[string]any{}},
-	})
-	var result struct {
-		IsError bool `json:"isError"`
-	}
-	json.Unmarshal(raw, &result)
-	if !result.IsError {
-		t.Error("expected isError=true for unknown server")
 	}
 }
 
@@ -277,7 +244,7 @@ func TestIntegrationServe_unreachableUpstreamDoesNotExit(t *testing.T) {
 	configtest.WriteServer(t, cfg, config.ServerConfig{Name: "dead", Transport: "http", URL: "http://127.0.0.1:19998"})
 	client := startServerWithUnreachable(t, cfg, []string{"dead"})
 	// Should still serve list/call for the working upstream
-	text := client.listTools("github")
+	text := client.listTools()
 	if !strings.Contains(text, "list_pull_requests") {
 		t.Errorf("expected github tools after partial startup failure, got: %q", text)
 	}
@@ -339,27 +306,6 @@ func execGitHubToolIsError(t *testing.T, p githubToolErrorParams) bool {
 	return r.IsError
 }
 
-func TestIntegrationServer_protectedToolRequiresExecProtected(t *testing.T) {
-	t.Parallel()
-	cfg := t.TempDir()
-	writeGitHubServer(t, cfg, &config.PermissionsConfig{Protected: []string{"list_pull_requests"}})
-	client := startServer(t, cfg)
-	if !execGitHubToolIsError(t, githubToolErrorParams{
-		Client:   client,
-		ExecName: "call",
-		Tool:     "list_pull_requests",
-	}) {
-		t.Error("expected call to fail for protected tool")
-	}
-	if execGitHubToolIsError(t, githubToolErrorParams{
-		Client:   client,
-		ExecName: "perm_call",
-		Tool:     "list_pull_requests",
-	}) {
-		t.Error("expected perm_call to succeed for protected tool")
-	}
-}
-
 func TestIntegrationServer_hiddenToolNotListed(t *testing.T) {
 	t.Parallel()
 	cfg := t.TempDir()
@@ -370,7 +316,7 @@ func TestIntegrationServer_hiddenToolNotListed(t *testing.T) {
 			Hidden: []string{"search_code"},
 		},
 	})
-	text := startServer(t, cfg).listTools("github")
+	text := startServer(t, cfg).listTools()
 	if strings.Contains(text, "search_code") {
 		t.Errorf("hidden tool 'search_code' should not appear in list output")
 	}
@@ -412,11 +358,7 @@ func TestIntegrationServer_listAllTools(t *testing.T) {
 			Fixtures:   mockFixtureDir(t, map[string]string{"do_" + srv: `{"ok":true}`}),
 		})
 	}
-	raw := startServer(t, cfg).mustCall("tools/call", map[string]any{
-		"name":      "list",
-		"arguments": map[string]any{},
-	})
-	text := toolCallText(t, raw)
+	text := startServer(t, cfg).listTools()
 	for _, want := range []string{"do_alpha", "do_beta"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("list() with no server arg should include %q, got: %q", want, text)
@@ -435,7 +377,7 @@ func TestIntegrationServer_multipleUpstreams(t *testing.T) {
 	}
 	client := startServer(t, cfg)
 	for _, srv := range []string{"alpha", "beta"} {
-		if !strings.Contains(client.listTools(srv), "do_thing") {
+		if !strings.Contains(client.listTools(), "do_thing") {
 			t.Errorf("%s: expected do_thing in list", srv)
 		}
 	}

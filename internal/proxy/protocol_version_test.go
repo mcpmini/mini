@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"slices"
-	"strings"
 	"sync"
 	"testing"
 
@@ -21,7 +20,6 @@ type localDaemonTransport struct {
 	mu          sync.Mutex
 	methods     []string
 	initializes int
-	compact     bool
 }
 
 func (d *localDaemonTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -36,17 +34,10 @@ func (d *localDaemonTransport) RoundTrip(req *http.Request) (*http.Response, err
 	d.methods = append(d.methods, request.Method)
 	if request.Method == "initialize" {
 		d.initializes++
-		d.compact = request.Params.ToolMode == transport.ToolModeCompactValue
 	}
-	compact := d.compact
 	d.mu.Unlock()
 	if request.Method == transport.NotificationInitialized {
 		return localDaemonResponse(http.StatusAccepted, ""), nil
-	}
-	if request.Method == "tools/list" && compact {
-		return daemonResult(request.ID, transport.ToolsListResult{Tools: []transport.ToolDefinition{
-			{Name: "list"}, {Name: "call"}, {Name: "perm_call"}, {Name: "config"},
-		}})
 	}
 	return daemonResult(request.ID, json.RawMessage(`{"ok":true}`))
 }
@@ -76,7 +67,7 @@ func TestRun_modernRequestsHandshakeOnce(t *testing.T) {
 	var out bytes.Buffer
 	err := Run(RunParams{
 		Client: &http.Client{Transport: daemon}, SessionID: "sess", In: modernInput(requests...), Out: &out,
-		ToolMode: transport.ToolModeProxy, Clock: clock.NewFake(),
+		Clock: clock.NewFake(),
 	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -93,37 +84,18 @@ func TestRun_modernRequestsHandshakeOnce(t *testing.T) {
 	}
 }
 
-func TestRun_modernCompactModeUsesHandshakeToolMode(t *testing.T) {
-	daemon := &localDaemonTransport{}
-	var out bytes.Buffer
-	err := Run(RunParams{
-		Client: &http.Client{Transport: daemon}, SessionID: "sess", Out: &out,
-		In:       modernInput(transporttest.ModernRequest(1, "tools/list", nil)),
-		ToolMode: transport.ToolModeCompact, Clock: clock.NewFake(),
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	daemon.mu.Lock()
-	compact := daemon.compact
-	daemon.mu.Unlock()
-	if !compact || !strings.Contains(out.String(), `"name":"perm_call"`) {
-		t.Fatalf("compact handshake=%t tools/list output=%q", compact, out.String())
-	}
-}
-
-func newTestProxySession(t *testing.T, toolMode transport.ToolMode) (*proxySession, *bytes.Buffer) {
+func newTestProxySession(t *testing.T) (*proxySession, *bytes.Buffer) {
 	t.Helper()
 	var out bytes.Buffer
-	session := newProxySession(RunParams{ToolMode: toolMode, Clock: clock.NewFake()}, newLineWriter(&out))
+	session := newProxySession(RunParams{Clock: clock.NewFake()}, newLineWriter(&out))
 	t.Cleanup(session.close)
 	return session, &out
 }
 
 // newReadyProxySession skips the handshake a first modern request would forward to the daemon.
-func newReadyProxySession(t *testing.T, toolMode transport.ToolMode) (*proxySession, *bytes.Buffer) {
+func newReadyProxySession(t *testing.T) (*proxySession, *bytes.Buffer) {
 	t.Helper()
-	session, out := newTestProxySession(t, toolMode)
+	session, out := newTestProxySession(t)
 	session.clientReady.Store(true)
 	return session, out
 }
@@ -138,7 +110,7 @@ func TestRun_rejectsMalformedModernMetadataBeforeBootstrapOrListenAck(t *testing
 	var out bytes.Buffer
 	err := Run(RunParams{
 		Client: &http.Client{Transport: daemon}, In: modernInput(line), Out: &out,
-		ToolMode: transport.ToolModeProxy, Clock: clock.NewFake(),
+		Clock: clock.NewFake(),
 	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -158,7 +130,7 @@ func TestProxySession_rejectsMalformedModernDiscoverWithoutPoisoningBridge(t *te
 	daemon := &localDaemonTransport{}
 	var out bytes.Buffer
 	session := newProxySession(RunParams{
-		Client: &http.Client{Transport: daemon}, ToolMode: transport.ToolModeProxy, Clock: clock.NewFake(),
+		Client: &http.Client{Transport: daemon}, Clock: clock.NewFake(),
 	}, newLineWriter(&out))
 	defer session.close()
 
@@ -222,7 +194,7 @@ func TestProxySession_modernInputLeftForTheDaemon(t *testing.T) {
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			session, out := newReadyProxySession(t, transport.ToolModeProxy)
+			session, out := newReadyProxySession(t)
 			handled, err := session.handleModernInput([]byte(tc.line))
 			if err != nil || handled || out.Len() != 0 {
 				t.Fatalf("handled=%t error=%v output=%q, want the line forwarded untouched", handled, err, out.String())
@@ -235,7 +207,7 @@ func TestProxySession_modernInputLeftForTheDaemon(t *testing.T) {
 }
 
 func TestProxySession_modernRequestOnAReadySessionMarksItModern(t *testing.T) {
-	session, out := newReadyProxySession(t, transport.ToolModeProxy)
+	session, out := newReadyProxySession(t)
 	handled, err := session.handleModernInput(transporttest.ModernRequest(1, "tools/list", nil))
 	if err != nil || handled || out.Len() != 0 {
 		t.Fatalf("handled=%t error=%v output=%q, want the request forwarded", handled, err, out.String())

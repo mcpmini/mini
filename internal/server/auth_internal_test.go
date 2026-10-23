@@ -132,7 +132,7 @@ func TestRunAuthFlow_loginCompletingAfterRemoveServerDoesNotReinstall(t *testing
 			srv.authWg.Add(1)
 			srv.runAuthFlow(t.Context(), installAtStartAuth, &authFlowState{cancel: func() {}, login: login})
 
-			if got := len(srv.reg.All()) > 0; got != tc.wantTools {
+			if got := len(srv.reg.AllFull()) > 0; got != tc.wantTools {
 				t.Errorf("tools registered = %v, want %v", got, tc.wantTools)
 			}
 		})
@@ -160,7 +160,7 @@ func TestRunAuthFlow_CloseCancelsReconnectAfterLogin(t *testing.T) {
 	if ctx.Err() != context.Canceled {
 		t.Fatal("Close did not cancel the auth flow")
 	}
-	if got := len(srv.reg.All()); got != 0 {
+	if got := len(srv.reg.AllFull()); got != 0 {
 		t.Errorf("registered tools after Close = %d, want 0", got)
 	}
 	if srv.isUpstreamRegistered("svc") {

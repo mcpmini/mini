@@ -23,38 +23,13 @@ func TestListDirectoryNonEmpty(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	addTestConnection(addConnectionParams{T: t, Server: srv, Config: config.ServerConfig{Name: "fs"}, Connection: fake})
 
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "fs", "tool": "list_directory", "params": map[string]any{"path": "/dir"},
-	}))
+	resp := serve(t, srv, callTool("fs__list_directory", map[string]any{"path": "/dir"}))
 	env := parseEnvelope(t, toolResultText(t, resp))
 	if env["error"] != nil {
 		t.Fatalf("list_directory failed: %v", env)
 	}
-	if env["data"] == nil {
-		t.Errorf("expected non-empty data, got: %v", env["data"])
-	}
-}
-
-func TestReadFileTruncation(t *testing.T) {
-	fake := fakeConn("read_file")
-	fake.RespondWith(strings.Repeat("The quick brown fox jumps over the lazy dog. ", 50))
-
-	cfg := config.DefaultConfig()
-	cfg.DefaultStringLimit = 100
-	srv := newTestServer(t, server.Params{Config: cfg})
-	t.Cleanup(srv.Close)
-	addTestConnection(addConnectionParams{T: t, Server: srv, Config: config.ServerConfig{Name: "fs"}, Connection: fake})
-
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "fs", "tool": "read_file", "params": map[string]any{"path": "/big.txt"},
-	}))
-	env := parseEnvelope(t, toolResultText(t, resp))
-	if env["error"] != nil {
-		t.Fatalf("read_file failed: %v", env)
-	}
-	truncated, _ := env["truncated"].([]any)
-	if len(truncated) == 0 {
-		t.Errorf("expected truncated entries in envelope after string limit applied, got: %v", env)
+	if env["entries"] == nil {
+		t.Errorf("expected non-empty data, got: %v", env["entries"])
 	}
 }
 
@@ -83,17 +58,15 @@ func TestMultipleServers(t *testing.T) {
 
 	var tools []map[string]any
 	json.Unmarshal(
-		[]byte(toolResultText(t, serve(t, srv, callTool("list", map[string]any{})))),
+		[]byte(resultJSONText(t, serve(t, srv, rpc("tools/list", nil)))),
 		&tools,
 	) //nolint:errcheck
-	if countToolsByPrefix(tools, "fs1.") == 0 || countToolsByPrefix(tools, "fs2.") == 0 {
+	if countToolsByPrefix(tools, "fs1__") == 0 || countToolsByPrefix(tools, "fs2__") == 0 {
 		t.Errorf("expected tools from both servers, got fs1=%d fs2=%d",
-			countToolsByPrefix(tools, "fs1."), countToolsByPrefix(tools, "fs2."))
+			countToolsByPrefix(tools, "fs1__"), countToolsByPrefix(tools, "fs2__"))
 	}
-	resp1 := serve(t, srv, callTool("call", map[string]any{
-		"server": "fs1", "tool": "list_directory", "params": map[string]any{"path": "/dir"},
-	}))
-	if env1 := parseEnvelope(t, toolResultText(t, resp1)); env1["error"] != nil {
+	resp1 := serve(t, srv, callTool("fs1__list_directory", map[string]any{"path": "/dir"}))
+	if env1 := parseEnvelope(t, resultJSONText(t, resp1)); env1["error"] != nil {
 		t.Errorf("expected ok=true from fs1: %v", env1)
 	}
 }
@@ -104,15 +77,15 @@ func assertAddServer(t *testing.T, srv *server.Server) {
 		"action": "add_server",
 		"config": map[string]any{"name": "dynamic_echo", "command": testutil.Binary(t, "ECHOMCP_BIN")},
 	}))
-	text := toolResultText(t, resp)
+	text := resultJSONText(t, resp)
 	var result map[string]any
 	json.Unmarshal([]byte(text), &result) //nolint:errcheck
 	if result["error"] != nil {
 		t.Fatalf("add_server failed: %s", text)
 	}
-	if text2 := toolResultText(
+	if text2 := resultJSONText(
 		t,
-		serve(t, srv, callTool("list", map[string]any{})),
+		serve(t, srv, rpc("tools/list", nil)),
 	); !strings.Contains(
 		text2,
 		"dynamic_echo",
@@ -125,13 +98,13 @@ func assertRemoveServer(t *testing.T, srv *server.Server) {
 	t.Helper()
 	resp := serve(t, srv, callTool("config", map[string]any{"action": "remove_server", "server": "dynamic_echo"}))
 	var result map[string]any
-	json.Unmarshal([]byte(toolResultText(t, resp)), &result) //nolint:errcheck
+	json.Unmarshal([]byte(resultJSONText(t, resp)), &result) //nolint:errcheck
 	if result["error"] != nil {
 		t.Fatalf("remove_server failed: %v", result)
 	}
-	if text := toolResultText(
+	if text := resultJSONText(
 		t,
-		serve(t, srv, callTool("list", map[string]any{})),
+		serve(t, srv, rpc("tools/list", nil)),
 	); strings.Contains(
 		text,
 		"dynamic_echo",
@@ -161,9 +134,7 @@ func TestStdioEnvPassthrough(t *testing.T) {
 	if err := srv.AddUpstream(context.Background(), sc); err != nil {
 		t.Fatalf("AddUpstream: %v", err)
 	}
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "envtest", "tool": "get_env", "params": map[string]any{},
-	}))
+	resp := serve(t, srv, callTool("envtest__get_env", map[string]any{}))
 	if text := toolResultText(t, resp); !strings.Contains(text, "hello_from_mini") {
 		t.Errorf("MINI_TEST_VAR not in subprocess response, got: %s", text)
 	}
@@ -248,9 +219,7 @@ func TestAddConnection_reAddWithStaleProjections_keepsLiveSetProjection(t *testi
 		t.Fatal(err)
 	}
 
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "svc", "tool": "getData", "params": map[string]any{},
-	}))
+	resp := serve(t, srv, callTool("svc__getData", map[string]any{}))
 	data := parseProxyEnvelope(t, toolResultText(t, resp)).Data
 	if data["a"] == nil {
 		t.Errorf("live projection reverted by re-AddConnection: got %v", data)
@@ -286,9 +255,7 @@ func TestAddConnection_removeThenReAdd_usesNewProjections(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "svc", "tool": "getData", "params": map[string]any{},
-	}))
+	resp := serve(t, srv, callTool("svc__getData", map[string]any{}))
 	data := parseProxyEnvelope(t, toolResultText(t, resp)).Data
 	if data["b"] == nil {
 		t.Errorf("expected new projection after remove+add, got %v", data)

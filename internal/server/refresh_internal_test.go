@@ -72,24 +72,14 @@ func addToolListConnection(t *testing.T, s *Server, c *toolListConnection) *upst
 }
 
 func readToolsList(s *Server) string {
-	result, err := s.handleToolsList(context.Background(), newSession(s.clock))
+	result, err := s.handleToolsList(context.Background())
 	raw, _ := json.Marshal(result)
 	return fmt.Sprint(string(raw), err)
 }
 
 func TestToolListExpiryRefreshesEveryDiscoveryEntryPoint(t *testing.T) {
 	for entry, read := range map[string]func(*Server) (any, error){
-		"proxy": func(s *Server) (any, error) { return s.handleToolsList(context.Background(), newSession(s.clock)) },
-		"list":  func(s *Server) (any, error) { return s.handleList(context.Background(), nil) },
-		"search": func(s *Server) (any, error) {
-			return s.handleList(context.Background(), json.RawMessage(`{"query":"new"}`))
-		},
-		"hidden": func(s *Server) (any, error) {
-			return s.handleList(context.Background(), json.RawMessage(`{"hidden":true}`))
-		},
-		"detail": func(s *Server) (any, error) {
-			return s.handleList(context.Background(), json.RawMessage(`{"tool":"svc.new","detail":true}`))
-		},
+		"proxy": func(s *Server) (any, error) { return s.handleToolsList(context.Background()) },
 	} {
 		t.Run(entry, func(t *testing.T) {
 			s, fc := newToolListTestServer(t)
@@ -108,39 +98,6 @@ func TestToolListExpiryRefreshesEveryDiscoveryEntryPoint(t *testing.T) {
 				t.Fatalf("%s after expiry = %s, %v after %d fetches; want one refetch", entry, raw, err, c.calls.Load())
 			}
 		})
-	}
-}
-
-func TestToolListExcludedEntryPointsDoNotFetch(t *testing.T) {
-	s, fc := newToolListTestServer(t)
-	c := newToolListConnection("svc", func(context.Context, int32) (transport.ToolList, error) {
-		return toolListNamed("old", transport.FreshUntil(fc.Now())), nil
-	})
-	addToolListConnection(t, s, c)
-	addToolListConnection(
-		t,
-		s,
-		newToolListConnection("other", func(context.Context, int32) (transport.ToolList, error) {
-			return toolListNamed("tool", transport.Freshness{}), nil
-		}),
-	)
-	compact := newSession(fc)
-	compact.mode.Store(int32(transport.ToolModeCompact))
-	if _, err := s.handleToolsList(t.Context(), compact); err != nil {
-		t.Fatal(err)
-	}
-	for name, want := range map[string]string{"svc.bad tool": "not_found", "other.tool": `"server":"other"`} {
-		detail, err := s.handleList(t.Context(), json.RawMessage(`{"tool":"`+name+`","detail":true}`))
-		if got, _ := json.Marshal(detail); err != nil || !strings.Contains(string(got), want) {
-			t.Fatalf("detail of %s = %s, %v; want %s", name, got, err, want)
-		}
-	}
-	s.cfg.DisableListHidden = true
-	if _, err := s.handleList(t.Context(), json.RawMessage(`{"hidden":true}`)); !errors.Is(err, errListHiddenDisabled) {
-		t.Fatalf("disabled hidden listing = %v, want %v", err, errListHiddenDisabled)
-	}
-	if c.calls.Load() != 1 {
-		t.Fatalf("excluded entry points fetched svc's list %d times", c.calls.Load()-1)
 	}
 }
 
@@ -384,9 +341,8 @@ func TestToolListRefreshKeepsAliasesAndPermissions(t *testing.T) {
 	if got := readToolsList(s); !strings.Contains(got, "svc__alias") || strings.Contains(got, "secret") {
 		t.Fatalf("refreshed tools/list = %s; want the alias and no hidden tool", got)
 	}
-	result, err := s.handleList(t.Context(), json.RawMessage(`{"tool":"svc.alias","detail":true}`))
-	raw, _ := json.Marshal(result)
-	if err != nil || !strings.Contains(string(raw), `"permission":"open"`) {
-		t.Fatalf("refreshed detail = %s, %v; want its permission", raw, err)
+	entry, err := s.reg.Lookup("svc.alias")
+	if err != nil || entry.Permission != config.PermOpen {
+		t.Fatalf("refreshed alias = %+v, %v; want open permission", entry, err)
 	}
 }

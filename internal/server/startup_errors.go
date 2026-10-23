@@ -19,7 +19,7 @@ func (s *Server) lookupTool(server, tool string) (*registry.ToolEntry, error) {
 	}
 	entry, err := s.reg.Lookup(toolFullName(server, tool))
 	if err != nil {
-		return nil, errLookup{err}
+		return nil, err
 	}
 	return entry, nil
 }

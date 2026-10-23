@@ -22,28 +22,9 @@ func (n ToolName) Name() string {
 }
 
 type ToolEntry struct {
-	Server        string
-	ToolName      ToolName
-	FullName      string // "server.tool" using visible name (alias if set)
-	FullNameLower string // pre-lowercased for search
-	Def           transport.ToolDefinition
-	DescLower     string // pre-lowercased for search
-	Permission    config.PermissionLevel
-}
-
-// CompactEntry is what discover returns per tool — no full schema.
-type CompactEntry struct {
-	Name        string                 `json:"name"`
-	Server      string                 `json:"server"`
-	Description string                 `json:"description"`
-	Permission  config.PermissionLevel `json:"permission"`
-}
-
-func (e *ToolEntry) Compact() CompactEntry {
-	return CompactEntry{
-		Name:        e.FullName,
-		Server:      e.Server,
-		Description: e.Def.Description,
-		Permission:  e.Permission,
-	}
+	Server     string
+	ToolName   ToolName
+	FullName   string // "server.tool" using visible name (alias if set)
+	Def        transport.ToolDefinition
+	Permission config.PermissionLevel
 }

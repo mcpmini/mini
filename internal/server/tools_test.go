@@ -30,9 +30,7 @@ func TestKnownToolBadArgs_ReturnsIsError(t *testing.T) {
 	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"pong"}]}`)
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fake)
 
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "svc", "tool": "ping",
-	}))
+	resp := serve(t, srv, callTool("svc__ping", nil))
 	if resp["error"] != nil {
 		t.Fatalf("expected tool result, not RPC error: %v", resp["error"])
 	}
@@ -52,9 +50,7 @@ func TestToolsCall_executionErrorIsIsError(t *testing.T) {
 	fake := fakeConnWithError("errTool")
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fake)
 
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "svc", "tool": "errTool", "params": map[string]any{},
-	}))
+	resp := serve(t, srv, callTool("svc__errTool", map[string]any{}))
 	if resp["error"] != nil {
 		t.Errorf("tool execution error must NOT be a JSON-RPC error, got: %v", resp["error"])
 	}

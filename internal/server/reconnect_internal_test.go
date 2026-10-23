@@ -28,8 +28,8 @@ func newInternalTestServer(t *testing.T) *Server {
 
 func registeredToolNames(srv *Server) []string {
 	var names []string
-	for _, e := range srv.reg.All() {
-		names = append(names, e.Name)
+	for _, e := range srv.reg.AllFull() {
+		names = append(names, e.FullName)
 	}
 	slices.Sort(names)
 	return names
@@ -104,8 +104,8 @@ func TestPublishReconnectedTools_usesReloadedAliases(t *testing.T) {
 	srv.publishReconnectedTools(upstreams[0], upstreams[0].conn, transport.ToolList{Tools: tools})
 
 	names := map[string]bool{}
-	for _, e := range srv.reg.All() {
-		names[e.Name] = true
+	for _, e := range srv.reg.AllFull() {
+		names[e.FullName] = true
 	}
 	if !names["gh.new_alias"] {
 		t.Errorf("reconnect should use the reloaded alias, got: %v", names)

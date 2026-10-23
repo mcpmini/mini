@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -37,7 +36,7 @@ func setupGitHubMCP(t *testing.T, ctx context.Context, token string) *server.Ser
 
 func ghTestDiscover(t *testing.T, srv *server.Server) {
 	t.Helper()
-	text := toolResultText(t, serve(t, srv, callTool("list", map[string]any{})))
+	text := resultJSONText(t, serve(t, srv, rpc("tools/list", nil)))
 	var tools []map[string]any
 	if err := json.Unmarshal([]byte(text), &tools); err != nil {
 		t.Fatalf("discover not JSON: %v\n%s", err, text)
@@ -49,42 +48,19 @@ func ghTestDiscover(t *testing.T, srv *server.Server) {
 
 func ghTestGetMe(t *testing.T, srv *server.Server) {
 	t.Helper()
-	text := toolResultText(t, serve(t, srv, callTool("call", map[string]any{
-		"server": "github", "tool": "get_me", "params": map[string]any{},
-	})))
+	text := toolResultText(t, serve(t, srv, callTool("github__get_me", map[string]any{})))
 	env := parseEnvelope(t, text)
 	if env["error"] != nil {
 		t.Errorf("expected ok=true, got: %v", env["ok"])
 	}
 }
 
-func ghTestBlockedOnExec(t *testing.T, srv *server.Server) {
-	t.Helper()
-	text := toolResultText(t, serve(t, srv, callTool("call", map[string]any{
-		"server": "github", "tool": "merge_pull_request",
-		"params": map[string]any{"owner": "x", "repo": "y", "pullNumber": 1},
-	})))
-	if !strings.Contains(text, "perm_call") {
-		t.Errorf("expected perm_call error, got: %s", text)
-	}
-}
-
-func ghTestSearchIssueTools(t *testing.T, srv *server.Server) {
-	t.Helper()
-	text := toolResultText(t, serve(t, srv, callTool("list", map[string]any{"query": "issue"})))
-	var tools []map[string]any
-	json.Unmarshal([]byte(text), &tools) //nolint:errcheck
-	if len(tools) == 0 {
-		t.Error("expected at least one issue tool")
-	}
-}
-
 func ghTestListIssues(t *testing.T, srv *server.Server) {
 	t.Helper()
-	text := toolResultText(t, serve(t, srv, callTool("call", map[string]any{
-		"server": "github", "tool": "list_issues",
-		"params": map[string]any{"owner": "anthropics", "repo": "claude-code"},
-	})))
+	text := toolResultText(
+		t,
+		serve(t, srv, callTool("github__list_issues", map[string]any{"owner": "anthropics", "repo": "claude-code"})),
+	)
 	if env := parseEnvelope(t, text); env["error"] != nil {
 		t.Errorf("expected ok=true, got: %v", env["ok"])
 	}
@@ -109,10 +85,8 @@ func TestWithGitHubMCP(t *testing.T) {
 	defer cancel()
 	srv := setupGitHubMCP(t, ctx, token)
 	t.Run("discover lists github tools", func(t *testing.T) { ghTestDiscover(t, srv) })
-	t.Run("search for issue tools", func(t *testing.T) { ghTestSearchIssueTools(t, srv) })
 	t.Run("get_me returns envelope", func(t *testing.T) { ghTestGetMe(t, srv) })
 	t.Run("list_issues returns envelope", func(t *testing.T) { ghTestListIssues(t, srv) })
-	t.Run("create_issue blocked on execute", func(t *testing.T) { ghTestBlockedOnExec(t, srv) })
 	t.Run("configure status shows github", func(t *testing.T) { ghTestStatusShowsGitHub(t, srv) })
 }
 

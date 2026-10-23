@@ -4,13 +4,11 @@ package server_test
 
 import (
 	"encoding/json"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
 )
@@ -28,17 +26,8 @@ type toolSurface struct {
 }
 
 var missingToolSurfaces = []toolSurface{
-	{name: "call", call: func(t *testing.T, srv *server.Server) map[string]any {
-		return serve(t, srv, callTool("call", map[string]any{"server": "svc", "tool": "ping"}))
-	}},
-	{name: "perm_call", call: func(t *testing.T, srv *server.Server) map[string]any {
-		return serve(t, srv, callTool("perm_call", map[string]any{"server": "svc", "tool": "ping"}))
-	}},
-	{name: "list detail", call: func(t *testing.T, srv *server.Server) map[string]any {
-		return serve(t, srv, callTool("list", map[string]any{"tool": "svc.ping", "detail": true}))
-	}},
 	{name: "proxy call", call: func(t *testing.T, srv *server.Server) map[string]any {
-		return serveProxy(t, srv, callTool("svc__ping", map[string]any{}))
+		return serve(t, srv, callTool("svc__ping", nil))
 	}},
 }
 
@@ -99,7 +88,7 @@ func TestMissingTool_aConfiguredServerThatIsNotConnectedSaysWhy(t *testing.T) {
 
 			got := missingToolErrorOf(
 				t,
-				serve(t, r.srv, callTool("call", map[string]any{"server": "svc", "tool": "ping"})),
+				serve(t, r.srv, callTool("svc__ping", nil)),
 			)
 
 			if got.Error != tc.want || got.Retryable != tc.wantRetryable || got.Action != tc.wantAction {
@@ -145,10 +134,6 @@ func TestMissingTool_staysNotFoundWhenTheServerCanNotExplainIt(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := settledStartup(t, httpServer("ready", newMCPTestServer(t, pingTools).URL)).srv
 
-			compact := serve(t, srv, callTool("call", map[string]any{"server": tc.server, "tool": "missing"}))
-			if got := missingToolErrorOf(t, compact); got.Error != "not_found" {
-				t.Errorf("compact call error = %+v, want not_found", got)
-			}
 			proxy := serveProxy(t, srv, callTool(tc.server+"__missing", map[string]any{}))
 			if code := rpcErrorCode(proxy); code != -32602 {
 				t.Errorf("proxy call = %v, want JSON-RPC invalid params", proxy)
@@ -161,23 +146,4 @@ func rpcErrorCode(resp map[string]any) float64 {
 	errVal, _ := resp["error"].(map[string]any)
 	code, _ := errVal["code"].(float64)
 	return code
-}
-
-func TestMissingTool_aNotReadyErrorFollowsTheConfiguredResponseFormatOnEveryCompactSurface(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.DangerousAllowPrivateURLs = true
-	cfg.ResponseFormat = config.FormatToon
-	srv := newTestServer(t, server.Params{Config: cfg, Logger: slog.New(discardLogs()), Clock: clock.NewFake()})
-	url, _ := gatedUpstream(t)
-	srv.ConnectUpstreams(t.Context(), []config.ServerConfig{httpServer("svc", url)})
-
-	for _, surface := range missingToolSurfaces {
-		if surface.name == "proxy call" {
-			continue
-		}
-		text := toolResultText(t, surface.call(t, srv))
-		if strings.HasPrefix(strings.TrimSpace(text), "{") || !strings.Contains(text, "server_starting") {
-			t.Errorf("%s returned %q, want a TOON server_starting error", surface.name, text)
-		}
-	}
 }

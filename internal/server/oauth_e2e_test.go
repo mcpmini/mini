@@ -230,7 +230,7 @@ func TestStartAuth_e2e_toolsAccessibleAfterAuth(t *testing.T) {
 			MCPURL:     mcpSrv.URL,
 		},
 	)
-	authText := toolResultText(
+	authText := resultJSONText(
 		t,
 		serve(t, srv, callTool("config", map[string]any{"action": "start_auth", "server": "mysvc"})),
 	)
@@ -238,7 +238,7 @@ func TestStartAuth_e2e_toolsAccessibleAfterAuth(t *testing.T) {
 	json.Unmarshal([]byte(authText), &authResult)
 	authtest.CompleteAuthorization(t, authResult["url"].(string), "test-code")
 	for range 100 {
-		listText := toolResultText(t, serve(t, srv, callTool("list", map[string]any{})))
+		listText := resultJSONText(t, serve(t, srv, rpc("tools/list", nil)))
 		var tools []any
 		if err := json.Unmarshal([]byte(listText), &tools); err == nil && len(tools) == 2 {
 			return
@@ -368,7 +368,7 @@ func TestStartAuth_e2e_withStaleToken_browserTokenUsedOnFirstRequest(t *testing.
 	mu.Unlock()
 	unauthorizedAfterAuth.Store(0)
 
-	authText := toolResultText(
+	authText := resultJSONText(
 		t,
 		serve(t, mini, callTool("config", map[string]any{"action": "start_auth", "server": "srv"})),
 	)
@@ -380,7 +380,7 @@ func TestStartAuth_e2e_withStaleToken_browserTokenUsedOnFirstRequest(t *testing.
 
 	waitForServerConnected(t, mini, "srv")
 
-	serve(t, mini, callTool("list", map[string]any{}))
+	serve(t, mini, rpc("tools/list", nil))
 
 	if n := unauthorizedAfterAuth.Load(); n > 0 {
 		t.Errorf("browser token caused %d unexpected 401 responses after auth, want 0", n)

@@ -7,11 +7,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
-	"log/slog"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/clock"
+
 	"github.com/mcpmini/mini/internal/transport"
 	"github.com/mcpmini/mini/internal/version"
 )
@@ -89,11 +88,7 @@ func TestToolCallRequestMRTRUsesItsDeclaredVersion(t *testing.T) {
 }
 
 func TestRequestVersionControlsDispatchAndResultDecoration(t *testing.T) {
-	s := &Server{
-		logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
-		toolMode:    transport.ToolModeCompact,
-		toolSchemas: []map[string]any{},
-	}
+	s := newInternalTestServer(t)
 	session := newSession(clock.NewFake())
 	modern := transport.Request{
 		JsonRPC: transport.JsonRPCVersion,
@@ -187,7 +182,7 @@ func TestAddModernResultFieldsDecoratesPerMethod(t *testing.T) {
 }
 
 func TestActivateModern(t *testing.T) {
-	s := newRouteTestServer(transport.ToolModeCompact)
+	s := newRouteTestServer()
 	t.Run("stdio session needs no initialize", func(t *testing.T) {
 		session := newSession(clock.NewFake())
 		s.activateModern(session)
@@ -196,9 +191,9 @@ func TestActivateModern(t *testing.T) {
 		default:
 			t.Fatal("modern request left a stdio session waiting for initialize")
 		}
-		if !session.clientReady.Load() || session.toolMode() != transport.ToolModeCompact || !session.modern.Load() {
-			t.Fatalf("activated session: ready=%v mode=%v modern=%v, want ready, the server's mode, modern",
-				session.clientReady.Load(), session.toolMode(), session.modern.Load())
+		if !session.clientReady.Load() || !session.modern.Load() {
+			t.Fatalf("activated session: ready=%v modern=%v, want ready, modern",
+				session.clientReady.Load(), session.modern.Load())
 		}
 	})
 	t.Run("HTTP session keeps its own lifecycle", func(t *testing.T) {
@@ -229,22 +224,5 @@ func TestModernVersionError(t *testing.T) {
 	if resp := modernVersionError(legacy); resp == nil || resp.ID != 4 ||
 		resp.Error.Code != transport.CodeUnsupportedProtocolVersion {
 		t.Fatalf("legacy version in request metadata = %+v, want unsupported protocol version for id 4", resp)
-	}
-}
-
-func TestHandleDiscoverFollowsSessionToolMode(t *testing.T) {
-	for _, tc := range []struct {
-		session, server transport.ToolMode
-		want            string
-	}{
-		{session: transport.ToolModeProxy, server: transport.ToolModeCompact, want: proxyInitInstructions},
-		{session: transport.ToolModeCompact, server: transport.ToolModeProxy, want: compactInitInstructions},
-	} {
-		session := newSession(clock.NewFake())
-		session.setToolModeOnce(tc.session)
-		if got := newRouteTestServer(tc.server).handleDiscover(session).Instructions; got != tc.want {
-			t.Errorf("%v session on a %v server: discover instructions = %q, want %q",
-				tc.session, tc.server, got, tc.want)
-		}
 	}
 }

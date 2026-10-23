@@ -31,10 +31,10 @@ func TestQueueDepth_rejectsWhenFull(t *testing.T) {
 	slow := newBlockingConn(blocked, release)
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc", MaxPendingRequests: 1}, slow)
 	go func() {
-		serve(t, srv, callTool("call", map[string]any{"server": "svc", "tool": "op", "params": map[string]any{}}))
+		serve(t, srv, callTool("svc__op", map[string]any{}))
 	}()
 	<-blocked
-	resp := serve(t, srv, callTool("call", map[string]any{"server": "svc", "tool": "op", "params": map[string]any{}}))
+	resp := serve(t, srv, callTool("svc__op", map[string]any{}))
 	text := toolResultText(t, resp)
 	var env map[string]any
 	if err := json.Unmarshal([]byte(text), &env); err != nil {
@@ -62,7 +62,7 @@ func TestQueueDepth_zeroMeansUnlimited(t *testing.T) {
 		resp := serve(
 			t,
 			srv,
-			callTool("call", map[string]any{"server": "svc", "tool": "op", "params": map[string]any{}}),
+			callTool("svc__op", map[string]any{}),
 		)
 		text := toolResultText(t, resp)
 		var env map[string]any
@@ -77,7 +77,7 @@ func TestQueueDepth_zeroMeansUnlimited(t *testing.T) {
 
 func assertQueueCallOK(t *testing.T, srv *server.Server, callN int) {
 	t.Helper()
-	resp := serve(t, srv, callTool("call", map[string]any{"server": "svc", "tool": "op", "params": map[string]any{}}))
+	resp := serve(t, srv, callTool("svc__op", map[string]any{}))
 	var env map[string]any
 	json.Unmarshal([]byte(toolResultText(t, resp)), &env)
 	if env["error"] != nil {
@@ -109,13 +109,13 @@ func TestQueueDepth_timeoutReleasesSlot(t *testing.T) {
 	ctx := context.Background()
 	slow := &ctxAwareConnection{tools: []transport.ToolDefinition{{Name: "op", InputSchema: json.RawMessage(`{}`)}}}
 	srv.AddConnection(ctx, config.ServerConfig{Name: "svc", MaxPendingRequests: 1, ToolTimeout: "50ms"}, slow)
-	serve(t, srv, callTool("call", map[string]any{"server": "svc", "tool": "op", "params": map[string]any{}}))
+	serve(t, srv, callTool("svc__op", map[string]any{}))
 	slow2 := &ctxAwareConnection{
 		tools:  []transport.ToolDefinition{{Name: "op", InputSchema: json.RawMessage(`{}`)}},
 		result: toolJSON(`{"result":"ok"}`),
 	}
 	srv.AddConnection(ctx, config.ServerConfig{Name: "svc2", MaxPendingRequests: 1}, slow2)
-	resp := serve(t, srv, callTool("call", map[string]any{"server": "svc2", "tool": "op", "params": map[string]any{}}))
+	resp := serve(t, srv, callTool("svc2__op", map[string]any{}))
 	var env map[string]any
 	json.Unmarshal([]byte(toolResultText(t, resp)), &env)
 	if env["error"] != nil {
