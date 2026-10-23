@@ -248,7 +248,7 @@ func testStdioDiscoveryResult(t *testing.T, p stdioDiscoveryResultParams) {
 	} else if err != nil || !conn.isModern() {
 		t.Fatalf("negotiate = %v, modern=%v; want modern discovery", err, conn.isModern())
 	}
-	methods := receiveMethods(seen, len(replies))
+	methods := receiveMethodsWithinASecond(seen, len(replies))
 	if len(methods) != len(replies) {
 		t.Fatalf("discovery sent %v, want %d requests", methods, len(replies))
 	}

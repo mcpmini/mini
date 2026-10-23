@@ -61,7 +61,7 @@ func TestStdioDiscoveryFallsBackToLegacy(t *testing.T) {
 				t.Fatalf("negotiate legacy server: %v", err)
 			}
 			want := []string{"server/discover", "initialize", NotificationInitialized}
-			if got := receiveMethods(seen, len(want)); !slices.Equal(got, want) {
+			if got := receiveMethodsWithinASecond(seen, len(want)); !slices.Equal(got, want) {
 				t.Fatalf("requests = %v, want %v", got, want)
 			}
 		})
@@ -136,7 +136,6 @@ func TestStdioDiscoveryExplicitRejectionFailsWithoutInitialize(t *testing.T) {
 	}
 }
 
-// exitedBeforeSetup restarts a server only when its failure isn't an explicit modern refusal.
 func TestStdioDiscoveryRefusalsAreExplicit(t *testing.T) {
 	conn := newWriteOnlyConn(discardWriteCloser{Writer: io.Discard})
 	rejected := func(code int) func() error {
@@ -176,7 +175,7 @@ func TestStdioDiscoveryRetriesSupportedVersionErrorOnce(t *testing.T) {
 		t.Fatalf("negotiate: %v", err)
 	}
 	want := []string{"server/discover", "server/discover"}
-	if got := receiveMethods(seen, len(want)); !slices.Equal(got, want) || !conn.isModern() {
+	if got := receiveMethodsWithinASecond(seen, len(want)); !slices.Equal(got, want) || !conn.isModern() {
 		t.Fatalf("requests = %v, modern = %v; want one corrected discovery and modern mode", got, conn.isModern())
 	}
 }
@@ -267,8 +266,7 @@ func replyError(serverW io.Writer, code int, data json.RawMessage) func(Request)
 
 func noReply(Request) {}
 
-// Returns early with what arrived, so a missing request can't hang the test.
-func receiveMethods(seen <-chan Request, n int) []string {
+func receiveMethodsWithinASecond(seen <-chan Request, n int) []string {
 	methods := make([]string, 0, n)
 	for range n {
 		select {
