@@ -143,3 +143,99 @@ func TestRequestVersionControlsDispatchAndResultDecoration(t *testing.T) {
 		t.Fatalf("legacy tools/list inherited modern result fields: %s", legacyResponse.Result)
 	}
 }
+
+func TestAddModernResultFieldsRejectsNonObjectResults(t *testing.T) {
+	for _, raw := range []string{`[1]`, `null`, `"text"`, `{"_meta":[]}`, `{"_meta":"x"}`} {
+		t.Run(raw, func(t *testing.T) {
+			if got, err := addModernResultFields("tools/call", json.RawMessage(raw)); err == nil {
+				t.Fatalf("decorated non-object result %s as %v, want an error", raw, got)
+			}
+		})
+	}
+}
+
+func TestAddModernResultFieldsDecoratesPerMethod(t *testing.T) {
+	decorate := func(method, raw string) map[string]json.RawMessage {
+		t.Helper()
+		result, err := addModernResultFields(method, json.RawMessage(raw))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result.(map[string]json.RawMessage)
+	}
+	t.Run("only tools/list is cacheable", func(t *testing.T) {
+		fields := decorate("ping", `{}`)
+		if string(fields["resultType"]) != `"complete"` || fields["ttlMs"] != nil || fields["cacheScope"] != nil {
+			t.Fatalf("ping result = %v, want resultType only", fields)
+		}
+	})
+	t.Run("tools/list keeps its own fields and gains the missing ones", func(t *testing.T) {
+		fields := decorate("tools/list", `{"resultType":"complete","ttlMs":5000}`)
+		if string(fields["ttlMs"]) != `5000` || string(fields["cacheScope"]) != `"private"` {
+			t.Fatalf("tools/list result = %v, want ttlMs 5000 kept and cacheScope added", fields)
+		}
+	})
+	t.Run("null _meta gains the server identity", func(t *testing.T) {
+		var meta map[string]json.RawMessage
+		if err := json.Unmarshal(decorate("ping", `{"_meta":null}`)["_meta"], &meta); err != nil {
+			t.Fatal(err)
+		}
+		if meta["io.modelcontextprotocol/serverInfo"] == nil {
+			t.Fatalf("_meta = %v, want mini's server identity", meta)
+		}
+	})
+}
+
+func TestActivateModern(t *testing.T) {
+	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), toolMode: transport.ToolModeCompact}
+	t.Run("stdio session needs no initialize", func(t *testing.T) {
+		session := newSession(clock.NewFake())
+		s.activateModern(session)
+		select {
+		case <-session.initDone:
+		default:
+			t.Fatal("modern request left a stdio session waiting for initialize")
+		}
+		if !session.clientReady.Load() || session.toolMode() != transport.ToolModeCompact || !session.modern.Load() {
+			t.Fatalf("activated session: ready=%v mode=%v modern=%v, want ready, the server's mode, modern",
+				session.clientReady.Load(), session.toolMode(), session.modern.Load())
+		}
+	})
+	t.Run("HTTP session keeps its own lifecycle", func(t *testing.T) {
+		session := newSession(clock.NewFake())
+		session.httpSession.Store(true)
+		s.activateModern(session)
+		select {
+		case <-session.initDone:
+			t.Fatal("modern request initialized an HTTP session")
+		default:
+		}
+		if session.clientReady.Load() {
+			t.Fatal("modern request marked an HTTP session ready for notifications")
+		}
+	})
+}
+
+func TestModernVersionError(t *testing.T) {
+	request := func(params string) transport.Request {
+		return transport.Request{JsonRPC: transport.JsonRPCVersion, ID: 4, Params: json.RawMessage(params)}
+	}
+	for _, params := range []string{`{}`, `{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}`} {
+		if resp := modernVersionError(request(params)); resp != nil {
+			t.Errorf("params %s rejected: %+v", params, resp.Error)
+		}
+	}
+	legacy := request(`{"_meta":{"io.modelcontextprotocol/protocolVersion":"` + transport.LatestLegacyVersion + `"}}`)
+	if resp := modernVersionError(legacy); resp == nil || resp.ID != 4 ||
+		resp.Error.Code != transport.CodeUnsupportedProtocolVersion {
+		t.Fatalf("legacy version in request metadata = %+v, want unsupported protocol version for id 4", resp)
+	}
+}
+
+func TestHandleDiscoverFollowsSessionToolMode(t *testing.T) {
+	session := newSession(clock.NewFake())
+	session.setToolModeOnce(transport.ToolModeCompact)
+	if got := (&Server{}).handleDiscover(session).Instructions; got != compactInitInstructions {
+		t.Fatalf("compact session discover instructions = %q", got)
+	}
+}
