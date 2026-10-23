@@ -5,6 +5,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -15,20 +16,22 @@ import (
 
 func TestWaitOnListenMarksClientReadyOnlyForToolChanges(t *testing.T) {
 	for _, wantsTools := range []bool{false, true} {
-		session := newSession(clock.NewFake())
-		session.markInitialized()
-		var wg sync.WaitGroup
-		ctx, cancel := context.WithCancel(context.Background())
-		(&Server{}).waitOnListen(ctx, handleScannedLineParams{session: session, writeOut: func(any) {}, wg: &wg},
-			listenSubscription{
-				id:            json.RawMessage(`1`),
-				notifications: transport.ListenNotifications{ToolsListChanged: wantsTools},
-			})
-		if got := session.clientReady.Load(); got != wantsTools {
-			t.Errorf("listen for tool changes=%v left clientReady=%v", wantsTools, got)
-		}
-		cancel()
-		wg.Wait()
+		t.Run(fmt.Sprintf("tool changes %v", wantsTools), func(t *testing.T) {
+			session := newSession(clock.NewFake())
+			session.markInitialized()
+			var wg sync.WaitGroup
+			ctx, cancel := context.WithCancel(context.Background())
+			(&Server{}).waitOnListen(ctx, handleScannedLineParams{session: session, writeOut: func(any) {}, wg: &wg},
+				listenSubscription{
+					id:            json.RawMessage(`1`),
+					notifications: transport.ListenNotifications{ToolsListChanged: wantsTools},
+				})
+			if got := session.clientReady.Load(); got != wantsTools {
+				t.Errorf("listen for tool changes=%v left clientReady=%v", wantsTools, got)
+			}
+			cancel()
+			wg.Wait()
+		})
 	}
 }
 

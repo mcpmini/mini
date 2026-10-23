@@ -221,7 +221,16 @@ func TestSessionNotifyForwarder(t *testing.T) {
 		session := newSession(clock.NewFake())
 		session.closeToolsChangedStreams()
 		stop := startSessionNotifyForwarder(session, func(message any) { t.Errorf("forwarded %v", message) })
-		stop()
+		stopped := make(chan struct{})
+		go func() {
+			stop()
+			close(stopped)
+		}()
+		select {
+		case <-stopped:
+		case <-time.After(5 * time.Second):
+			t.Fatal("stopping the forwarder of a closed session never returned")
+		}
 	})
 }
 
