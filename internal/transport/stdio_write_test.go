@@ -3,7 +3,9 @@
 package transport
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -12,6 +14,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/mcpmini/mini/internal/clock"
 )
 
 func TestStdioWriteCancellationInterruptsABlockedPipeWrite(t *testing.T) {
@@ -213,3 +217,90 @@ type failingWriteCloser struct{}
 
 func (failingWriteCloser) Write([]byte) (int, error) { return 0, errors.New("broken pipe") }
 func (failingWriteCloser) Close() error              { return nil }
+
+const modernContinuationCall = `{"name":"confirm","arguments":{},"inputResponses":{"r1":{"accepted":true}},` +
+	`"requestState":9007199254740993,"custom":1,` +
+	`"_meta":{"io.modelcontextprotocol/clientCapabilities":{"elicitation":{"form":{}}},"unknown":true}}`
+
+func TestStdioModernCallKeepsContinuationFieldsAndMetadata(t *testing.T) {
+	conn, serverW, serverR := makePipeConn(t)
+	conn.setModern(ModernVersions[0])
+	seen := scriptStdioUpstream(serverW, serverR, replyResult(serverW, json.RawMessage(`{"ok":true}`)))
+	if _, err := conn.Call(context.Background(), "tools/call", json.RawMessage(modernContinuationCall)); err != nil {
+		t.Fatalf("Call: %v", err)
+	}
+	call := <-seen
+	assertRequestMeta(t, requestMetaParams{
+		Params:          call.Params,
+		ProtocolVersion: ModernVersions[0],
+		Elicitation:     true,
+	})
+	kept := []string{
+		`"inputResponses":{"r1":{"accepted":true}}`,
+		`"requestState":9007199254740993`,
+		`"custom":1`,
+		`"unknown":true`,
+	}
+	for _, raw := range kept {
+		if !strings.Contains(string(call.Params), raw) {
+			t.Errorf("modern call params %s do not contain %s", call.Params, raw)
+		}
+	}
+}
+
+func TestStdioModernCancellationTargetsSentRequest(t *testing.T) {
+	conn, _, serverR := makePipeConn(t)
+	conn.setModern(ModernVersions[0])
+	scanner := bufio.NewScanner(serverR)
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan error, 1)
+	go func() {
+		_, err := conn.Call(ctx, "tools/call", json.RawMessage(`{"name":"slow","arguments":{}}`))
+		result <- err
+	}()
+	call := readScannerRequest(t, scanner)
+	cancel()
+	notice := readScannerRequest(t, scanner)
+	var cancelled CancelledParams
+	if notice.Method != NotificationCancelled || json.Unmarshal(notice.Params, &cancelled) != nil ||
+		!sameJSONID(cancelled.RequestID, call.ID) {
+		t.Fatalf(
+			"after cancelling call %v mini sent %q %s, want a cancel for that call",
+			call.ID,
+			notice.Method,
+			notice.Params,
+		)
+	}
+	if err := <-result; !errors.Is(err, context.Canceled) {
+		t.Fatalf("Call error = %v, want context.Canceled", err)
+	}
+}
+
+func TestStdioCancellationGivesUpOnItsTurnToWrite(t *testing.T) {
+	conn := newWriteOnlyConn(discardWriteCloser{Writer: io.Discard})
+	fakeClock := clock.NewFake()
+	conn.clock = fakeClock
+	if err := conn.lockWrite(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer conn.unlockWrite()
+	sent := make(chan struct{})
+	go func() {
+		conn.cancelUpstreamRequest(context.Background(), 1)
+		close(sent)
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := fakeClock.BlockUntilContext(ctx, 1); err != nil {
+		t.Fatal(err)
+	}
+	fakeClock.Advance(stdioCancelWriteTimeout)
+	select {
+	case <-sent:
+	case <-time.After(time.Second):
+		t.Fatal("the cancellation kept waiting behind another write")
+	}
+	if conn.Health(context.Background()) != nil {
+		t.Fatal("a cancellation that never started writing ended the connection")
+	}
+}

@@ -2,7 +2,12 @@
 // MCP uses JSON-RPC 2.0 over stdio (or HTTP/SSE).
 package transport
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+
+	"github.com/mcpmini/mini/internal/version"
+)
 
 const JsonRPCVersion = "2.0"
 
@@ -137,4 +142,26 @@ func (m ToolMode) String() string {
 		return "compact"
 	}
 	return "proxy"
+}
+
+func newInitializeParams() InitializeParams {
+	return InitializeParams{
+		ProtocolVersion: LatestLegacyVersion,
+		Capabilities:    map[string]any{},
+		ClientInfo:      ClientInfo{Name: "mini", Version: version.Version},
+	}
+}
+
+func parseInitializeResult(raw json.RawMessage) (InitializeResult, error) {
+	var result InitializeResult
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return InitializeResult{}, fmt.Errorf("parse initialize: %w", err)
+	}
+	if !IsLegacyVersion(result.ProtocolVersion) {
+		return InitializeResult{}, fmt.Errorf(
+			"upstream negotiated unsupported protocol version %q",
+			result.ProtocolVersion,
+		)
+	}
+	return result, nil
 }
