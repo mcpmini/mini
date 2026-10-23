@@ -28,8 +28,9 @@ func TestParseHeaderParametersAcceptsAnnotatedPrimitives(t *testing.T) {
 	}
 }
 
-func TestParseHeaderParametersWithoutSchema(t *testing.T) {
-	for _, raw := range []string{``, `null`, `{"type":"object"}`} {
+func TestParseHeaderParametersWithoutAnnotations(t *testing.T) {
+	property := `{"type":"object","properties":{"x-mcp-header":{"type":"string"}}}`
+	for _, raw := range []string{``, `null`, `{"type":"object"}`, property} {
 		if params, reason := parseHeaderParameters(json.RawMessage(raw)); reason != "" || len(params) != 0 {
 			t.Errorf("schema %q = %+v, %q; want no headers and no error", raw, params, reason)
 		}
@@ -45,6 +46,15 @@ func TestParseHeaderParametersRejectsInvalidSchemas(t *testing.T) {
 			"b":{"type":"object","properties":{"c":{"type":"string","x-mcp-header":"ID"}}}}}`,
 		"under $defs":        `{"$defs":{"p":{"type":"string","x-mcp-header":"P"}}}`,
 		"under nested oneOf": `{"properties":{"p":{"type":"object","properties":{"q":{"oneOf":[{"x-mcp-header":"Q"}]}}}}}`,
+		"under anyOf":        `{"properties":{"p":{"anyOf":[{"type":"string","x-mcp-header":"P"}]}}}`,
+		"under items":        `{"properties":{"rows":{"type":"array","items":{"type":"string","x-mcp-header":"P"}}}}`,
+		"on the root":        `{"type":"string","x-mcp-header":"P"}`,
+		"number type":        `{"properties":{"p":{"type":"number","x-mcp-header":"P"}}}`,
+		"missing type":       `{"properties":{"p":{"x-mcp-header":"P"}}}`,
+		"type list":          `{"properties":{"p":{"type":["string"],"x-mcp-header":"P"}}}`,
+		"space in name":      `{"properties":{"p":{"type":"string","x-mcp-header":"bad name"}}}`,
+		"case-insensitive duplicate": `{"properties":{"a":{"type":"string","x-mcp-header":"X"},
+			"b":{"type":"integer","x-mcp-header":"x"}}}`,
 	}
 	for name, schema := range tests {
 		t.Run(name, func(t *testing.T) {

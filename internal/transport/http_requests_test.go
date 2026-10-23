@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 )
@@ -324,7 +325,8 @@ func TestModernCallRejectsAnUnknownResultType(t *testing.T) {
 		writeRPCResult(t, rpcResultParams{Writer: w, ID: req.ID, Result: map[string]string{"resultType": "later"}})
 	}})
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
-	if result, err := conn.Call(t.Context(), "ping", nil); err == nil {
-		t.Fatalf("result %s with an unknown resultType was accepted", result)
+	result, err := conn.Call(t.Context(), "ping", nil)
+	if err == nil || !strings.Contains(err.Error(), `unknown resultType "later"`) {
+		t.Fatalf("Call = %s, %v; want an unknown resultType error", result, err)
 	}
 }

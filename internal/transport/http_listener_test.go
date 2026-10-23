@@ -467,11 +467,7 @@ func TestRestartListenerWithoutListenStopsTheRunningListener(t *testing.T) {
 		conn.restartListener(false)
 		close(restarted)
 	}()
-	select {
-	case <-restarted:
-	case <-time.After(5 * time.Second):
-		t.Fatal("restartListener did not stop the running listener")
-	}
+	waitForListenerSignal(t, restarted, "restartListener did not stop the running listener")
 	if !running.stopped() || conn.listener != nil {
 		t.Fatalf("old listener stopped = %v, current listener = %v; want it stopped and none started",
 			running.stopped(), conn.listener)
