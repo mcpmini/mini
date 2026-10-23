@@ -61,7 +61,7 @@ func TestStdioDiscoveryFallsBackToLegacy(t *testing.T) {
 				t.Fatalf("negotiate legacy server: %v", err)
 			}
 			want := []string{"server/discover", "initialize", NotificationInitialized}
-			if got := receiveMethods(seen, len(want)); !slices.Equal(got, want) {
+			if got := receiveMethodsWithinASecond(seen, len(want)); !slices.Equal(got, want) {
 				t.Fatalf("requests = %v, want %v", got, want)
 			}
 		})
@@ -136,6 +136,32 @@ func TestStdioDiscoveryExplicitRejectionFailsWithoutInitialize(t *testing.T) {
 	}
 }
 
+func TestStdioDiscoveryRefusalsAreExplicit(t *testing.T) {
+	conn := newWriteOnlyConn(discardWriteCloser{Writer: io.Discard})
+	rejected := func(code int) func() error {
+		return func() error {
+			_, _, err := conn.classifyDiscoveryRPCError(t.Context(), &RPCError{Code: code}, ModernVersions[0])
+			return err
+		}
+	}
+	refusals := map[string]func() error{
+		"header mismatch":   rejected(CodeHeaderMismatch),
+		"no shared version": rejected(CodeUnsupportedProtocolVersion),
+		"legacy-only result": func() error {
+			_, err := classifyStdioDiscover(json.RawMessage(`{"supportedVersions":["2025-11-25"]}`), ModernVersions[0])
+			return err
+		},
+	}
+	for name, refuse := range refusals {
+		t.Run(name, func(t *testing.T) {
+			var explicit explicitModernProbeError
+			if err := refuse(); !errors.As(err, &explicit) {
+				t.Fatalf("error = %v, want an explicit modern refusal", err)
+			}
+		})
+	}
+}
+
 func TestStdioDiscoveryRetriesSupportedVersionErrorOnce(t *testing.T) {
 	conn, serverW, serverR := makePipeConn(t)
 	supported := json.RawMessage(`{"requested":"2026-07-28","supported":["2026-07-28"]}`)
@@ -143,11 +169,13 @@ func TestStdioDiscoveryRetriesSupportedVersionErrorOnce(t *testing.T) {
 		replyError(serverW, CodeUnsupportedProtocolVersion, supported),
 		replyResult(serverW, DiscoverResult{SupportedVersions: ModernVersions}),
 	)
-	if _, err := conn.negotiate(context.Background()); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := conn.negotiate(ctx); err != nil {
 		t.Fatalf("negotiate: %v", err)
 	}
 	want := []string{"server/discover", "server/discover"}
-	if got := receiveMethods(seen, len(want)); !slices.Equal(got, want) || !conn.isModern() {
+	if got := receiveMethodsWithinASecond(seen, len(want)); !slices.Equal(got, want) || !conn.isModern() {
 		t.Fatalf("requests = %v, modern = %v; want one corrected discovery and modern mode", got, conn.isModern())
 	}
 }
@@ -238,10 +266,15 @@ func replyError(serverW io.Writer, code int, data json.RawMessage) func(Request)
 
 func noReply(Request) {}
 
-func receiveMethods(seen <-chan Request, n int) []string {
+func receiveMethodsWithinASecond(seen <-chan Request, n int) []string {
 	methods := make([]string, 0, n)
 	for range n {
-		methods = append(methods, (<-seen).Method)
+		select {
+		case request := <-seen:
+			methods = append(methods, request.Method)
+		case <-time.After(time.Second):
+			return methods
+		}
 	}
 	return methods
 }

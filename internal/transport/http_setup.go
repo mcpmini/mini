@@ -191,71 +191,44 @@ func (c *HTTPConnection) probe(ctx context.Context) (json.RawMessage, error) {
 	return c.rpc(ctx, "server/discover", params)
 }
 
+// httpDiscoverPolicy falls back on any version mismatch, even after -32022 where the spec says not
+// to: servers that list only legacy versions (Atlassian v2) still accept initialize over HTTP.
+// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/80041ab0a139a8f4fb3adbc99f7ae9113ea59671/docs/specification/2026-07-28/basic/versioning.mdx?plain=1#L143-L146
+var httpDiscoverPolicy = discoverPolicy{}
+
 func classifyDiscover(result json.RawMessage, err error) (probeVerdict, error) {
 	if err == nil {
-		return classifyDiscoverResult(result)
+		return classifyDiscoverResult(result, httpDiscoverPolicy)
 	}
 	return classifyDiscoverError(err)
 }
 
 func classifyDiscoverError(err error) (probeVerdict, error) {
 	// The spec reads anything other than a recognized modern answer as legacy, including a reply that answers nothing.
+	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/80041ab0a139a8f4fb3adbc99f7ae9113ea59671/docs/specification/2026-07-28/basic/transports/streamable-http.mdx?plain=1#L663-L665
 	var unusable unusableResponseError
 	if errors.As(err, &unusable) {
-		return probeVerdict{era: EraLegacy}, nil
+		return legacyProbeVerdict()
 	}
 	var rpcErr *RPCError
 	if errors.As(err, &rpcErr) {
-		return classifyDiscoverRPC(rpcErr)
+		return classifyDiscoverRejection(rpcErr, httpDiscoverPolicy)
 	}
 	var statusErr *HTTPStatusError
 	if errors.As(err, &statusErr) {
 		if statusErr.RPC != nil {
-			return classifyDiscoverRPC(statusErr.RPC)
+			return classifyDiscoverRejection(statusErr.RPC, httpDiscoverPolicy)
 		}
 		if isLegacyProbeStatus(statusErr.StatusCode) {
-			return probeVerdict{era: EraLegacy}, nil
+			return legacyProbeVerdict()
 		}
 	}
 	return probeVerdict{}, err
 }
 
-func classifyDiscoverResult(result json.RawMessage) (probeVerdict, error) {
-	versions, recognized := discoverSupportedVersions(result)
-	if !recognized {
-		return legacyProbeVerdict()
-	}
-	verdict := modernVersionVerdict(versions)
-	if verdict.era != EraModern {
-		return verdict, nil
-	}
-	if err := requireCompleteResult(result, "server/discover"); err != nil {
-		return probeVerdict{}, err
-	}
-	var discovered DiscoverResult
-	if err := json.Unmarshal(result, &discovered); err != nil {
-		return legacyProbeVerdict()
-	}
-	verdict.listen = verdict.era == EraModern && discovered.Capabilities.ToolsListChanged()
-	return verdict, nil
-}
-
-func classifyDiscoverRPC(err *RPCError) (probeVerdict, error) {
-	if isModernRejection(err.Code) {
-		return probeVerdict{}, err
-	}
-	if err.Code != CodeUnsupportedProtocolVersion {
-		return probeVerdict{era: EraLegacy}, nil
-	}
-	data, ok := decodeUnsupportedVersionData(err.Data)
-	if !ok {
-		return probeVerdict{era: EraLegacy}, nil
-	}
-	// The spec says not to fall back after -32022, but servers that list only legacy versions here
-	// (Atlassian v2) still accept initialize.
-	return modernVersionVerdict(data.Supported), nil
-}
-
+// The spec falls back on a 4xx without a modern error body. 403, 408 and 429 are auth, timeout and
+// rate-limit failures, which say nothing about the server's protocol version.
+// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/80041ab0a139a8f4fb3adbc99f7ae9113ea59671/docs/specification/2026-07-28/basic/transports/versioning.mdx?plain=1#L169
 func isLegacyProbeStatus(status int) bool {
 	return status >= 400 && status < 500 && status != 403 && status != 408 && status != 429
 }
