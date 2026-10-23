@@ -32,6 +32,8 @@ func stdioAgent(name string, servers ...string) agents.Agent {
 }
 
 // pressing runs the background loads to completion first, as if they finished before the first key.
+// It drops what each key returns, so the checks a save starts race the keys after it; a test that
+// presses keys on Logins after a save uses pressingAndDelivering instead.
 func pressing(keys ...string) func(tea.Model) error {
 	return func(m tea.Model) error {
 		deliver(m, m.Init())
@@ -174,7 +176,9 @@ func TestRun_goingBackFromLoginsSyncsAgain(t *testing.T) {
 		Setup:       setupFor(configDir),
 		LoadCatalog: fromCatalog(c),
 		// Tick linear and save; Logins lists it; back, swap linear for sentry, save again, continue.
-		Program: pressing("space", "tab", "enter", "esc", "space", "down", "space", "tab", "enter", "enter", "enter"),
+		Program: pressingAndDelivering(
+			"space", "tab", "enter", "esc", "space", "down", "space", "tab", "enter", "tab", "enter", "enter",
+		),
 	})
 	if err != nil || !out.Saved {
 		t.Fatalf("Run = %+v, %v; want it finished", out, err)
@@ -230,7 +234,7 @@ func TestRun_theCatalogOffersOnlyServersMiniHasNot(t *testing.T) {
 		Params{
 			Setup:       setupFor(configDir),
 			LoadCatalog: fromCatalog(c),
-			Program:     pressing("space", "tab", "enter", "enter", "enter"),
+			Program:     pressingAndDelivering("space", "tab", "enter", "tab", "enter", "enter"),
 		},
 	)
 	if got := writtenNames(t, configDir); err != nil || !slices.Equal(got, []string{"linear", "sentry"}) {
@@ -261,7 +265,7 @@ func TestRun_withNothingToImport(t *testing.T) {
 			Params{
 				Setup:       setupFor(configDir),
 				LoadCatalog: fromCatalog(c),
-				Program:     pressing("space", "tab", "enter", "enter", "enter"),
+				Program:     pressingAndDelivering("space", "tab", "enter", "tab", "enter", "enter"),
 			},
 		)
 		if got := writtenNames(t, configDir); err != nil || !slices.Equal(got, []string{"sentry"}) {
