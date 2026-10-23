@@ -122,7 +122,7 @@ func TestRequestVersionControlsDispatchAndResultDecoration(t *testing.T) {
 		Method:  "server/discover",
 		Params:  json.RawMessage(`{}`),
 	}
-	if _, err := s.dispatch(context.Background(), legacyDiscover, session); !errors.Is(err, errMethodNotFound) {
+	if _, err := s.routeRequest(context.Background(), legacyDiscover, session); !errors.Is(err, errMethodNotFound) {
 		t.Fatalf("legacy discover after modern request error = %v, want method not found", err)
 	}
 	legacyList := transport.Request{
