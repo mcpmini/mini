@@ -243,7 +243,8 @@ func TestHandleDiscoverFollowsSessionToolMode(t *testing.T) {
 		session := newSession(clock.NewFake())
 		session.setToolModeOnce(tc.session)
 		if got := newRouteTestServer(tc.server).handleDiscover(session).Instructions; got != tc.want {
-			t.Errorf("%v session on a %v server: discover instructions = %q, want %q", tc.session, tc.server, got, tc.want)
+			t.Errorf("%v session on a %v server: discover instructions = %q, want %q",
+				tc.session, tc.server, got, tc.want)
 		}
 	}
 }
