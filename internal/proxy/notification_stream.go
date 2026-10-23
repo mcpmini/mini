@@ -182,8 +182,6 @@ func (s *notificationStream) consume(ctx context.Context, state linkState, done 
 	//nolint:errcheck // status and scan results determine handling; Close releases the response stream.
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		//nolint:errcheck // status already rejects this stream; draining only permits connection reuse.
-		io.Copy(io.Discard, resp.Body)
 		return
 	}
 	s.scan(resp.Body)

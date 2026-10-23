@@ -53,9 +53,11 @@ func SocketClient(socket string, timeout time.Duration) *http.Client {
 
 func socketTransport(socket string) *http.Transport {
 	return &http.Transport{
-		// A pooled connection to a daemon that has since exited can fail a POST with "server closed
-		// idle connection", which the proxy can't tell from a request the daemon received, so it
-		// never retries; a fresh dial to an exited daemon fails before sending and is retried.
+		// A reused connection to a daemon that has since exited fails a POST with "server closed idle
+		// connection", which can't be told apart from a request the daemon received, so the proxy
+		// can't retry it without risking a tool call running twice. Dialing per request makes an
+		// exited daemon fail at dial, before anything is sent, which is safe to retry. The cost is
+		// one local socket dial per message, microseconds next to the upstream call it carries.
 		DisableKeepAlives: true,
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			// network and address come from the request URL; ignored because the daemon listens on a Unix socket
