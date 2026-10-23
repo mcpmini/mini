@@ -2,66 +2,12 @@ package server
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 
 	"github.com/mcpmini/mini/internal/transport"
 	"github.com/mcpmini/mini/internal/version"
 )
-
-func (s *Session) acknowledgeListen(listen listenSubscription, cancel context.CancelFunc, writeOut func(any)) {
-	// Held across the write: a tool change written after the acknowledgement must find this listen.
-	s.listensMu.Lock()
-	defer s.listensMu.Unlock()
-	writeOut(transport.NewSubscriptionAck(listen.id, listen.notifications))
-	s.listens[string(listen.id)] = cancel
-	s.listenTools[string(listen.id)] = listen.notifications.ToolsListChanged
-}
-
-func (s *Session) removeListen(id json.RawMessage) {
-	s.listensMu.Lock()
-	delete(s.listens, string(id))
-	delete(s.listenTools, string(id))
-	s.listensMu.Unlock()
-}
-
-func (s *Session) writeTaggedToolsChanged(writeOut func(any)) {
-	s.listensMu.Lock()
-	defer s.listensMu.Unlock()
-	for id, wantsToolChanges := range s.listenTools {
-		if wantsToolChanges {
-			writeOut(transport.NewToolsListChangedNotification(json.RawMessage(id)))
-		}
-	}
-}
-
-func (s *Session) cancelListens() {
-	s.listensMu.Lock()
-	for _, cancel := range s.listens {
-		cancel()
-	}
-	s.listens = make(map[string]context.CancelFunc)
-	s.listenTools = make(map[string]bool)
-	s.listensMu.Unlock()
-}
-
-func (s *Server) handleModernLine(p handleScannedLineParams, line []byte) bool {
-	if len(peekRequestID(line)) == 0 {
-		return false
-	}
-	if peekMethod(line) == transport.MethodSubscriptionsListen {
-		var request struct {
-			Params json.RawMessage `json:"params"`
-		}
-		if json.Unmarshal(line, &request) != nil || !transport.HasModernRequestIntent(request.Params) {
-			return false
-		}
-		s.startListen(p.ctx, p, line)
-		return true
-	}
-	return false
-}
 
 func modernRequestVersion(line []byte) string {
 	var request struct {

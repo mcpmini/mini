@@ -141,7 +141,7 @@ func (s *Server) handleScannedLine(p handleScannedLineParams) {
 		return
 	}
 	line := bytes.Clone(p.rawLine)
-	if s.handleModernLine(p, line) {
+	if s.handleListenLine(p, line) {
 		return
 	}
 	method := peekMethod(line)
