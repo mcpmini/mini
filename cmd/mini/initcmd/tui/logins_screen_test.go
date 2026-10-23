@@ -895,7 +895,7 @@ func TestRun_aByHandServerPointsAtTheFileItWillHaveInMini(t *testing.T) {
 	token := catalog.Entry{Name: "github", URL: "https://mcp.github.example/mcp", Auth: catalog.AuthToken}
 	var view string
 	program := func(m tea.Model) error {
-		pressingAndDelivering("space", "tab", "enter")(m)
+		pressing("space", "tab", "enter")(m)
 		view = shown(m.(*app))
 		return nil
 	}

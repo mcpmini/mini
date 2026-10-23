@@ -31,16 +31,21 @@ func stdioAgent(name string, servers ...string) agents.Agent {
 	}}
 }
 
-// pressing runs the background loads to completion first, as if they finished before the first key.
-// It drops what each key returns, so the checks a save starts race the keys after it; a test that
-// presses keys on Logins after a save uses pressingAndDelivering instead.
 func pressing(keys ...string) func(tea.Model) error {
+	return pressingThen(deliver, keys)
+}
+
+func pressingWithoutWaiting(keys ...string) func(tea.Model) error {
+	return pressingThen(func(tea.Model, tea.Cmd) {}, keys)
+}
+
+func pressingThen(handle func(tea.Model, tea.Cmd), keys []string) func(tea.Model) error {
 	return func(m tea.Model) error {
 		deliver(m, m.Init())
 		m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 		m.View()
 		for _, key := range keys {
-			pressKey(m, key)
+			handle(m, pressKey(m, key))
 		}
 		return nil
 	}
@@ -176,7 +181,7 @@ func TestRun_goingBackFromLoginsSyncsAgain(t *testing.T) {
 		Setup:       setupFor(configDir),
 		LoadCatalog: fromCatalog(c),
 		// Tick linear and save; Logins lists it; back, swap linear for sentry, save again, continue.
-		Program: pressingAndDelivering(
+		Program: pressing(
 			"space", "tab", "enter", "esc", "space", "down", "space", "tab", "enter", "tab", "enter", "enter",
 		),
 	})
@@ -234,7 +239,7 @@ func TestRun_theCatalogOffersOnlyServersMiniHasNot(t *testing.T) {
 		Params{
 			Setup:       setupFor(configDir),
 			LoadCatalog: fromCatalog(c),
-			Program:     pressingAndDelivering("space", "tab", "enter", "tab", "enter", "enter"),
+			Program:     pressing("space", "tab", "enter", "tab", "enter", "enter"),
 		},
 	)
 	if got := writtenNames(t, configDir); err != nil || !slices.Equal(got, []string{"linear", "sentry"}) {
@@ -265,7 +270,7 @@ func TestRun_withNothingToImport(t *testing.T) {
 			Params{
 				Setup:       setupFor(configDir),
 				LoadCatalog: fromCatalog(c),
-				Program:     pressingAndDelivering("space", "tab", "enter", "tab", "enter", "enter"),
+				Program:     pressing("space", "tab", "enter", "tab", "enter", "enter"),
 			},
 		)
 		if got := writtenNames(t, configDir); err != nil || !slices.Equal(got, []string{"sentry"}) {
@@ -308,7 +313,7 @@ func TestRun_theSummaryIsReadOnlyOnceNoCheckIsRunning(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			setup := setupFor(t.TempDir())
 			setup.Probe = blockUntilCancelled
-			program := pressing("space", "tab", "enter", "enter", "enter")
+			program := pressingWithoutWaiting("space", "tab", "enter", "enter", "enter")
 			out, err := Run(Params{Setup: setup, LoadCatalog: fromCatalog(plain), Program: program})
 			if err != nil || !out.Saved || statusOf(out.Report, "plain") != (initcmd.ReadyState{}) {
 				t.Errorf("out = %+v, %v; want plain checked, so not marked as maybe needing a login", out, err)
@@ -322,7 +327,7 @@ func TestRun_LoginsDescribesTheCursorsServerFromTheCatalog(t *testing.T) {
 	linear.Description = "Issues and projects"
 	var view string
 	program := func(m tea.Model) error {
-		pressingAndDelivering("space", "tab", "enter")(m)
+		pressing("space", "tab", "enter")(m)
 		view = shown(m.(*app))
 		return nil
 	}
@@ -341,7 +346,7 @@ func TestRun_ReviewSaysWhichPicksTheSaveCouldNotAdd(t *testing.T) {
 	testutil.WriteFile(t, filepath.Join(configDir, "internal"), "")
 	var view string
 	program := func(m tea.Model) error {
-		pressingAndDelivering("space", "tab", "enter")(m)
+		pressing("space", "tab", "enter")(m)
 		view = shown(m.(*app))
 		return nil
 	}
@@ -368,7 +373,7 @@ func TestRun_quittingCancelsAPendingLoginBeforeReturning(t *testing.T) {
 		StartLogin:  startLogin,
 		Program: func(m tea.Model) error {
 			// Delivering the save waits out linear's registration check, so enter starts its login.
-			pressingAndDelivering("space", "tab", "enter")(m)
+			pressing("space", "tab", "enter")(m)
 			pressKey(m, "enter")
 			pressKey(m, "ctrl+c")
 			return nil
@@ -445,7 +450,7 @@ func TestRun_aLoginReachesMiniOnlyWhenTheRunFinishes(t *testing.T) {
 	var savedBeforeFinish bool
 	program := func(m tea.Model) error {
 		// Tick linear, leave Catalog, log in to linear.
-		pressingAndDelivering("space", "tab", "enter", "enter")(m)
+		pressing("space", "tab", "enter", "enter")(m)
 		_, err := os.Stat(filepath.Join(configDir, token))
 		savedBeforeFinish = err == nil
 		for _, key := range []string{"tab", "enter", "enter"} {
