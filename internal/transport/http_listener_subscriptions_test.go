@@ -415,3 +415,27 @@ func waitForListenerSignal(t *testing.T, signal <-chan struct{}, failure string)
 		t.Fatal(failure)
 	}
 }
+
+func TestListenResponseOutcome(t *testing.T) {
+	rejection := &RPCError{Code: CodeInvalidParams, Message: "no"}
+	rejected := listenResponseOutcome(Response{ID: 1, Error: rejection})
+	if !errors.Is(rejected, errListenRejected) || !errors.Is(rejected, rejection) {
+		t.Fatalf("error response outcome = %v, want a rejected listen carrying the RPC error", rejected)
+	}
+	completed := listenResponseOutcome(Response{ID: 1, Result: json.RawMessage(`{}`)})
+	if !errors.Is(completed, errListenComplete) {
+		t.Fatalf("result response outcome = %v, want the subscription completed", completed)
+	}
+	if err := listenResponseOutcome(Response{ID: 1}); err != nil {
+		t.Fatalf("empty response outcome = %v, want none", err)
+	}
+}
+
+func TestHandleSubscriptionMessageIgnoresUnrecognizedMessages(t *testing.T) {
+	conn := &HTTPConnection{}
+	for _, message := range []string{`{}`, `[1]`, `"text"`, `{"id":null,"error":{"code":1}}`} {
+		if err := conn.handleSubscriptionMessage(json.RawMessage(message)); err != nil {
+			t.Errorf("message %s ended the subscription: %v", message, err)
+		}
+	}
+}

@@ -426,3 +426,50 @@ func TestNewStreamClient_redirect_notFollowed(t *testing.T) {
 		)
 	}
 }
+
+func TestHandleNotificationRoutesByMethod(t *testing.T) {
+	conn := &HTTPConnection{}
+	logMessage := Notification{
+		JsonRPC: JsonRPCVersion,
+		Method:  "notifications/message",
+		Params:  json.RawMessage(`{"a":1}`),
+	}
+	conn.handleNotification(logMessage)
+	conn.handleNotification(Notification{Method: NotificationToolsChanged, Params: json.RawMessage(`{"_meta":{}}`)})
+	var got []Notification
+	conn.SetNotificationHandler(func(n Notification) { got = append(got, n) })
+	conn.handleNotification(logMessage)
+	want := []Notification{
+		{JsonRPC: JsonRPCVersion, Method: NotificationToolsChanged},
+		logMessage,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("handled = %+v, want the buffered bare tool change then the message", got)
+	}
+	for i := range want {
+		if got[i].Method != want[i].Method || string(got[i].Params) != string(want[i].Params) {
+			t.Fatalf("handled[%d] = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
+func TestRestartListenerWithoutListenStopsTheRunningListener(t *testing.T) {
+	conn := &HTTPConnection{}
+	ctx, cancel := context.WithCancel(context.Background())
+	running := &sessionListener{cancel: cancel, done: make(chan struct{})}
+	go func() {
+		<-ctx.Done()
+		close(running.done)
+	}()
+	conn.listener = running
+	restarted := make(chan struct{})
+	go func() {
+		conn.restartListener(false)
+		close(restarted)
+	}()
+	waitForListenerSignal(t, restarted, "restartListener did not stop the running listener")
+	if !running.stopped() || conn.listener != nil {
+		t.Fatalf("old listener stopped = %v, current listener = %v; want it stopped and none started",
+			running.stopped(), conn.listener)
+	}
+}

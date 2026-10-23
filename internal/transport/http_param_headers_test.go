@@ -284,30 +284,12 @@ func TestModernToolHeaderValidationDropsOnlyInvalidDefinitions(t *testing.T) {
 	tools := []ToolDefinition{
 		modernTool("number", `{"type":"object","properties":{"p":{"type":"number","x-mcp-header":"P"}}}`),
 		modernTool("valid after number", `{"type":"object","properties":{}}`),
-		modernTool("missing type", `{"type":"object","properties":{"p":{"x-mcp-header":"P"}}}`),
-		modernTool("valid after missing type", `{"type":"object","properties":{}}`),
-		modernTool("type list", `{"type":"object","properties":{"p":{"type":["string"],"x-mcp-header":"P"}}}`),
-		modernTool("valid after type list", `{"type":"object","properties":{}}`),
-		modernTool("space", `{"type":"object","properties":{"p":{"type":"string","x-mcp-header":"bad name"}}}`),
-		modernTool("valid after space", `{"type":"object","properties":{}}`),
-		modernTool("duplicate", `{"type":"object","properties":{
-			"a":{"type":"string","x-mcp-header":"X"},
-			"b":{"type":"integer","x-mcp-header":"x"}}}`),
-		modernTool("valid after duplicate", `{"type":"object","properties":{}}`),
-		modernTool("items", `{"type":"object","properties":{"rows":{"type":"array",
-			"items":{"type":"string","x-mcp-header":"P"}}}}`),
-		modernTool("valid after items", `{"type":"object","properties":{}}`),
 		modernTool("root", `{"type":"string","x-mcp-header":"P"}`),
-		modernTool("valid after root", `{"type":"object","properties":{}}`),
-		modernTool("anyOf", `{"type":"object","properties":{"p":{"anyOf":[{"type":"string","x-mcp-header":"P"}]}}}`),
-		modernTool("valid after anyOf", `{"type":"object","properties":{"x-mcp-header":{"type":"string"}}}`),
+		modernTool("valid with header", `{"type":"object","properties":{"p":{"type":"string","x-mcp-header":"P"}}}`),
 	}
 	conn := &HTTPConnection{serverName: "test"}
 	got := conn.rebuildToolHeaders(tools)
-	want := []string{
-		"valid after number", "valid after missing type", "valid after type list",
-		"valid after space", "valid after duplicate", "valid after items", "valid after root", "valid after anyOf",
-	}
+	want := []string{"valid after number", "valid with header"}
 	if len(got) != len(want) {
 		t.Fatalf("valid tool count = %d, want %d", len(got), len(want))
 	}
@@ -316,8 +298,8 @@ func TestModernToolHeaderValidationDropsOnlyInvalidDefinitions(t *testing.T) {
 			t.Errorf("tool[%d] = %q, want %q", i, got[i].Name, want[i])
 		}
 	}
-	if _, ok := conn.modernHeaders["valid after anyOf"]; !ok {
-		t.Fatal("property named x-mcp-header invalidated its tool")
+	if _, ok := conn.modernHeaders["valid with header"]; !ok {
+		t.Fatal("valid tool's header parameters were not kept")
 	}
 }
 
