@@ -82,10 +82,8 @@ func TestNotificationStream_opensAnAuthenticatedDaemonStreamOnlyOnceBound(t *tes
 	t.Run("closed before bind", func(t *testing.T) {
 		stream, daemon, _ := startNotificationStream(t, &notificationSink{lines: make(chan string, 1)})
 		stream.Close()
-		select {
-		case opened := <-daemon.opened:
-			t.Fatalf("unbound stream opened a daemon stream with headers %v", opened.header)
-		default:
+		if n := daemon.attempts.Load(); n != 0 {
+			t.Fatalf("unbound stream opened %d daemon streams, want none", n)
 		}
 	})
 	for name, token := range map[string]string{"with token": "tok", "no token": ""} {
@@ -196,8 +194,9 @@ func startNotificationStream(t *testing.T, sink io.Writer) (*notificationStream,
 }
 
 type streamDaemon struct {
-	opened chan openedDaemonStream
-	status atomic.Int32
+	opened   chan openedDaemonStream
+	attempts atomic.Int32
+	status   atomic.Int32
 }
 
 type openedDaemonStream struct {
@@ -218,6 +217,7 @@ func (b closeRecordingBody) Close() error {
 }
 
 func (d *streamDaemon) RoundTrip(req *http.Request) (*http.Response, error) {
+	d.attempts.Add(1)
 	body, events := io.Pipe()
 	context.AfterFunc(req.Context(), func() {
 		events.CloseWithError(req.Context().Err()) //nolint:errcheck // CloseWithError on a pipe always succeeds.
