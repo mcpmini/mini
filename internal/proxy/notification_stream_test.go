@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -125,8 +126,10 @@ func TestNotificationStream_retriesARejectedStreamWithoutReadingIt(t *testing.T)
 	daemon.status.Store(http.StatusServiceUnavailable)
 	stream.Bind(linkState{token: "tok"})
 	rejected := nextDaemonStream(t, daemon)
-	if _, err := fmt.Fprintf(rejected.events, "data: %s\n\n", toolsChangedLine(t)); !errors.Is(err, io.ErrClosedPipe) {
-		t.Fatalf("writing to a rejected stream: %v, want its body closed unread", err)
+	select {
+	case <-rejected.closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("rejected stream's body was never closed")
 	}
 	if err := fake.BlockUntilContext(t.Context(), 1); err != nil {
 		t.Fatal(err)
@@ -175,7 +178,6 @@ func startNotificationStream(t *testing.T, sink io.Writer) (*notificationStream,
 	return stream, daemon, fake
 }
 
-// streamDaemon serves each notification stream GET from a pipe the test writes SSE events to.
 type streamDaemon struct {
 	opened chan openedDaemonStream
 	status atomic.Int32
@@ -184,6 +186,18 @@ type streamDaemon struct {
 type openedDaemonStream struct {
 	header http.Header
 	events *io.PipeWriter
+	closed <-chan struct{}
+}
+
+type closeRecordingBody struct {
+	io.ReadCloser
+	once   *sync.Once
+	closed chan struct{}
+}
+
+func (b closeRecordingBody) Close() error {
+	b.once.Do(func() { close(b.closed) })
+	return b.ReadCloser.Close()
 }
 
 func (d *streamDaemon) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -191,12 +205,13 @@ func (d *streamDaemon) RoundTrip(req *http.Request) (*http.Response, error) {
 	context.AfterFunc(req.Context(), func() {
 		events.CloseWithError(req.Context().Err()) //nolint:errcheck // CloseWithError on a pipe always succeeds.
 	})
-	d.opened <- openedDaemonStream{header: req.Header.Clone(), events: events}
+	recorded := closeRecordingBody{ReadCloser: body, once: new(sync.Once), closed: make(chan struct{})}
+	d.opened <- openedDaemonStream{header: req.Header.Clone(), events: events, closed: recorded.closed}
 	status := int(d.status.Load())
 	if status == 0 {
 		status = http.StatusOK
 	}
-	return &http.Response{StatusCode: status, Body: body, Header: make(http.Header)}, nil
+	return &http.Response{StatusCode: status, Body: recorded, Header: make(http.Header)}, nil
 }
 
 func nextDaemonStream(t *testing.T, daemon *streamDaemon) openedDaemonStream {
