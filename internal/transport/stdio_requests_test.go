@@ -442,7 +442,9 @@ func TestStdioModernCallWithNonObjectParamsSendsNothing(t *testing.T) {
 	var written strings.Builder
 	conn := newWriteOnlyConn(discardWriteCloser{Writer: &written})
 	conn.setModern(ModernVersions[0])
-	if _, err := conn.Call(context.Background(), "tools/call", json.RawMessage(`[1]`)); err == nil {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	if _, err := conn.Call(ctx, "tools/call", json.RawMessage(`[1]`)); err == nil {
 		t.Fatal("modern call with array params succeeded")
 	}
 	if written.Len() != 0 {
