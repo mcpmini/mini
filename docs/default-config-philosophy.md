@@ -10,8 +10,8 @@ mini ships no visibility defaults: every upstream tool is visible, and none is p
 
 ```yaml
 permissions:
-  hidden: [delete_file]           # left out of discovery
-  protected: [merge_pull_request] # compact mode and the CLI require perm_call
+  hidden: [delete_file]
+  protected: [merge_pull_request] # compact mode needs perm_call; the CLI needs mini perm-call
 ```
 
 ---
