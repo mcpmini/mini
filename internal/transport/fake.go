@@ -38,14 +38,14 @@ func (f *FakeConnection) Call(_ context.Context, method string, params json.RawM
 	return nil, fmt.Errorf("no fake response for %s", method)
 }
 
-func (f *FakeConnection) ListTools(_ context.Context) ([]ToolDefinition, error) {
+func (f *FakeConnection) ListTools(_ context.Context) (ToolList, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.ListToolsCalls++
 	if f.Err != nil {
-		return nil, f.Err
+		return ToolList{}, f.Err
 	}
-	return append([]ToolDefinition(nil), f.Tools...), nil
+	return ToolList{Tools: append([]ToolDefinition(nil), f.Tools...)}, nil
 }
 
 func (f *FakeConnection) Health(_ context.Context) error { return f.Err }

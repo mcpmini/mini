@@ -51,7 +51,7 @@ func TestPublishReconnectedTools_staleUpstreamLeavesTheRegistryAlone(t *testing.
 		if _, err := srv.removeServerFromAgent("svc"); err != nil {
 			t.Fatal(err)
 		}
-		if srv.publishReconnectedTools(reconnecting, reconnecting.conn, newTools) {
+		if srv.publishReconnectedTools(reconnecting, reconnecting.conn, transport.ToolList{Tools: newTools}) {
 			t.Error("publish reported success for a removed upstream")
 		}
 		if got := registeredToolNames(srv); len(got) != 0 {
@@ -73,7 +73,7 @@ func TestPublishReconnectedTools_staleUpstreamLeavesTheRegistryAlone(t *testing.
 			config.ServerConfig{Name: "svc"},
 			&transport.FakeConnection{Tools: newTools},
 		)
-		if srv.publishReconnectedTools(reconnecting, reconnecting.conn, oldTools) {
+		if srv.publishReconnectedTools(reconnecting, reconnecting.conn, transport.ToolList{Tools: oldTools}) {
 			t.Error("publish reported success for a replaced upstream")
 		}
 		if got := registeredToolNames(srv); !slices.Equal(got, []string{"svc.new_tool"}) {
@@ -101,7 +101,7 @@ func TestPublishReconnectedTools_usesReloadedAliases(t *testing.T) {
 	if len(upstreams) != 1 {
 		t.Fatalf("expected 1 upstream, got %d", len(upstreams))
 	}
-	srv.publishReconnectedTools(upstreams[0], upstreams[0].conn, tools)
+	srv.publishReconnectedTools(upstreams[0], upstreams[0].conn, transport.ToolList{Tools: tools})
 
 	names := map[string]bool{}
 	for _, e := range srv.reg.All() {

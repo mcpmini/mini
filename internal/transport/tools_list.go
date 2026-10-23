@@ -9,6 +9,10 @@ import (
 
 const maxToolsListPages = 10
 
+type ToolList struct {
+	Tools []ToolDefinition
+}
+
 func decodeToolsListPage(raw json.RawMessage) (ToolsListResult, error) {
 	if err := requireCompleteResult(raw, "tools/list"); err != nil {
 		return ToolsListResult{}, err

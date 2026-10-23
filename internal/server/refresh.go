@@ -25,45 +25,17 @@ func (s *Server) attachNotificationHandler(u *upstreamServer, conn transport.Con
 }
 
 func (s *Server) requestToolRefresh(u *upstreamServer, conn transport.Connection) {
-	if !s.isCurrentUpstreamConn(u, conn) {
-		return
+	if s.isCurrentUpstreamConn(u, conn) {
+		u.refresher.request()
 	}
-	if !u.beginRefreshRequest() {
-		return
-	}
-	s.refreshWg.Add(1)
-	go s.runToolRefreshes(u)
 }
 
 func (s *Server) runToolRefreshes(u *upstreamServer) {
-	defer s.refreshWg.Done()
-	for s.takeRefreshRequest(u) {
+	for u.refresher.next() {
 		if err := s.refreshTools(u); err != nil && !errors.Is(err, context.Canceled) {
 			s.logger.Warn("refresh upstream tools failed", "server", u.cfg.Name, "err", err)
 		}
 	}
-}
-
-func (s *Server) takeRefreshRequest(u *upstreamServer) bool {
-	u.refreshMu.Lock()
-	defer u.refreshMu.Unlock()
-	if !u.refreshPending || u.ctx.Err() != nil {
-		u.refreshing = false
-		return false
-	}
-	u.refreshPending = false
-	return true
-}
-
-func (u *upstreamServer) beginRefreshRequest() bool {
-	u.refreshMu.Lock()
-	defer u.refreshMu.Unlock()
-	u.refreshPending = true
-	if u.refreshing {
-		return false
-	}
-	u.refreshing = true
-	return true
 }
 
 func (s *Server) refreshTools(u *upstreamServer) error {
@@ -73,14 +45,14 @@ func (s *Server) refreshTools(u *upstreamServer) error {
 	}
 	ctx, cancel := context.WithTimeout(u.ctx, refreshTimeout)
 	defer cancel()
-	tools, err := conn.ListTools(ctx)
+	toolList, err := conn.ListTools(ctx)
 	if err != nil {
 		if transport.IsConnectionError(err) {
 			s.maybeReconnect(u, connError{err: err})
 		}
 		return err
 	}
-	if !s.publishRefreshedTools(u, conn, tools) {
+	if !s.publishRefreshedTools(u, conn, toolList) {
 		return context.Canceled
 	}
 	return nil
@@ -89,18 +61,18 @@ func (s *Server) refreshTools(u *upstreamServer) error {
 func (s *Server) publishRefreshedTools(
 	u *upstreamServer,
 	conn transport.Connection,
-	tools []transport.ToolDefinition,
+	toolList transport.ToolList,
 ) bool {
 	s.serverOpMu.Lock()
 	defer s.serverOpMu.Unlock()
 	if !s.isCurrentUpstreamConn(u, conn) {
 		return false
 	}
-	changed := !reflect.DeepEqual(u.lastDefs, tools)
-	u.lastDefs = tools
+	changed := !reflect.DeepEqual(u.lastDefs, toolList.Tools)
+	u.lastDefs = toolList.Tools
 	s.reg.ReplaceServer(registry.ServerParams{
 		Name:            u.cfg.Name,
-		Defs:            tools,
+		Defs:            toolList.Tools,
 		Perm:            u.cfg.Permissions,
 		AliasByToolName: s.currentAliasesFor(u.cfg.Name),
 	})

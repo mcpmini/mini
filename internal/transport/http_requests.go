@@ -122,7 +122,7 @@ func (c *HTTPConnection) modernRPCError(err *RPCError) error {
 	return err
 }
 
-func (c *HTTPConnection) ListTools(ctx context.Context) ([]ToolDefinition, error) {
+func (c *HTTPConnection) ListTools(ctx context.Context) (ToolList, error) {
 	// Judged by how each page was sent, not the shared era, which a concurrent reset can change mid-listing.
 	anyLegacyPage := false
 	tools, err := paginateToolsList(ctx, func(ctx context.Context, cursor string) (ToolsListResult, error) {
@@ -131,12 +131,12 @@ func (c *HTTPConnection) ListTools(ctx context.Context) ([]ToolDefinition, error
 		return page, err
 	})
 	if err != nil {
-		return nil, err
+		return ToolList{}, err
 	}
 	if anyLegacyPage {
-		return tools, nil
+		return ToolList{Tools: tools}, nil
 	}
-	return c.rebuildToolHeaders(tools), nil
+	return ToolList{Tools: c.rebuildToolHeaders(tools)}, nil
 }
 
 func (c *HTTPConnection) callToolsPage(ctx context.Context, cursor string) (ToolsListResult, string, error) {

@@ -20,12 +20,13 @@ func TestIntegrationStdioModernProcessNegotiatesListsAndCalls(t *testing.T) {
 	if got := conn.negotiatedModernVersion(); got != ModernVersions[0] {
 		t.Fatalf("negotiated version = %q, want modern %q", got, ModernVersions[0])
 	}
-	tools, err := conn.ListTools(context.Background())
+	toolList, err := conn.ListTools(context.Background())
 	if err != nil {
 		t.Fatalf("tools/list: %v", err)
 	}
-	if len(tools) != 1 || string(tools[0].OutputSchema) != `{"type":"object","properties":{"ok":{"type":"boolean"}}}` {
-		t.Fatalf("modern tools = %+v", tools)
+	wantSchema := `{"type":"object","properties":{"ok":{"type":"boolean"}}}`
+	if len(toolList.Tools) != 1 || string(toolList.Tools[0].OutputSchema) != wantSchema {
+		t.Fatalf("modern tools = %+v", toolList.Tools)
 	}
 	raw, err := conn.Call(context.Background(), "tools/call", json.RawMessage(`{"name":"modern_tool","arguments":{}}`))
 	if err != nil {
@@ -66,9 +67,9 @@ func TestIntegrationStdioUnansweredProbeReplacesPoisonedProcessOnce(t *testing.T
 		t.Fatalf("connect through replacement: %v", err)
 	}
 	defer func() { _ = conn.Close() }()
-	tools, err := conn.ListTools(ctx)
-	if err != nil || len(tools) != 1 || tools[0].Name != "modern_tool" {
-		t.Fatalf("tools/list on replacement = %+v, %v", tools, err)
+	toolList, err := conn.ListTools(ctx)
+	if err != nil || len(toolList.Tools) != 1 || toolList.Tools[0].Name != "modern_tool" {
+		t.Fatalf("tools/list on replacement = %+v, %v", toolList.Tools, err)
 	}
 	if _, err := conn.Call(ctx, "tools/call", json.RawMessage(`{"name":"modern_tool","arguments":{}}`)); err != nil {
 		t.Fatalf("tools/call on replacement: %v", err)

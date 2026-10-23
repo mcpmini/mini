@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/invoke"
 	"github.com/mcpmini/mini/internal/ops"
@@ -164,13 +163,13 @@ func (s *Server) IsReconnecting(serverName string) bool {
 }
 
 func (s *Server) registerUpstream(ctx context.Context, conn transport.Connection, in upstreamInstall) error {
-	tools, err := conn.ListTools(ctx)
+	toolList, err := conn.ListTools(ctx)
 	if err != nil {
 		conn.Close() //nolint:errcheck // ListTools failure is returned; Close only releases the unregistered connection.
 		return fmt.Errorf("list tools from %s: %w", in.cfg.Name, err)
 	}
 	//nolint:contextcheck // Installed upstream ownership keeps notification refreshes alive beyond this install request.
-	return s.installChecked(conn, tools, in)
+	return s.installChecked(conn, toolList, in)
 }
 
 func (s *Server) snapshotRemoveGen(name string) uint64 {
@@ -185,7 +184,7 @@ func (s *Server) checkInstall(in upstreamInstall) error {
 	return s.checkInstallLocked(in)
 }
 
-func (s *Server) installChecked(conn transport.Connection, tools []transport.ToolDefinition, in upstreamInstall) error {
+func (s *Server) installChecked(conn transport.Connection, toolList transport.ToolList, in upstreamInstall) error {
 	s.serverOpMu.Lock()
 	defer s.serverOpMu.Unlock()
 	if err := s.checkInstallLocked(in); err != nil {
@@ -195,7 +194,7 @@ func (s *Server) installChecked(conn transport.Connection, tools []transport.Too
 	if in.keepLiveProjections {
 		in.cfg.Projections = s.liveProjections(in.cfg.Name)
 	}
-	s.installUpstreamLocked(in.cfg, conn, tools)
+	s.installUpstreamLocked(in.cfg, conn, toolList)
 	return nil
 }
 
@@ -223,16 +222,16 @@ func (s *Server) checkInstallLocked(in upstreamInstall) error {
 func (s *Server) installUpstreamLocked(
 	sc config.ServerConfig,
 	conn transport.Connection,
-	tools []transport.ToolDefinition,
+	toolList transport.ToolList,
 ) {
-	u := newUpstreamServer(sc, conn, s.clock)
-	u.lastDefs = tools
+	u := s.newUpstreamServer(sc, conn)
+	u.lastDefs = toolList.Tools
 	old := s.swapUpstream(sc.Name, u)
 	s.seedProjectionsIfNone(sc)
-	s.registerTools(sc, tools, old)
+	s.registerTools(sc, toolList.Tools, old)
 	s.markToolsReady(sc.Name)
 	s.attachNotificationHandler(u, conn)
-	s.logger.Info("upstream registered", "server", sc.Name, "tools", len(tools))
+	s.logger.Info("upstream registered", "server", sc.Name, "tools", len(toolList.Tools))
 }
 
 func (s *Server) seedProjectionsIfNone(sc config.ServerConfig) {
@@ -246,9 +245,10 @@ func (s *Server) seedProjectionsIfNone(sc config.ServerConfig) {
 	}
 }
 
-func newUpstreamServer(sc config.ServerConfig, conn transport.Connection, clock clock.Clock) *upstreamServer {
+func (s *Server) newUpstreamServer(sc config.ServerConfig, conn transport.Connection) *upstreamServer {
 	ctx, cancel := context.WithCancel(context.Background())
-	u := &upstreamServer{cfg: sc, conn: conn, ctx: ctx, cancel: cancel, clock: clock}
+	u := &upstreamServer{cfg: sc, conn: conn, ctx: ctx, cancel: cancel, clock: s.clock}
+	u.refresher.startWorker = func() { s.refreshWg.Go(func() { s.runToolRefreshes(u) }) }
 	if sc.MaxPendingRequests > 0 {
 		u.sem = make(chan struct{}, sc.MaxPendingRequests)
 	}

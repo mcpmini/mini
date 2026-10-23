@@ -136,8 +136,8 @@ type callbackConnection struct {
 	call  func() (json.RawMessage, error)
 }
 
-func (c *callbackConnection) ListTools(_ context.Context) ([]transport.ToolDefinition, error) {
-	return c.tools, nil
+func (c *callbackConnection) ListTools(_ context.Context) (transport.ToolList, error) {
+	return transport.ToolList{Tools: c.tools}, nil
 }
 
 func (c *callbackConnection) Call(_ context.Context, _ string, _ json.RawMessage) (json.RawMessage, error) {
@@ -154,8 +154,8 @@ type ctxAwareConnection struct {
 	result json.RawMessage // if non-nil, return immediately
 }
 
-func (c *ctxAwareConnection) ListTools(_ context.Context) ([]transport.ToolDefinition, error) {
-	return c.tools, nil
+func (c *ctxAwareConnection) ListTools(_ context.Context) (transport.ToolList, error) {
+	return transport.ToolList{Tools: c.tools}, nil
 }
 
 func (c *ctxAwareConnection) Call(ctx context.Context, _ string, _ json.RawMessage) (json.RawMessage, error) {

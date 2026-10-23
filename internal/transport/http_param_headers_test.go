@@ -361,9 +361,9 @@ func TestModernLegacyAnnotatedToolsKeepLegacyWireShape(t *testing.T) {
 		}
 	})
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Clock: clock.NewFake()})
-	tools, err := conn.ListTools(t.Context())
-	if err != nil || len(tools) != 1 || tools[0].Name != "x" {
-		t.Fatalf("legacy ListTools = %v, %v", tools, err)
+	toolList, err := conn.ListTools(t.Context())
+	if err != nil || len(toolList.Tools) != 1 || toolList.Tools[0].Name != "x" {
+		t.Fatalf("legacy ListTools = %v, %v", toolList.Tools, err)
 	}
 	callParams := json.RawMessage(`{"name":"x","arguments":{"p":"v"}}`)
 	if _, err := conn.Call(t.Context(), "tools/call", callParams); err != nil {
@@ -380,8 +380,8 @@ func TestModernPartialListingStillSendsToolHeaders(t *testing.T) {
 	callHeaders := make(chan http.Header, 1)
 	server := newModernServer(t, modernUpstream{Handle: failSecondToolsPage(t, callHeaders)})
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: server.URL})
-	if tools, err := conn.ListTools(t.Context()); err != nil || len(tools) != 1 {
-		t.Fatalf("ListTools = %v, %v; want the first page's tool", tools, err)
+	if toolList, err := conn.ListTools(t.Context()); err != nil || len(toolList.Tools) != 1 {
+		t.Fatalf("ListTools = %v, %v; want the first page's tool", toolList.Tools, err)
 	}
 	if _, err := conn.Call(
 		t.Context(),

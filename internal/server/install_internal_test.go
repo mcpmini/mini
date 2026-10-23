@@ -82,7 +82,7 @@ func TestInstallChecked_readsLiveAliasesWhileSetProjectionWritesThem(t *testing.
 		for range 20 {
 			if err := srv.installChecked(
 				&transport.FakeConnection{},
-				tools,
+				transport.ToolList{Tools: tools},
 				srv.replacingInstall(config.ServerConfig{Name: "svc"}),
 			); err != nil {
 				t.Error(err)
@@ -102,7 +102,7 @@ func TestInstallChecked_guardRejection_closesConn(t *testing.T) {
 	fake := &transport.FakeConnection{}
 	in := upstreamInstall{cfg: config.ServerConfig{Name: "svc"}, removeGen: 0}
 
-	err := srv.installChecked(fake, nil, in)
+	err := srv.installChecked(fake, transport.ToolList{}, in)
 
 	if !errors.Is(err, errServerRemoved) {
 		t.Errorf("expected errServerRemoved, got %v", err)
@@ -120,7 +120,7 @@ func TestInstallChecked_namesToolsByTheLiveProjections(t *testing.T) {
 		srv := newInstallTestServer(t)
 
 		in := srv.newServerInstall(config.ServerConfig{Name: "svc", Projections: aliased})
-		if err := srv.installChecked(&transport.FakeConnection{}, tools, in); err != nil {
+		if err := srv.installChecked(&transport.FakeConnection{}, transport.ToolList{Tools: tools}, in); err != nil {
 			t.Fatal(err)
 		}
 
@@ -136,7 +136,11 @@ func TestInstallChecked_namesToolsByTheLiveProjections(t *testing.T) {
 			ProjectionsErr: &config.SourceError{ServerName: "svc", Err: errors.New("parse failed")},
 		}
 
-		if err := srv.installChecked(&transport.FakeConnection{}, tools, srv.replacingInstall(reloaded)); err != nil {
+		if err := srv.installChecked(
+			&transport.FakeConnection{},
+			transport.ToolList{Tools: tools},
+			srv.replacingInstall(reloaded),
+		); err != nil {
 			t.Fatal(err)
 		}
 
@@ -163,7 +167,7 @@ func TestAddServerFromAgent_aFailedAddStopsAnInstallStartedMeanwhile(t *testing.
 
 	if err := srv.installChecked(
 		&transport.FakeConnection{},
-		nil,
+		transport.ToolList{},
 		startedDuringTheAdd,
 	); !errors.Is(
 		err,
@@ -185,7 +189,7 @@ func TestAddServerFromAgent_stopsAnInstallStartedForTheNamesEarlierServer(t *tes
 
 	if err := srv.installChecked(
 		&transport.FakeConnection{},
-		nil,
+		transport.ToolList{},
 		startedForTheEarlierServer,
 	); !errors.Is(
 		err,

@@ -115,7 +115,7 @@ func TestStdioToolsListRequiresCompleteResult(t *testing.T) {
 			conn.setModern(ModernVersions[0])
 			scriptStdioUpstream(serverW, serverR, replyRawResult(t, serverW, tc.raw))
 			got, err := conn.ListTools(t.Context())
-			assertToolsListResult(t, toolsListResultParams{testCase: tc, tools: got, err: err})
+			assertToolsListResult(t, toolsListResultParams{testCase: tc, tools: got.Tools, err: err})
 		})
 	}
 }
@@ -130,7 +130,7 @@ func TestHTTPToolsListRequiresCompleteResult(t *testing.T) {
 			})
 			conn := mustHTTPConn(t, HTTPConnectionConfig{URL: server.URL})
 			got, err := conn.ListTools(t.Context())
-			assertToolsListResult(t, toolsListResultParams{testCase: tc, tools: got, err: err})
+			assertToolsListResult(t, toolsListResultParams{testCase: tc, tools: got.Tools, err: err})
 		})
 	}
 }

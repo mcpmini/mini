@@ -80,8 +80,8 @@ func (c *outputFailureConnection) Call(ctx context.Context, _ string, _ json.Raw
 	return nil, ctx.Err()
 }
 
-func (*outputFailureConnection) ListTools(context.Context) ([]transport.ToolDefinition, error) {
-	return []transport.ToolDefinition{{Name: "op", InputSchema: json.RawMessage(`{}`)}}, nil
+func (*outputFailureConnection) ListTools(context.Context) (transport.ToolList, error) {
+	return transport.ToolList{Tools: []transport.ToolDefinition{{Name: "op", InputSchema: json.RawMessage(`{}`)}}}, nil
 }
 
 func (*outputFailureConnection) Health(context.Context) error { return nil }

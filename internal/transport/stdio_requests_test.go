@@ -120,12 +120,12 @@ func TestListTools_viaPipe(t *testing.T) {
 			},
 		})
 	}()
-	tools, err := conn.ListTools(context.Background())
+	toolList, err := conn.ListTools(context.Background())
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
-	if len(tools) != 1 || tools[0].Name != "ping" {
-		t.Errorf("unexpected tools: %+v", tools)
+	if len(toolList.Tools) != 1 || toolList.Tools[0].Name != "ping" {
+		t.Errorf("unexpected tools: %+v", toolList.Tools)
 	}
 }
 
@@ -158,8 +158,8 @@ func TestListTools_viaPipe_pagination(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"a", "b"}; !slices.Equal(toolNames(got), want) {
-		t.Errorf("got %v, want %v", toolNames(got), want)
+	if want := []string{"a", "b"}; !slices.Equal(toolNames(got.Tools), want) {
+		t.Errorf("got %v, want %v", toolNames(got.Tools), want)
 	}
 	gotCursors := []string{<-cursorCh, <-cursorCh}
 	if want := []string{"", "p2"}; !slices.Equal(gotCursors, want) {

@@ -86,16 +86,16 @@ func (s *Server) tryReconnect(u *upstreamServer) error {
 	return nil
 }
 
-func (s *Server) dialAndList(u *upstreamServer) (transport.Connection, []transport.ToolDefinition, error) {
+func (s *Server) dialAndList(u *upstreamServer) (transport.Connection, transport.ToolList, error) {
 	conn, err := s.dialForReconnect(u)
 	if err != nil {
-		return nil, nil, err
+		return nil, transport.ToolList{}, err
 	}
-	tools, err := s.listToolsForReconnect(u, conn)
+	list, err := s.listToolsForReconnect(u, conn)
 	if err != nil {
-		return nil, nil, err
+		return nil, transport.ToolList{}, err
 	}
-	return conn, tools, nil
+	return conn, list, nil
 }
 
 func (s *Server) dialForReconnect(u *upstreamServer) (transport.Connection, error) {
@@ -111,19 +111,19 @@ func (s *Server) dialForReconnect(u *upstreamServer) (transport.Connection, erro
 func (s *Server) listToolsForReconnect(
 	u *upstreamServer,
 	conn transport.Connection,
-) ([]transport.ToolDefinition, error) {
+) (transport.ToolList, error) {
 	ctx, cancel := context.WithTimeout(u.ctx, 15*time.Second)
 	defer cancel()
-	tools, err := conn.ListTools(ctx)
+	toolList, err := conn.ListTools(ctx)
 	if err != nil {
 		conn.Close() //nolint:errcheck // ListTools failure is returned and logged; Close only releases the failed connection.
 		err = s.markOAuthIfRequired(ctx, u.cfg, err)
 		s.logger.Warn("reconnect list tools failed", "server", u.cfg.Name, "err", err)
 	}
-	return tools, err
+	return toolList, err
 }
 
-func (s *Server) swapConn(u *upstreamServer, conn transport.Connection, tools []transport.ToolDefinition) bool {
+func (s *Server) swapConn(u *upstreamServer, conn transport.Connection, toolList transport.ToolList) bool {
 	old, hook, ok := swapReconnectConn(u, conn)
 	if !ok {
 		return false
@@ -132,7 +132,7 @@ func (s *Server) swapConn(u *upstreamServer, conn transport.Connection, tools []
 	if old != nil {
 		old.Close() //nolint:errcheck // The replacement is installed; Close only releases the stale connection.
 	}
-	if !s.publishReconnectedTools(u, conn, tools) {
+	if !s.publishReconnectedTools(u, conn, toolList) {
 		return false
 	}
 	s.notifyAllSessions()
@@ -146,17 +146,17 @@ func (s *Server) swapConn(u *upstreamServer, conn transport.Connection, tools []
 func (s *Server) publishReconnectedTools(
 	u *upstreamServer,
 	conn transport.Connection,
-	tools []transport.ToolDefinition,
+	toolList transport.ToolList,
 ) bool {
 	s.serverOpMu.Lock()
 	defer s.serverOpMu.Unlock()
 	if !s.isCurrentUpstreamConn(u, conn) {
 		return false
 	}
-	u.lastDefs = tools
+	u.lastDefs = toolList.Tools
 	s.reg.ReplaceServer(registry.ServerParams{
 		Name:            u.cfg.Name,
-		Defs:            tools,
+		Defs:            toolList.Tools,
 		Perm:            u.cfg.Permissions,
 		AliasByToolName: s.currentAliasesFor(u.cfg.Name),
 	})
