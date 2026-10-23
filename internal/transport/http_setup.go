@@ -31,8 +31,8 @@ func (c *HTTPConnection) ensureReady(ctx context.Context) (modernVersion string,
 }
 
 func (c *HTTPConnection) initializeOnce(ctx context.Context) (renewed bool, err error) {
-	c.initMu.Lock()
-	defer c.initMu.Unlock()
+	c.setupMu.Lock()
+	defer c.setupMu.Unlock()
 	if c.initialized {
 		return false, nil
 	}
@@ -49,9 +49,9 @@ func (c *HTTPConnection) initHandshake(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	c.mu.Lock()
+	c.sessionMu.Lock()
 	c.protocolVersion = result.ProtocolVersion
-	c.mu.Unlock()
+	c.sessionMu.Unlock()
 	if err := c.sendInitializedNotification(ctx); err != nil {
 		return err
 	}
@@ -127,11 +127,11 @@ func (c *HTTPConnection) withSessionRecovery(
 }
 
 func (c *HTTPConnection) compareAndResetSession(expiredID string) {
-	c.initMu.Lock()
-	defer c.initMu.Unlock()
-	c.mu.Lock()
+	c.setupMu.Lock()
+	defer c.setupMu.Unlock()
+	c.sessionMu.Lock()
 	match := c.sessionID == expiredID
-	c.mu.Unlock()
+	c.sessionMu.Unlock()
 	if match {
 		c.initialized = false
 	}
@@ -149,10 +149,10 @@ func (c *HTTPConnection) isModern() bool {
 }
 
 func (c *HTTPConnection) resetModernEra() {
-	c.initMu.Lock()
+	c.setupMu.Lock()
 	c.eraKnown = false
 	c.modernVersion.Store(nil)
-	c.initMu.Unlock()
+	c.setupMu.Unlock()
 }
 
 func setDiscoverRequestHeaders(req *http.Request) {
@@ -161,8 +161,8 @@ func setDiscoverRequestHeaders(req *http.Request) {
 }
 
 func (c *HTTPConnection) probeOnce(ctx context.Context) (modernVersion string, err error) {
-	c.initMu.Lock()
-	defer c.initMu.Unlock()
+	c.setupMu.Lock()
+	defer c.setupMu.Unlock()
 	if c.eraKnown {
 		return c.negotiatedModernVersion(), nil
 	}

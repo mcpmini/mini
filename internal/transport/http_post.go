@@ -169,9 +169,9 @@ func (c *HTTPConnection) storeSessionID(sessionID string) {
 	if len(sessionID) > 256 {
 		return
 	}
-	c.mu.Lock()
+	c.sessionMu.Lock()
 	c.sessionID = sessionID
-	c.mu.Unlock()
+	c.sessionMu.Unlock()
 }
 
 func (c *HTTPConnection) httpErrorResult(resp *http.Response, method string, sentSessionID string) (postResult, error) {
@@ -216,11 +216,11 @@ func (c *HTTPConnection) setRequestHeaders(ctx context.Context, req *http.Reques
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	protocolVersion := LatestLegacyVersion
-	c.mu.Lock()
+	c.sessionMu.Lock()
 	if c.protocolVersion != "" {
 		protocolVersion = c.protocolVersion
 	}
-	c.mu.Unlock()
+	c.sessionMu.Unlock()
 	req.Header.Set("X-Mini-Version", version.Version)
 	for k, v := range c.headers {
 		req.Header.Set(k, v)
@@ -234,8 +234,8 @@ func (c *HTTPConnection) setRequestHeaders(ctx context.Context, req *http.Reques
 }
 
 func (c *HTTPConnection) attachSessionID(req *http.Request) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.sessionMu.Lock()
+	defer c.sessionMu.Unlock()
 	if c.sessionID != "" {
 		req.Header.Set("Mcp-Session-Id", c.sessionID)
 	}
