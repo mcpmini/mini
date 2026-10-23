@@ -123,40 +123,6 @@ func TestModernRequestCarriesMetadataAndParameterHeaders(t *testing.T) {
 	}
 }
 
-func TestModernRequestRefreshesAuthorizationAndReplays(t *testing.T) {
-	var callAuth []string
-	conn, provider := newAuthReplayConn(t, modernHandler(t, modernUpstream{
-		Tools: []ToolDefinition{modernTool("x", `{}`)},
-		Handle: func(w http.ResponseWriter, r *http.Request, req Request) {
-			callAuth = append(callAuth, r.Header.Get("Authorization"))
-			assertModernHeader(t, modernHeaderParams{
-				Request: r,
-				Name:    "Mcp-Method",
-				Want:    "tools/call",
-			})
-			if r.Header.Get("Authorization") == "Bearer old" {
-				w.WriteHeader(http.StatusUnauthorized)
-				return
-			}
-			writeRPCResult(t, rpcResultParams{
-				Writer: w,
-				ID:     req.ID,
-				Result: map[string]bool{"ok": true},
-			})
-		},
-	}))
-	if _, err := conn.Call(t.Context(), "tools/call", json.RawMessage(`{"name":"x","arguments":{}}`)); err != nil {
-		t.Fatal(err)
-	}
-	if !slices.Equal(callAuth, []string{"Bearer old", "Bearer new"}) || provider.refreshes != 1 {
-		t.Fatalf(
-			"tools/call auth = %v, refreshes = %d; want old then new after one refresh",
-			callAuth,
-			provider.refreshes,
-		)
-	}
-}
-
 func TestModernValueEncoding(t *testing.T) {
 	cases := []struct{ input, want string }{
 		{"us-west1", "us-west1"},
@@ -192,13 +158,6 @@ func TestModernArgumentHeaderValues(t *testing.T) {
 				t.Fatalf("primitiveHeaderValue(%s) = %q, %v", tc.raw, got, ok)
 			}
 		})
-	}
-}
-
-func TestModernRequestRejectsNonObjectParams(t *testing.T) {
-	if _, err := prepareModernParams(json.RawMessage(`[]`), ModernVersions[0]); err == nil ||
-		err.Error() != "modern request params must be a JSON object" {
-		t.Fatalf("prepareModernParams error = %v", err)
 	}
 }
 
@@ -277,16 +236,6 @@ func assertModernHeader(t *testing.T, p modernHeaderParams) {
 	t.Helper()
 	if got := p.Request.Header.Get(p.Name); got != p.Want {
 		t.Errorf("%s = %q, want %q", p.Name, got, p.Want)
-	}
-}
-
-func writeHeaderMismatch(t *testing.T, w http.ResponseWriter, id any) {
-	t.Helper()
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusBadRequest)
-	_, err := fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%v,"error":{"code":-32020,"message":"header mismatch"}}`, id)
-	if err != nil {
-		t.Errorf("write mismatch response: %v", err)
 	}
 }
 

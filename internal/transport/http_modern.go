@@ -1,13 +1,9 @@
 package transport
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
-	"errors"
 	"log/slog"
-	"net/http"
 	"strings"
 )
 
@@ -59,97 +55,11 @@ func (c *HTTPConnection) isModern() bool {
 	return c.negotiatedModernVersion() != ""
 }
 
-func (c *HTTPConnection) callModern(ctx context.Context, call httpCall) (json.RawMessage, error) {
-	prepared, err := prepareModernParams(call.Params, call.modernVersion)
-	if err != nil {
-		return nil, err
-	}
-	call.Params = prepared
-	if call.Method == "tools/call" {
-		if err = c.ensureToolHeaders(ctx); err != nil {
-			return nil, err
-		}
-	}
-	result, err := c.send(ctx, call)
-	if call.Method == "tools/call" && isHeaderMismatch(err) {
-		if _, err = c.ListTools(ctx); err != nil {
-			return nil, err
-		}
-		result, err = c.send(ctx, call)
-	}
-	if err != nil {
-		return nil, c.modernError(err)
-	}
-	if _, err := ResultTypeOf(result); err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
-func isHeaderMismatch(err error) bool {
-	var rpcErr *RPCError
-	if errors.As(err, &rpcErr) {
-		return rpcErr.Code == CodeHeaderMismatch
-	}
-	var statusErr *HTTPStatusError
-	return errors.As(err, &statusErr) && statusErr.RPC != nil && statusErr.RPC.Code == CodeHeaderMismatch
-}
-
-func (c *HTTPConnection) modernError(err error) error {
-	if err == nil {
-		return nil
-	}
-	var statusErr *HTTPStatusError
-	if errors.As(err, &statusErr) {
-		if statusErr.RPC != nil {
-			return c.modernRPCError(statusErr.RPC)
-		}
-		if statusErr.StatusCode >= 400 && statusErr.StatusCode < 500 {
-			c.resetModernEra()
-			return &ConnectionError{Err: err}
-		}
-	}
-	var rpcErr *RPCError
-	if errors.As(err, &rpcErr) {
-		return c.modernRPCError(rpcErr)
-	}
-	return err
-}
-
-func (c *HTTPConnection) modernRPCError(err *RPCError) error {
-	if err.Code == CodeUnsupportedProtocolVersion {
-		c.resetModernEra()
-	}
-	return err
-}
-
 func (c *HTTPConnection) resetModernEra() {
 	c.initMu.Lock()
 	c.eraKnown = false
 	c.modernVersion.Store(nil)
 	c.initMu.Unlock()
-}
-
-func (c *HTTPConnection) buildModernHTTPRequest(ctx context.Context, call httpCall) (*http.Request, string, error) {
-	req := call.Request
-	body, err := json.Marshal(req)
-	if err != nil {
-		return nil, "", err
-	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(body))
-	if err != nil {
-		return nil, "", err
-	}
-	sentAuth, err := c.setRequestHeaders(ctx, httpReq)
-	if err != nil {
-		return nil, "", err
-	}
-	httpReq.Header.Set("MCP-Protocol-Version", call.modernVersion)
-	httpReq.Header.Set("Mcp-Method", req.Method)
-	if req.Method == "tools/call" {
-		c.addToolCallHeaders(httpReq, req.Params)
-	}
-	return httpReq, sentAuth, nil
 }
 
 func encodeModernHeaderValue(value string) string {
