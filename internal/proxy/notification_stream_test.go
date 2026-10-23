@@ -78,7 +78,7 @@ func TestNotificationStream_forwardDropsInvalidJSON(t *testing.T) {
 	}
 }
 
-func TestNotificationStream_opensTheDaemonStreamOnlyOnceBound(t *testing.T) {
+func TestNotificationStream_opensAnAuthenticatedDaemonStreamOnlyOnceBound(t *testing.T) {
 	t.Run("closed before bind", func(t *testing.T) {
 		stream, daemon, _ := startNotificationStream(t, &notificationSink{lines: make(chan string, 1)})
 		stream.Close()
@@ -88,8 +88,8 @@ func TestNotificationStream_opensTheDaemonStreamOnlyOnceBound(t *testing.T) {
 		default:
 		}
 	})
-	for _, token := range []string{"tok", ""} {
-		t.Run("token "+token, func(t *testing.T) {
+	for name, token := range map[string]string{"with token": "tok", "no token": ""} {
+		t.Run(name, func(t *testing.T) {
 			sink := &notificationSink{lines: make(chan string, 1)}
 			stream, daemon, _ := startNotificationStream(t, sink)
 			stream.Bind(linkState{token: token})
@@ -114,10 +114,7 @@ func TestNotificationStream_reconnectsOneSecondAfterTheStreamEnds(t *testing.T) 
 	stream, daemon, fake := startNotificationStream(t, &notificationSink{lines: make(chan string, 1)})
 	stream.Bind(linkState{token: "tok"})
 	nextDaemonStream(t, daemon).end()
-	if err := fake.BlockUntilContext(t.Context(), 1); err != nil {
-		t.Fatal(err)
-	}
-	fake.Advance(time.Second)
+	advanceThroughRetryDelay(t, fake, daemon)
 	nextDaemonStream(t, daemon)
 }
 
@@ -131,11 +128,31 @@ func TestNotificationStream_retriesARejectedStreamWithoutReadingIt(t *testing.T)
 	case <-time.After(5 * time.Second):
 		t.Fatal("rejected stream's body was never closed")
 	}
-	if err := fake.BlockUntilContext(t.Context(), 1); err != nil {
-		t.Fatal(err)
-	}
-	fake.Advance(time.Second)
+	advanceThroughRetryDelay(t, fake, daemon)
 	nextDaemonStream(t, daemon)
+}
+
+// Just short of the delay, the retry timer must still be pending and no stream reopened.
+func advanceThroughRetryDelay(t *testing.T, fake *clock.Fake, daemon *streamDaemon) {
+	t.Helper()
+	awaitRetryTimer(t, fake)
+	fake.Advance(time.Second - time.Millisecond)
+	awaitRetryTimer(t, fake)
+	select {
+	case <-daemon.opened:
+		t.Fatal("reconnected before the one-second retry delay")
+	default:
+	}
+	fake.Advance(time.Millisecond)
+}
+
+func awaitRetryTimer(t *testing.T, fake *clock.Fake) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	if err := fake.BlockUntilContext(ctx, 1); err != nil {
+		t.Fatalf("no retry timer pending: %v", err)
+	}
 }
 
 func TestNotificationStream_followsTheNewestLink(t *testing.T) {
@@ -206,7 +223,11 @@ func (d *streamDaemon) RoundTrip(req *http.Request) (*http.Response, error) {
 		events.CloseWithError(req.Context().Err()) //nolint:errcheck // CloseWithError on a pipe always succeeds.
 	})
 	recorded := closeRecordingBody{ReadCloser: body, once: new(sync.Once), closed: make(chan struct{})}
-	d.opened <- openedDaemonStream{header: req.Header.Clone(), events: events, closed: recorded.closed}
+	select {
+	case d.opened <- openedDaemonStream{header: req.Header.Clone(), events: events, closed: recorded.closed}:
+	case <-req.Context().Done():
+		return nil, req.Context().Err()
+	}
 	status := int(d.status.Load())
 	if status == 0 {
 		status = http.StatusOK
