@@ -39,6 +39,9 @@ func TestNextRetryDelay(t *testing.T) {
 	if got := nextRetryDelay(5*time.Second, &backoff); got != 5*time.Second || backoff != 2*time.Second {
 		t.Fatalf("Retry-After delay = %v, backoff = %v; want the server's delay with backoff untouched", got, backoff)
 	}
+	if got := nextRetryDelay(0, &backoff); got != 0 || backoff != 2*time.Second {
+		t.Fatalf("zero delay = %v, backoff = %v; want an immediate retry, backoff untouched", got, backoff)
+	}
 	if got := nextRetryDelay(-1, &backoff); got != 2*time.Second || backoff != 4*time.Second {
 		t.Fatalf("backoff delay = %v, next backoff = %v; want 2s then 4s", got, backoff)
 	}
