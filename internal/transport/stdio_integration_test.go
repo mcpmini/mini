@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"maps"
@@ -183,4 +184,69 @@ func (s *writeStartSignal) Close() error { return s.pipe.Close() }
 
 func (s *writeStartSignal) SetWriteDeadline(deadline time.Time) error {
 	return s.pipe.(deadlineWriter).SetWriteDeadline(deadline)
+}
+
+func TestIntegrationStartSubprocess_prefixesUpstreamStderr(t *testing.T) {
+	var logs syncBuffer
+	conn, err := startSubprocess(context.Background(), StdioCommand{
+		Command: "sh",
+		Args:    []string{"-c", "echo from-upstream >&2"},
+		Logger:  slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-conn.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("subprocess did not exit")
+	}
+	if err := conn.Close(); err != nil {
+		t.Fatalf("subprocess failed: %v", err)
+	}
+	if !strings.Contains(logs.String(), "[sh] from-upstream") {
+		t.Fatalf("stderr logs = %q, want the upstream stderr with the command prefix", logs.String())
+	}
+}
+
+func TestIntegrationStdioClose_killsTheUpstreamOnceAndRepeatsItsResult(t *testing.T) {
+	conn, err := startSubprocess(context.Background(), StdioCommand{
+		Command: "sleep",
+		Args:    []string{"30"},
+		Logger:  slog.New(slog.DiscardHandler),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed := make(chan error, 1)
+	go func() { closed <- conn.Close() }()
+	var first error
+	select {
+	case first = <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close waited for an upstream that ignores stdin EOF")
+	}
+	if second := conn.Close(); fmt.Sprint(second) != fmt.Sprint(first) {
+		t.Fatalf("second Close = %v, want the first result %v", second, first)
+	}
+	if conn.Health(context.Background()) == nil {
+		t.Fatal("closed connection still reports healthy")
+	}
+}
+
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }

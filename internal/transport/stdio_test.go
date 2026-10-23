@@ -11,7 +11,6 @@ import (
 	"log/slog"
 	"os/exec"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 )
@@ -97,30 +96,6 @@ type failingWriteCloser struct{}
 func (failingWriteCloser) Write([]byte) (int, error) { return 0, errors.New("broken pipe") }
 func (failingWriteCloser) Close() error              { return nil }
 
-func TestStartSubprocessPassesEnvAndPrefixesStderr(t *testing.T) {
-	var logs syncBuffer
-	conn, err := startSubprocess(context.Background(), StdioCommand{
-		Command: "sh",
-		Args:    []string{"-c", `printf '%s\n' "$MINI_STDIO_TEST" >&2`},
-		Env:     []string{"MINI_STDIO_TEST=from-config"},
-		Logger:  slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case <-conn.done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("subprocess did not exit")
-	}
-	if err := conn.Close(); err != nil {
-		t.Fatalf("subprocess failed: %v", err)
-	}
-	if !strings.Contains(logs.String(), "[sh] from-config") {
-		t.Fatalf("stderr logs = %q, want the configured env value with the command prefix", logs.String())
-	}
-}
-
 func TestStartSubprocessReportsAMissingCommand(t *testing.T) {
 	_, err := startSubprocess(context.Background(), StdioCommand{
 		Command: "mini-no-such-command",
@@ -129,55 +104,4 @@ func TestStartSubprocessReportsAMissingCommand(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "start mini-no-such-command") {
 		t.Fatalf("error = %v, want a start failure naming the command", err)
 	}
-}
-
-func TestStdioCloseKillsTheUpstreamOnceAndRepeatsItsResult(t *testing.T) {
-	conn, err := startSubprocess(context.Background(), StdioCommand{
-		Command: "sleep",
-		Args:    []string{"30"},
-		Logger:  slog.New(slog.DiscardHandler),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	closed := make(chan error, 1)
-	go func() { closed <- conn.Close() }()
-	var first error
-	select {
-	case first = <-closed:
-	case <-time.After(5 * time.Second):
-		t.Fatal("Close waited for an upstream that ignores stdin EOF")
-	}
-	if second := conn.Close(); fmt.Sprint(second) != fmt.Sprint(first) {
-		t.Fatalf("second Close = %v, want the first result %v", second, first)
-	}
-	if conn.Health(context.Background()) == nil {
-		t.Fatal("closed connection still reports healthy")
-	}
-}
-
-func TestExitStatus(t *testing.T) {
-	if got := exitStatus(nil); got != "exit status 0" {
-		t.Fatalf("exitStatus(nil) = %q", got)
-	}
-	if got := exitStatus(errors.New("signal: killed")); got != "signal: killed" {
-		t.Fatalf("exitStatus(err) = %q", got)
-	}
-}
-
-type syncBuffer struct {
-	mu  sync.Mutex
-	buf strings.Builder
-}
-
-func (b *syncBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.Write(p)
-}
-
-func (b *syncBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.String()
 }

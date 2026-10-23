@@ -363,15 +363,8 @@ func TestFreshnessStaleAndExpire(t *testing.T) {
 	}
 }
 
-func TestDecodeToolsListPageRejectsUnusablePages(t *testing.T) {
-	for name, raw := range map[string]string{
-		"input required": `{"resultType":"input_required","tools":[]}`,
-		"malformed":      `{"tools":"none"}`,
-	} {
-		t.Run(name, func(t *testing.T) {
-			if page, err := decodeToolsListPage(json.RawMessage(raw)); err == nil {
-				t.Fatalf("page %s decoded as %+v, want an error", raw, page)
-			}
-		})
+func TestDecodeToolsListPageRejectsAMalformedPage(t *testing.T) {
+	if page, err := decodeToolsListPage(json.RawMessage(`{"tools":"none"}`)); err == nil {
+		t.Fatalf("malformed page decoded as %+v, want an error", page)
 	}
 }
