@@ -3,18 +3,15 @@ package transport
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"os/exec"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/mcpmini/mini/internal/clock"
-	"github.com/mcpmini/mini/internal/version"
 )
 
 type StdioConnection struct {
@@ -123,79 +120,21 @@ func newConn(p newStdioConnParams) *StdioConnection {
 	}
 }
 
-func (c *StdioConnection) Call(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
-	modernVersion := c.negotiatedModernVersion()
-	if modernVersion != "" {
-		prepared, err := prepareModernParams(params, modernVersion)
-		if err != nil {
-			return nil, err
-		}
-		params = prepared
-	} else if method == "tools/call" {
-		params = stripModernToolCallFields(params)
-	}
-	result, err := c.rpc(ctx, method, params)
-	if err != nil || modernVersion == "" {
-		return result, err
-	}
-	if _, err := ResultTypeOf(result); err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
-func (c *StdioConnection) rpc(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
-	id := c.nextID.Add(1)
-	ch := c.pending.register(id)
-	request := Request{JsonRPC: JsonRPCVersion, ID: id, Method: method, Params: params}
-	if err := c.writeJSONContext(ctx, request); err != nil {
-		c.pending.remove(id)
-		c.abandonAfterFailedWrite(ctx, err)
-		return nil, err
-	}
-	return c.awaitResponse(ctx, id, ch)
-}
-
-func (c *StdioConnection) awaitResponse(ctx context.Context, id int64, ch chan *Response) (json.RawMessage, error) {
-	select {
-	case <-ctx.Done():
-		if c.pending.remove(id) && c.isModern() {
-			c.cancelUpstreamRequest(context.WithoutCancel(ctx), id)
-		}
-		return nil, ctx.Err()
-	case <-c.done:
-		return nil, fmt.Errorf("connection closed")
-	case resp := <-ch:
-		if resp.Error != nil {
-			return nil, resp.Error
-		}
-		return resp.Result, nil
-	}
-}
-
-func (c *StdioConnection) ListTools(ctx context.Context) ([]ToolDefinition, error) {
-	return paginateToolsList(ctx, c.callToolsPage)
-}
-
-func (c *StdioConnection) callToolsPage(ctx context.Context, cursor string) (ToolsListResult, error) {
-	var params json.RawMessage
-	if cursor != "" {
-		//nolint:errcheck // cursor map contains only strings.
-		params, _ = json.Marshal(map[string]string{"cursor": cursor})
-	}
-	raw, err := c.Call(ctx, "tools/list", params)
-	if err != nil {
-		return ToolsListResult{}, err
-	}
-	return decodeToolsListPage(raw)
-}
-
 func (c *StdioConnection) Health(_ context.Context) error {
 	select {
 	case <-c.done:
 		return fmt.Errorf("process exited")
 	default:
 		return nil
+	}
+}
+
+func (c *StdioConnection) isClosed() bool {
+	select {
+	case <-c.done:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -228,102 +167,14 @@ func (c *StdioConnection) closeDone() {
 	c.closeOnce.Do(func() { close(c.done) })
 }
 
-func (c *StdioConnection) initialize(ctx context.Context) error {
-	//nolint:errcheck // fixed handshake fields contain only JSON-serializable values.
-	params, _ := json.Marshal(newInitializeParams())
-	raw, err := c.Call(ctx, "initialize", params)
-	if err != nil {
-		return err
-	}
-	result, err := parseInitializeResult(raw)
-	if err != nil {
-		return err
-	}
-	c.logger.Info("upstream connected", "server", result.ServerInfo.Name, "protocol", result.ProtocolVersion)
-	return c.writeJSONContext(ctx, Notification{JsonRPC: JsonRPCVersion, Method: NotificationInitialized})
+func (c *StdioConnection) abandon() {
+	c.closeDone()
+	_ = c.shutdownProcess() //nolint:errcheck // the caller reports why the connection ended
 }
 
-func newInitializeParams() InitializeParams {
-	return InitializeParams{
-		ProtocolVersion: LatestLegacyVersion,
-		Capabilities:    map[string]any{},
-		ClientInfo:      ClientInfo{Name: "mini", Version: version.Version},
+func exitStatus(waitErr error) string {
+	if waitErr == nil {
+		return "exit status 0"
 	}
-}
-
-func parseInitializeResult(raw json.RawMessage) (InitializeResult, error) {
-	var result InitializeResult
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return InitializeResult{}, fmt.Errorf("parse initialize: %w", err)
-	}
-	if !IsLegacyVersion(result.ProtocolVersion) {
-		return InitializeResult{}, fmt.Errorf(
-			"upstream negotiated unsupported protocol version %q",
-			result.ProtocolVersion,
-		)
-	}
-	return result, nil
-}
-
-func (c *StdioConnection) readLoop() {
-	defer c.closeDone()
-	for c.scanner.Scan() {
-		c.dispatch(c.scanner.Bytes())
-	}
-	if err := c.scanner.Err(); err != nil {
-		c.logger.Error("upstream read error", "err", err)
-	}
-}
-
-func (c *StdioConnection) dispatch(line []byte) {
-	var resp Response
-	if err := json.Unmarshal(line, &resp); err != nil {
-		c.logger.Error("bad upstream response", "err", err)
-		return
-	}
-	if resp.ID == nil {
-		c.dispatchNotification(line)
-		return
-	}
-	c.noteSubscriptionResponse(&resp)
-	c.pending.deliver(resp.ID, &resp)
-}
-
-func (c *StdioConnection) dispatchNotification(line []byte) {
-	var notification Notification
-	if err := json.Unmarshal(line, &notification); err != nil || notification.Method == "" {
-		return
-	}
-	if c.isModern() && c.dispatchModernSubscriptionNotification(notification) {
-		return
-	}
-	if notification.Method == NotificationToolsChanged {
-		c.toolsChanged.NotifyToolsChanged()
-		return
-	}
-	if handler := c.toolsChanged.Handler(); handler != nil {
-		handler(notification)
-	}
-}
-
-func (c *StdioConnection) SetNotificationHandler(handler func(Notification)) {
-	c.toolsChanged.SetHandler(handler)
-}
-
-// A best-effort notice for a caller that has already given up, so it gets only a short bound.
-const stdioCancelWriteTimeout = 250 * time.Millisecond
-
-func (c *StdioConnection) cancelUpstreamRequest(parent context.Context, id int64) {
-	ctx, cancel := clock.WithTimeout(parent, c.clock, stdioCancelWriteTimeout)
-	defer cancel()
-	params, err := json.Marshal(CancelledParams{RequestID: json.RawMessage(strconv.FormatInt(id, 10))})
-	if err != nil {
-		c.logger.Debug("encode upstream cancellation", "err", err)
-		return
-	}
-	notification := Notification{JsonRPC: JsonRPCVersion, Method: NotificationCancelled, Params: params}
-	if err := c.writeJSONContext(ctx, notification); err != nil {
-		c.logger.Debug("send upstream cancellation", "err", err)
-		c.abandonAfterFailedWrite(ctx, err)
-	}
+	return waitErr.Error()
 }

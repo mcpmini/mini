@@ -91,7 +91,7 @@ func (c *HTTPConnection) parseHTTPMessage(message []byte, requestID any) (parsed
 		return parsedHTTPMessage{}, unusableResponseError{err}
 	}
 	if len(rpc.ID) == 0 && rpc.Method != "" {
-		c.dispatchNotification(Notification{JsonRPC: JsonRPCVersion, Method: rpc.Method, Params: rpc.Params})
+		c.handleNotification(Notification{JsonRPC: JsonRPCVersion, Method: rpc.Method, Params: rpc.Params})
 		return parsedHTTPMessage{}, nil
 	}
 	return parsedHTTPMessage{

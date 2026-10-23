@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log/slog"
 	"sync"
+
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 type toolsChangedOutbox struct {
@@ -105,4 +107,38 @@ func (s *Session) notifyToolsChanged() {
 		return
 	}
 	slog.Debug("notification queue full, dropping event")
+}
+
+func startSessionNotifyForwarder(session *Session, writeOut func(any)) func() {
+	ch, ok := session.openToolsChangedStream()
+	if !ok {
+		return func() {}
+	}
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for notification := range ch {
+			session.forwardToolsChanged(notification, writeOut)
+		}
+	}()
+	return func() { session.closeToolsChangedStream(ch); wg.Wait() }
+}
+
+func (s *Session) forwardToolsChanged(raw json.RawMessage, writeOut func(any)) {
+	if !s.modern.Load() {
+		writeOut(raw)
+		return
+	}
+	s.writeTaggedToolsChanged(writeOut)
+}
+
+func (s *Session) writeTaggedToolsChanged(writeOut func(any)) {
+	s.listensMu.Lock()
+	defer s.listensMu.Unlock()
+	for id, wantsToolChanges := range s.listenTools {
+		if wantsToolChanges {
+			writeOut(transport.NewToolsListChangedNotification(json.RawMessage(id)))
+		}
+	}
 }

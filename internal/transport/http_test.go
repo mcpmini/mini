@@ -217,8 +217,8 @@ func TestHTTPConnection_sessionIDPersisted(t *testing.T) {
 func TestHTTPConnection_buffersNotificationUntilHandlerInstalled(t *testing.T) {
 	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: "http://example.invalid"})
 	for range 32 {
-		conn.dispatchNotification(Notification{JsonRPC: JsonRPCVersion, Method: NotificationInitialized})
-		conn.dispatchNotification(Notification{JsonRPC: JsonRPCVersion, Method: NotificationToolsChanged})
+		conn.handleNotification(Notification{JsonRPC: JsonRPCVersion, Method: NotificationInitialized})
+		conn.handleNotification(Notification{JsonRPC: JsonRPCVersion, Method: NotificationToolsChanged})
 	}
 
 	received := make(chan Notification, 8)
@@ -237,8 +237,8 @@ func TestHTTPConnection_buffersNotificationUntilHandlerInstalled(t *testing.T) {
 	default:
 	}
 
-	conn.dispatchNotification(Notification{JsonRPC: JsonRPCVersion, Method: NotificationInitialized})
-	conn.dispatchNotification(Notification{JsonRPC: JsonRPCVersion, Method: NotificationToolsChanged})
+	conn.handleNotification(Notification{JsonRPC: JsonRPCVersion, Method: NotificationInitialized})
+	conn.handleNotification(Notification{JsonRPC: JsonRPCVersion, Method: NotificationToolsChanged})
 	got := []string{
 		mustReceiveBufferedNotification(t, received).Method,
 		mustReceiveBufferedNotification(t, received).Method,

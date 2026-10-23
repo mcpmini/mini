@@ -29,14 +29,14 @@ func (c *StdioConnection) negotiate(ctx context.Context) (*StdioConnection, erro
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return c.restartForLegacy(ctx, errProbeUnanswered.Error())
+		return c.restartWithInitialize(ctx, errProbeUnanswered.Error())
 	case c.exitedBeforeSetup(ctx, err):
 		// Some legacy servers exit on an unknown method, before or after answering it.
 		exit := c.Close()
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return c.restartForLegacy(ctx, fmt.Sprintf("upstream exited during setup (%s)", exitStatus(exit)))
+		return c.restartWithInitialize(ctx, fmt.Sprintf("upstream exited during setup (%s)", exitStatus(exit)))
 	}
 	_ = c.Close() //nolint:errcheck // cleanup must not mask the setup error
 	return nil, err
@@ -234,16 +234,7 @@ func unsupportedStdioVersion(data UnsupportedVersionData, requested string) erro
 	)
 }
 
-func (c *StdioConnection) isClosed() bool {
-	select {
-	case <-c.done:
-		return true
-	default:
-		return false
-	}
-}
-
-func (c *StdioConnection) restartForLegacy(ctx context.Context, probeFailure string) (*StdioConnection, error) {
+func (c *StdioConnection) restartWithInitialize(ctx context.Context, probeFailure string) (*StdioConnection, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -259,9 +250,17 @@ func (c *StdioConnection) restartForLegacy(ctx context.Context, probeFailure str
 	return replacement, nil
 }
 
-func exitStatus(waitErr error) string {
-	if waitErr == nil {
-		return "exit status 0"
+func (c *StdioConnection) initialize(ctx context.Context) error {
+	//nolint:errcheck // fixed handshake fields contain only JSON-serializable values.
+	params, _ := json.Marshal(newInitializeParams())
+	raw, err := c.Call(ctx, "initialize", params)
+	if err != nil {
+		return err
 	}
-	return waitErr.Error()
+	result, err := parseInitializeResult(raw)
+	if err != nil {
+		return err
+	}
+	c.logger.Info("upstream connected", "server", result.ServerInfo.Name, "protocol", result.ProtocolVersion)
+	return c.writeJSONContext(ctx, Notification{JsonRPC: JsonRPCVersion, Method: NotificationInitialized})
 }
