@@ -53,6 +53,10 @@ func SocketClient(socket string, timeout time.Duration) *http.Client {
 
 func socketTransport(socket string) *http.Transport {
 	return &http.Transport{
+		// A pooled connection to a daemon that has since exited can fail a POST with "server closed
+		// idle connection", which the proxy can't tell from a request the daemon received, so it
+		// never retries; a fresh dial to an exited daemon fails before sending and is retried.
+		DisableKeepAlives: true,
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			// network and address come from the request URL; ignored because the daemon listens on a Unix socket
 			return (&net.Dialer{}).DialContext(ctx, "unix", socket)
