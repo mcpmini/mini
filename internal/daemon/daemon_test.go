@@ -1,7 +1,10 @@
 package daemon_test
 
 import (
+	"context"
+	"io"
 	"net/http"
+	"net/http/httptrace"
 	"os"
 	"path/filepath"
 	"strings"
@@ -159,4 +162,34 @@ func TestRunning_checksHealthzPath(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("healthcheck did not call the daemon")
 	}
+}
+
+func TestSocketClient_dialsTheDaemonForEveryRequest(t *testing.T) {
+	sock := daemon.SocketPath(shortConfigDir(t))
+	testutil.StartUnixServer(t, sock, func(http.ResponseWriter, *http.Request) {})
+	client := daemon.SocketClient(sock, 5*time.Second)
+	for i := range 2 {
+		if socketClientReusedConnection(t, client) {
+			t.Fatalf("request %d reused a pooled connection, which fails unretried if the daemon has exited since", i)
+		}
+	}
+}
+
+func socketClientReusedConnection(t *testing.T, client *http.Client) bool {
+	t.Helper()
+	var reused bool
+	trace := &httptrace.ClientTrace{GotConn: func(info httptrace.GotConnInfo) { reused = info.Reused }}
+	ctx := httptrace.WithClientTrace(context.Background(), trace)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://localhost/mcp", strings.NewReader("{}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("POST to the daemon socket: %v", err)
+	}
+	//nolint:errcheck // draining only lets the transport pool the connection, which is what the test checks.
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close() //nolint:errcheck // the empty response is already read
+	return reused
 }
