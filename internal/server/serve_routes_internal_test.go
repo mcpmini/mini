@@ -63,6 +63,8 @@ func TestHandleCancelledCancelsTheNamedRequestAndListen(t *testing.T) {
 	session.registerInFlight(json.RawMessage(`"7"`), cancelOther)
 	session.listens["7"] = func() {}
 	session.listenTools["7"] = true
+	session.listens[`"7"`] = func() {}
+	session.listenTools[`"7"`] = true
 
 	handleCancelled(json.RawMessage(`{"requestId":7}`), session)
 
@@ -77,6 +79,9 @@ func TestHandleCancelledCancelsTheNamedRequestAndListen(t *testing.T) {
 	}
 	if _, open := session.listens["7"]; open {
 		t.Fatal("listen 7 is still registered after cancellation")
+	}
+	if _, open := session.listens[`"7"`]; !open {
+		t.Fatal(`listen "7" was removed by a cancellation for numeric id 7`)
 	}
 }
 
@@ -113,8 +118,11 @@ func TestResolveToolModeFallsBackToServerDefault(t *testing.T) {
 			}
 		})
 	}
-	if got := newRouteTestServer(transport.ToolModeProxy).resolveToolMode(""); got != transport.ToolModeProxy {
-		t.Fatalf("no signal on a proxy server resolved to %v", got)
+	proxy := newRouteTestServer(transport.ToolModeProxy)
+	for _, signal := range []string{"", "turbo"} {
+		if got := proxy.resolveToolMode(signal); got != transport.ToolModeProxy {
+			t.Fatalf("signal %q on a proxy server resolved to %v, want the server's proxy default", signal, got)
+		}
 	}
 }
 
@@ -246,9 +254,12 @@ func TestNormalizeToolCallResult(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := normalizeToolCallResult(tc.result).(map[string]any)
-			text := got["content"].([]map[string]any)[0]["text"]
-			if (got["isError"] == true) != tc.isError || text != tc.text {
+			got, ok := normalizeToolCallResult(tc.result).(map[string]any)
+			content, hasContent := got["content"].([]map[string]any)
+			if !ok || !hasContent || len(content) == 0 {
+				t.Fatalf("result = %#v, want a map with a content block", got)
+			}
+			if text := content[0]["text"]; (got["isError"] == true) != tc.isError || text != tc.text {
 				t.Fatalf("result = %+v, want isError=%v text %q", got, tc.isError, tc.text)
 			}
 		})
