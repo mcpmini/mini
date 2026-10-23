@@ -125,21 +125,19 @@ func (c *HTTPConnection) modernRPCError(err *RPCError) error {
 func (c *HTTPConnection) ListTools(ctx context.Context) (ToolList, error) {
 	// Judged by how each page was sent, not the shared era, which a concurrent reset can change mid-listing.
 	anyLegacyPage := false
-	tools, err := paginateToolsList(ctx, func(ctx context.Context, cursor string) (ToolsListResult, error) {
+	toolList, err := paginateToolsList(ctx, func(ctx context.Context, cursor string) (toolsListPage, error) {
 		page, modernVersion, err := c.callToolsPage(ctx, cursor)
 		anyLegacyPage = anyLegacyPage || (err == nil && modernVersion == "")
 		return page, err
 	})
-	if err != nil {
-		return ToolList{}, err
+	if err != nil || anyLegacyPage {
+		return toolList, err
 	}
-	if anyLegacyPage {
-		return ToolList{Tools: tools}, nil
-	}
-	return ToolList{Tools: c.rebuildToolHeaders(tools)}, nil
+	toolList.Tools = c.rebuildToolHeaders(toolList.Tools)
+	return toolList, nil
 }
 
-func (c *HTTPConnection) callToolsPage(ctx context.Context, cursor string) (ToolsListResult, string, error) {
+func (c *HTTPConnection) callToolsPage(ctx context.Context, cursor string) (toolsListPage, string, error) {
 	var params json.RawMessage
 	if cursor != "" {
 		//nolint:errcheck // cursor map contains only strings.
@@ -147,11 +145,8 @@ func (c *HTTPConnection) callToolsPage(ctx context.Context, cursor string) (Tool
 	}
 	raw, modernVersion, err := c.callAndReportVersion(ctx, "tools/list", params)
 	if err != nil {
-		return ToolsListResult{}, "", err
+		return toolsListPage{}, "", err
 	}
-	r, err := decodeToolsListPage(raw)
-	if err != nil {
-		return ToolsListResult{}, "", err
-	}
-	return r, modernVersion, nil
+	page, err := decodeToolsListPage(raw, c.clock.Now(), modernVersion)
+	return page, modernVersion, err
 }

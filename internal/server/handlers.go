@@ -68,15 +68,18 @@ func (s *Server) handleList(ctx context.Context, raw json.RawMessage) (any, erro
 	if err := unmarshalOptional(raw, &p); err != nil {
 		return nil, err
 	}
-	if p.Tool != "" && p.Detail {
-		return s.listDetail(p.Tool)
+	switch {
+	case p.Tool != "" && p.Detail:
+		return s.listFreshDetail(ctx, p.Tool)
+	case p.Hidden && s.cfg.DisableListHidden:
+		return nil, errListHiddenDisabled
 	}
-	if err := s.waitForStartup(ctx); err != nil {
+	if err := s.awaitCurrentToolLists(ctx); err != nil {
 		return nil, err
 	}
 	switch {
 	case p.Hidden:
-		return s.listHidden()
+		return s.reg.AllWithHidden(), nil
 	case p.Query != "":
 		return s.reg.Search(p.Query), nil
 	default:
@@ -84,15 +87,45 @@ func (s *Server) handleList(ctx context.Context, raw json.RawMessage) (any, erro
 	}
 }
 
-func (s *Server) listHidden() (any, error) {
-	if s.cfg.DisableListHidden {
-		return nil, fmt.Errorf("listing hidden tools is disabled by server configuration (disable_list_hidden: true)")
+var errListHiddenDisabled = errors.New(
+	"listing hidden tools is disabled by server configuration (disable_list_hidden: true)",
+)
+
+func (s *Server) awaitCurrentToolLists(ctx context.Context) error {
+	wait, cancel := context.WithTimeout(ctx, discoveryWait)
+	defer cancel()
+	if err := s.waitForStartup(ctx); err != nil {
+		return err
 	}
-	return s.reg.AllWithHidden(), nil
+	s.awaitFreshToolLists(wait, s.snapshotUpstreams())
+	return ctx.Err()
 }
 
-func (s *Server) listDetail(fullName string) (any, error) {
+func (s *Server) listFreshDetail(ctx context.Context, fullName string) (any, error) {
 	server, tool, _ := strings.Cut(fullName, ".")
+	if u := s.detailUpstream(server, tool); u != nil {
+		wait, cancel := context.WithTimeout(ctx, discoveryWait)
+		defer cancel()
+		s.awaitFreshToolLists(wait, []*upstreamServer{u})
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+	}
+	return s.listDetail(server, tool)
+}
+
+func (s *Server) detailUpstream(server, tool string) *upstreamServer {
+	if validateExecuteParams(executeParams{Server: server, Tool: tool}) != nil {
+		return nil
+	}
+	u, err := s.getUpstream(server)
+	if err != nil {
+		return nil
+	}
+	return u
+}
+
+func (s *Server) listDetail(server, tool string) (any, error) {
 	e, err := s.lookupTool(server, tool)
 	if err != nil {
 		return s.toolNotFoundError(err, server, tool)

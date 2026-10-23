@@ -225,7 +225,7 @@ func (s *Server) installUpstreamLocked(
 	toolList transport.ToolList,
 ) {
 	u := s.newUpstreamServer(sc, conn)
-	u.lastDefs = toolList.Tools
+	u.adoptToolList(toolList)
 	old := s.swapUpstream(sc.Name, u)
 	s.seedProjectionsIfNone(sc)
 	s.registerTools(sc, toolList.Tools, old)

@@ -180,7 +180,7 @@ func (s *Server) handleToolsList(ctx context.Context, session *Session) (any, er
 	if session.toolMode() != transport.ToolModeProxy {
 		return map[string]any{"tools": s.toolSchemas}, nil
 	}
-	if err := s.waitForStartup(ctx); err != nil {
+	if err := s.awaitCurrentToolLists(ctx); err != nil {
 		return nil, err
 	}
 	schemas, err := buildProxyToolSchemas(s.reg.AllFull())
