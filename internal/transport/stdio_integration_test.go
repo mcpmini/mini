@@ -13,8 +13,11 @@ import (
 	"os/exec"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/mcpmini/mini/internal/clock"
 )
 
 func TestIntegrationStdioEnvironment_overlaysParent(t *testing.T) {
@@ -141,11 +144,17 @@ func TestIntegrationStdioCallReturnsAtItsDeadlineWhenTheServerStopsReadingStdin(
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { conn.Close() })
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	stdin := &writeStartSignal{pipe: conn.stdin, started: make(chan struct{})}
+	conn.stdin = stdin
+	fake := clock.NewFake()
+	ctx, cancel := clock.WithTimeout(context.Background(), fake, 200*time.Millisecond)
 	defer cancel()
 	largerThanThePipeBuffer := json.RawMessage(`"` + strings.Repeat("x", 1<<20) + `"`)
 	returned := make(chan error, 1)
 	go func() { _, err := conn.Call(ctx, "ping", largerThanThePipeBuffer); returned <- err }()
+	// A deadline that passes before the write starts is a plain cancellation, not the interrupted write.
+	<-stdin.started
+	fake.Advance(200 * time.Millisecond)
 	select {
 	case err := <-returned:
 		if !errors.Is(err, os.ErrDeadlineExceeded) {
@@ -157,4 +166,21 @@ func TestIntegrationStdioCallReturnsAtItsDeadlineWhenTheServerStopsReadingStdin(
 	if conn.Health(context.Background()) == nil {
 		t.Fatal("a half-written request left the connection usable")
 	}
+}
+
+type writeStartSignal struct {
+	pipe    io.WriteCloser
+	started chan struct{}
+	once    sync.Once
+}
+
+func (s *writeStartSignal) Write(b []byte) (int, error) {
+	s.once.Do(func() { close(s.started) })
+	return s.pipe.Write(b)
+}
+
+func (s *writeStartSignal) Close() error { return s.pipe.Close() }
+
+func (s *writeStartSignal) SetWriteDeadline(deadline time.Time) error {
+	return s.pipe.(deadlineWriter).SetWriteDeadline(deadline)
 }
