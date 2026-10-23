@@ -87,21 +87,6 @@ func TestRun_connect(t *testing.T) {
 	}
 }
 
-// pressingAndDelivering also runs the command each key returns, as the program would, so
-// background work a screen starts finishes before the next key.
-func pressingAndDelivering(keys ...string) func(tea.Model) error {
-	return func(m tea.Model) error {
-		deliver(m, m.Init())
-		m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
-		m.View()
-		for _, key := range keys {
-			cmd := pressKey(m, key)
-			deliver(m, cmd)
-		}
-		return nil
-	}
-}
-
 func TestRun_connectAndRemove(t *testing.T) {
 	run := func(t *testing.T, check error) (agents.Agent, Outcome) {
 		t.Helper()
@@ -112,7 +97,7 @@ func TestRun_connectAndRemove(t *testing.T) {
 		setup.AgentsToConnect = []agents.Agent{claude}
 		setup.Probe = func(context.Context, string, config.ServerConfig) error { return check }
 		// Nothing to import or add, so Connect is the first screen; enter picks the first option.
-		out, err := Run(Params{Setup: setup, LoadCatalog: noCatalog, Program: pressingAndDelivering("enter")})
+		out, err := Run(Params{Setup: setup, LoadCatalog: noCatalog, Program: pressing("enter")})
 		if err != nil {
 			t.Fatal(err)
 		}
