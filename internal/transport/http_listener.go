@@ -50,8 +50,8 @@ func (c *HTTPConnection) startListener() {
 	if c.listener != nil && !c.listener.stopped() {
 		return
 	}
-	c.listenerMu.Lock()
-	defer c.listenerMu.Unlock()
+	c.closeMu.Lock()
+	defer c.closeMu.Unlock()
 	if c.closed {
 		return
 	}

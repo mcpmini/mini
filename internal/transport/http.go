@@ -24,24 +24,24 @@ type HTTPConnection struct {
 	client                  *http.Client
 	clock                   clock.Clock
 	nextID                  atomic.Int64
+	mu                      sync.Mutex
 	sessionID               string
 	protocolVersion         string
-	mu                      sync.Mutex
-	initMu                  sync.Mutex
+	setupMu                 sync.Mutex
 	eraKnown                bool
-	// Atomic because request building reads it while a probe may hold initMu.
-	modernVersion     atomic.Pointer[string]
-	modernMu          sync.RWMutex
-	modernListMu      sync.Mutex
-	modernHeaders     map[string][]headerParameter
-	initialized       bool
-	initializedBefore bool
-	listener          *sessionListener
-	listenerCtx       context.Context
-	listenerCancel    context.CancelFunc
-	listenerWG        sync.WaitGroup
-	// Guards closed, so no listener is added to listenerWG once Close has started waiting on it.
-	listenerMu   sync.Mutex
+	initialized             bool
+	initializedBefore       bool
+	listener                *sessionListener
+	// Atomic because request building reads it while a probe may hold setupMu.
+	modernVersion  atomic.Pointer[string]
+	modernMu       sync.RWMutex
+	modernListMu   sync.Mutex
+	modernHeaders  map[string][]headerParameter
+	listenerCtx    context.Context
+	listenerCancel context.CancelFunc
+	listenerWG     sync.WaitGroup
+	// No listener may join listenerWG once Close has started waiting on it.
+	closeMu      sync.Mutex
 	closed       bool
 	toolsChanged toolsChangedNotifier
 }
@@ -179,9 +179,9 @@ func (c *HTTPConnection) Health(ctx context.Context) error {
 }
 
 func (c *HTTPConnection) Close() error {
-	c.listenerMu.Lock()
+	c.closeMu.Lock()
 	c.closed = true
-	c.listenerMu.Unlock()
+	c.closeMu.Unlock()
 	c.listenerCancel()
 	c.listenerWG.Wait()
 	return nil
