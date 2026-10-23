@@ -174,11 +174,17 @@ func (c *StdioConnection) discoverCorrected(ctx context.Context, protocolVersion
 	}
 	verdict, err := classifyStdioDiscover(result, protocolVersion)
 	if err == nil && verdict.era != EraModern {
-		return probeVerdict{}, explicitModernProbeError{
-			fmt.Errorf("modern discovery retry for %q returned no supported versions", protocolVersion),
-		}
+		return probeVerdict{}, explicitModernProbeError{retryWithoutModernVersion(result, protocolVersion)}
 	}
 	return verdict, err
+}
+
+func retryWithoutModernVersion(result json.RawMessage, protocolVersion string) error {
+	if versions, listed := discoverSupportedVersions(result); listed {
+		data := UnsupportedVersionData{Supported: versions}
+		return fmt.Errorf("modern discovery retry: %w", unsupportedVersionError(data, protocolVersion))
+	}
+	return fmt.Errorf("modern discovery retry for %q returned no supported versions", protocolVersion)
 }
 
 func classifyStdioDiscover(result json.RawMessage, requested string) (probeVerdict, error) {

@@ -133,6 +133,8 @@ func TestClassifyDiscoverResponses(t *testing.T) {
 		{name: "400 with a null id", status: 400, body: `{"jsonrpc":"2.0","id":null,"error":{"code":-32000,"message":"Unsupported protocol version"}}`, era: EraLegacy},
 		{name: "unsupported version listing modern", status: 200, body: `{"jsonrpc":"2.0","id":1,"error":{"code":-32022,"message":"Unsupported protocol version","data":{"supported":["2026-07-28","2025-11-25"]}}}`, era: EraModern},
 		{name: "unsupported version listing only legacy", status: 200, body: `{"jsonrpc":"2.0","id":1,"error":{"code":-32022,"message":"Unsupported protocol version","data":{"supported":["2025-11-25","2025-06-18"]}}}`, era: EraLegacy},
+		{name: "unsupported version sharing nothing", status: 200, body: `{"jsonrpc":"2.0","id":1,"error":{"code":-32022,"message":"Unsupported protocol version","data":{"supported":["2099-01-01"]}}}`, wantErr: true},
+		{name: "400 unsupported version without data", status: 400, body: `{"jsonrpc":"2.0","id":1,"error":{"code":-32022,"message":"Unsupported protocol version"}}`, wantErr: true},
 		{name: "header mismatch", status: 200, body: `{"jsonrpc":"2.0","id":1,"error":{"code":-32020,"message":"header mismatch"}}`, wantErr: true},
 		{name: "client mismatch", status: 200, body: `{"jsonrpc":"2.0","id":1,"error":{"code":-32021,"message":"client mismatch"}}`, wantErr: true},
 		{name: "forbidden", status: 403, body: "forbidden", wantErr: true},
