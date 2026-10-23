@@ -61,8 +61,9 @@ func (c *StdioConnection) awaitResponse(ctx context.Context, id int64, ch chan *
 	}
 }
 
-func (c *StdioConnection) ListTools(ctx context.Context) ([]ToolDefinition, error) {
-	return paginateToolsList(ctx, c.callToolsPage)
+func (c *StdioConnection) ListTools(ctx context.Context) (ToolList, error) {
+	tools, err := paginateToolsList(ctx, c.callToolsPage)
+	return ToolList{Tools: tools}, err
 }
 
 func (c *StdioConnection) callToolsPage(ctx context.Context, cursor string) (ToolsListResult, error) {

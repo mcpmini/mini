@@ -73,7 +73,7 @@ func mustListTools(t *testing.T, conn *HTTPConnection) []ToolDefinition {
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
-	return got
+	return got.Tools
 }
 
 func mustLegacyHTTPConn(t *testing.T, cfg HTTPConnectionConfig) *HTTPConnection {
@@ -701,8 +701,8 @@ func TestListTools_HTTPPagination(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"a", "b"}; !slices.Equal(toolNames(got), want) {
-		t.Errorf("got %v, want %v", toolNames(got), want)
+	if want := []string{"a", "b"}; !slices.Equal(toolNames(got.Tools), want) {
+		t.Errorf("got %v, want %v", toolNames(got.Tools), want)
 	}
 	gotCursors := []string{<-cursorCh, <-cursorCh}
 	if want := []string{"", "p2"}; !slices.Equal(gotCursors, want) {

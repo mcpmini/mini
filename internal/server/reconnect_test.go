@@ -37,8 +37,8 @@ func (c *errAfterRegisterConn) Call(
 	return json.RawMessage(`{"content":[{"type":"text","text":"ok"}]}`), nil
 }
 
-func (c *errAfterRegisterConn) ListTools(_ context.Context) ([]transport.ToolDefinition, error) {
-	return c.tools, nil
+func (c *errAfterRegisterConn) ListTools(_ context.Context) (transport.ToolList, error) {
+	return transport.ToolList{Tools: c.tools}, nil
 }
 func (c *errAfterRegisterConn) Health(_ context.Context) error { return nil }
 func (c *errAfterRegisterConn) Close() error                   { return nil }
@@ -440,8 +440,8 @@ func (c *slowErrConn) Call(ctx context.Context, _ string, _ json.RawMessage) (js
 	return nil, errors.New("transport: connection reset")
 }
 
-func (c *slowErrConn) ListTools(_ context.Context) ([]transport.ToolDefinition, error) {
-	return c.tools, nil
+func (c *slowErrConn) ListTools(_ context.Context) (transport.ToolList, error) {
+	return transport.ToolList{Tools: c.tools}, nil
 }
 func (c *slowErrConn) Health(_ context.Context) error { return nil }
 func (c *slowErrConn) Close() error                   { return nil }

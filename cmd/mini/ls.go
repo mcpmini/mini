@@ -62,13 +62,13 @@ func fetchTools(configDir, serverName string) ([]transport.ToolDefinition, func(
 		return nil, nil, err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	tools, err := conn.ListTools(ctx)
+	list, err := conn.ListTools(ctx)
 	if err != nil {
 		cancel()
 		conn.Close() //nolint:errcheck // Preserve the ListTools error; closing a killed stdio process may report its exit status.
 		return nil, nil, fmt.Errorf("list tools: %w", err)
 	}
-	return tools, func() {
+	return list.Tools, func() {
 		cancel()
 		//nolint:errcheck // Tools are already read; closing a killed stdio process may report its exit status.
 		conn.Close()

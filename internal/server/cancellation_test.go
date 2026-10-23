@@ -208,8 +208,8 @@ func (f *blockingFakeConn) Call(ctx context.Context, _ string, _ json.RawMessage
 	return nil, ctx.Err()
 }
 
-func (f *blockingFakeConn) ListTools(_ context.Context) ([]transport.ToolDefinition, error) {
-	return f.tools, nil
+func (f *blockingFakeConn) ListTools(_ context.Context) (transport.ToolList, error) {
+	return transport.ToolList{Tools: f.tools}, nil
 }
 
 func (f *blockingFakeConn) Health(_ context.Context) error { return nil }

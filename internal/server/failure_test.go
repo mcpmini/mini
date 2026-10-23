@@ -113,8 +113,8 @@ func (c *slowConnection) Call(ctx context.Context, method string, _ json.RawMess
 	}
 }
 
-func (c *slowConnection) ListTools(_ context.Context) ([]transport.ToolDefinition, error) {
-	return c.tools, nil
+func (c *slowConnection) ListTools(_ context.Context) (transport.ToolList, error) {
+	return transport.ToolList{Tools: c.tools}, nil
 }
 
 func (c *slowConnection) Health(_ context.Context) error { return nil }

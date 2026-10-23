@@ -352,7 +352,7 @@ type slowFakeConn struct {
 	block chan struct{}
 }
 
-func (c *slowFakeConn) ListTools(ctx context.Context) ([]transport.ToolDefinition, error) {
+func (c *slowFakeConn) ListTools(ctx context.Context) (transport.ToolList, error) {
 	<-c.block // wait until remove has fired
 	return c.FakeConnection.ListTools(ctx)
 }

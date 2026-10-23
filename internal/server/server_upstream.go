@@ -164,13 +164,13 @@ func (s *Server) IsReconnecting(serverName string) bool {
 }
 
 func (s *Server) registerUpstream(ctx context.Context, conn transport.Connection, in upstreamInstall) error {
-	tools, err := conn.ListTools(ctx)
+	list, err := conn.ListTools(ctx)
 	if err != nil {
 		conn.Close() //nolint:errcheck // ListTools failure is returned; Close only releases the unregistered connection.
 		return fmt.Errorf("list tools from %s: %w", in.cfg.Name, err)
 	}
 	//nolint:contextcheck // Installed upstream ownership keeps notification refreshes alive beyond this install request.
-	return s.installChecked(conn, tools, in)
+	return s.installChecked(conn, list, in)
 }
 
 func (s *Server) snapshotRemoveGen(name string) uint64 {
@@ -185,7 +185,7 @@ func (s *Server) checkInstall(in upstreamInstall) error {
 	return s.checkInstallLocked(in)
 }
 
-func (s *Server) installChecked(conn transport.Connection, tools []transport.ToolDefinition, in upstreamInstall) error {
+func (s *Server) installChecked(conn transport.Connection, list transport.ToolList, in upstreamInstall) error {
 	s.serverOpMu.Lock()
 	defer s.serverOpMu.Unlock()
 	if err := s.checkInstallLocked(in); err != nil {
@@ -195,7 +195,7 @@ func (s *Server) installChecked(conn transport.Connection, tools []transport.Too
 	if in.keepLiveProjections {
 		in.cfg.Projections = s.liveProjections(in.cfg.Name)
 	}
-	s.installUpstreamLocked(in.cfg, conn, tools)
+	s.installUpstreamLocked(in.cfg, conn, list)
 	return nil
 }
 
@@ -223,16 +223,16 @@ func (s *Server) checkInstallLocked(in upstreamInstall) error {
 func (s *Server) installUpstreamLocked(
 	sc config.ServerConfig,
 	conn transport.Connection,
-	tools []transport.ToolDefinition,
+	list transport.ToolList,
 ) {
 	u := newUpstreamServer(sc, conn, s.clock)
-	u.lastDefs = tools
+	u.lastDefs = list.Tools
 	old := s.swapUpstream(sc.Name, u)
 	s.seedProjectionsIfNone(sc)
-	s.registerTools(sc, tools, old)
+	s.registerTools(sc, list.Tools, old)
 	s.markToolsReady(sc.Name)
 	s.attachNotificationHandler(u, conn)
-	s.logger.Info("upstream registered", "server", sc.Name, "tools", len(tools))
+	s.logger.Info("upstream registered", "server", sc.Name, "tools", len(list.Tools))
 }
 
 func (s *Server) seedProjectionsIfNone(sc config.ServerConfig) {

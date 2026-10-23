@@ -51,8 +51,7 @@ func (def ToolDefinition) ToMap() (map[string]any, error) {
 type Connection interface {
 	// Call invokes a JSON-RPC method on the upstream server.
 	Call(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error)
-	// ListTools returns the full tool list from the upstream server.
-	ListTools(ctx context.Context) ([]ToolDefinition, error)
+	ListTools(ctx context.Context) (ToolList, error)
 	// Health checks if the upstream server is alive.
 	Health(ctx context.Context) error
 	// Close shuts down the connection.
