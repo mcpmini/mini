@@ -468,18 +468,15 @@ func mustListTools(t *testing.T, srv *server.Server) []map[string]any {
 	return tools
 }
 
-func resultJSONText(t *testing.T, resp map[string]any) string {
+func toolListJSON(t *testing.T, resp map[string]any) string {
 	t.Helper()
 	result, ok := resp["result"].(map[string]any)
-	if !ok {
-		t.Fatalf("missing result: %v", resp)
+	if !ok || result["tools"] == nil {
+		t.Fatalf("missing tools/list result: %v", resp)
 	}
-	if tools, ok := result["tools"]; ok {
-		raw, err := json.Marshal(tools)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return string(raw)
+	raw, err := json.Marshal(result["tools"])
+	if err != nil {
+		t.Fatal(err)
 	}
-	return toolResultText(t, resp)
+	return string(raw)
 }

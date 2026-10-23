@@ -51,7 +51,7 @@ func setupFSServer(t *testing.T, allowedDir string) (*server.Server, context.Can
 
 func fsTestDiscover(t *testing.T, srv *server.Server) {
 	t.Helper()
-	text := resultJSONText(t, serve(t, srv, rpc("tools/list", nil)))
+	text := toolListJSON(t, serve(t, srv, rpc("tools/list", nil)))
 	var tools []map[string]any
 	if err := json.Unmarshal([]byte(text), &tools); err != nil {
 		t.Fatalf("discover not JSON: %v\n%s", err, text)

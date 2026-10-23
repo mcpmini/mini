@@ -36,7 +36,7 @@ func setupGitHubMCP(t *testing.T, ctx context.Context, token string) *server.Ser
 
 func ghTestDiscover(t *testing.T, srv *server.Server) {
 	t.Helper()
-	text := resultJSONText(t, serve(t, srv, rpc("tools/list", nil)))
+	text := toolListJSON(t, serve(t, srv, rpc("tools/list", nil)))
 	var tools []map[string]any
 	if err := json.Unmarshal([]byte(text), &tools); err != nil {
 		t.Fatalf("discover not JSON: %v\n%s", err, text)

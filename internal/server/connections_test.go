@@ -56,17 +56,13 @@ func TestMultipleServers(t *testing.T) {
 		addConnectionParams{T: t, Server: srv, Config: config.ServerConfig{Name: "fs2"}, Connection: fake2},
 	)
 
-	var tools []map[string]any
-	json.Unmarshal(
-		[]byte(resultJSONText(t, serve(t, srv, rpc("tools/list", nil)))),
-		&tools,
-	) //nolint:errcheck
+	tools := mustListTools(t, srv)
 	if countToolsByPrefix(tools, "fs1__") == 0 || countToolsByPrefix(tools, "fs2__") == 0 {
 		t.Errorf("expected tools from both servers, got fs1=%d fs2=%d",
 			countToolsByPrefix(tools, "fs1__"), countToolsByPrefix(tools, "fs2__"))
 	}
 	resp1 := serve(t, srv, callTool("fs1__list_directory", map[string]any{"path": "/dir"}))
-	if env1 := parseEnvelope(t, resultJSONText(t, resp1)); env1["error"] != nil {
+	if env1 := parseEnvelope(t, toolResultText(t, resp1)); env1["error"] != nil {
 		t.Errorf("expected ok=true from fs1: %v", env1)
 	}
 }
@@ -77,13 +73,13 @@ func assertAddServer(t *testing.T, srv *server.Server) {
 		"action": "add_server",
 		"config": map[string]any{"name": "dynamic_echo", "command": testutil.Binary(t, "ECHOMCP_BIN")},
 	}))
-	text := resultJSONText(t, resp)
+	text := toolResultText(t, resp)
 	var result map[string]any
 	json.Unmarshal([]byte(text), &result) //nolint:errcheck
 	if result["error"] != nil {
 		t.Fatalf("add_server failed: %s", text)
 	}
-	if text2 := resultJSONText(
+	if text2 := toolListJSON(
 		t,
 		serve(t, srv, rpc("tools/list", nil)),
 	); !strings.Contains(
@@ -98,11 +94,11 @@ func assertRemoveServer(t *testing.T, srv *server.Server) {
 	t.Helper()
 	resp := serve(t, srv, callTool("config", map[string]any{"action": "remove_server", "server": "dynamic_echo"}))
 	var result map[string]any
-	json.Unmarshal([]byte(resultJSONText(t, resp)), &result) //nolint:errcheck
+	json.Unmarshal([]byte(toolResultText(t, resp)), &result) //nolint:errcheck
 	if result["error"] != nil {
 		t.Fatalf("remove_server failed: %v", result)
 	}
-	if text := resultJSONText(
+	if text := toolListJSON(
 		t,
 		serve(t, srv, rpc("tools/list", nil)),
 	); strings.Contains(

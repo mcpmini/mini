@@ -165,7 +165,7 @@ func TestConcurrentAddRemove_RegistryConsistency(t *testing.T) {
 	// "contested.toolX" should either be present or absent — never in a
 	// broken state that would cause a panic or data corruption.
 	resp := serve(t, srv, rpc("tools/list", nil))
-	text := resultJSONText(t, resp)
+	text := toolListJSON(t, resp)
 	// If the server is present, "contested" should appear in the list.
 	// The important thing is that the call doesn't panic or return garbage.
 	_ = text // success = no panic, no race-detector violation
@@ -185,7 +185,7 @@ func TestAddRemoveSameServer_ToolsDoNotLeak(t *testing.T) {
 
 	// Verify the tool is visible.
 	resp := serve(t, srv, rpc("tools/list", nil))
-	if !strings.Contains(resultJSONText(t, resp), "tempserver__secret_tool") {
+	if !strings.Contains(toolListJSON(t, resp), "tempserver__secret_tool") {
 		t.Fatal("expected secret_tool to be listed after add")
 	}
 
@@ -197,7 +197,7 @@ func TestAddRemoveSameServer_ToolsDoNotLeak(t *testing.T) {
 
 	// The tool must no longer be discoverable.
 	resp = serve(t, srv, rpc("tools/list", nil))
-	if strings.Contains(resultJSONText(t, resp), "tempserver") {
+	if strings.Contains(toolListJSON(t, resp), "tempserver") {
 		t.Errorf("tempserver tools still visible after remove_server")
 	}
 
@@ -339,7 +339,7 @@ func TestGenerationCounter_RemoveWinsRace(t *testing.T) {
 
 	// After remove returned ok, "racing" must NOT be in the registry.
 	resp := serve(t, srv, rpc("tools/list", nil))
-	if strings.Contains(resultJSONText(t, resp), "racing") {
+	if strings.Contains(toolListJSON(t, resp), "racing") {
 		t.Error("remove_server returned ok:true but server is still registered (generation counter not working)")
 	}
 }

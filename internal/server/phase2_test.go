@@ -65,7 +65,7 @@ func TestConfigureRemoveServer(t *testing.T) {
 	}))
 
 	resp2 := serve(t, srv, rpc("tools/list", nil))
-	text := resultJSONText(t, resp2)
+	text := toolListJSON(t, resp2)
 	var results []any
 	json.Unmarshal([]byte(text), &results)
 	if len(results) != 2 {

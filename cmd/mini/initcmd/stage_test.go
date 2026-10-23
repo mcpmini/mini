@@ -41,12 +41,12 @@ func stageServer(t *testing.T, s *stage, name string) {
 func TestStage(t *testing.T) {
 	t.Run("the stage reads mini's settings but holds none of its servers", func(t *testing.T) {
 		configDir := t.TempDir()
-		testutil.WriteFile(t, filepath.Join(configDir, "config.yaml"), "tool_mode: compact\n")
+		testutil.WriteFile(t, filepath.Join(configDir, "config.yaml"), "response_format: toon\n")
 		testutil.WriteFile(t, filepath.Join(configDir, "servers", "notes.yaml"), "url: https://notes.example/mcp\n")
 
 		s := newTestStage(t, configDir)
 
-		if got := readOrMissing(t, filepath.Join(s.dir, "config.yaml")); got != "tool_mode: compact\n" {
+		if got := readOrMissing(t, filepath.Join(s.dir, "config.yaml")); got != "response_format: toon\n" {
 			t.Errorf("staged config.yaml = %q, want mini's settings", got)
 		}
 		if got := readOrMissing(t, filepath.Join(s.dir, "servers", "notes.yaml")); got != "<missing>" {

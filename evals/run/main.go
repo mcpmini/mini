@@ -7,9 +7,8 @@
 //	run-eval <eval|all> [mode...] [--reps N]
 //
 // Evals:  bugfix | review-prs | incident-triage | sprint | baseline
-// Modes:  direct | cli-passthrough | cli-projected | cli-toon |
-//
-//	proxy-passthrough | proxy-projected | proxy-toon
+// Modes:  direct | cli-passthrough | cli-projected | cli-toon | proxy-passthrough |
+// proxy-projected | proxy-toon
 //
 // Examples:
 //

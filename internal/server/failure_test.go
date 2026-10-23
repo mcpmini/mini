@@ -55,7 +55,7 @@ func TestUpstream_allCallsFail_discoverStillWorks(t *testing.T) {
 
 	// discover should still work even when upstream is down
 	resp := serve(t, srv, rpc("tools/list", nil))
-	text := resultJSONText(t, resp)
+	text := toolListJSON(t, resp)
 	var tools []any
 	if err := json.Unmarshal([]byte(text), &tools); err != nil {
 		t.Fatalf("expected JSON array from list, got: %s", text)

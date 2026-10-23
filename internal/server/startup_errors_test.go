@@ -97,7 +97,7 @@ func settledStartup(t *testing.T, sc config.ServerConfig) startupRetry {
 	return r
 }
 
-func TestMissingTool_staysNotFoundWhenTheServerCanNotExplainIt(t *testing.T) {
+func TestMissingTool_isInvalidParamsWhenTheServerCanNotExplainIt(t *testing.T) {
 	cases := []struct {
 		name   string
 		server string
@@ -109,9 +109,9 @@ func TestMissingTool_staysNotFoundWhenTheServerCanNotExplainIt(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := settledStartup(t, httpServer("ready", newMCPTestServer(t, pingTools).URL)).srv
 
-			proxy := serve(t, srv, callTool(tc.server+"__missing", map[string]any{}))
-			if code := rpcErrorCode(proxy); code != -32602 {
-				t.Errorf("proxy call = %v, want JSON-RPC invalid params", proxy)
+			resp := serve(t, srv, callTool(tc.server+"__missing", map[string]any{}))
+			if code := rpcErrorCode(resp); code != -32602 {
+				t.Errorf("call = %v, want JSON-RPC invalid params", resp)
 			}
 		})
 	}

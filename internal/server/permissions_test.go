@@ -42,7 +42,7 @@ func TestHiddenToolIsNotListed(t *testing.T) {
 	)
 
 	resp := serve(t, srv, rpc("tools/list", nil))
-	text := resultJSONText(t, resp)
+	text := toolListJSON(t, resp)
 	if strings.Contains(text, "secret") {
 		t.Errorf("hidden tool should not appear in tools/list, got: %s", text)
 	}

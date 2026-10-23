@@ -80,12 +80,12 @@ func TestConfigureAddServer_viaHTTP(t *testing.T) {
 		"config": map[string]any{"name": "dynamic", "transport": "http", "url": mcp.URL},
 	}))
 	var result map[string]any
-	json.Unmarshal([]byte(resultJSONText(t, resp)), &result)
+	json.Unmarshal([]byte(toolResultText(t, resp)), &result)
 	if result["error"] != nil || result["server"] != "dynamic" {
 		t.Errorf("expected ok add_server, got: %v", result)
 	}
 
-	listText := resultJSONText(t, serve(t, srv, rpc("tools/list", nil)))
+	listText := toolListJSON(t, serve(t, srv, rpc("tools/list", nil)))
 	var tools []any
 	json.Unmarshal([]byte(listText), &tools)
 	if len(tools) != 3 {
@@ -560,7 +560,7 @@ func TestConfigureRemoveServer_clearsDiscover(t *testing.T) {
 	}
 	assertRemoveOk(t, srv, "svc")
 
-	discoverText := resultJSONText(t, serve(t, srv, rpc("tools/list", nil)))
+	discoverText := toolListJSON(t, serve(t, srv, rpc("tools/list", nil)))
 	if strings.Contains(discoverText, "ping") {
 		t.Errorf("removed server's tools should not appear in discover, got: %s", discoverText)
 	}
