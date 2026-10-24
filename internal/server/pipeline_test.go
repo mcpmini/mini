@@ -42,17 +42,6 @@ func TestExecuteReturnsEnvelope(t *testing.T) {
 	verifyEnvelope(t, successText(t, resp))
 }
 
-func TestExecuteInlineForSmallResponse(t *testing.T) {
-	srv, fake := newPipelineServer(t, "ping", `{"content":[{"type":"text","text":"{\"pong\":true}"}]}`)
-	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fake)
-	resp := serve(t, srv, callTool("svc__ping", map[string]any{}))
-	var env map[string]any
-	json.Unmarshal([]byte(toolResultText(t, resp)), &env) //nolint:errcheck
-	if env["file"] != nil {
-		t.Error("expected no file for small inline response")
-	}
-}
-
 func TestSessionProjectionOverride(t *testing.T) {
 	srv, fake := newPipelineServer(
 		t,

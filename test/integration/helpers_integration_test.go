@@ -803,6 +803,9 @@ func nativeCallFrom(t *testing.T, wire proxyResult) nativeCallResult {
 	}
 	result.Text = wire.Content[0].Text
 	if err := json.Unmarshal([]byte(result.Text), &result.Data); err != nil {
+		if !wire.IsError {
+			t.Fatalf("tool result is not JSON: %q", result.Text)
+		}
 		result.Data = result.Text
 	}
 	for _, block := range wire.Content {

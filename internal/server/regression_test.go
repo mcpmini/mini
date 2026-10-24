@@ -201,7 +201,6 @@ func TestAddRemoveSameServer_ToolsDoNotLeak(t *testing.T) {
 		t.Errorf("tempserver tools still visible after remove_server")
 	}
 
-	// Calling the removed tool returns a tool error (isError:true), not an MCP protocol error.
 	resp = serve(t, srv, callTool("tempserver__secret_tool", map[string]any{}))
 	requireRPCError(
 		requireRPCErrorParams{T: t, Resp: resp, WantCode: transport.CodeInvalidParams, WantSubstr: "not found"},

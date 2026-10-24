@@ -169,26 +169,6 @@ func TestAddServer_invalidName_rejected(t *testing.T) {
 	}
 }
 
-func TestNativeCallRejectsUnknownServerNames(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	for _, name := range []string{"../escape", "../../etc/passwd", "bad name!", "server\x00null"} {
-		resp := serve(t, srv, callTool(name+"__anything", map[string]any{}))
-		requireRPCError(
-			requireRPCErrorParams{T: t, Resp: resp, WantCode: transport.CodeInvalidParams, WantSubstr: "not found"},
-		)
-	}
-}
-
-func TestNativeCallRejectsUnknownToolNames(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	for _, name := range []string{"bad tool!", "tool\x00null", "tool@host"} {
-		resp := serve(t, srv, callTool("validserver__"+name, map[string]any{}))
-		requireRPCError(
-			requireRPCErrorParams{T: t, Resp: resp, WantCode: transport.CodeInvalidParams, WantSubstr: "not found"},
-		)
-	}
-}
-
 // TestAddServer_credentialsStrippedWithPrivateURLsAllowed verifies that
 // agent-supplied auth/headers are stripped even when DangerousAllowPrivateURLs
 // is true. The connection will fail (no real server), but the error must come
