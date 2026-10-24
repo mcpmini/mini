@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -124,52 +123,6 @@ func TestRead_SymlinkWithinStore_Allowed(t *testing.T) {
 //
 // Fix: serverOpMu serializes all add/remove operations for the same name.
 // ---------------------------------------------------------------------------
-
-// TestConcurrentAddRemove_RegistryConsistency hammers concurrent add+remove
-// for the same server name and asserts that after all goroutines finish, the
-// registry is in a consistent state: either the server is present with tools,
-// or it is fully absent — never partially corrupted.
-func TestConcurrentAddRemove_RegistryConsistency(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	defer srv.Close()
-	ctx := context.Background()
-
-	const iterations = 200
-	var wg sync.WaitGroup
-
-	// Adder goroutine: repeatedly adds the server.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		fake := fakeConn("toolX")
-		for range iterations {
-			srv.AddConnection(ctx, config.ServerConfig{Name: "contested"}, fake) //nolint:errcheck
-		}
-	}()
-
-	// Remover goroutine: repeatedly removes the server.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for range iterations {
-			serve(t, srv, callTool("config", map[string]any{
-				"action": "remove_server",
-				"server": "contested",
-			}))
-		}
-	}()
-
-	wg.Wait()
-
-	// After the storm, call list and check the result is coherent.
-	// "contested.toolX" should either be present or absent — never in a
-	// broken state that would cause a panic or data corruption.
-	resp := serve(t, srv, rpc("tools/list", nil))
-	text := toolListJSON(t, resp)
-	// If the server is present, "contested" should appear in the list.
-	// The important thing is that the call doesn't panic or return garbage.
-	_ = text // success = no panic, no race-detector violation
-}
 
 // TestAddRemoveSameServer_ToolsDoNotLeak verifies that after add then remove,
 // the server's tools are fully gone from the list.

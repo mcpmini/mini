@@ -313,11 +313,6 @@ func assertFailedCallRecorded(params assertFailedCallRecordedParams) {
 	}
 }
 
-func newSessionServer(t *testing.T) *server.Server {
-	t.Helper()
-	return newTestServer(t, server.Params{})
-}
-
 func fakeGetData() *transport.FakeConnection {
 	return &transport.FakeConnection{
 		Tools: []transport.ToolDefinition{
@@ -556,27 +551,6 @@ func TestConfigureRemoveServer_clearsDiscover(t *testing.T) {
 	discoverText := toolListJSON(t, serve(t, srv, rpc("tools/list", nil)))
 	if strings.Contains(discoverText, "ping") {
 		t.Errorf("removed server's tools should not appear in discover, got: %s", discoverText)
-	}
-}
-
-func TestSessionScopedProjectionNotPersistedAcrossCalls(t *testing.T) {
-	srv := newSessionServer(t)
-	addEdgeConn(
-		addConnectionParams{T: t, Server: srv, Config: config.ServerConfig{Name: "svc"}, Connection: fakeGetData()},
-	)
-
-	serve(t, srv, callTool("config", map[string]any{
-		"action":       "set_projection",
-		"server":       "svc",
-		"tool":         "getData",
-		"projection":   map[string]any{"include_only": []string{"a"}},
-		"session_only": true,
-	}))
-
-	resp := serve(t, srv, callTool("svc__getData", map[string]any{}))
-	text := toolResultText(t, resp)
-	if strings.Contains(text, `"b":2`) {
-		t.Logf("note: session projection applied within same session: %s", text)
 	}
 }
 

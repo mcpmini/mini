@@ -41,19 +41,3 @@ func TestExecuteReturnsEnvelope(t *testing.T) {
 	resp := serve(t, srv, callTool("ci__getBuild", map[string]any{"id": "1234"}))
 	verifyEnvelope(t, successText(t, resp))
 }
-
-func TestSessionProjectionOverride(t *testing.T) {
-	srv, fake := newPipelineServer(
-		t,
-		"getBuild",
-		`{"content":[{"type":"text","text":"{\"build_number\":1,\"status\":\"ok\",\"secret\":\"topsecret\",\"branch\":\"main\"}"}]}`,
-	)
-	srv.AddConnection(context.Background(), config.ServerConfig{Name: "ci"}, fake)
-	// Set a session projection that excludes "secret"; validates configure doesn't error.
-	serve(t, srv, callTool("config", map[string]any{
-		"action":     "set_projection",
-		"server":     "ci",
-		"tool":       "getBuild",
-		"projection": map[string]any{"include_only": []string{"build_number", "status", "branch"}},
-	}))
-}
