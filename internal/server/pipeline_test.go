@@ -39,10 +39,7 @@ func TestExecuteReturnsEnvelope(t *testing.T) {
 		`{"content":[{"type":"text","text":"{\"build_number\":1234,\"status\":\"failed\",\"branch\":\"main\"}"}]}`)
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "ci"}, fake)
 	resp := serve(t, srv, callTool("ci__getBuild", map[string]any{"id": "1234"}))
-	env := verifyEnvelope(t, toolResultText(t, resp))
-	if env["error"] != nil {
-		t.Errorf("expected success, got error: %v", env["error"])
-	}
+	verifyEnvelope(t, successText(t, resp))
 }
 
 func TestExecuteInlineForSmallResponse(t *testing.T) {

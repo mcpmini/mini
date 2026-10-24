@@ -226,3 +226,9 @@ func TestModernVersionError(t *testing.T) {
 		t.Fatalf("legacy version in request metadata = %+v, want unsupported protocol version for id 4", resp)
 	}
 }
+
+func TestHandleDiscoverCarriesTheProxyInstructions(t *testing.T) {
+	if got := newRouteTestServer().handleDiscover().Instructions; got != proxyInitInstructions {
+		t.Errorf("discover instructions = %q, want the proxy instructions", got)
+	}
+}

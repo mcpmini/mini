@@ -335,6 +335,15 @@ func parseProxyEnvelope(t *testing.T, text string) proxyEnvelope {
 	return env
 }
 
+func successText(t *testing.T, resp map[string]any) string {
+	t.Helper()
+	result, _ := resp["result"].(map[string]any)
+	if resp["error"] != nil || result == nil || result["isError"] == true {
+		t.Fatalf("call failed: %v", resp)
+	}
+	return toolResultText(t, resp)
+}
+
 func toolResultText(t *testing.T, resp map[string]any) string {
 	t.Helper()
 	if errVal := resp["error"]; errVal != nil {

@@ -400,22 +400,29 @@ func TestProxy_Call_ToolFormatToon_RendersToon(t *testing.T) {
 	}
 }
 
-func TestProxy_Call_GlobalFormatToon_RendersToon(t *testing.T) {
+func TestProxy_Call_GlobalFormatToon_RendersToonUnlessTheToolSaysJSON(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseFormat = "toon"
 	srv := newTestServer(t, server.Params{Config: cfg})
 	defer srv.Close()
 
-	conn := fakeConn("get_user")
+	conn := fakeConn("get_user", "get_raw_user")
 	conn.Responses["tools/call"] = json.RawMessage(
 		`{"content":[{"type":"text","text":"{\"id\":1,\"name\":\"alice\"}"}]}`,
 	)
 	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
+	serve(t, srv, callTool("config", map[string]any{
+		"action": "set_projection", "server": "svc", "tool": "get_raw_user",
+		"projection": map[string]any{"format": "json"},
+	}))
 
-	resp := serve(t, srv, callTool("svc__get_user", map[string]any{}))
-	text := toolResultText(t, resp)
+	text := toolResultText(t, serve(t, srv, callTool("svc__get_user", map[string]any{})))
 	if strings.HasPrefix(text, "{") || !strings.Contains(text, "name: alice") {
 		t.Errorf("global response_format:toon should produce TOON in proxy mode, got: %s", text)
+	}
+	text = toolResultText(t, serve(t, srv, callTool("svc__get_raw_user", map[string]any{})))
+	if !strings.HasPrefix(text, "{") {
+		t.Errorf("per-tool format:json should override global toon, got: %s", text)
 	}
 }
 

@@ -63,14 +63,7 @@ func fsTestDiscover(t *testing.T, srv *server.Server) {
 
 func fsTestListDir(t *testing.T, srv *server.Server, dir string) {
 	t.Helper()
-	text := toolResultText(t, serve(t, srv, callTool("fs__list_directory", map[string]any{"path": dir})))
-	var env map[string]any
-	if err := json.Unmarshal([]byte(text), &env); err != nil {
-		t.Fatalf("result not JSON: %v\n%s", err, text)
-	}
-	if env["error"] != nil {
-		t.Errorf("expected ok=true, got: %v\nfull: %s", env["ok"], text)
-	}
+	parseEnvelope(t, successText(t, serve(t, srv, callTool("fs__list_directory", map[string]any{"path": dir}))))
 }
 
 func fsTestStatusShowsFS(t *testing.T, srv *server.Server) {
@@ -121,9 +114,6 @@ func TestWithRealFilesystemMCP_WriteProtected(t *testing.T) {
 	srv, tmpDir := newProtectedFSServer(t)
 	testFile := filepath.Join(tmpDir, "hello.txt")
 	resp := serve(t, srv, callTool("fs__write_file", map[string]any{"path": testFile, "content": "hello from mini"}))
-	env := parseEnvelope(t, toolResultText(t, resp))
-	if env["error"] != nil {
-		t.Errorf("write_file failed: %v", env)
-	}
+	successText(t, resp)
 	testutil.ReadFile(t, testFile)
 }

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -239,8 +240,7 @@ func TestStartAuth_e2e_toolsAccessibleAfterAuth(t *testing.T) {
 	authtest.CompleteAuthorization(t, authResult["url"].(string), "test-code")
 	for range 100 {
 		listText := toolListJSON(t, serve(t, srv, rpc("tools/list", nil)))
-		var tools []any
-		if err := json.Unmarshal([]byte(listText), &tools); err == nil && len(tools) == 2 {
+		if strings.Contains(listText, `"mysvc__search"`) && strings.Contains(listText, `"mysvc__create"`) {
 			return
 		}
 		time.Sleep(50 * time.Millisecond)

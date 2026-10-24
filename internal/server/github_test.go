@@ -48,22 +48,13 @@ func ghTestDiscover(t *testing.T, srv *server.Server) {
 
 func ghTestGetMe(t *testing.T, srv *server.Server) {
 	t.Helper()
-	text := toolResultText(t, serve(t, srv, callTool("github__get_me", map[string]any{})))
-	env := parseEnvelope(t, text)
-	if env["error"] != nil {
-		t.Errorf("expected ok=true, got: %v", env["ok"])
-	}
+	parseEnvelope(t, successText(t, serve(t, srv, callTool("github__get_me", map[string]any{}))))
 }
 
 func ghTestListIssues(t *testing.T, srv *server.Server) {
 	t.Helper()
-	text := toolResultText(
-		t,
-		serve(t, srv, callTool("github__list_issues", map[string]any{"owner": "anthropics", "repo": "claude-code"})),
-	)
-	if env := parseEnvelope(t, text); env["error"] != nil {
-		t.Errorf("expected ok=true, got: %v", env["ok"])
-	}
+	resp := serve(t, srv, callTool("github__list_issues", map[string]any{"owner": "anthropics", "repo": "claude-code"}))
+	parseEnvelope(t, successText(t, resp))
 }
 
 func ghTestStatusShowsGitHub(t *testing.T, srv *server.Server) {

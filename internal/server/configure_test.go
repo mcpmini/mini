@@ -126,11 +126,7 @@ func newConfigServer(t *testing.T) *server.Server {
 func execGetFileInfo(t *testing.T, srv *server.Server) map[string]any {
 	t.Helper()
 	resp := serve(t, srv, callTool("fs__get_file_info", map[string]any{}))
-	result := parseEnvelope(t, toolResultText(t, resp))
-	if result["error"] != nil {
-		t.Fatalf("get_file_info failed: %v", result)
-	}
-	return result
+	return parseEnvelope(t, successText(t, resp))
 }
 
 func assertExcluded(t *testing.T, obj map[string]any, keys ...string) {
@@ -186,10 +182,7 @@ func TestProjectionTruncation_fieldNameAndChars(t *testing.T) {
 	}))
 
 	resp := serve(t, srv, callTool("svc__get_doc", nil))
-	env := parseEnvelope(t, toolResultText(t, resp))
-	if env["error"] != nil {
-		t.Fatalf("get_doc failed: %v", env)
-	}
+	env := parseEnvelope(t, successText(t, resp))
 
 	notice := env["__mini"].(map[string]any)
 	truncated, _ := notice["truncated"].([]any)

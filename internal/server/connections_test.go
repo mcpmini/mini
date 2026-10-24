@@ -24,10 +24,7 @@ func TestListDirectoryNonEmpty(t *testing.T) {
 	addTestConnection(addConnectionParams{T: t, Server: srv, Config: config.ServerConfig{Name: "fs"}, Connection: fake})
 
 	resp := serve(t, srv, callTool("fs__list_directory", map[string]any{"path": "/dir"}))
-	env := parseEnvelope(t, toolResultText(t, resp))
-	if env["error"] != nil {
-		t.Fatalf("list_directory failed: %v", env)
-	}
+	env := parseEnvelope(t, successText(t, resp))
 	if env["entries"] == nil {
 		t.Errorf("expected non-empty data, got: %v", env["entries"])
 	}
@@ -61,10 +58,7 @@ func TestMultipleServers(t *testing.T) {
 		t.Errorf("expected tools from both servers, got fs1=%d fs2=%d",
 			countToolsByPrefix(tools, "fs1__"), countToolsByPrefix(tools, "fs2__"))
 	}
-	resp1 := serve(t, srv, callTool("fs1__list_directory", map[string]any{"path": "/dir"}))
-	if env1 := parseEnvelope(t, toolResultText(t, resp1)); env1["error"] != nil {
-		t.Errorf("expected ok=true from fs1: %v", env1)
-	}
+	successText(t, serve(t, srv, callTool("fs1__list_directory", map[string]any{"path": "/dir"})))
 }
 
 func assertAddServer(t *testing.T, srv *server.Server) {
