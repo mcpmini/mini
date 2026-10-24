@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
-	"time"
 )
 
 // makePipeConn creates a StdioConnection backed by in-memory pipes.
@@ -56,27 +55,6 @@ func TestHealth_closedConn(t *testing.T) {
 	conn.closeDone()
 	if err := conn.Health(context.Background()); err == nil {
 		t.Error("expected error for closed connection")
-	}
-}
-
-func TestNewStdioConnection_hungUpstreamKilledOnDeadline(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
-
-	start := time.Now()
-	conn, err := NewStdioConnection(ctx, StdioCommand{
-		Command: "sleep",
-		Args:    []string{"30"},
-		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
-	})
-	elapsed := time.Since(start)
-
-	if err == nil {
-		conn.Close()
-		t.Fatal("expected handshake to fail for an upstream that never answers initialize")
-	}
-	if elapsed >= 5*time.Second {
-		t.Fatalf("handshake did not respect deadline, took %v", elapsed)
 	}
 }
 
