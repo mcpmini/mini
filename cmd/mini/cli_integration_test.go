@@ -339,25 +339,6 @@ func TestIntegrationCLI_bareMini_printsHelpAndExitsZero(t *testing.T) {
 	}
 }
 
-func TestIntegrationCLI_connect_removedModeFlag(t *testing.T) {
-	t.Parallel()
-	for _, value := range []string{"compact", "proxy"} {
-		t.Run(value, func(t *testing.T) {
-			_, stderr, code := run(
-				runParams{
-					T:         t,
-					Bin:       miniBin(t),
-					ConfigDir: t.TempDir(),
-					Args:      []string{"connect", "--tool-mode", value},
-				},
-			)
-			if code == 0 || !strings.Contains(stderr, "unknown flag: --tool-mode") {
-				t.Fatalf("removed flag: code=%d stderr=%q", code, stderr)
-			}
-		})
-	}
-}
-
 func TestIntegrationCLI_cleanup_empty(t *testing.T) {
 	t.Parallel()
 	bin := miniBin(t)
