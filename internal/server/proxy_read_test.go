@@ -4,6 +4,7 @@ package server_test
 
 import (
 	"encoding/json"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -240,5 +241,32 @@ func TestProxy_NoDoubleUnderscore_ReturnsError(t *testing.T) {
 		if !ok || result["isError"] != true {
 			t.Errorf("expected error for malformed proxy tool name, got: %v", resp)
 		}
+	}
+}
+
+func TestProxy_MiniRead_RecoversExcludedFieldFromToonNotice(t *testing.T) {
+	srv := newProxyToonServer(t, nil)
+	defer srv.Close()
+	conn := fakeConn("get_user")
+	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"x\"}"}]}`)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
+	setProxyExclude(
+		setProxyExcludeParams{
+			T:          t,
+			Server:     srv,
+			Tool:       "get_user",
+			Projection: map[string]any{"exclude": []string{"secret"}},
+		},
+	)
+
+	texts := contentTexts(proxyResultOf(t, serve(t, srv, callTool("svc__get_user", map[string]any{}))))
+	match := regexp.MustCompile(`\n  file: "(\d+)"\n`).FindStringSubmatch(strings.Join(texts, "\n"))
+	if match == nil {
+		t.Fatalf("TOON notice has no quoted file key: %q", texts)
+	}
+	const path = ".content[0].text | fromjson | .secret"
+	read := callTool("read", map[string]any{"file": match[1], "filter": path})
+	if recovered := toolResultText(t, serve(t, srv, read)); recovered != `"x"` {
+		t.Errorf("read(%q) = %q, want the excluded value", path, recovered)
 	}
 }
