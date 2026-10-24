@@ -360,7 +360,7 @@ func openAgent(t *testing.T, srv *server.Server) *agentConn {
 	a := &agentConn{t: t, in: inW, lines: make(chan string, 64)}
 	go a.readLines(outR)
 	t.Cleanup(func() { inW.Close(); <-done })
-	a.send(rpc("initialize", initParams(true)))
+	a.send(rpc("initialize", initParams()))
 	a.send(notification("notifications/initialized", nil))
 	a.send(rpc("tools/list", map[string]any{}))
 	a.waitForLine(`"tools"`)

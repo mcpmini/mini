@@ -52,9 +52,7 @@ func TestReconnect_rpcErrorDoesNotTriggerReconnect(t *testing.T) {
 		errFn: func() error { return &transport.RPCError{Code: -32602, Message: "bad args"} },
 	}
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, errConn)
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "svc", "tool": "ping", "params": map[string]any{},
-	}))
+	resp := serve(t, srv, callTool("svc__ping", map[string]any{}))
 	env := parseEnvelope(t, toolResultText(t, resp))
 	if env["error"] == nil {
 		t.Errorf("expected ok=false for RPC error, got: %v", env)
@@ -78,26 +76,45 @@ func TestReconnect_changedToolSet_noStaleEntries(t *testing.T) {
 	fakeV2 := fakeConnWithResp("toolA")
 	srv.AddConnection(ctx, config.ServerConfig{Name: "svc"}, fakeV2)
 	t.Run("toolA succeeds", func(t *testing.T) {
-		resp := serve(t, srv, callTool("call", map[string]any{
-			"server": "svc", "tool": "toolA", "params": map[string]any{},
-		}))
+		resp := serve(t, srv, callTool("svc__toolA", map[string]any{}))
 		if resp["error"] != nil {
 			t.Errorf("unexpected error for toolA: %v", resp["error"])
 		}
 	})
 	t.Run("toolB not found", func(t *testing.T) {
-		resp := serve(t, srv, callTool("call", map[string]any{
-			"server": "svc", "tool": "toolB", "params": map[string]any{},
-		}))
-		requireToolError(t, resp, "not found")
+		resp := serve(t, srv, callTool("svc__toolB", map[string]any{}))
+		requireRPCError(
+			requireRPCErrorParams{T: t, Resp: resp, WantCode: transport.CodeInvalidParams, WantSubstr: "not found"},
+		)
 	})
 }
 
 func reconnectHTTPServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	return newMCPTestServer(t, []map[string]any{
-		{"name": "ping", "description": "ping", "inputSchema": map[string]any{"type": "object"}},
-	})
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		var request struct {
+			ID     any    `json:"id"`
+			Method string `json:"method"`
+		}
+		if err := json.Unmarshal(body, &request); err != nil {
+			t.Error(err)
+			return
+		}
+		if request.Method == "tools/call" {
+			if err := json.NewEncoder(w).
+				Encode(map[string]any{"jsonrpc": "2.0", "id": request.ID, "result": map[string]any{"content": []map[string]any{{"type": "text", "text": "ok"}}}}); err != nil {
+				t.Error(err)
+			}
+			return
+		}
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		fakeMCPHandle(w, r, []map[string]any{{"name": "ping", "inputSchema": map[string]any{"type": "object"}}})
+	}))
 }
 
 type waitForReconnectParams struct {
@@ -142,23 +159,21 @@ func makeErrConn(errOnCall *bool) *errAfterRegisterConn {
 	}
 }
 
-type assertEnvelopeOKParams struct {
-	T          *testing.T
-	Server     *server.Server
-	ServerName string
-	ToolName   string
-	WantOK     bool
+type assertCallSuccessParams struct {
+	T           *testing.T
+	Server      *server.Server
+	ServerName  string
+	ToolName    string
+	WantSuccess bool
 }
 
-func assertEnvelopeOK(params assertEnvelopeOKParams) {
+func assertCallSuccess(params assertCallSuccessParams) {
 	params.T.Helper()
-	resp := serve(params.T, params.Server, callTool("call", map[string]any{
-		"server": params.ServerName, "tool": params.ToolName, "params": map[string]any{},
-	}))
-	env := parseEnvelope(params.T, toolResultText(params.T, resp))
-	gotOK := env["error"] == nil
-	if gotOK != params.WantOK {
-		params.T.Errorf("expected ok=%v, got: %v", params.WantOK, env)
+	resp := serve(params.T, params.Server, callTool(params.ServerName+"__"+params.ToolName, map[string]any{}))
+	result, _ := resp["result"].(map[string]any)
+	gotOK := resp["error"] == nil && result != nil && result["isError"] != true
+	if gotOK != params.WantSuccess {
+		params.T.Errorf("expected success=%v, got: %v", params.WantSuccess, resp)
 	}
 }
 
@@ -171,10 +186,14 @@ func TestReconnect_successAfterFailure(t *testing.T) {
 		Name: "svc", Transport: "http", URL: httpSrv.URL,
 	}, makeErrConn(&errOnCall))
 	errOnCall = true
-	assertEnvelopeOK(assertEnvelopeOKParams{T: t, Server: srv, ServerName: "svc", ToolName: "ping", WantOK: false})
+	assertCallSuccess(
+		assertCallSuccessParams{T: t, Server: srv, ServerName: "svc", ToolName: "ping", WantSuccess: false},
+	)
 	errOnCall = false
 	waitForReconnect(waitForReconnectParams{T: t, FakeClock: fakeClock, Server: srv, ServerName: "svc"})
-	assertEnvelopeOK(assertEnvelopeOKParams{T: t, Server: srv, ServerName: "svc", ToolName: "ping", WantOK: true})
+	assertCallSuccess(
+		assertCallSuccessParams{T: t, Server: srv, ServerName: "svc", ToolName: "ping", WantSuccess: true},
+	)
 }
 
 type writeToolsCallRespParams struct {
@@ -272,15 +291,14 @@ func TestPerSession_rpcErrorKeepsConn(t *testing.T) {
 		"id":      0,
 		"method":  "initialize",
 		"params": map[string]any{
-			"protocolVersion":       "2025-03-26",
-			"capabilities":          map[string]any{},
-			"clientInfo":            map[string]any{"name": "t", "version": "0"},
-			transport.ToolModeParam: transport.ToolModeCompactValue,
+			"protocolVersion": "2025-03-26",
+			"capabilities":    map[string]any{},
+			"clientInfo":      map[string]any{"name": "t", "version": "0"},
 		},
 	})
 	exec, _ := json.Marshal(map[string]any{
 		"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "tools/call",
-		"params": map[string]any{"name": "call", "arguments": map[string]any{"server": "svc", "tool": "ping"}},
+		"params": map[string]any{"name": "svc__ping", "arguments": map[string]any{}},
 	})
 	postToMiniHTTP(mcpPostParams{T: t, HTTPServer: ts, SessionID: sid, Body: init})
 	postToMiniHTTP(
@@ -348,15 +366,14 @@ func TestPerSession_transportErrorRedialsConn(t *testing.T) {
 		"id":      0,
 		"method":  "initialize",
 		"params": map[string]any{
-			"protocolVersion":       "2025-03-26",
-			"capabilities":          map[string]any{},
-			"clientInfo":            map[string]any{"name": "t", "version": "0"},
-			transport.ToolModeParam: transport.ToolModeCompactValue,
+			"protocolVersion": "2025-03-26",
+			"capabilities":    map[string]any{},
+			"clientInfo":      map[string]any{"name": "t", "version": "0"},
 		},
 	})
 	exec, _ := json.Marshal(map[string]any{
 		"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "tools/call",
-		"params": map[string]any{"name": "call", "arguments": map[string]any{"server": "svc", "tool": "ping"}},
+		"params": map[string]any{"name": "svc__ping", "arguments": map[string]any{}},
 	})
 
 	postToMiniHTTP(mcpPostParams{T: t, HTTPServer: ts, SessionID: sid, Body: init})
@@ -405,9 +422,7 @@ func TestClose_concurrentConnError(t *testing.T) {
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
-			resp := serve(t, srv, callTool("call", map[string]any{
-				"server": "svc", "tool": "ping", "params": map[string]any{},
-			}))
+			resp := serve(t, srv, callTool("svc__ping", map[string]any{}))
 			if resp["error"] != nil {
 				callErr = fmt.Errorf("rpc error: %v", resp["error"])
 			}

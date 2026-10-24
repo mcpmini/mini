@@ -16,7 +16,7 @@ import (
 
 func initHTTPSession(t *testing.T, cfg, token string) string {
 	t.Helper()
-	resp := daemonPost(t, cfg, daemonPostOpts{Token: token, ToolMode: "compact"})
+	resp := daemonPost(t, cfg, daemonPostOpts{Token: token})
 	sessionID := resp.Header.Get("Mcp-Session-Id")
 	io.Copy(io.Discard, resp.Body) //nolint:errcheck
 	resp.Body.Close()
@@ -120,10 +120,9 @@ func TestIntegrationDaemon_TokenFilePermissions(t *testing.T) {
 }
 
 type daemonPostOpts struct {
-	Token    string
-	Host     string
-	Origin   string
-	ToolMode string
+	Token  string
+	Host   string
+	Origin string
 }
 
 func daemonPost(t *testing.T, cfg string, opts daemonPostOpts) *http.Response {
@@ -132,9 +131,6 @@ func daemonPost(t *testing.T, cfg string, opts daemonPostOpts) *http.Response {
 		"protocolVersion": "2024-11-05",
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "test", "version": "0"},
-	}
-	if opts.ToolMode != "" {
-		params["_mini_tool_mode"] = opts.ToolMode
 	}
 	body, _ := json.Marshal(map[string]any{
 		"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "initialize", "params": params,
@@ -168,10 +164,9 @@ func postHTTPToolCall(t *testing.T, cfg string, c httpToolCall) *http.Response {
 	t.Helper()
 	session := daemonSession{cfg: cfg, id: c.sessionID, token: c.token}
 	return postDaemonToolsCall(t, session, toolCallRaw(toolCallParams{
-		ServerTool: "call",
-		Server:     c.server,
-		Tool:       c.tool,
-		Args:       map[string]any{},
+		Server: c.server,
+		Tool:   c.tool,
+		Args:   map[string]any{},
 	}))
 }
 
@@ -212,18 +207,19 @@ func waitForDaemonServersConnected(t *testing.T, cfg string) {
 	})
 }
 
-func decodeDaemonEnvelope(t *testing.T, resp *http.Response) envelope {
+func decodeDaemonEnvelope(t *testing.T, resp *http.Response) nativeCallResult {
 	t.Helper()
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
-	text := decodeRPCToolText(t, resp.Body)
-	var env envelope
-	if err := json.Unmarshal([]byte(text), &env); err != nil {
-		t.Fatalf("decode call envelope: %v\ntext: %s", err, text)
+	var rpc struct {
+		Result json.RawMessage `json:"result"`
 	}
-	return env
+	if err := json.NewDecoder(resp.Body).Decode(&rpc); err != nil {
+		t.Fatal(err)
+	}
+	return decodeNativeCall(t, rpc.Result)
 }
 
 func decodeRPCToolText(t *testing.T, body io.Reader) string {
@@ -249,13 +245,13 @@ func decodeRPCToolText(t *testing.T, body io.Reader) string {
 	return rpc.Result.Content[0].Text
 }
 
-func assertInlineGetItem(t *testing.T, env envelope) {
+func assertInlineGetItem(t *testing.T, env nativeCallResult) {
 	t.Helper()
-	if env.Error != "" {
+	if env.IsError {
 		t.Fatalf("expected ok=true envelope, got %+v", env)
 	}
-	if env.File != nil {
-		t.Fatalf("expected inline response, got file %q", *env.File)
+	if env.Notice.File != "" {
+		t.Fatalf("expected inline response, got file %q", env.Notice.File)
 	}
 	data, ok := env.Data.(map[string]any)
 	if !ok {

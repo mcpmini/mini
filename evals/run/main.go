@@ -7,16 +7,15 @@
 //	run-eval <eval|all> [mode...] [--reps N]
 //
 // Evals:  bugfix | review-prs | incident-triage | sprint | baseline
-// Modes:  raw | mcp-passthrough | mcp-projected | mcp-toon |
-//
-//	cli-passthrough | cli-projected | cli-toon
+// Modes:  direct | cli-passthrough | cli-projected | cli-toon | proxy-passthrough |
+// proxy-projected | proxy-toon
 //
 // Examples:
 //
 //	run-eval bugfix                       # all 7 modes, 1 rep
-//	run-eval bugfix raw                   # raw only
-//	run-eval bugfix raw --reps 5          # raw, 5 reps each
-//	run-eval all raw --reps 3             # all evals, raw mode, 3 reps
+//	run-eval bugfix direct                # direct only
+//	run-eval bugfix direct --reps 5       # direct, 5 reps each
+//	run-eval all direct --reps 3          # all evals, direct mode, 3 reps
 package main
 
 import (
@@ -47,7 +46,6 @@ var registry = []evalEntry{
 
 var validModes = map[string]bool{
 	"direct":          true,
-	"mcp-passthrough": true, "mcp-projected": true, "mcp-toon": true,
 	"cli-passthrough": true, "cli-projected": true, "cli-toon": true,
 	"proxy-passthrough": true, "proxy-projected": true, "proxy-toon": true,
 }
@@ -292,7 +290,6 @@ func usage() string {
 	return `Usage: run-eval <eval|all> [mode...] [--reps N]
 
 Evals:  bugfix | review-prs | incident-triage | sprint | baseline
-Modes:  direct | mcp-passthrough | mcp-projected | mcp-toon
-        cli-passthrough | cli-projected | cli-toon
+Modes:  direct | cli-passthrough | cli-projected | cli-toon
         proxy-passthrough | proxy-projected | proxy-toon`
 }

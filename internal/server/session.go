@@ -38,8 +38,6 @@ type Session struct {
 	initOnce      sync.Once
 	initAbortOnce sync.Once
 
-	mode        atomic.Int32 // holds ToolMode; zero value = ToolModeProxy
-	modeOnce    sync.Once
 	clientReady atomic.Bool
 	// HTTP sessions keep the initialization gate even for modern requests: the stdio proxy runs the
 	// handshake for its modern agents and learns from "not initialized" that the daemon lost it.
@@ -104,14 +102,6 @@ func newSession(clock clock.Clock) *Session {
 		initAbort:    make(chan struct{}),
 		toolsChanged: newToolsChangedOutbox(),
 	}
-}
-
-func (s *Session) toolMode() transport.ToolMode {
-	return transport.ToolMode(s.mode.Load())
-}
-
-func (s *Session) setToolModeOnce(m transport.ToolMode) {
-	s.modeOnce.Do(func() { s.mode.Store(int32(m)) })
 }
 
 func (s *Session) markInitialized() {

@@ -122,29 +122,6 @@ type CancelledParams struct {
 	RequestID json.RawMessage `json:"requestId"`
 }
 
-const ToolModeParam = "_mini_tool_mode"
-
-const (
-	ToolModeProxyValue   = "proxy"
-	ToolModeCompactValue = "compact"
-)
-
-// ToolMode selects how a session exposes upstream tools. Proxy is the zero
-// value so an unconfigured session defaults to it automatically.
-type ToolMode int32
-
-const (
-	ToolModeProxy   ToolMode = iota // upstream tools exposed directly as server__tool
-	ToolModeCompact                 // four meta-tools: list/call/perm_call/config
-)
-
-func (m ToolMode) String() string {
-	if m == ToolModeCompact {
-		return "compact"
-	}
-	return "proxy"
-}
-
 func newInitializeParams() InitializeParams {
 	return InitializeParams{
 		ProtocolVersion: LatestLegacyVersion,

@@ -24,7 +24,7 @@ func TestServeReturnsFirstResponseWriteError(t *testing.T) {
 		writes.Add(1)
 		return 0, want
 	}}
-	input := append(buildServeInput(false, nil), []byte("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"ping\"}\n")...)
+	input := append(buildServeInput(nil), []byte("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"ping\"}\n")...)
 	if err := srv.Serve(t.Context(), bytes.NewReader(input), out); !errors.Is(err, want) {
 		t.Fatalf("Serve error = %v, want output failure cause %v", err, want)
 	}
@@ -49,7 +49,7 @@ func TestServeOutputFailureCancelsAndJoinsAcceptedCall(t *testing.T) {
 		}
 		return len(p), nil
 	}}
-	input := buildServeInput(false, [][]byte{
+	input := buildServeInput([][]byte{
 		callTool("svc__op", map[string]any{}),
 		rpc("ping", nil),
 	})

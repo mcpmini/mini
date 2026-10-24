@@ -42,7 +42,7 @@ func TestInlineSmallResponse(t *testing.T) {
 	raw := json.RawMessage(`{"status":"ok","id":"abc"}`)
 	data := map[string]any{"status": "ok", "id": "abc"}
 
-	env, _, err := builder.Build(response.BuildParams{Server: "ci", Tool: "getStatus", Raw: raw, Summary: data})
+	env, err := builder.Build(response.BuildParams{Server: "ci", Tool: "getStatus", Raw: raw, Summary: data})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestFileWrittenWhenProjectionApplied(t *testing.T) {
 	raw := json.RawMessage(`{"status":"ok","body":"secret content"}`)
 	data := map[string]any{"status": "ok"}
 
-	env, _, err := builder.Build(
+	env, err := builder.Build(
 		response.BuildParams{Server: "ci", Tool: "getPage", Raw: raw, Summary: data, Excluded: []string{"body"}},
 	)
 	if err != nil {
@@ -85,7 +85,7 @@ func TestExcludedKeys(t *testing.T) {
 	data := map[string]any{"a": 1}
 	excluded := []string{"b", "c"}
 
-	env, _, err := builder.Build(
+	env, err := builder.Build(
 		response.BuildParams{Server: "s", Tool: "t", Raw: raw, Summary: data, Excluded: excluded},
 	)
 	if err != nil {
@@ -105,7 +105,7 @@ func TestOmittedFields(t *testing.T) {
 	data := map[string]any{"summary": "short", "body": strings.Repeat("x", 50)}
 	truncated := []projection.Truncation{{JQPath: ".body", Chars: 450}}
 
-	env, _, err := builder.Build(response.BuildParams{
+	env, err := builder.Build(response.BuildParams{
 		Server: "ci", Tool: "getPage", Raw: raw, Summary: data, Truncated: truncated,
 	})
 	if err != nil {
@@ -117,31 +117,6 @@ func TestOmittedFields(t *testing.T) {
 	}
 	if env.File == nil {
 		t.Error("expected file written when a field was truncated")
-	}
-}
-
-func TestCallStatsReduction(t *testing.T) {
-	store := newTestStore(t)
-	builder := response.NewBuilder(store)
-
-	raw := json.RawMessage(
-		`{"status":"ok","body":"this is a large response with lots of text content that exceeds the threshold"}`,
-	)
-	data := map[string]any{"status": "ok"}
-
-	_, stats, err := builder.Build(response.BuildParams{Server: "ci", Tool: "getPage", Raw: raw, Summary: data})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if stats.RawTokens == 0 {
-		t.Error("expected non-zero raw token count")
-	}
-	if stats.SummaryTokens >= stats.RawTokens {
-		t.Errorf("summary should be smaller: summary=%d raw=%d", stats.SummaryTokens, stats.RawTokens)
-	}
-	if stats.ReductionPct() <= 0 {
-		t.Errorf("expected positive reduction, got %.1f%%", stats.ReductionPct())
 	}
 }
 

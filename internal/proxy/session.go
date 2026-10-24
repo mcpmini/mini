@@ -4,14 +4,12 @@ import (
 	"sync/atomic"
 
 	"github.com/mcpmini/mini/internal/clock"
-	"github.com/mcpmini/mini/internal/transport"
 )
 
 type proxySession struct {
 	daemon             DaemonSession
 	resolver           *DaemonResolver
 	link               *daemonLink
-	toolMode           transport.ToolMode
 	clock              clock.Clock
 	writer             *lineWriter
 	notificationStream *notificationStream
@@ -23,17 +21,13 @@ type proxySession struct {
 func newProxySession(p RunParams, writer *lineWriter) *proxySession {
 	session := DaemonSession{client: p.Client, sessionID: p.SessionID}
 	subs := newSubscriptions()
-	var notifications *notificationStream
-	if p.ToolMode == transport.ToolModeProxy {
-		notifications = newNotificationStream(notificationStreamParams{
-			Daemon: session, Writer: writer, Clock: p.Clock, Subscriptions: subs,
-		})
-	}
+	notifications := newNotificationStream(notificationStreamParams{
+		Daemon: session, Writer: writer, Clock: p.Clock, Subscriptions: subs,
+	})
 	return &proxySession{
 		daemon:             session,
 		resolver:           p.Resolver,
 		link:               newDaemonLink(p.Token),
-		toolMode:           p.ToolMode,
 		clock:              p.Clock,
 		writer:             writer,
 		notificationStream: notifications,
@@ -42,9 +36,7 @@ func newProxySession(p RunParams, writer *lineWriter) *proxySession {
 }
 
 func (s *proxySession) close() {
-	if s.notificationStream != nil {
-		s.notificationStream.Close()
-	}
+	s.notificationStream.Close()
 }
 
 func (s *proxySession) writeLine(line []byte) error {
@@ -103,7 +95,7 @@ func (s *proxySession) recoverForwarding(
 	}
 	if message != forwardedMessageInitialize {
 		// daemon accepts duplicate initialize, so concurrent recoveries may each replay the handshake
-		s.daemonAt(next).Handshake(s.toolMode)
+		s.daemonAt(next).Handshake()
 		s.restoreLifecycle(next)
 	}
 	return next, true
@@ -137,7 +129,5 @@ func (s *proxySession) restoreLifecycle(state linkState) {
 }
 
 func (s *proxySession) bindNotifications(state linkState) {
-	if s.notificationStream != nil {
-		s.notificationStream.Bind(state)
-	}
+	s.notificationStream.Bind(state)
 }

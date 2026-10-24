@@ -22,7 +22,7 @@ func (s *proxySession) ensureModernReady() {
 	if s.clientReady.Load() {
 		return
 	}
-	initialize, initialized := handshakeLines(s.toolMode)
+	initialize, initialized := handshakeLines()
 	// forward recovers a stale or restarted daemon, which must happen before a listen is acknowledged locally.
 	s.forward(forwardedMessage{line: initialize, kind: forwardedMessageInitialize})
 	s.forward(forwardedMessage{line: initialized, kind: forwardedMessageInitialized})

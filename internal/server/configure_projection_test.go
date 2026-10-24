@@ -71,7 +71,7 @@ func newProjectionServer(
 			Connection: fakeConn("getData", "other"),
 		},
 	)
-	postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: initMsg(true)})
+	postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: initMsg()})
 	return srv
 }
 
@@ -285,7 +285,7 @@ func newServerAwaitingAuthorization(
 	srv := newTestServer(t, server.Params{ConfigDir: dir})
 	srv.ConnectUpstreams(t.Context(), []config.ServerConfig{sc})
 	srv.WaitForStartupConnects()
-	postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: initMsg(true)})
+	postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: initMsg()})
 	return srv
 }
 
@@ -401,7 +401,7 @@ func TestConfigureGetProjection_readsAHiddenTool(t *testing.T) {
 			Connection: fakeConn("getData", "other"),
 		},
 	)
-	postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: initMsg(true)})
+	postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: initMsg()})
 
 	assertReport(
 		t,

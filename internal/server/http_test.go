@@ -135,30 +135,6 @@ func initSession(t *testing.T, ts *httptest.Server) string {
 	return sessionID
 }
 
-func initCompactRequest() []byte {
-	b, _ := json.Marshal(map[string]any{
-		"jsonrpc": transport.JsonRPCVersion,
-		"id":      1,
-		"method":  "initialize",
-		"params": map[string]any{
-			"protocolVersion":       "2024-11-05",
-			"capabilities":          map[string]any{},
-			"clientInfo":            map[string]any{"name": "test", "version": "0"},
-			transport.ToolModeParam: transport.ToolModeCompactValue,
-		},
-	})
-	return b
-}
-
-func initCompactSession(t *testing.T, ts *httptest.Server) string {
-	t.Helper()
-	resp := mcpPost(mcpPostParams{T: t, HTTPServer: ts, Body: initCompactRequest(), SessionID: ""})
-	sessionID := resp.Header.Get("Mcp-Session-Id")
-	io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
-	return sessionID
-}
-
 func drainMCPPost(params mcpPostParams) {
 	params.T.Helper()
 	resp := mcpPost(
@@ -203,8 +179,8 @@ func httpExecToolText(params httpExecToolTextParams) string {
 		"id":      3,
 		"method":  "tools/call",
 		"params": map[string]any{
-			"name":      "call",
-			"arguments": map[string]any{"server": params.ServerName, "tool": params.Tool},
+			"name":      params.ServerName + "__" + params.Tool,
+			"arguments": map[string]any{},
 		},
 	})
 	resp := mcpPost(mcpPostParams{T: params.T, HTTPServer: params.HTTPServer, Body: body, SessionID: params.SessionID})
@@ -279,7 +255,7 @@ func TestHTTPServer_sessionPersistsProjection(t *testing.T) {
 	fake := fakeConn("get_item")
 	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"x\"}"}]}`)
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fake) //nolint:errcheck
-	sessionID := initCompactSession(t, ts)
+	sessionID := initSession(t, ts)
 	setSessionProjection(
 		t,
 		sessionProjectionParams{
@@ -298,7 +274,8 @@ func TestHTTPServer_sessionPersistsProjection(t *testing.T) {
 	}
 	var env map[string]any
 	json.Unmarshal([]byte(text), &env) //nolint:errcheck
-	data, _ := json.Marshal(env["data"])
+	delete(env, "__mini")
+	data, _ := json.Marshal(env)
 	if bytes.Contains(data, []byte("secret")) {
 		t.Errorf("session projection should have excluded 'secret' from data, got: %s", data)
 	}
@@ -346,10 +323,10 @@ func httpExecOne(params httpExecOneParams) {
 	// Each goroutine gets its own session, which requires initialize first.
 	// Spec: "The initialization phase MUST be the first interaction between client and server."
 	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/lifecycle.mdx#L38
-	sessionID := initCompactSession(params.T, params.HTTPServer)
+	sessionID := initSession(params.T, params.HTTPServer)
 	body, _ := json.Marshal(map[string]any{
 		"jsonrpc": transport.JsonRPCVersion, "id": params.ID + 1, "method": "tools/call",
-		"params": map[string]any{"name": "call", "arguments": map[string]any{"server": "svc", "tool": "ping"}},
+		"params": map[string]any{"name": "svc__ping", "arguments": map[string]any{}},
 	})
 	resp := mcpPost(mcpPostParams{T: params.T, HTTPServer: params.HTTPServer, Body: body, SessionID: sessionID})
 	if resp.StatusCode != http.StatusOK {
@@ -497,8 +474,7 @@ func TestHTTPServer_staleSessionFails(t *testing.T) {
 
 	_, ts2 := newHTTPTestServer(t, server.Params{})
 	body, _ := json.Marshal(map[string]any{
-		"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "tools/call",
-		"params": map[string]any{"name": "list", "arguments": map[string]any{}},
+		"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "tools/list",
 	})
 
 	done := make(chan struct{})

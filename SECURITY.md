@@ -99,17 +99,15 @@ Response files written to `~/.mini/internal/responses/` use:
 The `read` tool (proxy mode) validates requested paths using `filepath.EvalSymlinks` before checking they are within the response directory. Symlinks inside the store that point outside it are rejected — a symlink escape would allow reading arbitrary files accessible to the process user.
 
 
-## Tool visibility and compact-mode gates
+## Tool visibility and CLI permissions
 
 | Setting | Applies to | Effect |
 |------|-----------|--------------|
-| `hidden` | Proxy, compact, CLI | Filtered from normal discovery |
-| `protected` | Compact and CLI only | `call` refuses it; `perm_call` can run it |
-| `open` (default) | Compact and CLI only | `call` and `perm_call` can run it |
+| `hidden` | MCP and CLI | Filtered from discovery |
+| `protected` | CLI only | `mini call` refuses it; `mini perm-call` can run it |
+| `open` (default) | CLI only | `mini call` and `mini perm-call` can run it |
 
-In default proxy mode, mini exposes upstream tools directly. Use your MCP client's approval settings for writes; mini does not enforce `protected` there.
-
-**Note**: hidden tools are enumerable through compact-mode discovery with `list(hidden:true)` unless `disable_list_hidden: true` is set in global config. Do not rely on `hidden` as a hard access control boundary without this flag.
+Over MCP, mini exposes upstream tools directly. Use your MCP client's approval settings for writes; mini does not enforce `protected` there.
 
 
 ## OAuth security

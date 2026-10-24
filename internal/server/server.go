@@ -10,7 +10,6 @@ import (
 	"github.com/mcpmini/mini/internal/projection"
 	"github.com/mcpmini/mini/internal/registry"
 	"github.com/mcpmini/mini/internal/response"
-	"github.com/mcpmini/mini/internal/transport"
 )
 
 type Server struct {
@@ -23,14 +22,11 @@ type Server struct {
 	stopWaiting      chan struct{}
 	stopWaitingOnce  sync.Once
 	projections      map[string]map[string]*config.ProjectionConfig
-	envelope         *response.Builder
 	store            *response.Store
 	projDefaults     *projection.Defaults
-	toolSchemas      []map[string]any
 	sessions         *sessionStore
 	logger           *slog.Logger
 	clock            clock.Clock
-	toolMode         transport.ToolMode
 	daemonAuthToken  string
 	providerRegistry *provider.Registry
 	// Held across each add_server, remove_server and config check of one name, so its saved and live states agree.

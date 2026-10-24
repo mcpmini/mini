@@ -35,7 +35,7 @@ func TestProxy_StableOutput_AllRootShapesMirrorUpstreamText(t *testing.T) {
 			)
 			addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
-			resp := serveProxy(t, srv, callTool("svc__get_value", map[string]any{}))
+			resp := serve(t, srv, callTool("svc__get_value", map[string]any{}))
 			result := resp["result"].(map[string]any)
 
 			assertDeepEqual(
@@ -56,7 +56,7 @@ func TestProxy_StableOutput_StructuredContentIsNotAddedOrDuplicated(t *testing.T
 	)
 	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
-	resp := serveProxy(t, srv, callTool("svc__get_value", map[string]any{}))
+	resp := serve(t, srv, callTool("svc__get_value", map[string]any{}))
 	result := resp["result"].(map[string]any)
 	if _, ok := result["structuredContent"]; ok {
 		t.Errorf("proxy mode must not add structuredContent the upstream did not send: %v", result)
@@ -70,7 +70,7 @@ func TestProxy_StableOutput_MiniOmittedWhenUnaltered(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1}"}]}`)
 	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
-	resp := serveProxy(t, srv, callTool("svc__get_value", map[string]any{}))
+	resp := serve(t, srv, callTool("svc__get_value", map[string]any{}))
 	text := toolResultText(t, resp)
 	if bytesContainsMini(text) {
 		t.Errorf("expected no __mini key when projection left data unaltered, got: %s", text)
@@ -84,7 +84,7 @@ func TestProxy_ErrorBehavior_ToolErrorNotWrappedInData(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(`{"isError":true,"content":[{"type":"text","text":"boom"}]}`)
 	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
-	resp := serveProxy(t, srv, callTool("svc__failing_tool", map[string]any{}))
+	resp := serve(t, srv, callTool("svc__failing_tool", map[string]any{}))
 	result, ok := resp["result"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected result envelope, got: %v", resp)
@@ -106,7 +106,7 @@ func TestProxy_ErrorBehavior_UnknownServerReturnsToolError(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 
-	resp := serveProxy(t, srv, callTool("nosuchserver__tool", map[string]any{}))
+	resp := serve(t, srv, callTool("nosuchserver__tool", map[string]any{}))
 	if resp["error"] == nil {
 		result, ok := resp["result"].(map[string]any)
 		if !ok || result["isError"] != true {
@@ -121,7 +121,7 @@ func TestProxy_FlatArguments_ReachUpstreamAsSent(t *testing.T) {
 	conn := fakeConn("list_repos")
 	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "gh", Connection: conn})
 
-	resp := serveProxy(t, srv, callTool("gh__list_repos", map[string]any{"state": "open"}))
+	resp := serve(t, srv, callTool("gh__list_repos", map[string]any{"state": "open"}))
 	if resp["error"] != nil {
 		t.Fatalf("flat call should succeed, got: %v", resp["error"])
 	}
@@ -136,7 +136,7 @@ func TestProxy_ControlKey_NotForwardedToUpstream(t *testing.T) {
 	conn := fakeConn("get_item")
 	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
-	resp := serveProxy(t, srv, callTool("svc__get_item", map[string]any{
+	resp := serve(t, srv, callTool("svc__get_item", map[string]any{
 		"id":     "x",
 		"__mini": map[string]any{"projection": "raw"},
 	}))
@@ -154,7 +154,7 @@ func TestProxy_ArgsKey_ForwardedAsUpstreamArgument(t *testing.T) {
 	conn := fakeConn("get_item")
 	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
-	serveProxy(t, srv, callTool("svc__get_item", map[string]any{"args": map[string]any{"id": "x"}}))
+	serve(t, srv, callTool("svc__get_item", map[string]any{"args": map[string]any{"id": "x"}}))
 	if !strings.Contains(string(conn.LastParams), `"args":{"id":"x"}`) {
 		t.Errorf("args key should be forwarded as an upstream argument: %s", conn.LastParams)
 	}
@@ -179,7 +179,7 @@ func TestProxy_ClosedRefRoot_FlatCallWithControlReachesUpstream(t *testing.T) {
 	}
 	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
-	resp := serveProxy(t, srv, callTool("svc__get_item", map[string]any{
+	resp := serve(t, srv, callTool("svc__get_item", map[string]any{
 		"id":     "x",
 		"__mini": map[string]any{"projection": "raw"},
 	}))
@@ -208,7 +208,7 @@ func TestProxy_Alias_DispatchesToRealUpstreamName(t *testing.T) {
 		},
 	)
 
-	resp := serveProxy(t, srv, callTool("gh__list_prs", map[string]any{}))
+	resp := serve(t, srv, callTool("gh__list_prs", map[string]any{}))
 	text := toolResultText(t, resp)
 	t.Logf("alias response: %s", text)
 
@@ -238,7 +238,7 @@ func TestProxy_RawBypass_PreservesLargeIntegers(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":9007199254740993}"}]}`)
 	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
-	resp := serveProxy(t, srv, callTool("svc__get_item", map[string]any{"__mini": map[string]any{"projection": "raw"}}))
+	resp := serve(t, srv, callTool("svc__get_item", map[string]any{"__mini": map[string]any{"projection": "raw"}}))
 	text := toolResultText(t, resp)
 	if !strings.Contains(text, "9007199254740993") {
 		t.Errorf("raw bypass corrupted large integer: %s", text)
@@ -252,7 +252,7 @@ func TestProxy_ForwardsLargeIntegerArgs(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{}"}]}`)
 	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
-	serveProxy(
+	serve(
 		t,
 		srv,
 		callTool("svc__get_item", map[string]any{"id": json.Number("9007199254740993")}),

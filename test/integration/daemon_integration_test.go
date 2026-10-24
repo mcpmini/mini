@@ -155,12 +155,9 @@ func daemonForTest(t *testing.T) string {
 	return cfg
 }
 
-func startProxyCmd(t *testing.T, cfg, toolMode string) (io.WriteCloser, *bufio.Scanner) {
+func startProxyCmd(t *testing.T, cfg string) (io.WriteCloser, *bufio.Scanner) {
 	t.Helper()
 	args := []string{"--config", cfg, "connect", "--log-level", "error"}
-	if toolMode != "" {
-		args = append(args, "--tool-mode", toolMode)
-	}
 	cmd := exec.Command(miniBin, args...)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -183,9 +180,9 @@ func startProxyCmd(t *testing.T, cfg, toolMode string) (io.WriteCloser, *bufio.S
 	return stdin, scanner
 }
 
-func connect(t *testing.T, cfg, toolMode string) *mcpClient {
+func connect(t *testing.T, cfg string) *mcpClient {
 	t.Helper()
-	stdin, scanner := startProxyCmd(t, cfg, toolMode)
+	stdin, scanner := startProxyCmd(t, cfg)
 	c := newMCPClient(t, stdin, scanner)
 	c.mustCall("initialize", map[string]any{
 		"protocolVersion": "2024-11-05",
@@ -195,15 +192,14 @@ func connect(t *testing.T, cfg, toolMode string) *mcpClient {
 	return c
 }
 
-func connectProxy(t *testing.T, cfg string) *mcpClient   { return connect(t, cfg, "") }
-func connectCompact(t *testing.T, cfg string) *mcpClient { return connect(t, cfg, "compact") }
+func connectProxy(t *testing.T, cfg string) *mcpClient { return connect(t, cfg) }
 
 func TestIntegrationDaemon_basicToolCall(t *testing.T) {
 	t.Parallel()
 	cfg := daemonForTest(t)
 	startDaemon(t, cfg)
-	client := connectCompact(t, cfg)
-	if e := client.execEnvelope("svc", "get_item", nil); e.Error != "" {
+	client := connectProxy(t, cfg)
+	if e := client.execResult("svc", "get_item", nil); e.IsError {
 		t.Errorf("expected ok=true, got: %+v", e)
 	}
 }
@@ -232,8 +228,8 @@ func TestIntegrationDaemon_sessionIsolation(t *testing.T) {
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
 
 	startDaemon(t, cfg)
-	c1 := connectCompact(t, cfg)
-	c2 := connectCompact(t, cfg)
+	c1 := connectProxy(t, cfg)
+	c2 := connectProxy(t, cfg)
 
 	c1.setProjection(setProjectionParams{
 		Server:      "svc",
@@ -242,11 +238,11 @@ func TestIntegrationDaemon_sessionIsolation(t *testing.T) {
 		SessionOnly: true,
 	})
 
-	b1, _ := json.Marshal(c1.execEnvelope("svc", "get_item", nil).Data)
+	b1, _ := json.Marshal(c1.execResult("svc", "get_item", nil).Data)
 	if strings.Contains(string(b1), "secret") {
 		t.Errorf("c1: session projection should exclude secret, got: %s", b1)
 	}
-	b2, _ := json.Marshal(c2.execEnvelope("svc", "get_item", nil).Data)
+	b2, _ := json.Marshal(c2.execResult("svc", "get_item", nil).Data)
 	if !strings.Contains(string(b2), "secret") {
 		t.Errorf("c2: different session should still have secret, got: %s", b2)
 	}
@@ -260,7 +256,7 @@ func TestIntegrationDaemon_standaloneFlag(t *testing.T) {
 
 	// No daemon running — --standalone should work without trying to start one.
 	client := startServer(t, cfg)
-	if e := client.execEnvelope("svc", "ping", nil); e.Error != "" {
+	if e := client.execResult("svc", "ping", nil); e.IsError {
 		t.Errorf("standalone mode: expected ok=true, got: %+v", e)
 	}
 }
@@ -349,8 +345,8 @@ func TestIntegrationDaemon_recoversAfterGracefulKill(t *testing.T) {
 	cfg := daemonForTest(t)
 	cmd := startDaemon(t, cfg)
 	tokenBefore := readDaemonToken(t, cfg)
-	client := connectCompact(t, cfg)
-	if e := client.execEnvelope("svc", "get_item", nil); e.Error != "" {
+	client := connectProxy(t, cfg)
+	if e := client.execResult("svc", "get_item", nil); e.IsError {
 		t.Fatalf("pre-kill call failed: %+v", e)
 	}
 
@@ -360,7 +356,7 @@ func TestIntegrationDaemon_recoversAfterGracefulKill(t *testing.T) {
 		Signal:    syscall.SIGTERM,
 	})
 
-	if e := client.execEnvelopeOnceStarted("svc", "get_item"); e.Error != "" {
+	if e := client.execResultOnceStarted("svc", "get_item"); e.IsError {
 		t.Fatalf("post-kill call did not recover: %+v", e)
 	}
 	if got := readDaemonToken(t, cfg); got != tokenBefore {
@@ -373,8 +369,8 @@ func TestIntegrationDaemon_recoversAfterSIGKILLWithStaleSocket(t *testing.T) {
 	cfg := daemonForTest(t)
 	cmd := startDaemon(t, cfg)
 	tokenBefore := readDaemonToken(t, cfg)
-	client := connectCompact(t, cfg)
-	if e := client.execEnvelope("svc", "get_item", nil); e.Error != "" {
+	client := connectProxy(t, cfg)
+	if e := client.execResult("svc", "get_item", nil); e.IsError {
 		t.Fatalf("pre-kill call failed: %+v", e)
 	}
 
@@ -388,7 +384,7 @@ func TestIntegrationDaemon_recoversAfterSIGKILLWithStaleSocket(t *testing.T) {
 		t.Fatalf("expected stale socket file to remain after SIGKILL, got: %v", err)
 	}
 
-	if e := client.execEnvelopeOnceStarted("svc", "get_item"); e.Error != "" {
+	if e := client.execResultOnceStarted("svc", "get_item"); e.IsError {
 		t.Fatalf("post-SIGKILL call did not recover despite stale socket: %+v", e)
 	}
 	if got := readDaemonToken(t, cfg); got != tokenBefore {
@@ -406,8 +402,8 @@ func TestIntegrationDaemon_manyClientsRecoverSingleWinner(t *testing.T) {
 
 	clients := make([]*mcpClient, n)
 	for i := range clients {
-		clients[i] = connectCompact(t, cfg)
-		if e := clients[i].execEnvelope("svc", "get_item", nil); e.Error != "" {
+		clients[i] = connectProxy(t, cfg)
+		if e := clients[i].execResult("svc", "get_item", nil); e.IsError {
 			t.Fatalf("client %d pre-kill call failed: %+v", i, e)
 		}
 	}
@@ -436,8 +432,8 @@ func recoverAllClients(t *testing.T, clients []*mcpClient) {
 		wg.Add(1)
 		go func(i int, c *mcpClient) {
 			defer wg.Done()
-			if e := c.execEnvelopeOnceStarted("svc", "get_item"); e.Error != "" {
-				errs[i] = e.Error
+			if e := c.execResultOnceStarted("svc", "get_item"); e.IsError {
+				errs[i] = e.Text
 			}
 		}(i, c)
 	}
@@ -451,12 +447,12 @@ func recoverAllClients(t *testing.T, clients []*mcpClient) {
 
 // A respawned daemon serves calls before its upstreams reconnect, and answers those with the retryable
 // server_starting (#279); an agent retries that, so recovery means the call succeeds once the server is up.
-func (c *mcpClient) execEnvelopeOnceStarted(server, tool string) envelope {
+func (c *mcpClient) execResultOnceStarted(server, tool string) nativeCallResult {
 	c.t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for {
-		e := c.execEnvelope(server, tool, nil)
-		if e.Error != "server_starting" || time.Now().After(deadline) {
+		e := c.execResult(server, tool, nil)
+		if !strings.Contains(e.Text, `"server_starting"`) || time.Now().After(deadline) {
 			return e
 		}
 		time.Sleep(10 * time.Millisecond)

@@ -23,7 +23,6 @@ func (s *Server) activateModern(session *Session) {
 	if session.modern.Swap(true) || session.httpSession.Load() {
 		return
 	}
-	session.setToolModeOnce(s.resolveToolMode(""))
 	session.markInitialized()
 	session.clientReady.Store(true)
 }
@@ -106,12 +105,12 @@ func addMissingField(fields map[string]json.RawMessage, key string, value json.R
 	}
 }
 
-func (s *Server) handleDiscover(session *Session) transport.DiscoverResult {
+func (s *Server) handleDiscover() transport.DiscoverResult {
 	return transport.DiscoverResult{
 		ResultType:        string(transport.ResultComplete),
 		SupportedVersions: transport.SupportedVersions(),
 		Capabilities:      transport.ServerCapabilities{Tools: &transport.ToolsCapability{ListChanged: true}},
-		Instructions:      s.initInstructions(session),
+		Instructions:      proxyInitInstructions,
 		Meta: &transport.DiscoverMeta{
 			ServerInfo: transport.ServerInfo{Name: "mini", Version: version.Version},
 		},

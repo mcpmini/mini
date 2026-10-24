@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/transport"
@@ -28,8 +29,8 @@ func newInternalTestServer(t *testing.T) *Server {
 
 func registeredToolNames(srv *Server) []string {
 	var names []string
-	for _, e := range srv.reg.All() {
-		names = append(names, e.Name)
+	for _, e := range srv.reg.AllFull() {
+		names = append(names, e.FullName)
 	}
 	slices.Sort(names)
 	return names
@@ -104,8 +105,8 @@ func TestPublishReconnectedTools_usesReloadedAliases(t *testing.T) {
 	srv.publishReconnectedTools(upstreams[0], upstreams[0].conn, transport.ToolList{Tools: tools})
 
 	names := map[string]bool{}
-	for _, e := range srv.reg.All() {
-		names[e.Name] = true
+	for _, e := range srv.reg.AllFull() {
+		names[e.FullName] = true
 	}
 	if !names["gh.new_alias"] {
 		t.Errorf("reconnect should use the reloaded alias, got: %v", names)
@@ -149,5 +150,18 @@ func TestMarkOAuthIfRequired_secondCallSkipsRewrite(t *testing.T) {
 			"second call: err = %v, want the oauth-required error (a rewrite attempt would have failed and returned the bare connErr instead)",
 			err,
 		)
+	}
+}
+
+func TestNextBackoffDoublesUpTo64Seconds(t *testing.T) {
+	for _, c := range []struct{ in, want time.Duration }{
+		{time.Second, 2 * time.Second},
+		{32 * time.Second, 64 * time.Second},
+		{64 * time.Second, 64 * time.Second},
+		{128 * time.Second, 128 * time.Second},
+	} {
+		if got := nextBackoff(c.in); got != c.want {
+			t.Errorf("nextBackoff(%v) = %v, want %v", c.in, got, c.want)
+		}
 	}
 }

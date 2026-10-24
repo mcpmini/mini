@@ -22,7 +22,6 @@ type RunParams struct {
 	Token     string
 	In        io.Reader
 	Out       io.Writer
-	ToolMode  transport.ToolMode
 	Resolver  *DaemonResolver // nil = standalone, no recovery
 	Clock     clock.Clock
 }
@@ -61,7 +60,7 @@ func runWithLimit(p RunParams, limit int) error {
 			}
 			continue
 		}
-		message := classifyForwardedMessage(maybeInjectToolMode(line, p.ToolMode))
+		message := classifyForwardedMessage(line)
 		if message.mustForwardSync() {
 			if err := forwardSync(message, fp); err != nil {
 				fp.wg.Wait()
@@ -85,49 +84,6 @@ func newForwardPool(p RunParams, limit int) forwardAsyncParams {
 		wg:      &wg,
 		sem:     make(chan struct{}, max(1, limit)),
 	}
-}
-
-func maybeInjectToolMode(line []byte, mode transport.ToolMode) []byte {
-	if mode == transport.ToolModeCompact {
-		return injectCompactMode(line)
-	}
-	return line
-}
-
-func injectCompactMode(line []byte) []byte {
-	if !peekIsInitialize(line) {
-		return line
-	}
-	if result, err := withCompactModeParam(line); err == nil {
-		return result
-	}
-	return line
-}
-
-func withCompactModeParam(line []byte) ([]byte, error) {
-	var full map[string]json.RawMessage
-	if err := json.Unmarshal(line, &full); err != nil {
-		return nil, err
-	}
-	params, err := extractInitParams(full)
-	if err != nil {
-		return nil, err
-	}
-	params[transport.ToolModeParam] = json.RawMessage(`"` + transport.ToolModeCompactValue + `"`)
-	if full["params"], err = json.Marshal(params); err != nil {
-		return nil, err
-	}
-	return json.Marshal(full)
-}
-
-func extractInitParams(full map[string]json.RawMessage) (map[string]json.RawMessage, error) {
-	params := map[string]json.RawMessage{}
-	if raw := full["params"]; len(raw) > 0 {
-		if err := json.Unmarshal(raw, &params); err != nil {
-			return nil, err
-		}
-	}
-	return params, nil
 }
 
 func startForward(message forwardedMessage, p forwardAsyncParams) {
@@ -184,13 +140,6 @@ func isNotInitialized(resp []byte) bool {
 	return json.Unmarshal(resp, &rpc) == nil &&
 		rpc.Error != nil &&
 		strings.HasPrefix(rpc.Error.Message, transport.NotInitializedMessage)
-}
-
-func peekIsInitialize(line []byte) bool {
-	var m struct {
-		Method string `json:"method"`
-	}
-	return json.Unmarshal(line, &m) == nil && m.Method == "initialize"
 }
 
 type requestID struct {

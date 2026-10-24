@@ -114,8 +114,8 @@ func TestIntegrationFakeMCPContentFaultPayloads(t *testing.T) {
 			Fault:       map[string]any{"method": "tools/call", "type": "error_response", "message": "injected marker"},
 			ToolTimeout: "",
 		})
-		got := client.execEnvelope("svc", "get_item", nil)
-		if got.Error == "" || !strings.Contains(got.Message, "injected marker") {
+		got := client.execResult("svc", "get_item", nil)
+		if !got.IsError || !strings.Contains(got.Text, "injected marker") {
 			t.Fatalf("fault response = %+v, want injected tool error", got)
 		}
 	})

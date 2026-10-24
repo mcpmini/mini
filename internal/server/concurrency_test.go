@@ -59,9 +59,7 @@ func runExecWorker(t *testing.T, srv *server.Server, wg *sync.WaitGroup) {
 	t.Helper()
 	defer wg.Done()
 	for range stressIterations {
-		resp := serve(t, srv, callTool("call", map[string]any{
-			"server": "alpha", "tool": "toolA", "params": map[string]any{},
-		}))
+		resp := serve(t, srv, callTool("alpha__toolA", map[string]any{}))
 		_ = resp["error"]
 	}
 }

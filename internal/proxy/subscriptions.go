@@ -81,7 +81,7 @@ func (s *proxySession) handleLocalModernLine(message modernLine) (bool, error) {
 }
 
 func (s *proxySession) acknowledgeListen(id json.RawMessage, params transport.ListenParams) error {
-	toolsChanged := params.Notifications.ToolsListChanged && s.notificationStream != nil
+	toolsChanged := params.Notifications.ToolsListChanged
 	ack := transport.NewSubscriptionAck(id, transport.ListenNotifications{ToolsListChanged: toolsChanged})
 	return s.subs.acknowledge(ack, func(ack transport.SubscriptionAck) error {
 		line, err := json.Marshal(ack)

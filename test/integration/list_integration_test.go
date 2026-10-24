@@ -23,7 +23,7 @@ func TestIntegrationListTools_paginatesAcrossPages(t *testing.T) {
 	})
 	client := startServer(t, cfg)
 
-	result := client.listTools("svc")
+	result := client.listTools()
 	for _, name := range []string{"tool_a", "tool_b", "tool_c"} {
 		if !strings.Contains(result, name) {
 			t.Errorf("tool %q missing from list output: %s", name, result)

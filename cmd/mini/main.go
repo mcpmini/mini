@@ -23,33 +23,19 @@ import (
 type connectFlags struct {
 	logLevel   string
 	standalone bool
-	toolMode   transport.ToolMode
 }
 
 func newConnectCmd(opts *rootOptions) *cobra.Command {
 	f := connectFlags{}
-	var toolModeStr string
 	cmd := &cobra.Command{
 		Use:   "connect",
 		Short: "Connect an agent to mini (stdio MCP)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			f.toolMode = parseToolMode(toolModeStr)
 			return runConnect(opts.configDir, f)
 		},
 	}
-	bindConnectFlags(cmd, &f, &toolModeStr)
+	bindConnectFlags(cmd, &f)
 	return cmd
-}
-
-func parseToolMode(m string) transport.ToolMode {
-	switch m {
-	case transport.ToolModeCompactValue:
-		return transport.ToolModeCompact
-	case "", transport.ToolModeProxyValue:
-		return transport.ToolModeProxy
-	}
-	fatalf("invalid --tool-mode %q; valid values: proxy, compact", m)
-	return transport.ToolModeProxy
 }
 
 func runConnect(configDir string, f connectFlags) error {
@@ -58,12 +44,11 @@ func runConnect(configDir string, f connectFlags) error {
 		fatalf("%v", err)
 	}
 	logger := buildLogger(cfg, f.logLevel, os.Stderr)
-	if !f.standalone && connectViaDaemon(configDir, logger, f.toolMode) == nil {
+	if !f.standalone && connectViaDaemon(configDir, logger) == nil {
 		return nil
 	}
 	return serveStandalone(ServeParams{
 		ConfigDir: configDir, Cfg: cfg, Servers: servers.Loaded, Logger: logger,
-		ToolMode: f.toolMode,
 	})
 }
 
@@ -72,7 +57,6 @@ type ServeParams struct {
 	Cfg       *config.Config
 	Servers   []config.ServerConfig
 	Logger    *slog.Logger
-	ToolMode  transport.ToolMode
 }
 
 type serveFunc func(context.Context, io.Reader, io.Writer) error
@@ -127,7 +111,6 @@ func serveStandalone(p ServeParams) error {
 	defer stop()
 	srv := buildAndStart(ctx, BuildServerParams{
 		Cfg: p.Cfg, ConfigDir: p.ConfigDir, Logger: p.Logger, Servers: p.Servers,
-		ToolMode: p.ToolMode,
 	})
 	defer srv.Close()
 	p.Logger.Info("mini ready")
@@ -145,14 +128,13 @@ type BuildServerParams struct {
 	Logger          *slog.Logger
 	Servers         []config.ServerConfig
 	Clock           clock.Clock
-	ToolMode        transport.ToolMode
 	DaemonAuthToken string
 }
 
 func buildAndStart(ctx context.Context, p BuildServerParams) *server.Server {
 	srv := server.New(server.Params{
 		Config: p.Cfg, ConfigDir: p.ConfigDir, Logger: p.Logger,
-		Clock: p.Clock, ToolMode: p.ToolMode,
+		Clock:           p.Clock,
 		DaemonAuthToken: p.DaemonAuthToken,
 	})
 	srv.ConnectUpstreams(ctx, p.Servers)
@@ -160,7 +142,7 @@ func buildAndStart(ctx context.Context, p BuildServerParams) *server.Server {
 	return srv
 }
 
-func connectViaDaemon(configDir string, logger *slog.Logger, mode transport.ToolMode) error {
+func connectViaDaemon(configDir string, logger *slog.Logger) error {
 	if err := daemon.CheckSocketPath(configDir); err != nil {
 		return err
 	}
@@ -174,7 +156,7 @@ func connectViaDaemon(configDir string, logger *slog.Logger, mode transport.Tool
 	logger.Info("connected to mini daemon", "socket", socket, "session", sessionID)
 	return proxy.Run(proxy.RunParams{
 		Client: daemon.SocketClient(socket, 0), SessionID: sessionID, Token: token,
-		In: os.Stdin, Out: os.Stdout, ToolMode: mode, Resolver: proxy.NewDaemonResolver(reresolve),
+		In: os.Stdin, Out: os.Stdout, Resolver: proxy.NewDaemonResolver(reresolve),
 		Clock: clock.System(),
 	})
 }
@@ -234,14 +216,8 @@ func fatalf(format string, args ...any) {
 	os.Exit(1)
 }
 
-func bindConnectFlags(cmd *cobra.Command, f *connectFlags, toolModeStr *string) {
+func bindConnectFlags(cmd *cobra.Command, f *connectFlags) {
 	fl := cmd.Flags()
 	fl.StringVar(&f.logLevel, "log-level", "", "log level (debug|info|warn|error)")
 	fl.BoolVar(&f.standalone, "standalone", false, "skip daemon detection, serve directly (useful for debugging)")
-	fl.StringVar(
-		toolModeStr,
-		"tool-mode",
-		"",
-		"tool interface: compact for the four-meta-tool interface (default is proxy)",
-	)
 }

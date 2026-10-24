@@ -110,7 +110,6 @@ func (s RunStats) AvgTurns() float64 {
 // EvalResult holds results for all modes, each across one or more reps.
 type EvalResult struct {
 	Direct RunStats
-	MCP    [numFormats]RunStats
 	CLI    [numFormats]RunStats
 	Proxy  [numFormats]RunStats
 }

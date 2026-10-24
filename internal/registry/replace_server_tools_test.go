@@ -27,8 +27,8 @@ func TestReplaceServer_removesStaleHiddenTools(t *testing.T) {
 	if _, ok := reg.LookupWithHidden("svc.secret"); ok {
 		t.Fatal("removed hidden tool remained in LookupWithHidden")
 	}
-	if names := compactNames(reg.AllWithHidden()); !slices.Equal(names, []string{"other.untouched", "svc.visible"}) {
-		t.Fatalf("AllWithHidden = %v", names)
+	if names := fullNames(reg.AllFull()); !slices.Equal(names, []string{"other.untouched", "svc.visible"}) {
+		t.Fatalf("AllFull = %v", names)
 	}
 	if _, err := reg.Lookup("other.untouched"); err != nil {
 		t.Fatalf("other server entry was removed: %v", err)
@@ -112,20 +112,10 @@ func TestReplaceServer_readersSeeOnlyCompleteCatalogs(t *testing.T) {
 	}
 }
 
-func compactNames(entries []registry.CompactEntry) []string {
-	names := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		names = append(names, entry.Name)
-	}
-	slices.Sort(names)
-	return names
-}
-
 func fullNames(entries []*registry.ToolEntry) []string {
-	names := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		names = append(names, entry.FullName)
+	names := make([]string, len(entries))
+	for i, e := range entries {
+		names[i] = e.FullName
 	}
-	slices.Sort(names)
 	return names
 }

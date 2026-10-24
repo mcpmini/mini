@@ -20,7 +20,7 @@ import (
 )
 
 func TestNotificationStream_modernTaggingAndLegacyForwarding(t *testing.T) {
-	session, out := newTestProxySession(t, transport.ToolModeProxy)
+	session, out := newTestProxySession(t)
 	notification := toolsChangedLine(t)
 	if err := session.notificationStream.forward(notification); err != nil {
 		t.Fatal(err)

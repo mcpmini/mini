@@ -63,14 +63,14 @@ func TestProxy_MiniRead_JQRoundTrip(t *testing.T) {
 			)
 			addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
-			serveProxy(t, srv, callTool("config", map[string]any{
+			serve(t, srv, callTool("config", map[string]any{
 				"action":     "set_projection",
 				"server":     "svc",
 				"tool":       "get_data",
 				"projection": tc.projection,
 			}))
 
-			resp := serveProxy(t, srv, callTool("svc__get_data", map[string]any{}))
+			resp := serve(t, srv, callTool("svc__get_data", map[string]any{}))
 			text := toolResultText(t, resp)
 
 			var env map[string]any
@@ -100,7 +100,7 @@ func TestProxy_MiniRead_JQRoundTrip(t *testing.T) {
 					continue
 				}
 
-				resp2 := serveProxy(t, srv, callTool("read", map[string]any{"file": key, "filter": path}))
+				resp2 := serve(t, srv, callTool("read", map[string]any{"file": key, "filter": path}))
 				got := toolResultText(t, resp2)
 
 				if got != want {

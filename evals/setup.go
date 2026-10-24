@@ -27,14 +27,6 @@ func rawAllowedTools(servers map[string]string, extraBuiltins string) string {
 	return strings.Join(names, ",")
 }
 
-func miniMCPAllowedTools(extraBuiltins string) string {
-	base := "mcp__mini__list,mcp__mini__call,mcp__mini__perm_call,mcp__mini__config"
-	if extraBuiltins != "" {
-		return base + "," + extraBuiltins
-	}
-	return base
-}
-
 func cliAllowedTools(extraBuiltins string) string {
 	if extraBuiltins != "" {
 		return "Bash," + extraBuiltins
@@ -58,30 +50,6 @@ type miniConfigParams struct {
 	servers    map[string]string
 	callLogDir string
 	format     format
-}
-
-func (r *Runner) miniMCPConfig(p miniConfigParams) (string, error) {
-	configDir, err := r.buildMiniConfigDir(p)
-	if err != nil {
-		return "", err
-	}
-	return writeMCPConfig(p.env, map[string]any{
-		"mcpServers": map[string]any{
-			"mini": map[string]any{
-				"command": r.MiniBin,
-				"args": []string{
-					"--config",
-					configDir,
-					"connect",
-					"--standalone",
-					"--tool-mode",
-					"compact",
-					"--log-level",
-					"error",
-				},
-			},
-		},
-	})
 }
 
 func (r *Runner) miniCLIConfigDir(p miniConfigParams) (string, error) {

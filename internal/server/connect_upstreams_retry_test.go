@@ -325,14 +325,14 @@ func TestConnectUpstreamAsync_projectionsReloadedDuringRetry_installUsesLiveProj
 		{
 			name:        "projections removed",
 			reloaded:    map[string]map[string]*config.ProjectionConfig{},
-			wantListed:  "svc.ping",
-			wantMissing: "svc.old_alias",
+			wantListed:  "svc__ping",
+			wantMissing: "svc__old_alias",
 		},
 		{
 			name:        "alias changed",
 			reloaded:    aliasPing("new_alias"),
-			wantListed:  "svc.new_alias",
-			wantMissing: "svc.old_alias",
+			wantListed:  "svc__new_alias",
+			wantMissing: "svc__old_alias",
 		},
 	}
 	for _, tc := range cases {

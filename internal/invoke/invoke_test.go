@@ -346,7 +346,7 @@ func TestInvokeRaw_NilParams(t *testing.T) {
 
 func TestBuildEnvelope_NoProjection(t *testing.T) {
 	raw := json.RawMessage(`{"items":[1,2,3]}`)
-	env, _, err := invoke.BuildEnvelope(invoke.BuildEnvelopeParams{
+	env, err := invoke.BuildEnvelope(invoke.BuildEnvelopeParams{
 		Server:   "svc",
 		Tool:     "list",
 		Raw:      raw,
@@ -368,7 +368,7 @@ func TestBuildEnvelope_NoProjection(t *testing.T) {
 func TestBuildEnvelope_WithProjection(t *testing.T) {
 	raw := json.RawMessage(`{"id":1,"secret":"hidden","name":"Alice"}`)
 	projCfg := &config.ProjectionConfig{Exclude: []string{"secret"}}
-	env, _, err := invoke.BuildEnvelope(invoke.BuildEnvelopeParams{
+	env, err := invoke.BuildEnvelope(invoke.BuildEnvelopeParams{
 		Server:   "svc",
 		Tool:     "get",
 		Raw:      raw,
@@ -395,7 +395,7 @@ func TestBuildEnvelope_TruncationRecorded(t *testing.T) {
 	longBody := strings.Repeat("x", 500)
 	raw := json.RawMessage(`{"id":1,"body":"` + longBody + `"}`)
 	projCfg := &config.ProjectionConfig{StringLimits: map[string]int{"body": 50}}
-	env, _, err := invoke.BuildEnvelope(invoke.BuildEnvelopeParams{
+	env, err := invoke.BuildEnvelope(invoke.BuildEnvelopeParams{
 		Server:   "svc",
 		Tool:     "get",
 		Raw:      raw,

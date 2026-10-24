@@ -18,13 +18,16 @@ import (
 	"github.com/mcpmini/mini/internal/transport/transporttest"
 )
 
-type compactRecoveryTransport struct {
+type evictedSessionTransport struct {
 	initializes int
 	calls       int
-	compact     bool
 }
 
-func (d *compactRecoveryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (d *evictedSessionTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Method == http.MethodGet {
+		<-req.Context().Done()
+		return nil, req.Context().Err()
+	}
 	request, err := readDaemonRequest(req)
 	if err != nil {
 		return nil, err
@@ -32,7 +35,6 @@ func (d *compactRecoveryTransport) RoundTrip(req *http.Request) (*http.Response,
 	switch request.Method {
 	case "initialize":
 		d.initializes++
-		d.compact = request.Params.ToolMode == transport.ToolModeCompactValue
 	case transport.NotificationInitialized:
 		return localDaemonResponse(http.StatusAccepted, ""), nil
 	case "tools/call":
@@ -45,18 +47,18 @@ func (d *compactRecoveryTransport) RoundTrip(req *http.Request) (*http.Response,
 			)
 		}
 	}
-	return daemonResult(request.ID, json.RawMessage(`{"data":{"answer":"ok"}}`))
+	return daemonResult(request.ID, json.RawMessage(`{"content":[{"type":"text","text":"ok"}]}`))
 }
 
-func TestRun_modernCompactCallRecoversAfterIdleEviction(t *testing.T) {
-	daemon := &compactRecoveryTransport{}
+func TestRun_modernCallRecoversAfterIdleEviction(t *testing.T) {
+	daemon := &evictedSessionTransport{}
 	fakeClock := clock.NewFake()
 	var out bytes.Buffer
 	done := make(chan error, 1)
 	go func() {
 		done <- Run(RunParams{
 			Client: &http.Client{Transport: daemon}, SessionID: "sess", In: modernInput(transporttest.ModernRequest(1, "tools/call", nil)), Out: &out,
-			ToolMode: transport.ToolModeCompact, Clock: fakeClock,
+			Clock: fakeClock,
 		})
 	}()
 	if err := fakeClock.BlockUntilContext(t.Context(), 1); err != nil {
@@ -66,8 +68,8 @@ func TestRun_modernCompactCallRecoversAfterIdleEviction(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if daemon.initializes != 2 || !daemon.compact || !strings.Contains(out.String(), `"data":{"answer":"ok"}`) {
-		t.Fatalf("initializes=%d compact=%t output=%q", daemon.initializes, daemon.compact, out.String())
+	if daemon.initializes != 2 || !strings.Contains(out.String(), `"text":"ok"`) {
+		t.Fatalf("initializes=%d output=%q", daemon.initializes, out.String())
 	}
 }
 
@@ -77,6 +79,10 @@ type restartingDaemonTransport struct {
 }
 
 func (d *restartingDaemonTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Method == http.MethodGet {
+		<-req.Context().Done()
+		return nil, req.Context().Err()
+	}
 	if d.resolved.Load() == 0 {
 		return nil, &net.OpError{Op: "dial", Err: syscall.ECONNREFUSED}
 	}
@@ -90,7 +96,7 @@ func (d *restartingDaemonTransport) RoundTrip(req *http.Request) (*http.Response
 	if request.Method == transport.NotificationInitialized {
 		return localDaemonResponse(http.StatusAccepted, ""), nil
 	}
-	return daemonResult(request.ID, transport.ToolsListResult{Tools: []transport.ToolDefinition{{Name: "call"}}})
+	return daemonResult(request.ID, transport.ToolsListResult{Tools: []transport.ToolDefinition{{Name: "svc__tool"}}})
 }
 
 func TestRun_modernAgentRecoversAfterDaemonRestart(t *testing.T) {
@@ -102,7 +108,7 @@ func TestRun_modernAgentRecoversAfterDaemonRestart(t *testing.T) {
 	go func() {
 		done <- Run(RunParams{
 			Client: &http.Client{Transport: daemon}, SessionID: "sess", In: modernInput(transporttest.ModernRequest(1, "tools/list", nil)), Out: &out,
-			ToolMode: transport.ToolModeCompact, Clock: fakeClock,
+			Clock: fakeClock,
 			Resolver: NewDaemonResolver(func() (string, error) {
 				resolves.Add(1)
 				return "restarted", nil
@@ -116,7 +122,7 @@ func TestRun_modernAgentRecoversAfterDaemonRestart(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if resolves.Load() != 1 || daemon.initializes != 1 || !strings.Contains(out.String(), `"name":"call"`) {
+	if resolves.Load() != 1 || daemon.initializes != 1 || !strings.Contains(out.String(), `"name":"svc__tool"`) {
 		t.Fatalf("resolves=%d initializes=%d output=%q", resolves.Load(), daemon.initializes, out.String())
 	}
 }
@@ -130,7 +136,7 @@ func TestRun_modernListenFirstRecoversDaemonBeforeAcknowledging(t *testing.T) {
 	go func() {
 		done <- Run(RunParams{
 			Client: &http.Client{Transport: daemon}, SessionID: "sess", In: modernInput(listenLine(1)),
-			Out: &out, ToolMode: transport.ToolModeCompact, Clock: fakeClock,
+			Out: &out, Clock: fakeClock,
 			Resolver: NewDaemonResolver(func() (string, error) {
 				resolves.Add(1)
 				return "restarted", nil
@@ -156,7 +162,7 @@ func TestRun_modernListenFirstWithUnreachableDaemonIsNotAcknowledged(t *testing.
 	var out bytes.Buffer
 	err := Run(RunParams{
 		Client: &http.Client{Transport: daemon}, SessionID: "sess", In: modernInput(listenLine(1)),
-		Out: &out, ToolMode: transport.ToolModeCompact, Clock: clock.NewFake(),
+		Out: &out, Clock: clock.NewFake(),
 		Resolver: NewDaemonResolver(func() (string, error) { return "", errors.New("no daemon") }),
 	})
 	if err != nil {

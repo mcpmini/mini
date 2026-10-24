@@ -83,20 +83,15 @@ func fakeServerConfig(p fakeServerParams) config.ServerConfig {
 }
 
 type toolCallParams struct {
-	ServerTool string
-	Server     string
-	Tool       string
-	Args       map[string]any
+	Server string
+	Tool   string
+	Args   map[string]any
 }
 
 func toolCallRaw(p toolCallParams) map[string]any {
 	return map[string]any{
-		"name": p.ServerTool,
-		"arguments": map[string]any{
-			"server": p.Server,
-			"tool":   p.Tool,
-			"args":   p.Args,
-		},
+		"name":      p.Server + "__" + p.Tool,
+		"arguments": p.Args,
 	}
 }
 
@@ -279,8 +274,6 @@ func startMiniCmd(t *testing.T, configDir string) (io.WriteCloser, *bufio.Scanne
 		configDir,
 		"connect",
 		"--standalone",
-		"--tool-mode",
-		"compact",
 		"--log-level",
 		"error",
 	)
@@ -518,12 +511,8 @@ func (c *mcpClient) execTool(server, tool string, args map[string]any) string {
 		args = map[string]any{}
 	}
 	raw := c.mustCall("tools/call", map[string]any{
-		"name": "call",
-		"arguments": map[string]any{
-			"server": server,
-			"tool":   tool,
-			"args":   args,
-		},
+		"name":      server + "__" + tool,
+		"arguments": args,
 	})
 	return toolCallText(c.t, raw)
 }
@@ -572,15 +561,6 @@ func (c *mcpClient) execProxyTool(serverDotTool string, args, controls map[strin
 	return pr
 }
 
-func (c *mcpClient) listTools(server string) string {
-	c.t.Helper()
-	raw := c.mustCall("tools/call", map[string]any{
-		"name":      "list",
-		"arguments": map[string]any{"server": server},
-	})
-	return toolCallText(c.t, raw)
-}
-
 func toolCallText(t *testing.T, raw json.RawMessage) string {
 	t.Helper()
 	var result struct {
@@ -602,41 +582,11 @@ func toolCallText(t *testing.T, raw json.RawMessage) string {
 	return result.Content[0].Text
 }
 
-type envelope struct {
-	Data      any          `json:"data"`
-	Excluded  []string     `json:"excluded"`
-	Truncated []truncation `json:"truncated"`
-	File      *string      `json:"file"`
-	Error     string       `json:"error"`
-	Message   string       `json:"message"`
-	Retryable bool         `json:"retryable"`
-}
-
-type truncation struct {
-	JQPath string `json:"path"`
-	Chars  int    `json:"chars"`
-	Items  int    `json:"items"`
-}
-
-func (c *mcpClient) execEnvelope(server, tool string, args map[string]any) envelope {
-	c.t.Helper()
-	if args == nil {
-		args = map[string]any{}
-	}
-	raw := c.mustCall("tools/call", toolCallRaw(toolCallParams{
-		ServerTool: "call",
-		Server:     server,
-		Tool:       tool,
-		Args:       args,
-	}))
-	// Use parseToolCallResult (not toolCallText) so we get the content even when
-	// mini returns isError=true — error envelopes are still valid JSON in the content.
-	text, _ := parseToolCallResult(raw)
-	var e envelope
-	if err := json.Unmarshal([]byte(text), &e); err != nil {
-		c.t.Fatalf("parse envelope from call %s.%s: %v\ntext: %s", server, tool, err, text)
-	}
-	return e
+type nativeCallResult struct {
+	Data    any
+	Text    string
+	IsError bool
+	Notice  miniEnv
 }
 
 type miniEnv struct {
@@ -678,46 +628,15 @@ func (c *mcpClient) callRead(file, filter string) string {
 	return toolCallText(c.t, raw)
 }
 
-func (c *mcpClient) execProtectedTool(server, tool string, args map[string]any) string {
-	c.t.Helper()
-	if args == nil {
-		args = map[string]any{}
-	}
-	raw := c.mustCall("tools/call", map[string]any{
-		"name": "perm_call",
-		"arguments": map[string]any{
-			"server": server,
-			"tool":   tool,
-			"args":   args,
-		},
-	})
-	return toolCallText(c.t, raw)
-}
-
-func (c *mcpClient) execProtectedAllowError(server, tool string, args map[string]any) (string, bool) {
-	c.t.Helper()
-	if args == nil {
-		args = map[string]any{}
-	}
-	raw := c.mustCall("tools/call", toolCallRaw(toolCallParams{
-		ServerTool: "perm_call",
-		Server:     server,
-		Tool:       tool,
-		Args:       args,
-	}))
-	return parseToolCallResult(raw)
-}
-
 func (c *mcpClient) execToolAllowError(server, tool string, args map[string]any) (string, bool) {
 	c.t.Helper()
 	if args == nil {
 		args = map[string]any{}
 	}
 	raw := c.mustCall("tools/call", toolCallRaw(toolCallParams{
-		ServerTool: "call",
-		Server:     server,
-		Tool:       tool,
-		Args:       args,
+		Server: server,
+		Tool:   tool,
+		Args:   args,
 	}))
 	return parseToolCallResult(raw)
 }
@@ -857,4 +776,57 @@ func addServerViaRPC(t *testing.T, p addServerParams) (isErr bool, text string) 
 	})
 	txt, isErr := parseToolCallResult(raw)
 	return isErr, txt
+}
+
+func (c *mcpClient) listTools() string {
+	c.t.Helper()
+	return string(c.mustCall("tools/list", nil))
+}
+
+func (c *mcpClient) execResult(server, tool string, args map[string]any) nativeCallResult {
+	c.t.Helper()
+	return nativeCallFrom(c.t, c.execProxyTool(server+"__"+tool, args, nil))
+}
+
+func decodeNativeCall(t *testing.T, raw json.RawMessage) nativeCallResult {
+	t.Helper()
+	var wire proxyResult
+	mustUnmarshal(t, raw, &wire)
+	return nativeCallFrom(t, wire)
+}
+
+func nativeCallFrom(t *testing.T, wire proxyResult) nativeCallResult {
+	t.Helper()
+	result := nativeCallResult{IsError: wire.IsError}
+	if len(wire.Content) == 0 {
+		return result
+	}
+	result.Text = wire.Content[0].Text
+	if err := json.Unmarshal([]byte(result.Text), &result.Data); err != nil {
+		if !wire.IsError {
+			t.Fatalf("tool result is not JSON: %q", result.Text)
+		}
+		result.Data = result.Text
+	}
+	for _, block := range wire.Content {
+		var body struct {
+			Mini json.RawMessage `json:"__mini"`
+		}
+		if json.Unmarshal([]byte(block.Text), &body) == nil && len(body.Mini) != 0 {
+			mustUnmarshal(t, body.Mini, &result.Notice)
+		}
+	}
+	if data, ok := result.Data.(map[string]any); ok {
+		delete(data, "__mini")
+	}
+	return result
+}
+
+func (c *mcpClient) nativeCallError(server, tool string) (string, bool) {
+	c.t.Helper()
+	_, err := c.call("tools/call", map[string]any{"name": server + "__" + tool, "arguments": map[string]any{}})
+	if err == nil {
+		return "", false
+	}
+	return err.Error(), true
 }

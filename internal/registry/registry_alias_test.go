@@ -17,10 +17,10 @@ func TestAlias_basicResolution(t *testing.T) {
 	})
 
 	t.Run("alias appears in list, real name does not", func(t *testing.T) {
-		all := reg.All()
+		all := reg.AllFull()
 		names := map[string]bool{}
 		for _, e := range all {
-			names[e.Name] = true
+			names[e.FullName] = true
 		}
 		if names["github.list_pull_requests"] {
 			t.Error("real tool name should not appear in list when aliased")
@@ -49,13 +49,6 @@ func TestAlias_basicResolution(t *testing.T) {
 	t.Run("real name not lookupable", func(t *testing.T) {
 		if _, err := reg.Lookup("github.list_pull_requests"); err == nil {
 			t.Error("real tool name should not be lookupable when aliased")
-		}
-	})
-
-	t.Run("search finds alias", func(t *testing.T) {
-		results := reg.Search("list_prs")
-		if len(results) != 1 || results[0].Name != "github.list_prs" {
-			t.Errorf("search should find alias, got: %v", results)
 		}
 	})
 }

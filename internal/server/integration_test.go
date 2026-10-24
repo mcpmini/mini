@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -52,7 +51,7 @@ func setupFSServer(t *testing.T, allowedDir string) (*server.Server, context.Can
 
 func fsTestDiscover(t *testing.T, srv *server.Server) {
 	t.Helper()
-	text := toolResultText(t, serve(t, srv, callTool("list", map[string]any{})))
+	text := toolListJSON(t, serve(t, srv, rpc("tools/list", nil)))
 	var tools []map[string]any
 	if err := json.Unmarshal([]byte(text), &tools); err != nil {
 		t.Fatalf("discover not JSON: %v\n%s", err, text)
@@ -64,41 +63,7 @@ func fsTestDiscover(t *testing.T, srv *server.Server) {
 
 func fsTestListDir(t *testing.T, srv *server.Server, dir string) {
 	t.Helper()
-	text := toolResultText(t, serve(t, srv, callTool("call", map[string]any{
-		"server": "fs", "tool": "list_directory", "params": map[string]any{"path": dir},
-	})))
-	var env map[string]any
-	if err := json.Unmarshal([]byte(text), &env); err != nil {
-		t.Fatalf("result not JSON: %v\n%s", err, text)
-	}
-	if env["error"] != nil {
-		t.Errorf("expected ok=true, got: %v\nfull: %s", env["ok"], text)
-	}
-}
-
-func fsTestWriteFileBlocked(t *testing.T, srv *server.Server) {
-	t.Helper()
-	text := toolResultText(t, serve(t, srv, callTool("call", map[string]any{
-		"server": "fs", "tool": "write_file",
-		"params": map[string]any{"path": "/tmp/test.txt", "content": "hello"},
-	})))
-	if !strings.Contains(text, "perm_call") {
-		t.Errorf("expected perm_call error, got: %s", text)
-	}
-}
-
-func fsTestDetailSchema(t *testing.T, srv *server.Server) {
-	t.Helper()
-	text := toolResultText(t, serve(t, srv, callTool("list", map[string]any{
-		"tool": "fs.list_directory", "detail": true,
-	})))
-	var detail map[string]any
-	if err := json.Unmarshal([]byte(text), &detail); err != nil {
-		t.Fatalf("detail not JSON: %v", err)
-	}
-	if detail["inputSchema"] == nil {
-		t.Error("expected inputSchema in detail")
-	}
+	parseEnvelope(t, successText(t, serve(t, srv, callTool("fs__list_directory", map[string]any{"path": dir}))))
 }
 
 func fsTestStatusShowsFS(t *testing.T, srv *server.Server) {
@@ -118,8 +83,6 @@ func TestWithRealFilesystemMCP(t *testing.T) {
 	defer srv.Close()
 	t.Run("discover lists filesystem tools", func(t *testing.T) { fsTestDiscover(t, srv) })
 	t.Run("execute list_directory returns envelope", func(t *testing.T) { fsTestListDir(t, srv, allowedDir) })
-	t.Run("execute write_file rejected without perm_call", func(t *testing.T) { fsTestWriteFileBlocked(t, srv) })
-	t.Run("discover detail returns schema", func(t *testing.T) { fsTestDetailSchema(t, srv) })
 	t.Run("configure status shows fs server", func(t *testing.T) { fsTestStatusShowsFS(t, srv) })
 }
 
@@ -150,13 +113,7 @@ func newProtectedFSServer(t *testing.T) (*server.Server, string) {
 func TestWithRealFilesystemMCP_WriteProtected(t *testing.T) {
 	srv, tmpDir := newProtectedFSServer(t)
 	testFile := filepath.Join(tmpDir, "hello.txt")
-	resp := serve(t, srv, callTool("perm_call", map[string]any{
-		"server": "fs", "tool": "write_file",
-		"params": map[string]any{"path": testFile, "content": "hello from mini"},
-	}))
-	env := parseEnvelope(t, toolResultText(t, resp))
-	if env["error"] != nil {
-		t.Errorf("write_file failed: %v", env)
-	}
+	resp := serve(t, srv, callTool("fs__write_file", map[string]any{"path": testFile, "content": "hello from mini"}))
+	successText(t, resp)
 	testutil.ReadFile(t, testFile)
 }

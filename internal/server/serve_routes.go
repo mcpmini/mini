@@ -92,11 +92,11 @@ func (s *Server) routeRequest(ctx context.Context, req transport.Request, sessio
 		if !transport.IsModernVersion(transport.ProtocolVersionFromParams(req.Params)) {
 			return nil, fmt.Errorf("%w: %s", errMethodNotFound, req.Method)
 		}
-		return s.handleDiscover(session), nil
+		return s.handleDiscover(), nil
 	case "initialize":
-		return s.handleInitialize(req.Params, session)
+		return s.handleInitialize(req.Params)
 	case "tools/list":
-		return s.handleToolsList(ctx, session)
+		return s.handleToolsList(ctx)
 	case "tools/call":
 		return s.handleToolsCall(ctx, req.Params, session)
 	case "ping":
@@ -124,13 +124,10 @@ func handleCancelled(params json.RawMessage, session *Session) {
 	session.removeListen(p.RequestID)
 }
 
-const compactInitInstructions = "mini is an MCP proxy. Use `list` to discover tools across connected servers, `call` to invoke them, `perm_call` for tools requiring elevated permissions, and `configure` to manage servers and settings."
-
 const proxyInitInstructions = "Results are the upstream server's own, trimmed where large: a trimmed result carries `__mini` (a key in the result object, or a final text block) with a `file` and the paths that were cut. To get cut data, call `read` with that `file` and a listed path as `filter`, or a jq filter built on it. Pass `__mini: {\"projection\": \"raw\"}` only from a script that must process the whole result without a second call. Tool arguments are the upstream server's own; `__mini` is reserved."
 
 type initializeClientParams struct {
 	ProtocolVersion string `json:"protocolVersion"`
-	ToolMode        string `json:"_mini_tool_mode"`
 }
 
 func negotiatedLegacyVersion(requested string) string {
@@ -140,46 +137,19 @@ func negotiatedLegacyVersion(requested string) string {
 	return transport.LatestLegacyVersion
 }
 
-// Fall back to the server-level default when the client sends no wire signal, so
-// a standalone `connect --tool-mode compact` applies over HTTP too, not just stdio.
-func (s *Server) resolveToolMode(signal string) transport.ToolMode {
-	switch signal {
-	case transport.ToolModeCompactValue:
-		return transport.ToolModeCompact
-	case transport.ToolModeProxyValue:
-		return transport.ToolModeProxy
-	default:
-		if signal != "" {
-			s.logger.Warn("unrecognized _mini_tool_mode signal; using server default", "signal", signal)
-		}
-		return s.toolMode
-	}
-}
-
-func (s *Server) handleInitialize(params json.RawMessage, session *Session) (any, error) {
+func (s *Server) handleInitialize(params json.RawMessage) (any, error) {
 	var p initializeClientParams
-	//nolint:errcheck // malformed params fall back to the default tool mode and the newest legacy version.
+	//nolint:errcheck // malformed params fall back to the newest legacy version.
 	json.Unmarshal(params, &p)
-	session.setToolModeOnce(s.resolveToolMode(p.ToolMode))
 	return transport.InitializeResult{
 		ProtocolVersion: negotiatedLegacyVersion(p.ProtocolVersion),
 		Capabilities:    map[string]any{"tools": map[string]any{"listChanged": true}},
 		ServerInfo:      transport.ServerInfo{Name: "mini", Version: version.Version},
-		Instructions:    s.initInstructions(session),
+		Instructions:    proxyInitInstructions,
 	}, nil
 }
 
-func (s *Server) initInstructions(session *Session) string {
-	if session.toolMode() == transport.ToolModeProxy {
-		return proxyInitInstructions
-	}
-	return compactInitInstructions
-}
-
-func (s *Server) handleToolsList(ctx context.Context, session *Session) (any, error) {
-	if session.toolMode() != transport.ToolModeProxy {
-		return map[string]any{"tools": s.toolSchemas}, nil
-	}
+func (s *Server) handleToolsList(ctx context.Context) (any, error) {
 	if err := s.awaitCurrentToolLists(ctx); err != nil {
 		return nil, err
 	}
@@ -195,7 +165,7 @@ func (s *Server) handleToolsCall(ctx context.Context, params json.RawMessage, se
 	if err != nil {
 		return nil, err
 	}
-	result, err := s.routeTool(ctx, call, session)
+	result, err := s.routeProxyTool(ctx, call, session)
 	if err != nil {
 		return normalizeToolCallError(err)
 	}
@@ -247,43 +217,7 @@ func normalizeToolCallResult(result any) any {
 	if ur, ok := result.(upstreamResult); ok {
 		return ur
 	}
-	if fe, ok := result.(formattedEnvelope); ok {
-		if fe.isError {
-			return toolErrorResult(fe.text)
-		}
-		return toolOKResult(fe.text)
-	}
 	return toolOKResult(result)
-}
-
-func (s *Server) routeTool(ctx context.Context, call toolCallRequest, session *Session) (any, error) {
-	if session.toolMode() == transport.ToolModeProxy {
-		return s.routeProxyTool(ctx, call, session)
-	}
-	return s.routeStandardTool(ctx, standardToolRouteParams{
-		Name: call.Name, Args: call.Arguments, Session: session,
-	})
-}
-
-type standardToolRouteParams struct {
-	Name    string
-	Args    json.RawMessage
-	Session *Session
-}
-
-func (s *Server) routeStandardTool(ctx context.Context, p standardToolRouteParams) (any, error) {
-	switch p.Name {
-	case "list":
-		return s.handleList(ctx, p.Args)
-	case "call":
-		return s.handleExecute(ctx, p.Args, p.Session)
-	case "perm_call":
-		return s.handleExecuteProtected(ctx, p.Args, p.Session)
-	case "config":
-		return s.handleConfigure(ctx, p.Args, p.Session)
-	default:
-		return nil, fmt.Errorf("%w: unknown tool: %s", errInvalidParams, p.Name)
-	}
 }
 
 func okResponse(id any, result any) (transport.Response, error) {

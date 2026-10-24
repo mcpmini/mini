@@ -39,7 +39,9 @@ func TestReconnect_detectsOAuthRequirement(t *testing.T) {
 		Name: "svc", Transport: "http", URL: oauthSrv.URL,
 	}, makeErrConn(&errOnCall))
 	errOnCall = true
-	assertEnvelopeOK(assertEnvelopeOKParams{T: t, Server: srv, ServerName: "svc", ToolName: "ping", WantOK: false})
+	assertCallSuccess(
+		assertCallSuccessParams{T: t, Server: srv, ServerName: "svc", ToolName: "ping", WantSuccess: false},
+	)
 
 	if err := fakeClock.BlockUntilContext(t.Context(), responseCleanupTimer+1); err != nil {
 		t.Fatalf("waiting for reconnect timer: %v", err)
@@ -65,9 +67,7 @@ func TestReconnect_reauthErrorDoesNotStartReconnect(t *testing.T) {
 		errFn: func() error { return reauthErr },
 	}
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, errConn)
-	serve(t, srv, callTool("call", map[string]any{
-		"server": "svc", "tool": "ping", "params": map[string]any{},
-	}))
+	serve(t, srv, callTool("svc__ping", map[string]any{}))
 	if srv.IsReconnecting("svc") {
 		t.Error("ErrReauthRequired should not trigger reconnect")
 	}
@@ -103,7 +103,9 @@ func TestReconnect_transientTokenRefreshKeepsLoop(t *testing.T) {
 	srv.AddConnection(context.Background(), sc, makeErrConn(&errOnCall))
 
 	errOnCall = true
-	assertEnvelopeOK(assertEnvelopeOKParams{T: t, Server: srv, ServerName: "svc", ToolName: "ping", WantOK: false})
+	assertCallSuccess(
+		assertCallSuccessParams{T: t, Server: srv, ServerName: "svc", ToolName: "ping", WantSuccess: false},
+	)
 
 	if err := fakeClock.BlockUntilContext(t.Context(), responseCleanupTimer+1); err != nil {
 		t.Fatalf("waiting for first reconnect timer: %v", err)
@@ -142,7 +144,9 @@ func TestReconnect_reauthDialFailureStopsLoop(t *testing.T) {
 	}, makeErrConn(&errOnCall))
 
 	errOnCall = true
-	assertEnvelopeOK(assertEnvelopeOKParams{T: t, Server: srv, ServerName: "svc", ToolName: "ping", WantOK: false})
+	assertCallSuccess(
+		assertCallSuccessParams{T: t, Server: srv, ServerName: "svc", ToolName: "ping", WantSuccess: false},
+	)
 
 	stopped := make(chan struct{})
 	go func() {

@@ -100,12 +100,10 @@ func TestPrintTestResultsReturnsHealthFailureAfterSummary(t *testing.T) {
 func TestPrintCallOutputReturnsJSONEncodingError(t *testing.T) {
 	var err error
 	output := testutil.CaptureStdout(t, func() {
-		err = printCallOutput(printCallOutputParams{
-			serverName: "server",
-			toolName:   "tool",
-			env:        &response.Envelope{Data: map[string]any{"bad": make(chan int)}},
-			mode:       callOutputJSON,
-		})
+		err = printCallOutput(
+			&response.Envelope{Data: map[string]any{"bad": make(chan int)}},
+			callOutputJSON,
+		)
 	})
 	var typeErr *json.UnsupportedTypeError
 	if !errors.As(err, &typeErr) || !strings.Contains(err.Error(), "encode JSON response") {

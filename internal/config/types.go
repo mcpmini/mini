@@ -115,10 +115,6 @@ type Config struct {
 	// LogLevel: debug, info, warn, error. Default: info.
 	LogLevel string `yaml:"log_level"`
 
-	// DisableListHidden prevents agents from using list(hidden:true) to discover
-	// hidden tools. When false (default), agents and admins can audit hidden tools.
-	DisableListHidden bool `yaml:"disable_list_hidden"`
-
 	// DangerousAllowRuntimeStdio permits add_server to launch arbitrary stdio
 	// subprocesses at runtime. Off by default — stdio transports exec commands
 	// and should only be registered at startup from trusted config files.

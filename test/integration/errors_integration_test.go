@@ -26,8 +26,8 @@ func TestIntegrationError_upstreamRPCError(t *testing.T) {
 			ToolTimeout: "",
 		})
 
-	e := client.execEnvelope("svc", "get_item", nil)
-	if e.Error == "" {
+	e := client.execResult("svc", "get_item", nil)
+	if !e.IsError {
 		t.Error("rpc_error fault should produce ok=false in envelope")
 	}
 }
@@ -43,15 +43,15 @@ func TestIntegrationError_toolTimeout(t *testing.T) {
 			ToolTimeout: "300ms",
 		})
 
-	e := client.execEnvelope("svc", "get_item", nil)
-	if e.Error == "" {
+	e := client.execResult("svc", "get_item", nil)
+	if !e.IsError {
 		t.Error("timed-out tool should produce ok=false in envelope")
 	}
 }
 
 func TestIntegrationError_unknownServer(t *testing.T) {
 	t.Parallel()
-	_, isErr := quickServer(t, map[string]string{"x": `{}`}).execToolAllowError("doesnotexist", "x", nil)
+	_, isErr := quickServer(t, map[string]string{"x": `{}`}).nativeCallError("doesnotexist", "x")
 	if !isErr {
 		t.Error("expected isError=true for unknown server")
 	}
@@ -59,7 +59,7 @@ func TestIntegrationError_unknownServer(t *testing.T) {
 
 func TestIntegrationError_unknownTool(t *testing.T) {
 	t.Parallel()
-	_, isErr := quickServer(t, map[string]string{"x": `{}`}).execToolAllowError("svc", "nonexistent", nil)
+	_, isErr := quickServer(t, map[string]string{"x": `{}`}).nativeCallError("svc", "nonexistent")
 	if !isErr {
 		t.Error("expected isError=true for unknown tool")
 	}
@@ -90,8 +90,8 @@ func TestIntegrationError_malformedRequest(t *testing.T) {
 	t.Parallel()
 	client := quickServer(t, map[string]string{"get_item": `{"id":1}`})
 	fmt.Fprint(client.stdin, "NOT_VALID_JSON_GARBAGE\n")
-	e := client.execEnvelope("svc", "get_item", nil)
-	if e.Error != "" {
+	e := client.execResult("svc", "get_item", nil)
+	if e.IsError {
 		t.Error("server should continue serving after a malformed request")
 	}
 }

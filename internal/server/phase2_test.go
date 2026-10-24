@@ -24,32 +24,10 @@ func TestExecProtected(t *testing.T) {
 	}
 	srv.AddConnection(ctx, config.ServerConfig{Name: "slack", Permissions: perm}, fake)
 
-	resp := serve(t, srv, callTool("perm_call", map[string]any{
-		"server": "slack",
-		"tool":   "sendMessage",
-		"params": map[string]any{"text": "hello"},
-	}))
+	resp := serve(t, srv, callTool("slack__sendMessage", map[string]any{"text": "hello"}))
 
 	if resp["error"] != nil {
 		t.Fatalf("unexpected error: %v", resp["error"])
-	}
-}
-
-func TestExecProtectedRejectsOpenTool(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	ctx := context.Background()
-	// default permission is open
-	srv.AddConnection(ctx, config.ServerConfig{Name: "ci"}, fakeConn("getBuild"))
-
-	resp := serve(t, srv, callTool("perm_call", map[string]any{
-		"server": "ci",
-		"tool":   "getBuild",
-		"params": map[string]any{},
-	}))
-
-	text := toolResultText(t, resp)
-	if text == "" {
-		t.Fatal("expected error text")
 	}
 }
 
@@ -86,37 +64,11 @@ func TestConfigureRemoveServer(t *testing.T) {
 		"server": "ci",
 	}))
 
-	resp2 := serve(t, srv, callTool("list", map[string]any{}))
-	text := toolResultText(t, resp2)
+	resp2 := serve(t, srv, rpc("tools/list", nil))
+	text := toolListJSON(t, resp2)
 	var results []any
 	json.Unmarshal([]byte(text), &results)
-	if len(results) != 0 {
-		t.Errorf("expected 0 tools after remove, got %d", len(results))
-	}
-}
-
-func TestDiscoverDetail(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	conn := &transport.FakeConnection{
-		Tools: []transport.ToolDefinition{
-			{
-				Name: "getBuild", Description: "Get a build by ID",
-				InputSchema: json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"}}}`),
-			},
-		},
-		Responses: make(map[string]json.RawMessage),
-	}
-	srv.AddConnection(context.Background(), config.ServerConfig{Name: "ci"}, conn)
-	resp := serve(t, srv, callTool("list", map[string]any{"tool": "ci.getBuild", "detail": true}))
-	text := toolResultText(t, resp)
-	var detail map[string]any
-	if err := json.Unmarshal([]byte(text), &detail); err != nil {
-		t.Fatalf("not JSON: %v\n%s", err, text)
-	}
-	if detail["name"] != "ci.getBuild" {
-		t.Errorf("unexpected name: %v", detail["name"])
-	}
-	if detail["inputSchema"] == nil {
-		t.Error("expected inputSchema in detail response")
+	if len(results) != 2 {
+		t.Errorf("expected only two builtins after remove, got %d", len(results))
 	}
 }

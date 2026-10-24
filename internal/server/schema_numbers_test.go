@@ -13,34 +13,26 @@ import (
 )
 
 func TestToolSchemas_PreserveNumbers(t *testing.T) {
-	for _, compact := range []bool{false, true} {
-		t.Run(map[bool]string{false: "proxy", true: "detail"}[compact], func(t *testing.T) {
-			srv := schemaNumberServer(t, json.RawMessage(`{"type":"object","const":9007199254740993,"maximum":1e400}`))
-			tool := schemaToolResult(t, schemaResponse(t, srv, compact), compact)
-			for _, key := range []string{"inputSchema", "outputSchema"} {
-				schema := tool[key].(map[string]any)
-				if schema["const"] != json.Number("9007199254740993") || schema["maximum"] != json.Number("1e400") {
-					t.Fatalf("%s numbers changed: %v", key, schema)
-				}
-			}
-		})
+	srv := schemaNumberServer(t, json.RawMessage(`{"type":"object","const":9007199254740993,"maximum":1e400}`))
+	tool := schemaToolResult(t, schemaResponse(t, srv))
+	for _, key := range []string{"inputSchema", "outputSchema"} {
+		schema := tool[key].(map[string]any)
+		if schema["const"] != json.Number("9007199254740993") || schema["maximum"] != json.Number("1e400") {
+			t.Fatalf("%s numbers changed: %v", key, schema)
+		}
 	}
 }
 
 func TestToolSchemas_InvalidDefinitionReturnsError(t *testing.T) {
-	for _, compact := range []bool{false, true} {
-		t.Run(map[bool]string{false: "proxy", true: "detail"}[compact], func(t *testing.T) {
-			srv := schemaNumberServer(t, json.RawMessage(`{"type":`))
-			decoder := json.NewDecoder(strings.NewReader(schemaResponse(t, srv, compact)))
-			var response map[string]any
-			if err := decoder.Decode(&response); err != nil {
-				t.Fatal(err)
-			}
-			result, _ := response["result"].(map[string]any)
-			if response["error"] == nil && result["isError"] != true {
-				t.Fatalf("expected conversion failure, got %v", response)
-			}
-		})
+	srv := schemaNumberServer(t, json.RawMessage(`{"type":`))
+	decoder := json.NewDecoder(strings.NewReader(schemaResponse(t, srv)))
+	var response map[string]any
+	if err := decoder.Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	result, _ := response["result"].(map[string]any)
+	if response["error"] == nil && result["isError"] != true {
+		t.Fatalf("expected conversion failure, got %v", response)
 	}
 }
 
@@ -54,30 +46,23 @@ func schemaNumberServer(t *testing.T, schema json.RawMessage) *server.Server {
 	return srv
 }
 
-func schemaResponse(t *testing.T, srv *server.Server, compact bool) string {
+func schemaResponse(t *testing.T, srv *server.Server) string {
 	t.Helper()
 	request := rpc("tools/list", nil)
-	if compact {
-		request = callTool("list", map[string]any{"tool": "svc.numbers", "detail": true})
-	}
 	var out bytes.Buffer
-	if err := srv.Serve(t.Context(), bytes.NewReader(buildServeInput(compact, [][]byte{request})), &out); err != nil {
+	if err := srv.Serve(t.Context(), bytes.NewReader(buildServeInput([][]byte{request})), &out); err != nil {
 		t.Fatal(err)
 	}
 	lines := bytes.Split(bytes.TrimSpace(out.Bytes()), []byte("\n"))
 	return string(lines[len(lines)-1])
 }
 
-func schemaToolResult(t *testing.T, raw string, compact bool) map[string]any {
+func schemaToolResult(t *testing.T, raw string) map[string]any {
 	t.Helper()
 	response := decodeSchemaJSON(t, raw)
 	result, ok := response["result"].(map[string]any)
 	if !ok || result["isError"] == true {
 		t.Fatalf("expected tool schemas, got %s", raw)
-	}
-	if compact {
-		content := result["content"].([]any)[0].(map[string]any)
-		return decodeSchemaJSON(t, content["text"].(string))
 	}
 	for _, tool := range result["tools"].([]any) {
 		definition := tool.(map[string]any)

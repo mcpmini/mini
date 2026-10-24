@@ -46,7 +46,7 @@ func TestHandshake_offersNewestLegacyVersion(t *testing.T) {
 			t.Errorf("write response: %v", err)
 		}
 	})
-	DaemonSession{client: client, sessionID: "sess"}.Handshake(0)
+	DaemonSession{client: client, sessionID: "sess"}.Handshake()
 	if protocolVersion != "2025-11-25" {
 		t.Errorf("handshake protocolVersion = %q, want 2025-11-25", protocolVersion)
 	}

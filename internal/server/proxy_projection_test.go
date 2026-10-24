@@ -35,12 +35,12 @@ func TestProxy_RawProjection_BypassesConfiguredExclusion(t *testing.T) {
 	srv := newProxyServerWithSecretTool(t, 0)
 	defer srv.Close()
 
-	serveProxy(t, srv, callTool("config", map[string]any{
+	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "svc", "tool": "get_item",
 		"projection": map[string]any{"exclude": []string{"secret"}},
 	}))
 
-	resp := serveProxy(t, srv, callTool("svc__get_item", map[string]any{"__mini": map[string]any{"projection": "raw"}}))
+	resp := serve(t, srv, callTool("svc__get_item", map[string]any{"__mini": map[string]any{"projection": "raw"}}))
 	text := toolResultText(t, resp)
 	t.Logf("raw response: %s", text)
 
@@ -57,7 +57,7 @@ func TestProxy_RawProjection_BypassesGlobalStringLimit(t *testing.T) {
 	srv := newProxyServerWithSecretTool(t, 10)
 	defer srv.Close()
 
-	resp := serveProxy(t, srv, callTool("svc__get_item", map[string]any{"__mini": map[string]any{"projection": "raw"}}))
+	resp := serve(t, srv, callTool("svc__get_item", map[string]any{"__mini": map[string]any{"projection": "raw"}}))
 	text := toolResultText(t, resp)
 
 	if !strings.Contains(text, strings.Repeat("x", 80)) {
@@ -69,12 +69,12 @@ func TestProxy_DefaultProjection_UsesConfiguredExclusion(t *testing.T) {
 	srv := newProxyServerWithSecretTool(t, 0)
 	defer srv.Close()
 
-	serveProxy(t, srv, callTool("config", map[string]any{
+	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "svc", "tool": "get_item",
 		"projection": map[string]any{"exclude": []string{"secret"}},
 	}))
 
-	resp := serveProxy(
+	resp := serve(
 		t,
 		srv,
 		callTool("svc__get_item", map[string]any{"__mini": map[string]any{"projection": "default"}}),
@@ -94,12 +94,12 @@ func TestProxy_OmittedProjectionControl_BehavesAsDefault(t *testing.T) {
 	srv := newProxyServerWithSecretTool(t, 0)
 	defer srv.Close()
 
-	serveProxy(t, srv, callTool("config", map[string]any{
+	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "svc", "tool": "get_item",
 		"projection": map[string]any{"exclude": []string{"secret"}},
 	}))
 
-	resp := serveProxy(t, srv, callTool("svc__get_item", map[string]any{}))
+	resp := serve(t, srv, callTool("svc__get_item", map[string]any{}))
 	text := toolResultText(t, resp)
 
 	env := parseProxyEnvelope(t, text)
@@ -112,7 +112,7 @@ func TestProxy_InvalidProjectionControl_RejectedAsToolError(t *testing.T) {
 	srv := newProxyServerWithSecretTool(t, 0)
 	defer srv.Close()
 
-	resp := serveProxy(
+	resp := serve(
 		t,
 		srv,
 		callTool("svc__get_item", map[string]any{"__mini": map[string]any{"projection": "bogus"}}),
@@ -124,7 +124,7 @@ func TestProxy_ConcurrentRawAndDefaultCalls_DoNotCrossContaminate(t *testing.T) 
 	srv := newProxyServerWithSecretTool(t, 0)
 	defer srv.Close()
 
-	serveProxy(t, srv, callTool("config", map[string]any{
+	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "svc", "tool": "get_item",
 		"projection": map[string]any{"exclude": []string{"secret"}},
 	}))
@@ -134,7 +134,7 @@ func TestProxy_ConcurrentRawAndDefaultCalls_DoNotCrossContaminate(t *testing.T) 
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			resp := serveProxy(
+			resp := serve(
 				t,
 				srv,
 				callTool("svc__get_item", map[string]any{"__mini": map[string]any{"projection": "raw"}}),
@@ -146,7 +146,7 @@ func TestProxy_ConcurrentRawAndDefaultCalls_DoNotCrossContaminate(t *testing.T) 
 		}()
 		go func() {
 			defer wg.Done()
-			resp := serveProxy(
+			resp := serve(
 				t,
 				srv,
 				callTool("svc__get_item", map[string]any{"__mini": map[string]any{"projection": "default"}}),
@@ -171,7 +171,7 @@ func TestProxy_ToonFormat_RendersToonOutput(t *testing.T) {
 	)
 	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
-	resp := serveProxy(t, srv, callTool("svc__list_items", map[string]any{}))
+	resp := serve(t, srv, callTool("svc__list_items", map[string]any{}))
 	text := toolResultText(t, resp)
 	if strings.HasPrefix(text, "{") {
 		t.Fatalf("expected TOON format in proxy mode, got JSON: %s", text)
@@ -190,12 +190,12 @@ func TestProxy_DefaultProjection_PreservesLargeIntegers(t *testing.T) {
 	)
 	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
-	serveProxy(t, srv, callTool("config", map[string]any{
+	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "svc", "tool": "get_item",
 		"projection": map[string]any{"exclude": []string{"secret"}},
 	}))
 
-	resp := serveProxy(t, srv, callTool("svc__get_item", map[string]any{}))
+	resp := serve(t, srv, callTool("svc__get_item", map[string]any{}))
 	text := toolResultText(t, resp)
 	if !strings.Contains(text, "9007199254740993") {
 		t.Errorf("default projection corrupted large integer: %s", text)
@@ -222,7 +222,7 @@ type setProxyExcludeParams struct {
 
 func setProxyExclude(params setProxyExcludeParams) {
 	params.T.Helper()
-	serveProxy(params.T, params.Server, callTool("config", map[string]any{
+	serve(params.T, params.Server, callTool("config", map[string]any{
 		"action": "set_projection", "server": "svc", "tool": params.Tool, "projection": params.Projection,
 	}))
 }
@@ -255,7 +255,7 @@ func TestProxy_ToonFormat_UntrimmedObjectTextBecomesOneToonBlock(t *testing.T) {
 	)
 	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
-	result := proxyResultOf(t, serveProxy(t, srv, callTool("svc__get_user", map[string]any{})))
+	result := proxyResultOf(t, serve(t, srv, callTool("svc__get_user", map[string]any{})))
 	if _, ok := result["structuredContent"]; ok {
 		t.Errorf("TOON must not add structuredContent: %v", result)
 	}
@@ -282,7 +282,7 @@ func TestProxy_ToonFormat_TrimmedArrayKeepsJSONNoticeBlock(t *testing.T) {
 		},
 	)
 
-	texts := contentTexts(proxyResultOf(t, serveProxy(t, srv, callTool("svc__list_users", map[string]any{}))))
+	texts := contentTexts(proxyResultOf(t, serve(t, srv, callTool("svc__list_users", map[string]any{}))))
 	if len(texts) != 2 {
 		t.Fatalf("want TOON block plus notice block, got %q", texts)
 	}
@@ -303,7 +303,7 @@ func TestProxy_ToonFormat_KeepsUpstreamKeyOrder(t *testing.T) {
 	)
 	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
-	texts := contentTexts(proxyResultOf(t, serveProxy(t, srv, callTool("svc__get_user", map[string]any{}))))
+	texts := contentTexts(proxyResultOf(t, serve(t, srv, callTool("svc__get_user", map[string]any{}))))
 	if len(texts) != 1 || texts[0] != "name: alice\nid: 1" {
 		t.Errorf("want TOON in upstream key order, got %q", texts)
 	}
@@ -316,7 +316,7 @@ func TestProxy_ToonFormat_EmptyObjectKeepsJSONText(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{}"}]}`)
 	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
-	texts := contentTexts(proxyResultOf(t, serveProxy(t, srv, callTool("svc__delete_user", map[string]any{}))))
+	texts := contentTexts(proxyResultOf(t, serve(t, srv, callTool("svc__delete_user", map[string]any{}))))
 	if len(texts) != 1 || texts[0] != "{}" {
 		t.Errorf("want the upstream {} text kept, got %q", texts)
 	}
@@ -337,7 +337,7 @@ func TestProxy_ToonFormat_TrimmedObjectCarriesNoticeInToon(t *testing.T) {
 		},
 	)
 
-	texts := contentTexts(proxyResultOf(t, serveProxy(t, srv, callTool("svc__get_user", map[string]any{}))))
+	texts := contentTexts(proxyResultOf(t, serve(t, srv, callTool("svc__get_user", map[string]any{}))))
 	if len(texts) != 1 {
 		t.Fatalf("want one TOON block carrying the notice, got %q", texts)
 	}
@@ -364,7 +364,7 @@ func TestProxy_ToonFormat_MirrorTextIsToonAndStructuredKeepsNotice(t *testing.T)
 		},
 	)
 
-	result := proxyResultOf(t, serveProxy(t, srv, callTool("svc__get_user", map[string]any{})))
+	result := proxyResultOf(t, serve(t, srv, callTool("svc__get_user", map[string]any{})))
 	structured, _ := result["structuredContent"].(map[string]any)
 	if _, ok := structured["__mini"]; !ok {
 		t.Errorf("structuredContent must carry __mini: %v", structured)
@@ -382,7 +382,7 @@ func TestProxy_ToonFormat_ProseTextIsUnchanged(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"hello, world"}]}`)
 	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
-	texts := contentTexts(proxyResultOf(t, serveProxy(t, srv, callTool("svc__describe", map[string]any{}))))
+	texts := contentTexts(proxyResultOf(t, serve(t, srv, callTool("svc__describe", map[string]any{}))))
 	if len(texts) != 1 || texts[0] != "hello, world" {
 		t.Errorf("prose text must pass through unchanged, got %q", texts)
 	}
@@ -396,7 +396,7 @@ func TestProxy_ToonFormat_UnencodableJSONKeepsJSONAndLogsWarning(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":` + deepPayload(t) + `}]}`)
 	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
-	texts := contentTexts(proxyResultOf(t, serveProxy(t, srv, callTool("svc__get_blob", map[string]any{}))))
+	texts := contentTexts(proxyResultOf(t, serve(t, srv, callTool("svc__get_blob", map[string]any{}))))
 	if len(texts) != 1 || !strings.Contains(texts[0], "depth-sentinel") {
 		t.Errorf("unencodable JSON must stay as JSON text, got %.80q", texts)
 	}
@@ -415,7 +415,7 @@ func TestProxy_ToonFormat_RawAndErrorResultsStayJSON(t *testing.T) {
 		)
 		addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
-		resp := serveProxy(t, srv, callTool(
+		resp := serve(t, srv, callTool(
 			"svc__get_user",
 			map[string]any{"__mini": map[string]any{"projection": "raw"}},
 		))
@@ -432,7 +432,7 @@ func TestProxy_ToonFormat_RawAndErrorResultsStayJSON(t *testing.T) {
 		)
 		addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
-		text := toolResultText(t, serveProxy(t, srv, callTool("svc__fail", map[string]any{})))
+		text := toolResultText(t, serve(t, srv, callTool("svc__fail", map[string]any{})))
 		if text != `{"code":7}` {
 			t.Errorf("isError result must stay JSON, got %q", text)
 		}
@@ -447,13 +447,13 @@ func TestProxy_ToonFormat_PerToolOverrideOnlyAffectsThatTool(t *testing.T) {
 		`{"content":[{"type":"text","text":"{\"id\":1,\"name\":\"alice\"}"}]}`,
 	)
 	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
-	serveProxy(t, srv, callTool("config", map[string]any{
+	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "svc", "tool": "toon_tool",
 		"projection": map[string]any{"format": "toon"},
 	}))
 
-	toonText := contentTexts(proxyResultOf(t, serveProxy(t, srv, callTool("svc__toon_tool", map[string]any{}))))
-	jsonText := contentTexts(proxyResultOf(t, serveProxy(t, srv, callTool("svc__json_tool", map[string]any{}))))
+	toonText := contentTexts(proxyResultOf(t, serve(t, srv, callTool("svc__toon_tool", map[string]any{}))))
+	jsonText := contentTexts(proxyResultOf(t, serve(t, srv, callTool("svc__json_tool", map[string]any{}))))
 	if len(toonText) != 1 || strings.HasPrefix(toonText[0], "{") {
 		t.Errorf("configured tool must be TOON, got %q", toonText)
 	}
@@ -479,7 +479,7 @@ func TestProxy_ArrayItemExclusion_TrimsEachEntryAndKeepsRecovery(t *testing.T) {
 		},
 	)
 
-	texts := contentTexts(proxyResultOf(t, serveProxy(t, srv, callTool("svc__list_commits", map[string]any{}))))
+	texts := contentTexts(proxyResultOf(t, serve(t, srv, callTool("svc__list_commits", map[string]any{}))))
 	if len(texts) != 2 || texts[0] != `[{"author":{"login":"x"},"sha":"a"},{"author":{"login":"y"},"sha":"b"}]` {
 		t.Fatalf("want trimmed entries plus a notice block, got %q", texts)
 	}
@@ -497,7 +497,7 @@ func TestProxy_ArrayItemExclusion_TrimsEachEntryAndKeepsRecovery(t *testing.T) {
 		t.Fatalf("excluded = %q, want [%q]", notice.Mini.Excluded, path)
 	}
 	read := callTool("read", map[string]any{"file": notice.Mini.File, "filter": path})
-	if recovered := toolResultText(t, serveProxy(t, srv, read)); !strings.Contains(recovered, "u1") ||
+	if recovered := toolResultText(t, serve(t, srv, read)); !strings.Contains(recovered, "u1") ||
 		!strings.Contains(recovered, "u2") {
 		t.Errorf("read(%q) = %q, want both original avatar URLs", path, recovered)
 	}

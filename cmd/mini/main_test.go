@@ -14,26 +14,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/daemon"
 	"github.com/mcpmini/mini/internal/testutil"
-	"github.com/mcpmini/mini/internal/transport"
 )
-
-func TestParseToolMode(t *testing.T) {
-	cases := []struct {
-		in   string
-		want transport.ToolMode
-	}{
-		{"", transport.ToolModeProxy},
-		{"proxy", transport.ToolModeProxy},
-		{"compact", transport.ToolModeCompact},
-	}
-	for _, tc := range cases {
-		t.Run(tc.in, func(t *testing.T) {
-			if got := parseToolMode(tc.in); got != tc.want {
-				t.Errorf("parseToolMode(%q) = %v, want %v", tc.in, got, tc.want)
-			}
-		})
-	}
-}
 
 func shortConfigDir(t *testing.T) string { return testutil.ShortTempDir(t) }
 

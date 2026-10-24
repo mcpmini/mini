@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -140,100 +139,13 @@ func fakeConnWithError(name string) *transport.FakeConnection {
 	}
 }
 
-func assertOkFalse(t *testing.T, text string) {
-	t.Helper()
-	var env map[string]any
-	if err := json.Unmarshal([]byte(text), &env); err != nil {
-		t.Fatalf("expected JSON envelope, got: %s", text)
-	}
-	if env["error"] == nil {
-		t.Errorf("expected ok=false, got: %v", env)
-	}
-}
-
 func TestExecWithFakeConnectionError(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fakeConnWithError("ping"))
 
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "svc", "tool": "ping", "params": map[string]any{},
-	}))
-	assertOkFalse(t, toolResultText(t, resp))
+	resp := serve(t, srv, callTool("svc__ping", map[string]any{}))
+	requireToolError(t, resp, "ok")
 }
-
-func TestDiscoverDetail_edgeCases(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	addEdgeConn(
-		addConnectionParams{
-			T:          t,
-			Server:     srv,
-			Config:     config.ServerConfig{Name: "svc"},
-			Connection: fakeConn("myTool"),
-		},
-	)
-
-	resp := serve(t, srv, callTool("list", map[string]any{
-		"tool":   "svc.myTool",
-		"detail": true,
-	}))
-	text := toolResultText(t, resp)
-	var detail map[string]any
-	if err := json.Unmarshal([]byte(text), &detail); err != nil {
-		t.Fatalf("expected JSON detail, got: %s — err: %v", text, err)
-	}
-	if detail["name"] != "svc.myTool" {
-		t.Errorf("expected name=svc.myTool in detail, got: %v", detail["name"])
-	}
-	if detail["inputSchema"] == nil {
-		t.Errorf("expected inputSchema in detail, got: %v", detail)
-	}
-}
-
-func TestDiscoverDetailNotFound(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	resp := serve(t, srv, callTool("list", map[string]any{
-		"tool":   "nonexistent.tool",
-		"detail": true,
-	}))
-	assertIsErrorResult(t, resp)
-	text := toolResultText(t, resp)
-	if !strings.Contains(text, "not found") {
-		t.Errorf("expected 'not found' error message, got: %s", text)
-	}
-}
-
-func invalidParamsInput() []byte {
-	init := rpc("initialize", map[string]any{
-		"protocolVersion":       "2024-11-05",
-		"capabilities":          map[string]any{},
-		"clientInfo":            map[string]any{"name": "t", "version": "0"},
-		transport.ToolModeParam: transport.ToolModeCompactValue,
-	})
-	call := rpc("tools/call", map[string]any{
-		"name":      "call",
-		"arguments": `"not an object"`,
-	})
-	return append(init, call...)
-}
-
-func TestExecWithInvalidParams(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	lines := rawServe(t, srv, invalidParamsInput())
-	if len(lines) < 2 {
-		t.Fatalf("expected 2 responses, got %d", len(lines))
-	}
-	last := parseRPCResponse(t, lines[len(lines)-1])
-	result, ok := last["result"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected result object, got: %v", last)
-	}
-	if result["isError"] != true {
-		t.Logf("got result: %v", result)
-	}
-}
-
-// newSvcWithPartialProjection creates a server whose "svc" upstream has a projection
-// configured for coveredTool only, leaving uncoveredTool without projection coverage.
 
 // TestRequestBeforeInitialize_rejected verifies that requests (other than initialize and ping)
 // sent before the initialize handshake are rejected with -32600 Invalid Request.
@@ -380,7 +292,7 @@ func TestErrorCodes_standardValues(t *testing.T) {
 		},
 		{
 			name:     "method not found -32601",
-			input:    buildServeInput(true, [][]byte{rpc("no_such_method", nil)}),
+			input:    buildServeInput([][]byte{rpc("no_such_method", nil)}),
 			wantCode: transport.CodeMethodNotFound,
 		},
 	}
@@ -414,7 +326,7 @@ func TestResponseID_echoesRequest(t *testing.T) {
 				"jsonrpc": transport.JsonRPCVersion, "id": json.RawMessage(rawID), "method": "ping",
 			})
 			reqBytes = append(reqBytes, '\n')
-			lines := rawServe(t, newTestServer(t, server.Params{}), buildServeInput(true, [][]byte{reqBytes}))
+			lines := rawServe(t, newTestServer(t, server.Params{}), buildServeInput([][]byte{reqBytes}))
 			for _, line := range lines {
 				var msg map[string]any
 				json.Unmarshal(line, &msg) //nolint:errcheck

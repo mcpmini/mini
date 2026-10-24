@@ -35,7 +35,7 @@ func cancelLine(t *testing.T, id int) []byte {
 }
 
 func TestProxySession_modernListenAcknowledgesAndCancelsLocally(t *testing.T) {
-	session, out := newReadyProxySession(t, transport.ToolModeProxy)
+	session, out := newReadyProxySession(t)
 	handled, err := session.handleModernInput(listenLine(5))
 	if err != nil || !handled {
 		t.Fatalf("listen handled=%t error=%v", handled, err)
@@ -70,21 +70,28 @@ func TestProxySession_modernListenAcknowledgesAndCancelsLocally(t *testing.T) {
 	}
 }
 
-func TestProxySession_modernListenCompactAcknowledgesEmptyFilter(t *testing.T) {
-	session, out := newReadyProxySession(t, transport.ToolModeCompact)
-	if handled, err := session.handleModernInput(listenLine("listen")); err != nil || !handled {
+func TestProxySession_modernListenWithoutToolChangesAcknowledgesAnEmptyFilter(t *testing.T) {
+	session, out := newReadyProxySession(t)
+	listen := transporttest.ModernRequest(5, transport.MethodSubscriptionsListen, transport.ListenParams{})
+	if handled, err := session.handleModernInput(listen); err != nil || !handled {
 		t.Fatalf("listen handled=%t error=%v", handled, err)
 	}
 	if ack := decodeLine[transport.SubscriptionAck](t, out.Bytes()); ack.Params.Notifications.ToolsListChanged {
-		t.Fatalf("compact acknowledgment = %s, want an empty filter", out.Bytes())
+		t.Fatalf("acknowledgment = %s, want an empty filter", out.Bytes())
 	}
 	if got := proxyListenCount(session); got != 0 {
-		t.Fatalf("compact registered listens = %d, want 0", got)
+		t.Fatalf("registered listens = %d, want 0", got)
+	}
+	if err := session.notificationStream.forward(toolsChangedLine(t)); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(out.String(), "\n") != 1 {
+		t.Fatalf("tool change forwarded to a listen that didn't ask for it: %q", out.String())
 	}
 }
 
 func TestProxySession_modernListenWithMalformedParamsIsRejectedLocally(t *testing.T) {
-	session, out := newReadyProxySession(t, transport.ToolModeProxy)
+	session, out := newReadyProxySession(t)
 	listen := transporttest.ModernRequest(
 		7,
 		transport.MethodSubscriptionsListen,
@@ -100,7 +107,7 @@ func TestProxySession_modernListenWithMalformedParamsIsRejectedLocally(t *testin
 }
 
 func TestProxySession_modernListenWithWrongJSONRPCGoesToDaemon(t *testing.T) {
-	session, out := newTestProxySession(t, transport.ToolModeProxy)
+	session, out := newTestProxySession(t)
 	listen := bytes.Replace(listenLine(5), []byte(`"jsonrpc":"2.0"`), []byte(`"jsonrpc":"1.0"`), 1)
 	handled, err := handleLocal(t, session, listen)
 	if err != nil || handled || out.Len() != 0 || proxyListenCount(session) != 0 {
@@ -167,7 +174,7 @@ func TestProxySession_listenGoesToDaemonUntilItCanBeAnsweredLocally(t *testing.T
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			session, out := newTestProxySession(t, transport.ToolModeProxy)
+			session, out := newTestProxySession(t)
 			session.clientReady.Store(tc.ready)
 			handled, err := handleLocal(t, session, tc.line)
 			if err != nil || handled || out.Len() != 0 || proxyListenCount(session) != 0 {

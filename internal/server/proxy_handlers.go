@@ -321,3 +321,19 @@ func parseProxyToolName(name string) (server, tool string, err error) {
 	}
 	return s, t, nil
 }
+
+func (s *Server) resolveProjection(server, tool string, session *Session) *config.ProjectionConfig {
+	if p := session.Projection(toolFullName(server, tool)); p != nil {
+		return p
+	}
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
+	toolMap := s.projections[server]
+	if toolMap == nil {
+		return nil
+	}
+	if p := toolMap[tool]; p != nil {
+		return p
+	}
+	return toolMap["*"]
+}

@@ -85,12 +85,7 @@ func TestPrintCallOutputToonReturnsEncodingError(t *testing.T) {
 
 	var gotErr error
 	output := testutil.CaptureStdout(t, func() {
-		gotErr = printCallOutput(printCallOutputParams{
-			serverName: "gh",
-			toolName:   "list_issues",
-			env:        &response.Envelope{Data: nested},
-			mode:       callOutputToon,
-		})
+		gotErr = printCallOutput(&response.Envelope{Data: nested}, callOutputToon)
 	})
 	if gotErr == nil || !strings.Contains(gotErr.Error(), "nesting depth exceeds") {
 		t.Fatalf("expected TOON encoding error, got: %v", gotErr)

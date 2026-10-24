@@ -25,17 +25,14 @@ type BuildParams struct {
 	Truncated []projection.Truncation
 }
 
-func (b *Builder) Build(p BuildParams) (*Envelope, CallStats, error) {
-	rawTokens := EstimateTokensRaw(p.Raw)
-	summaryTokens := EstimateTokens(p.Summary)
-	stats := CallStats{RawTokens: rawTokens, SummaryTokens: summaryTokens}
+func (b *Builder) Build(p BuildParams) (*Envelope, error) {
 	e := newEnvelope(p)
 	if len(p.Excluded) > 0 || len(p.Truncated) > 0 {
 		if err := b.writeRawFile(e, p); err != nil {
-			return nil, stats, err
+			return nil, err
 		}
 	}
-	return e, stats, nil
+	return e, nil
 }
 
 func newEnvelope(p BuildParams) *Envelope {

@@ -124,7 +124,7 @@ func TestPeekRequestID(t *testing.T) {
 }
 
 func TestHandleLineRejectsBadEnvelopes(t *testing.T) {
-	srv := newRouteTestServer(transport.ToolModeCompact)
+	srv := newRouteTestServer()
 	tests := []struct {
 		name, line string
 		id         any
@@ -152,7 +152,7 @@ func TestHandleLineRoutesNotificationsWithoutReplying(t *testing.T) {
 	session := newSession(clock.NewFake())
 	session.markInitialized()
 	line := []byte(`{"jsonrpc":"2.0","method":"` + transport.NotificationInitialized + `"}`)
-	if _, send := newRouteTestServer(transport.ToolModeCompact).handleLine(context.Background(), line, session); send {
+	if _, send := newRouteTestServer().handleLine(context.Background(), line, session); send {
 		t.Fatal("a notification produced a response")
 	}
 	if !session.clientReady.Load() {
@@ -166,7 +166,7 @@ func TestHandleScannedLineAppliesCancellationBeforeReturning(t *testing.T) {
 	defer cancel()
 	session.registerInFlight(json.RawMessage(`1`), cancel)
 	var wg sync.WaitGroup
-	newRouteTestServer(transport.ToolModeCompact).handleScannedLine(handleScannedLineParams{
+	newRouteTestServer().handleScannedLine(handleScannedLineParams{
 		ctx:      context.Background(),
 		rawLine:  []byte(`{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":1}}`),
 		session:  session,
@@ -181,7 +181,7 @@ func TestHandleScannedLineAppliesCancellationBeforeReturning(t *testing.T) {
 
 func TestServeLoopAbortsInitializationWaitersAtEOF(t *testing.T) {
 	session := newSession(clock.NewFake())
-	err := newRouteTestServer(transport.ToolModeCompact).serveLoop(context.Background(), serveLoopParams{
+	err := newRouteTestServer().serveLoop(context.Background(), serveLoopParams{
 		Input: strings.NewReader(""), Output: io.Discard, Session: session,
 	})
 	if err != nil {
@@ -197,14 +197,14 @@ func TestServeLoopAbortsInitializationWaitersAtEOF(t *testing.T) {
 func TestServeReturnsInputReadError(t *testing.T) {
 	want := errors.New("stdin broke")
 	reader := io.MultiReader(strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"ping"}`+"\n"), errReader{want})
-	err := newRouteTestServer(transport.ToolModeCompact).Serve(context.Background(), reader, io.Discard)
+	err := newRouteTestServer().Serve(context.Background(), reader, io.Discard)
 	if !errors.Is(err, want) {
 		t.Fatalf("Serve error = %v, want the input failure %v", err, want)
 	}
 }
 
 func TestServeForgetsItsSessionOnReturn(t *testing.T) {
-	srv := newRouteTestServer(transport.ToolModeCompact)
+	srv := newRouteTestServer()
 	if err := srv.Serve(context.Background(), strings.NewReader(""), io.Discard); err != nil {
 		t.Fatal(err)
 	}

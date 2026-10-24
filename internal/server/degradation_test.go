@@ -31,10 +31,10 @@ func TestQueueDepth_rejectsWhenFull(t *testing.T) {
 	slow := newBlockingConn(blocked, release)
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc", MaxPendingRequests: 1}, slow)
 	go func() {
-		serve(t, srv, callTool("call", map[string]any{"server": "svc", "tool": "op", "params": map[string]any{}}))
+		serve(t, srv, callTool("svc__op", map[string]any{}))
 	}()
 	<-blocked
-	resp := serve(t, srv, callTool("call", map[string]any{"server": "svc", "tool": "op", "params": map[string]any{}}))
+	resp := serve(t, srv, callTool("svc__op", map[string]any{}))
 	text := toolResultText(t, resp)
 	var env map[string]any
 	if err := json.Unmarshal([]byte(text), &env); err != nil {
@@ -58,30 +58,8 @@ func TestQueueDepth_zeroMeansUnlimited(t *testing.T) {
 	sc := config.ServerConfig{Name: "svc", MaxPendingRequests: 0}
 	srv.AddConnection(ctx, sc, fake)
 
-	for i := 0; i < 5; i++ {
-		resp := serve(
-			t,
-			srv,
-			callTool("call", map[string]any{"server": "svc", "tool": "op", "params": map[string]any{}}),
-		)
-		text := toolResultText(t, resp)
-		var env map[string]any
-		if err := json.Unmarshal([]byte(text), &env); err != nil {
-			t.Fatalf("call %d: expected JSON envelope: %s", i, text)
-		}
-		if env["error"] != nil {
-			t.Errorf("call %d: expected ok=true with unlimited queue, got: %v", i, env)
-		}
-	}
-}
-
-func assertQueueCallOK(t *testing.T, srv *server.Server, callN int) {
-	t.Helper()
-	resp := serve(t, srv, callTool("call", map[string]any{"server": "svc", "tool": "op", "params": map[string]any{}}))
-	var env map[string]any
-	json.Unmarshal([]byte(toolResultText(t, resp)), &env)
-	if env["error"] != nil {
-		t.Errorf("call %d should succeed, got: %v", callN, env)
+	for range 5 {
+		successText(t, serve(t, srv, callTool("svc__op", map[string]any{})))
 	}
 }
 
@@ -100,8 +78,8 @@ func TestQueueDepth_slotReleasedAfterCompletion(t *testing.T) {
 		},
 	}
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc", MaxPendingRequests: 1}, slow)
-	assertQueueCallOK(t, srv, 1)
-	assertQueueCallOK(t, srv, 2)
+	successText(t, serve(t, srv, callTool("svc__op", map[string]any{})))
+	successText(t, serve(t, srv, callTool("svc__op", map[string]any{})))
 }
 
 func TestQueueDepth_timeoutReleasesSlot(t *testing.T) {
@@ -109,18 +87,13 @@ func TestQueueDepth_timeoutReleasesSlot(t *testing.T) {
 	ctx := context.Background()
 	slow := &ctxAwareConnection{tools: []transport.ToolDefinition{{Name: "op", InputSchema: json.RawMessage(`{}`)}}}
 	srv.AddConnection(ctx, config.ServerConfig{Name: "svc", MaxPendingRequests: 1, ToolTimeout: "50ms"}, slow)
-	serve(t, srv, callTool("call", map[string]any{"server": "svc", "tool": "op", "params": map[string]any{}}))
+	serve(t, srv, callTool("svc__op", map[string]any{}))
 	slow2 := &ctxAwareConnection{
 		tools:  []transport.ToolDefinition{{Name: "op", InputSchema: json.RawMessage(`{}`)}},
 		result: toolJSON(`{"result":"ok"}`),
 	}
 	srv.AddConnection(ctx, config.ServerConfig{Name: "svc2", MaxPendingRequests: 1}, slow2)
-	resp := serve(t, srv, callTool("call", map[string]any{"server": "svc2", "tool": "op", "params": map[string]any{}}))
-	var env map[string]any
-	json.Unmarshal([]byte(toolResultText(t, resp)), &env)
-	if env["error"] != nil {
-		t.Errorf("svc2 should work normally, got: %v", env)
-	}
+	successText(t, serve(t, srv, callTool("svc2__op", map[string]any{})))
 }
 
 func toolJSON(s string) json.RawMessage {

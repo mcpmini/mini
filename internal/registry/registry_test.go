@@ -47,9 +47,9 @@ func TestHiddenToolsNotIndexed(t *testing.T) {
 	perm := &config.PermissionsConfig{Hidden: []string{"adminSettings"}}
 	reg.AddServer(serverParams("ci", defs("getBuild", "adminSettings"), perm))
 
-	all := reg.All()
+	all := reg.AllFull()
 	for _, e := range all {
-		if e.Name == "ci.adminSettings" {
+		if e.FullName == "ci.adminSettings" {
 			t.Fatal("hidden tool should not appear in All()")
 		}
 	}
@@ -77,42 +77,17 @@ func TestRemoveServer(t *testing.T) {
 	}
 }
 
-func TestSearch(t *testing.T) {
-	reg := registry.New()
-	reg.AddServer(serverParams("ci", defs("getBuild", "listPipelines"), nil))
-
-	results := reg.Search("build")
-	if len(results) != 1 || results[0].Name != "ci.getBuild" {
-		t.Fatalf("unexpected search results: %v", results)
-	}
-}
-
 func TestAll_sortedDeterministic(t *testing.T) {
 	reg := registry.New()
 	reg.AddServer(serverParams("srv", defs("zebra", "alpha", "mango"), nil))
 
-	all := reg.All()
+	all := reg.AllFull()
 	if len(all) != 3 {
 		t.Fatalf("expected 3, got %d", len(all))
 	}
 	for i := 1; i < len(all); i++ {
-		if all[i].Name < all[i-1].Name {
-			t.Errorf("All() not sorted: %s before %s", all[i-1].Name, all[i].Name)
-		}
-	}
-}
-
-func TestSearch_sortedDeterministic(t *testing.T) {
-	reg := registry.New()
-	reg.AddServer(serverParams("srv", defs("z_tool", "a_tool", "m_tool"), nil))
-
-	results := reg.Search("tool")
-	if len(results) != 3 {
-		t.Fatalf("expected 3, got %d", len(results))
-	}
-	for i := 1; i < len(results); i++ {
-		if results[i].Name < results[i-1].Name {
-			t.Errorf("Search() not sorted: %s before %s", results[i-1].Name, results[i].Name)
+		if all[i].FullName < all[i-1].FullName {
+			t.Errorf("All() not sorted: %s before %s", all[i-1].FullName, all[i].FullName)
 		}
 	}
 }
@@ -162,9 +137,9 @@ func TestResolvePermission_caseInsensitive(t *testing.T) {
 	perm := &config.PermissionsConfig{Hidden: []string{"AdminTool"}}
 	reg.AddServer(serverParams("srv", defs("admintool"), perm))
 
-	all := reg.All()
+	all := reg.AllFull()
 	for _, e := range all {
-		if e.Name == "srv.admintool" {
+		if e.FullName == "srv.admintool" {
 			t.Error("case-insensitive hidden match failed: tool should be hidden")
 		}
 	}
@@ -200,43 +175,6 @@ func TestDefaultProtected_appliesToUnlistedTools(t *testing.T) {
 	}
 	if e.Permission != config.PermProtected {
 		t.Errorf("expected protected by default, got %s", e.Permission)
-	}
-}
-
-func TestAllWithHidden_includesHiddenTools(t *testing.T) {
-	reg := registry.New()
-	perm := &config.PermissionsConfig{Hidden: []string{"secretTool"}}
-	reg.AddServer(serverParams("srv", defs("openTool", "secretTool"), perm))
-
-	visible := reg.All()
-	all := reg.AllWithHidden()
-
-	if len(visible) != 1 {
-		t.Errorf("expected 1 visible tool, got %d", len(visible))
-	}
-	if len(all) != 2 {
-		t.Errorf("expected 2 tools (hidden included), got %d", len(all))
-	}
-
-	names := map[string]bool{}
-	for _, e := range all {
-		names[e.Name] = true
-	}
-	if !names["srv.openTool"] || !names["srv.secretTool"] {
-		t.Errorf("AllWithHidden missing expected tools, got: %v", all)
-	}
-}
-
-func TestAllWithHidden_sorted(t *testing.T) {
-	reg := registry.New()
-	perm := &config.PermissionsConfig{Hidden: []string{"aaa"}}
-	reg.AddServer(serverParams("srv", defs("zzz", "aaa", "mmm"), perm))
-
-	all := reg.AllWithHidden()
-	for i := 1; i < len(all); i++ {
-		if all[i].Name < all[i-1].Name {
-			t.Errorf("AllWithHidden not sorted: %s before %s", all[i-1].Name, all[i].Name)
-		}
 	}
 }
 

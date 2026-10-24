@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"strings"
 	"testing"
 	"testing/synctest"
@@ -17,10 +19,9 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-func newRouteTestServer(mode transport.ToolMode) *Server {
+func newRouteTestServer() *Server {
 	return &Server{
 		logger:   discardLogger(),
-		toolMode: mode,
 		sessions: newSessionStore(clock.NewFake()),
 	}
 }
@@ -100,73 +101,20 @@ func TestHandleCancelledIgnoresParamsWithoutRequestID(t *testing.T) {
 	}
 }
 
-func TestResolveToolModeFallsBackToServerDefault(t *testing.T) {
-	tests := []struct {
-		signal string
-		want   transport.ToolMode
-	}{
-		{transport.ToolModeCompactValue, transport.ToolModeCompact},
-		{transport.ToolModeProxyValue, transport.ToolModeProxy},
-		{"", transport.ToolModeCompact},
-		{"turbo", transport.ToolModeCompact},
-	}
-	srv := newRouteTestServer(transport.ToolModeCompact)
-	for _, tc := range tests {
-		t.Run(tc.signal, func(t *testing.T) {
-			if got := srv.resolveToolMode(tc.signal); got != tc.want {
-				t.Fatalf("resolveToolMode(%q) = %v, want %v", tc.signal, got, tc.want)
-			}
-		})
-	}
-	proxy := newRouteTestServer(transport.ToolModeProxy)
-	for _, signal := range []string{"", "turbo"} {
-		if got := proxy.resolveToolMode(signal); got != transport.ToolModeProxy {
-			t.Fatalf("signal %q on a proxy server resolved to %v, want the server's proxy default", signal, got)
-		}
-	}
-}
-
-func TestHandleInitializeKeepsTheFirstToolMode(t *testing.T) {
-	srv := newRouteTestServer(transport.ToolModeProxy)
-	session := newSession(clock.NewFake())
-	initialize := func(params string) transport.InitializeResult {
-		t.Helper()
-		result, err := srv.handleInitialize(json.RawMessage(params), session)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return result.(transport.InitializeResult)
-	}
-	first := initialize(`{"_mini_tool_mode":"compact"}`)
-	second := initialize(`{"_mini_tool_mode":"proxy"}`)
-	if session.toolMode() != transport.ToolModeCompact {
-		t.Fatalf("session mode = %v after re-initialize, want the first compact mode", session.toolMode())
-	}
-	if first.Instructions != compactInitInstructions || second.Instructions != compactInitInstructions {
-		t.Fatalf(
-			"instructions do not follow the session's compact mode: %q / %q",
-			first.Instructions,
-			second.Instructions,
-		)
-	}
-}
-
 func TestHandleInitializeWithMalformedParamsUsesDefaults(t *testing.T) {
-	srv := newRouteTestServer(transport.ToolModeProxy)
-	session := newSession(clock.NewFake())
-	result, err := srv.handleInitialize(json.RawMessage(`[1,2]`), session)
+	srv := newRouteTestServer()
+	result, err := srv.handleInitialize(json.RawMessage(`[1,2]`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := result.(transport.InitializeResult)
-	if got.ProtocolVersion != transport.LatestLegacyVersion || got.Instructions != proxyInitInstructions ||
-		session.toolMode() != transport.ToolModeProxy {
-		t.Fatalf("initialize with malformed params = %+v in mode %v, want proxy defaults", got, session.toolMode())
+	if got.ProtocolVersion != transport.LatestLegacyVersion || got.Instructions != proxyInitInstructions {
+		t.Fatalf("initialize with malformed params = %+v, want proxy defaults", got)
 	}
 }
 
 func TestAwaitInitializationGatesRequests(t *testing.T) {
-	srv := newRouteTestServer(transport.ToolModeProxy)
+	srv := newRouteTestServer()
 	request := func(method string) transport.Request { return transport.Request{Method: method} }
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -209,8 +157,7 @@ func TestAwaitInitializationGatesRequests(t *testing.T) {
 
 func TestHandleToolsCallSeparatesProtocolErrorsFromToolErrors(t *testing.T) {
 	session := newSession(clock.NewFake())
-	session.setToolModeOnce(transport.ToolModeCompact)
-	srv := newRouteTestServer(transport.ToolModeCompact)
+	srv := newRouteTestServer()
 	for _, params := range []string{`not json`, `{"name":"no_such_tool"}`} {
 		t.Run(params, func(t *testing.T) {
 			if _, err := srv.handleToolsCall(context.Background(), json.RawMessage(params), session); !errors.Is(
@@ -227,7 +174,7 @@ func TestHandleToolsCallSeparatesProtocolErrorsFromToolErrors(t *testing.T) {
 	})
 	t.Run("handler failure", func(t *testing.T) {
 		result, err := srv.handleToolsCall(
-			context.Background(), json.RawMessage(`{"name":"list","arguments":"not an object"}`), session,
+			context.Background(), json.RawMessage(`{"name":"config","arguments":"not an object"}`), session,
 		)
 		if err != nil {
 			t.Fatalf("handler failure became a protocol error: %v", err)
@@ -247,8 +194,6 @@ func TestNormalizeToolCallResult(t *testing.T) {
 		text    string
 	}{
 		{name: "error envelope", result: failed, isError: true, text: mustJSON(failed)},
-		{name: "formatted error", result: formattedEnvelope{text: "bad", isError: true}, isError: true, text: "bad"},
-		{name: "formatted success", result: formattedEnvelope{text: "good"}, isError: false, text: "good"},
 		{name: "string", result: "plain", isError: false, text: "plain"},
 		{name: "value", result: map[string]int{"n": 1}, isError: false, text: `{"n":1}`},
 	}
@@ -270,4 +215,8 @@ func TestNormalizeToolCallResult(t *testing.T) {
 			t.Fatalf("upstream result = %v, want it unchanged", got)
 		}
 	})
+}
+
+func discardLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }

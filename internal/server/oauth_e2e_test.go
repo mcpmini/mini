@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -238,9 +239,8 @@ func TestStartAuth_e2e_toolsAccessibleAfterAuth(t *testing.T) {
 	json.Unmarshal([]byte(authText), &authResult)
 	authtest.CompleteAuthorization(t, authResult["url"].(string), "test-code")
 	for range 100 {
-		listText := toolResultText(t, serve(t, srv, callTool("list", map[string]any{})))
-		var tools []any
-		if err := json.Unmarshal([]byte(listText), &tools); err == nil && len(tools) == 2 {
+		listText := toolListJSON(t, serve(t, srv, rpc("tools/list", nil)))
+		if strings.Contains(listText, `"mysvc__search"`) && strings.Contains(listText, `"mysvc__create"`) {
 			return
 		}
 		time.Sleep(50 * time.Millisecond)
@@ -380,7 +380,7 @@ func TestStartAuth_e2e_withStaleToken_browserTokenUsedOnFirstRequest(t *testing.
 
 	waitForServerConnected(t, mini, "srv")
 
-	serve(t, mini, callTool("list", map[string]any{}))
+	serve(t, mini, rpc("tools/list", nil))
 
 	if n := unauthorizedAfterAuth.Load(); n > 0 {
 		t.Errorf("browser token caused %d unexpected 401 responses after auth, want 0", n)

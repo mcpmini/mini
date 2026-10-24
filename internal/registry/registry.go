@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
-	"strings"
 	"sync"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -79,13 +78,11 @@ func buildEntry(p entryParams) *ToolEntry {
 	name := ToolName{UpstreamName: p.def.Name, Alias: p.alias}
 	full := p.server + "." + name.Name()
 	return &ToolEntry{
-		Server:        p.server,
-		ToolName:      name,
-		FullName:      full,
-		FullNameLower: strings.ToLower(full),
-		Def:           p.def,
-		DescLower:     strings.ToLower(p.def.Description),
-		Permission:    resolvePermission(p.def.Name, p.perm),
+		Server:     p.server,
+		ToolName:   name,
+		FullName:   full,
+		Def:        p.def,
+		Permission: resolvePermission(p.def.Name, p.perm),
 	}
 }
 
@@ -161,49 +158,6 @@ func (r *Registry) AllFull() []*ToolEntry {
 		out = append(out, e)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].FullName < out[j].FullName })
-	return out
-}
-
-func (r *Registry) All() []CompactEntry {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	out := make([]CompactEntry, 0, len(r.tools))
-	for _, e := range r.tools {
-		out = append(out, e.Compact())
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	return out
-}
-
-// AllWithHidden includes tools marked permission="hidden" that All() omits.
-func (r *Registry) AllWithHidden() []CompactEntry {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	out := make([]CompactEntry, 0, len(r.tools)+len(r.hidden))
-	for _, e := range r.tools {
-		out = append(out, e.Compact())
-	}
-	for _, e := range r.hidden {
-		out = append(out, e.Compact())
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	return out
-}
-
-func (r *Registry) Search(query string) []CompactEntry {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	q := strings.ToLower(query)
-	var out []CompactEntry
-	for _, e := range r.tools {
-		if strings.Contains(e.FullNameLower, q) || strings.Contains(e.DescLower, q) {
-			out = append(out, e.Compact())
-		}
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
 }
 
