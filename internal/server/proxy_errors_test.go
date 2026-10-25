@@ -3,6 +3,7 @@
 package server_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,7 +12,9 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/proxy"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
 	"github.com/mcpmini/mini/internal/transport/transporttest"
@@ -90,18 +93,50 @@ func requireMissingCapabilityResponse(t *testing.T, messages []modernMessage, id
 	}
 }
 
-func TestModernProxyPreservesMissingCapabilityThroughDaemonSession(t *testing.T) {
-	srv, _ := proxyErrorServer(t, missingFormCapability())
-	created := serveHTTPPost(srv, initRequest(), "")
-	sessionID := created.Header().Get("Mcp-Session-Id")
+func TestModernProxyPreservesMissingCapabilityThroughDaemonBridge(t *testing.T) {
+	srv, conn := proxyErrorServer(t, missingFormCapability())
 	id := json.RawMessage(`"agent-request"`)
 	request := transporttest.ModernRequest(
 		id,
 		"tools/call",
 		transport.ToolCallParams{Name: "svc__confirm", Arguments: map[string]any{}},
 	)
-	response := serveHTTPPost(srv, request, sessionID)
-	requireMissingCapabilityResponse(t, []modernMessage{decodeRecorderMessage(t, response)}, id)
+	message := serveThroughDaemonBridge(t, srv, request)
+	requireMissingCapabilityResponse(t, []modernMessage{message}, id)
+	if got := conn.toolCalls.Load(); got != 1 {
+		t.Fatalf("upstream tool calls through bridge = %d, want 1 without replay", got)
+	}
+}
+
+func serveThroughDaemonBridge(t *testing.T, srv *server.Server, request []byte) modernMessage {
+	t.Helper()
+	endpoint := httptest.NewServer(srv)
+	t.Cleanup(endpoint.Close)
+	client := endpoint.Client()
+	client.Transport = daemonBridgeTransport{base: client.Transport, address: endpoint.Listener.Addr().String()}
+	var output bytes.Buffer
+	if err := proxy.Run(proxy.RunParams{
+		Client: client, SessionID: "12345678-1234-1234-1234-123456789012",
+		In: bytes.NewReader(request), Out: &output, Clock: clock.NewFake(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var message modernMessage
+	if err := json.Unmarshal(output.Bytes(), &message); err != nil {
+		t.Fatalf("decode bridge response %q: %v", output.String(), err)
+	}
+	return message
+}
+
+type daemonBridgeTransport struct {
+	base    http.RoundTripper
+	address string
+}
+
+func (d daemonBridgeTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	forwarded := request.Clone(request.Context())
+	forwarded.URL.Host = d.address
+	return d.base.RoundTrip(forwarded)
 }
 
 func TestLegacyProxyMissingCapabilityRemainsToolError(t *testing.T) {
@@ -134,8 +169,27 @@ func TestModernProxyOtherRPCErrorRemainsToolError(t *testing.T) {
 	if response.Error != nil {
 		t.Fatalf("unexpected forwarded RPC error: %+v", response.Error)
 	}
-	if result := decodeResult[transport.ToolCallResult](t, response); !result.IsError {
-		t.Fatalf("result = %s, want existing isError tool result", response.Result)
+	result := decodeResult[transport.ToolCallResult](t, response)
+	if !result.IsError || len(result.Content) != 1 ||
+		!strings.Contains(result.Content[0].Text, "bad upstream arguments") {
+		t.Fatalf("result = %s, want existing tool error with the upstream message", response.Result)
+	}
+}
+
+func TestModernProxyToolExecutionErrorRemainsResult(t *testing.T) {
+	srv := newTestServer(t, server.Params{})
+	conn := fakeConn("confirm")
+	result := json.RawMessage(
+		`{"resultType":"complete","isError":true,"content":[{"type":"text","text":"confirmation failed"}],"_meta":{"upstream":"keep"}}`,
+	)
+	conn.Responses["tools/call"] = result
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
+	request := transporttest.ModernRequest(
+		41, "tools/call", transport.ToolCallParams{Name: "svc__confirm", Arguments: map[string]any{}},
+	)
+	response := responsesByID(serveModern(t, srv, request))[41]
+	if response.Error != nil || !bytes.Equal(response.Result, result) {
+		t.Fatalf("response = %+v, want the upstream tool execution error unchanged", response)
 	}
 }
 
