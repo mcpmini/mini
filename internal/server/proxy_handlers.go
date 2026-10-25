@@ -172,7 +172,7 @@ func (s *Server) proxyCallUpstream(ctx context.Context, p proxyCallParams) (any,
 	}
 	if toolErr != nil {
 		p.Session.recordCall(latencyMs, 0, true)
-		return proxyToolFailure(raw, toolErr), nil
+		return proxyToolFailure(p, raw, toolErr)
 	}
 	return s.proxyRespond(proxyReply{Call: p, Upstream: upstream, Raw: raw, LatencyMs: latencyMs})
 }
@@ -196,11 +196,16 @@ type proxyReply struct {
 	ProjCfg   *config.ProjectionConfig
 }
 
-func proxyToolFailure(raw json.RawMessage, toolErr error) any {
-	if errors.Is(toolErr, invoke.ErrToolReturnedError) {
-		return upstreamResult(raw)
+func proxyToolFailure(call proxyCallParams, raw json.RawMessage, toolErr error) (any, error) {
+	if call.MRTR != nil {
+		if rpcErr := missingCapabilityError(toolErr); rpcErr != nil {
+			return nil, rpcErr
+		}
 	}
-	return response.BuildError(response.BuildErrorParams{Code: "tool_error", Message: toolErr.Error()})
+	if errors.Is(toolErr, invoke.ErrToolReturnedError) {
+		return upstreamResult(raw), nil
+	}
+	return response.BuildError(response.BuildErrorParams{Code: "tool_error", Message: toolErr.Error()}), nil
 }
 
 func (s *Server) proxyProjectionConfig(p proxyCallParams) *config.ProjectionConfig {

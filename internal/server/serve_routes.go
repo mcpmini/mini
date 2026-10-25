@@ -76,6 +76,9 @@ func buildRouteResponse(id any, result any, err error) (transport.Response, bool
 }
 
 func routeErrorResponse(id any, err error) transport.Response {
+	if rpcErr := missingCapabilityError(err); rpcErr != nil {
+		return transport.Response{JsonRPC: transport.JsonRPCVersion, ID: id, Error: rpcErr}
+	}
 	switch {
 	case errors.Is(err, errMethodNotFound):
 		return errorResponse(id, transport.CodeMethodNotFound, err.Error())
@@ -84,6 +87,14 @@ func routeErrorResponse(id any, err error) transport.Response {
 	default:
 		return errorResponse(id, transport.CodeInternalError, err.Error())
 	}
+}
+
+func missingCapabilityError(err error) *transport.RPCError {
+	var rpcErr *transport.RPCError
+	if errors.As(err, &rpcErr) && rpcErr.Code == transport.CodeMissingRequiredClientCapability {
+		return rpcErr
+	}
+	return nil
 }
 
 func (s *Server) routeRequest(ctx context.Context, req transport.Request, session *Session) (any, error) {
@@ -167,7 +178,7 @@ func (s *Server) handleToolsCall(ctx context.Context, params json.RawMessage, se
 	}
 	result, err := s.routeProxyTool(ctx, call, session)
 	if err != nil {
-		return normalizeToolCallError(err)
+		return normalizeToolCallError(call, err)
 	}
 	return normalizeToolCallResult(result), nil
 }
@@ -203,7 +214,12 @@ func (c toolCallRequest) mrtr() *transport.ToolCallMRTR {
 	return mrtr
 }
 
-func normalizeToolCallError(err error) (any, error) {
+func normalizeToolCallError(call toolCallRequest, err error) (any, error) {
+	if transport.IsModernVersion(call.Meta.ProtocolVersion) {
+		if rpcErr := missingCapabilityError(err); rpcErr != nil {
+			return nil, rpcErr
+		}
+	}
 	if errors.Is(err, errInvalidParams) {
 		return nil, err
 	}
