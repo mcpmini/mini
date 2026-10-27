@@ -325,7 +325,7 @@ func TestToolListRefreshKeepsAliasesAndPermissions(t *testing.T) {
 	sc := config.ServerConfig{
 		Name:        "svc",
 		Projections: map[string]*config.ProjectionConfig{"visible": {Alias: "alias"}},
-		Permissions: &config.PermissionsConfig{Default: config.PermOpen, Hidden: []string{"secret"}},
+		Permissions: &config.PermissionsConfig{Hidden: []string{"secret"}},
 	}
 	if err := s.AddConnection(t.Context(), sc, c); err != nil {
 		t.Fatal(err)
@@ -334,7 +334,7 @@ func TestToolListRefreshKeepsAliasesAndPermissions(t *testing.T) {
 		t.Fatalf("refreshed tools/list = %s; want the alias and no hidden tool", got)
 	}
 	entry, err := s.reg.Lookup("svc.alias")
-	if err != nil || entry.Permission != config.PermOpen {
-		t.Fatalf("refreshed alias = %+v, %v; want open permission", entry, err)
+	if err != nil || entry.Hidden {
+		t.Fatalf("refreshed alias = %+v, %v; want a visible tool", entry, err)
 	}
 }

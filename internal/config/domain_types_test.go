@@ -11,12 +11,12 @@ import (
 )
 
 func TestNamedDomains_preserveUnknownYAMLValues(t *testing.T) {
-	raw := "transport: future-transport\nsession_mode: future-session\nauth:\n  type: future-auth\npermissions:\n  default: future-permission\n  protected: []\n  hidden: []\n"
+	raw := "transport: future-transport\nsession_mode: future-session\nauth:\n  type: future-auth\n"
 	var server config.ServerConfig
 	if err := yaml.Unmarshal([]byte(raw), &server); err != nil {
 		t.Fatal(err)
 	}
-	if server.IsHTTPTransport() || server.Permissions.LevelFor("tool") != config.PermOpen {
+	if server.IsHTTPTransport() {
 		t.Fatalf("unknown values changed fallback behavior: %+v", server)
 	}
 	encoded, err := yaml.Marshal(server)

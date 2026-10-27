@@ -32,7 +32,7 @@ preserved unchanged.
 
 Examples:
   mini add api --url https://example.com/mcp
-  mini add local --protected delete -- npx -y server-package`
+  mini add local -- npx -y server-package`
 
 func newAddCmd(opts *rootOptions) *cobra.Command {
 	sf := serverFlags{}
@@ -61,7 +61,6 @@ func bindAddFlags(cmd *cobra.Command, sf *serverFlags, imports *importFlags) {
 	flags := cmd.Flags()
 	flags.StringVar(&sf.url, "url", "", "HTTP/SSE server URL")
 	flags.Var(&sf.headers, "header", "HTTP header as Key=Value (repeatable)")
-	flags.Var(&sf.protected, "protected", "tool name to mark protected (repeatable)")
 	flags.BoolVar(&sf.noConnect, "no-connect", false, "skip connectivity check and OAuth authorization")
 	flags.StringVar(&imports.claude, "from-claude", "", "import from Claude Desktop / Claude Code config JSON")
 	flags.StringVar(&imports.cursor, "from-cursor", "", "import from Cursor mcp.json config")
@@ -143,13 +142,12 @@ func importCount(f importFlags) int {
 type serverFlags struct {
 	name, url string
 	headers   stringSlice
-	protected stringSlice
 	cmdArgs   []string
 	noConnect bool
 }
 
 func (f serverFlags) hasServerOptions() bool {
-	return f.url != "" || len(f.headers) > 0 || len(f.protected) > 0 || f.noConnect
+	return f.url != "" || len(f.headers) > 0 || f.noConnect
 }
 
 type importSource struct {
@@ -217,9 +215,6 @@ func addNamedServer(configDir string, sf serverFlags, out io.Writer) error {
 
 func (f serverFlags) serverConfig() config.ServerConfig {
 	sc := config.ServerConfig{Name: f.name}
-	if len(f.protected) > 0 {
-		sc.Permissions = &config.PermissionsConfig{Protected: f.protected}
-	}
 	if f.url != "" {
 		sc.Transport = "http"
 		sc.URL = f.url

@@ -1,9 +1,6 @@
 package registry
 
-import (
-	"github.com/mcpmini/mini/internal/config"
-	"github.com/mcpmini/mini/internal/transport"
-)
+import "github.com/mcpmini/mini/internal/transport"
 
 // ToolName pairs the upstream dispatch name with the agent-visible name.
 // For non-aliased tools UpstreamName == Name(). For aliased tools, Alias
@@ -22,9 +19,9 @@ func (n ToolName) Name() string {
 }
 
 type ToolEntry struct {
-	Server     string
-	ToolName   ToolName
-	FullName   string // "server.tool" using visible name (alias if set)
-	Def        transport.ToolDefinition
-	Permission config.PermissionLevel
+	Server   string
+	ToolName ToolName
+	FullName string // "server.tool" using visible name (alias if set)
+	Def      transport.ToolDefinition
+	Hidden   bool
 }

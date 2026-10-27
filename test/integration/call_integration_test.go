@@ -226,44 +226,6 @@ func TestIntegrationCLICall_OutputIsValidJSON(t *testing.T) {
 	}
 }
 
-func TestIntegrationCLIPermCall_BasicInvocation(t *testing.T) {
-	t.Parallel()
-	cfg := callSetup(t, map[string]string{
-		"create_item": `{"id":99,"created":true}`,
-	})
-	stdout, _, code := runCLI(t, cfg, "perm-call", "svc", "create_item", `{"name":"new"}`)
-	if code != 0 {
-		t.Fatalf("expected exit 0, got %d", code)
-	}
-	var env struct {
-		Error string `json:"error"`
-	}
-	if err := json.Unmarshal([]byte(stdout), &env); err != nil {
-		t.Fatalf("stdout not valid JSON: %v\nstdout: %s", err, stdout)
-	}
-	if env.Error != "" {
-		t.Errorf("expected no error in envelope, got %q", env.Error)
-	}
-}
-
-func TestIntegrationCLIPermCall_RawMode(t *testing.T) {
-	t.Parallel()
-	cfg := callSetup(t, map[string]string{
-		"delete_item": `{"deleted":true}`,
-	})
-	stdout, _, code := runCLI(t, cfg, "perm-call", "-r", "svc", "delete_item", `{"id":1}`)
-	if code != 0 {
-		t.Fatalf("expected exit 0, got %d", code)
-	}
-	var raw map[string]any
-	if err := json.Unmarshal([]byte(stdout), &raw); err != nil {
-		t.Fatalf("raw output not valid JSON: %v", err)
-	}
-	if raw["deleted"] != true {
-		t.Errorf("expected deleted=true, got %v", raw["deleted"])
-	}
-}
-
 func TestIntegrationCLICall_ConfigFormatToon(t *testing.T) {
 	t.Parallel()
 	cfg := callSetup(t, map[string]string{

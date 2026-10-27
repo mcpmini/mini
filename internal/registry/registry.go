@@ -12,7 +12,7 @@ import (
 
 type Registry struct {
 	mu       sync.RWMutex
-	tools    map[string]*ToolEntry // open + protected tools
+	tools    map[string]*ToolEntry // visible tools
 	hidden   map[string]*ToolEntry // hidden tools (excluded from Lookup)
 	byServer map[string][]*ToolEntry
 }
@@ -78,16 +78,16 @@ func buildEntry(p entryParams) *ToolEntry {
 	name := ToolName{UpstreamName: p.def.Name, Alias: p.alias}
 	full := p.server + "." + name.Name()
 	return &ToolEntry{
-		Server:     p.server,
-		ToolName:   name,
-		FullName:   full,
-		Def:        p.def,
-		Permission: resolvePermission(p.def.Name, p.perm),
+		Server:   p.server,
+		ToolName: name,
+		FullName: full,
+		Def:      p.def,
+		Hidden:   p.perm.Hides(p.def.Name),
 	}
 }
 
 func (r *Registry) insertEntryLocked(server string, entry *ToolEntry) {
-	if entry.Permission == config.PermHidden {
+	if entry.Hidden {
 		r.hidden[entry.FullName] = entry
 		return
 	}
@@ -96,7 +96,7 @@ func (r *Registry) insertEntryLocked(server string, entry *ToolEntry) {
 }
 
 // entryByFullNameLocked looks up an entry by its visible full name, searching
-// both the open/protected and hidden maps.
+// both the visible and hidden maps.
 func (r *Registry) entryByFullNameLocked(fullName string) (*ToolEntry, bool) {
 	if e, ok := r.tools[fullName]; ok {
 		return e, true
@@ -176,8 +176,4 @@ func (r *Registry) ToolCount(serverName string) int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return len(r.byServer[serverName])
-}
-
-func resolvePermission(toolName string, perm *config.PermissionsConfig) config.PermissionLevel {
-	return perm.LevelFor(toolName)
 }

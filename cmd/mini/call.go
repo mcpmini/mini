@@ -20,22 +20,16 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-func newCallCmd(opts *rootOptions) *cobra.Command {
-	return newCallCommand(opts, false)
-}
-
 const callLong = "PARAMS is a JSON object of tool arguments, or - to read it from stdin. `mini ls SERVER TOOL` lists a tool's arguments."
 
 const callExample = `  mini call deepwiki read_wiki_structure '{"repoName": "facebook/react"}'
   echo '{"repoName": "facebook/react"}' | mini call deepwiki read_wiki_structure -`
 
-const permCallExample = `  mini perm-call github add_issue_comment '{"owner": "me", "repo": "notes", "issue_number": 1, "body": "Done"}'`
-
-func newCallCommand(opts *rootOptions, protected bool) *cobra.Command {
+func newCallCmd(opts *rootOptions) *cobra.Command {
 	f := callFlags{}
 	cmd := &cobra.Command{
 		Use:     "call SERVER TOOL [PARAMS]",
-		Short:   "Invoke an open tool directly (exit 1 on tool error)",
+		Short:   "Invoke a tool directly (exit 1 on tool error)",
 		Long:    callLong,
 		Example: callExample,
 		Args:    usageArgs(cobra.RangeArgs(2, 3)),
@@ -47,7 +41,7 @@ func newCallCommand(opts *rootOptions, protected bool) *cobra.Command {
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			runCallCmd(runCallParams{
-				configDir: opts.configDir, args: args, flags: f, protected: protected,
+				configDir: opts.configDir, args: args, flags: f,
 			})
 			return nil
 		},
@@ -60,14 +54,6 @@ func addCallOutputFlags(cmd *cobra.Command, f *callFlags) {
 	cmd.Flags().BoolVarP(&f.json, "json", "j", false, "JSON output (projected envelope, default)")
 	cmd.Flags().BoolVarP(&f.toon, "toon", "t", false, "TOON format (token-oriented object notation)")
 	cmd.Flags().BoolVarP(&f.raw, "raw", "r", false, "raw upstream response, no projection")
-}
-
-func newPermCallCmd(opts *rootOptions) *cobra.Command {
-	cmd := newCallCommand(opts, true)
-	cmd.Use = "perm-call SERVER TOOL [PARAMS]"
-	cmd.Short = "Invoke a protected tool directly"
-	cmd.Example = permCallExample
-	return cmd
 }
 
 type callOutput int
@@ -88,7 +74,6 @@ type runCallParams struct {
 	configDir string
 	args      []string
 	flags     callFlags
-	protected bool
 }
 
 type executeProjectedParams struct {
@@ -121,7 +106,7 @@ type callContext struct {
 func runCallCmd(p runCallParams) {
 	cc := parseCallContext(p.configDir, p.args)
 	cc.clock = clock.System()
-	checkCallPermission(cc.sc, cc.toolName, p.protected)
+	exitIfHidden(cc.sc, cc.toolName)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -165,25 +150,11 @@ func loadCallCtx(configDir, serverName string) (*config.Config, *config.ServerCo
 	return cfg, sc
 }
 
-func checkCallPermission(sc *config.ServerConfig, toolName string, protected bool) {
-	if sc.Permissions == nil {
-		return
+func exitIfHidden(sc *config.ServerConfig, toolName string) {
+	if sc.Permissions.Hides(toolName) {
+		fmt.Fprintf(os.Stderr, "mini: tool not found: %s\n", toolName)
+		os.Exit(1)
 	}
-	if code, msg, blocked := callPermissionError(sc.Permissions, toolName, protected); blocked {
-		fmt.Fprintln(os.Stderr, msg)
-		os.Exit(code)
-	}
-}
-
-func callPermissionError(perm *config.PermissionsConfig, toolName string, protected bool) (int, string, bool) {
-	level := perm.LevelFor(toolName)
-	if level == config.PermHidden {
-		return 1, fmt.Sprintf("mini: tool not found: %s", toolName), true
-	}
-	if protected || level != config.PermProtected {
-		return 0, "", false
-	}
-	return 2, fmt.Sprintf("mini: %s is a protected tool; use perm-call", toolName), true
 }
 
 func mustDialCall(ctx context.Context, configDir string, cc callContext) transport.Connection {

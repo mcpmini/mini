@@ -22,10 +22,6 @@ func setupGitHubMCP(t *testing.T, ctx context.Context, token string) *server.Ser
 		Name: "github", Transport: "http",
 		URL:     "https://api.githubcopilot.com/mcp/",
 		Headers: map[string]string{"Authorization": "Bearer " + token},
-		Permissions: &config.PermissionsConfig{Default: "open", Protected: []string{
-			"create_pull_request", "merge_pull_request", "add_issue_comment",
-			"push_files", "create_repository", "fork_repository", "delete_file", "create_branch",
-		}},
 	}
 	t.Log("connecting to GitHub MCP...")
 	if err := srv.AddUpstream(ctx, sc); err != nil {

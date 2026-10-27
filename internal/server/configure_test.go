@@ -93,29 +93,6 @@ func TestConfigureAddServer_viaHTTP(t *testing.T) {
 	}
 }
 
-func fakeProtectedConn() (*transport.FakeConnection, *config.PermissionsConfig) {
-	fake := &transport.FakeConnection{
-		Tools: []transport.ToolDefinition{
-			{Name: "deleteAll", Description: "delete everything", InputSchema: json.RawMessage(`{}`)},
-		},
-		Responses: map[string]json.RawMessage{
-			"tools/call": json.RawMessage(`{"content":[{"type":"text","text":"deleted"}]}`),
-		},
-	}
-	return fake, &config.PermissionsConfig{Protected: []string{"deleteAll"}}
-}
-
-func TestExecuteProtected_callsProtectedTool(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	fake, perm := fakeProtectedConn()
-	srv.AddConnection(t.Context(), config.ServerConfig{Name: "db", Permissions: perm}, fake)
-
-	resp := serve(t, srv, callTool("db__deleteAll", map[string]any{}))
-	if text := toolResultText(t, resp); text != "deleted" {
-		t.Fatalf("protected tool result = %q, want deleted", text)
-	}
-}
-
 func newConfigServer(t *testing.T) *server.Server {
 	t.Helper()
 	srv := newTestServer(t, server.Params{})

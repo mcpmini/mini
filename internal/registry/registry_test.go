@@ -55,17 +55,6 @@ func TestHiddenToolsNotIndexed(t *testing.T) {
 	}
 }
 
-func TestProtectedPermission(t *testing.T) {
-	reg := registry.New()
-	perm := &config.PermissionsConfig{Protected: []string{"deleteIssue"}}
-	reg.AddServer(serverParams("jira", defs("getIssue", "deleteIssue"), perm))
-
-	e, _ := reg.Lookup("jira.deleteIssue")
-	if e.Permission != config.PermProtected {
-		t.Fatalf("expected protected, got %s", e.Permission)
-	}
-}
-
 func TestRemoveServer(t *testing.T) {
 	reg := registry.New()
 	reg.AddServer(serverParams("ci", defs("getBuild"), nil))
@@ -162,20 +151,6 @@ func TestAddServer_afterRemove_noStaleEntries(t *testing.T) {
 			t.Error("toolB should not exist after re-add with fewer tools")
 		}
 	})
-}
-
-func TestDefaultProtected_appliesToUnlistedTools(t *testing.T) {
-	reg := registry.New()
-	perm := &config.PermissionsConfig{Default: "protected"}
-	reg.AddServer(serverParams("srv", defs("anyTool"), perm))
-
-	e, err := reg.Lookup("srv.anyTool")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if e.Permission != config.PermProtected {
-		t.Errorf("expected protected by default, got %s", e.Permission)
-	}
 }
 
 func TestBuildEntry_annotationsThreaded(t *testing.T) {

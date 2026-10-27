@@ -132,7 +132,7 @@ The direct CLI uses `internal/invoke` and `response.Builder.Build()` for its `{d
 ```
 Its paths are `read` filters against the stored upstream result. An unchanged result, an `isError` result and a raw call are returned exactly as the upstream sent them. With `response_format: toon`, JSON text blocks are re-encoded as TOON.
 
-**`mini call` and `mini perm-call`** return an envelope with the recovery fields alongside `data`:
+**`mini call`** returns an envelope with the recovery fields alongside `data`:
 ```json
 {
   "data": { ... },
@@ -162,9 +162,9 @@ In both shapes:
 
 Projections live in the server's YAML under `projections:`. A `"*"` key is a wildcard applying to all tools on that server.
 
-### Tool visibility and CLI permissions
+### Tool visibility
 
-`hidden` filters tools from discovery. The `open`/`protected` split is enforced only in the direct CLI: `mini call` refuses protected tools, while `mini perm-call` can run them. Over MCP, protected tools are exposed directly and approval must be handled by the MCP client.
+`permissions.hidden` removes tools from discovery, and calls to them fail as not found, over MCP and in the CLI. mini does no approval of its own: the MCP client decides which calls need it, using the `readOnlyHint` and `destructiveHint` annotations mini passes through.
 
 ### Security defaults
 

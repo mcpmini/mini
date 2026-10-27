@@ -90,7 +90,6 @@ func subcommands(opts *rootOptions) []*cobra.Command {
 		newTestCmd(opts),
 		newInitCmd(opts),
 		newCallCmd(opts),
-		newPermCallCmd(opts),
 		newVersionCmd(),
 	}
 }

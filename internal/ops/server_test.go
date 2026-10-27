@@ -57,12 +57,9 @@ func TestAddServer_writtenFile(t *testing.T) {
 	t.Run("roundtrips permissions", func(t *testing.T) {
 		dir := tempDir(t)
 		sc := config.ServerConfig{
-			Name:    "guarded",
-			Command: "run",
-			Permissions: &config.PermissionsConfig{
-				Protected: []string{"dangerous_tool"},
-				Hidden:    []string{"internal_tool"},
-			},
+			Name:        "guarded",
+			Command:     "run",
+			Permissions: &config.PermissionsConfig{Hidden: []string{"internal_tool"}},
 		}
 		if _, err := ops.AddServer(dir, sc); err != nil {
 			t.Fatalf("AddServer: %v", err)
@@ -72,8 +69,8 @@ func TestAddServer_writtenFile(t *testing.T) {
 		if got.Permissions == nil {
 			t.Fatal("Permissions is nil after roundtrip")
 		}
-		if len(got.Permissions.Protected) != 1 || got.Permissions.Protected[0] != "dangerous_tool" {
-			t.Errorf("Protected = %v, want [dangerous_tool]", got.Permissions.Protected)
+		if len(got.Permissions.Hidden) != 1 || got.Permissions.Hidden[0] != "internal_tool" {
+			t.Errorf("Hidden = %v, want [internal_tool]", got.Permissions.Hidden)
 		}
 	})
 
