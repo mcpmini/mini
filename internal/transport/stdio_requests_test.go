@@ -268,11 +268,40 @@ func TestStdioModernCallWithNonObjectParamsSendsNothing(t *testing.T) {
 }
 
 func TestStdioCallReturnsTheUpstreamRPCError(t *testing.T) {
-	conn, serverW, serverR := makePipeConn(t)
-	scriptStdioUpstream(serverW, serverR, replyError(serverW, CodeInvalidParams, nil))
-	_, err := conn.Call(context.Background(), "tools/call", json.RawMessage(`{}`))
-	var rpcErr *RPCError
-	if !errors.As(err, &rpcErr) || rpcErr.Code != CodeInvalidParams {
-		t.Fatalf("Call error = %v, want the upstream's RPC error", err)
+	for _, tc := range []struct {
+		name    string
+		version string
+		code    int
+		data    json.RawMessage
+	}{
+		{name: "legacy invalid params", code: CodeInvalidParams},
+		{
+			name: "modern missing capability", version: ModernVersions[0], code: CodeMissingRequiredClientCapability,
+			data: json.RawMessage(`{"requiredCapabilities":{"elicitation":{"form":{}}}}`),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conn, serverW, serverR := makePipeConn(t)
+			conn.setModern(tc.version)
+			reject := replyError(serverW, tc.code, tc.data)
+			seen := scriptStdioUpstream(serverW, serverR, reject, reject)
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+			_, err := conn.Call(ctx, "tools/call", json.RawMessage(`{}`))
+			var rpcErr *RPCError
+			if !errors.As(err, &rpcErr) || rpcErr.Code != tc.code || rpcErr.Message != "rejected" ||
+				string(rpcErr.Data) != string(tc.data) {
+				t.Fatalf(
+					"RPC error = %#v (call error %v), want code %d, message rejected and data %s",
+					rpcErr,
+					err,
+					tc.code,
+					tc.data,
+				)
+			}
+			if got := len(seen); got != 1 {
+				t.Fatalf("upstream calls = %d, want one without replay", got)
+			}
+		})
 	}
 }

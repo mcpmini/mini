@@ -101,17 +101,14 @@ func TestProxy_ErrorBehavior_ToolErrorNotWrappedInData(t *testing.T) {
 	}
 }
 
-// Registry lookup fails before any envelope is built, so this surfaces as a JSON-RPC error, not an isError tool result.
-func TestProxy_ErrorBehavior_UnknownServerReturnsToolError(t *testing.T) {
+func TestProxy_ErrorBehavior_UnknownServerReturnsRPCError(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
-	defer srv.Close()
-
 	resp := serve(t, srv, callTool("nosuchserver__tool", map[string]any{}))
-	if resp["error"] == nil {
-		result, ok := resp["result"].(map[string]any)
-		if !ok || result["isError"] != true {
-			t.Errorf("expected RPC error or isError:true for unknown server, got: %v", resp)
-		}
+	requireRPCError(requireRPCErrorParams{
+		T: t, Resp: resp, WantCode: transport.CodeInvalidParams, WantSubstr: "not found",
+	})
+	if resp["result"] != nil {
+		t.Fatalf("unknown server response = %v, want no tool result", resp)
 	}
 }
 
