@@ -25,11 +25,11 @@ run_set() {
   shift 4
   export MINI_CONFORMANCE_MODE=$mode
   local failures=0 scenario output status
-  # Serial on purpose: mini's OAuth callback listens on fixed port 6464, so auth scenarios can't overlap.
+  # mini's OAuth callback uses fixed port 6464, so scenarios must run serially.
   for scenario in "$@"; do
-    local output_dir="$results/$set/$scenario"
+    local output_dir="$results/$set"
     mkdir -p "$output_dir"
-    # Baseline mode ignores a client that exits with an error, so scenarios with no entry run without it.
+    # Baseline mode ignores the client's exit code.
     local baseline_args=()
     if has_baseline_entry "$root/$baseline" "$scenario"; then
       baseline_args=(--expected-failures "$root/$baseline")
@@ -42,7 +42,7 @@ run_set() {
       status=$?
       failures=$((failures + 1))
     fi
-    printf '%s\n' "$output" > "$output_dir/output.log"
+    printf '%s\n' "$output" > "$output_dir/${scenario//\//_}.log"
     printf '%s: %s (exit %d)\n' "$set" "$scenario" "$status"
   done
   ((failures == 0))

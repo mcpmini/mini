@@ -150,17 +150,13 @@ func (peer *agentPeer) readReplies(output *bufio.Reader) {
 
 func decodeAgentResponse(response transport.Response) (map[string]any, error) {
 	if response.Error != nil {
-		return protocolErrorResult(response.Error)
+		return nil, fmt.Errorf("protocol error %d: %s", response.Error.Code, response.Error.Message)
 	}
 	var decoded map[string]any
 	if err := json.Unmarshal(response.Result, &decoded); err != nil {
 		return nil, err
 	}
 	return decoded, nil
-}
-
-func protocolErrorResult(rpcError *transport.RPCError) (map[string]any, error) {
-	return map[string]any{"error": rpcError}, nil
 }
 
 func marshalAgentParams(params map[string]any) (json.RawMessage, error) {
@@ -270,5 +266,16 @@ func (peer *agentPeer) callTool(name string, args, extra map[string]any) (map[st
 	for key, value := range extra {
 		params[key] = value
 	}
-	return peer.call("tools/call", params, 30*time.Second)
+	result, err := peer.call("tools/call", params, 30*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", name, err)
+	}
+	return completedToolResult(name, result)
+}
+
+func completedToolResult(name string, result map[string]any) (map[string]any, error) {
+	if result["isError"] == true {
+		return nil, fmt.Errorf("%s: tool error %v", name, result["content"])
+	}
+	return result, nil
 }

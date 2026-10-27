@@ -24,22 +24,17 @@ func TestWaitResponseSkipsRepliesToEarlierRequests(t *testing.T) {
 	}
 }
 
-func TestToolResultError(t *testing.T) {
-	tests := []struct {
-		name    string
-		result  map[string]any
-		wantErr bool
-	}{
-		{name: "complete result", result: map[string]any{"content": []any{}}, wantErr: false},
-		{name: "tool error", result: map[string]any{"isError": true, "content": []any{}}, wantErr: true},
-		{name: "protocol error", result: map[string]any{"error": map[string]any{"code": -32602}}, wantErr: true},
+func TestToolErrorsAreFailures(t *testing.T) {
+	rpcError := transport.Response{Error: &transport.RPCError{Code: -32602, Message: "bad"}}
+	if _, err := decodeAgentResponse(rpcError); err == nil {
+		t.Error("decodeAgentResponse(JSON-RPC error) error = nil, want error")
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if err := toolResultError("tool", test.result); (err != nil) != test.wantErr {
-				t.Fatalf("toolResultError() error = %v, want error %v", err, test.wantErr)
-			}
-		})
+	if _, err := completedToolResult("tool", map[string]any{"isError": true, "content": []any{}}); err == nil {
+		t.Error("completedToolResult(isError) error = nil, want error")
+	}
+	got, err := completedToolResult("tool", map[string]any{"resultType": "input_required"})
+	if err != nil || got["resultType"] != "input_required" {
+		t.Errorf("completedToolResult(input_required) = %v, %v; want the result unchanged", got, err)
 	}
 }
 

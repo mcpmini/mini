@@ -67,9 +67,6 @@ func loadRunParams() (runParams, error) {
 }
 
 func runScenario(params runParams) error {
-	if isAuthScenario(params.Scenario) {
-		params.Mode = "cli"
-	}
 	if err := setupMini(params); err != nil {
 		return err
 	}
@@ -158,26 +155,13 @@ func runPlan(params runParams, tools []tool, peer *agentPeer) error {
 
 func executePlannedCall(params runParams, peer *agentPeer, call plannedCall) error {
 	if params.Mode == "agent" {
-		result, err := peer.callTool(call.Name, call.Arguments, nil)
-		if err != nil {
-			return err
-		}
-		return toolResultError(call.Name, result)
+		_, err := peer.callTool(call.Name, call.Arguments, nil)
+		return err
 	}
 	_, err := callCLI(cliCallParams{
 		Binary: params.Binary, Config: params.Config, Name: call.Name, Arguments: call.Arguments,
 	})
 	return err
-}
-
-func toolResultError(name string, result map[string]any) error {
-	if rpcError, failed := result["error"]; failed {
-		return fmt.Errorf("%s: protocol error %v", name, rpcError)
-	}
-	if result["isError"] == true {
-		return fmt.Errorf("%s: tool error %v", name, result["content"])
-	}
-	return nil
 }
 
 func closeAgent(peer *agentPeer) {
@@ -187,7 +171,8 @@ func closeAgent(peer *agentPeer) {
 }
 
 func isUnauthorized(output string) bool {
-	return strings.Contains(output, "401") || strings.Contains(output, "403")
+	return strings.Contains(output, "unauthorized (") ||
+		strings.Contains(output, "status 401") || strings.Contains(output, "status 403")
 }
 
 type authSetupParams struct {
@@ -208,10 +193,11 @@ func runAuthSetup(params authSetupParams) error {
 	if params.Scenario == "auth/pre-registration" {
 		return runPreRegistration(params)
 	}
-	return runOAuthAdd(params)
+	runOAuthAdd(params)
+	return nil
 }
 
-func runOAuthAdd(params authSetupParams) error {
+func runOAuthAdd(params authSetupParams) {
 	result := runCLI(cliParams{
 		Binary: params.Binary, Config: params.Config, Timeout: 90 * time.Second,
 		Args: []string{"add", "conf", "--url", params.URL},
@@ -219,7 +205,6 @@ func runOAuthAdd(params authSetupParams) error {
 	if result.err != nil {
 		fmt.Fprintln(os.Stderr, "mini add auth:", result.err, result.combined())
 	}
-	return nil
 }
 
 func runPreRegistration(params authSetupParams) error {
@@ -274,29 +259,38 @@ func runMRTR(peer *agentPeer) error {
 	return err
 }
 
+const maxMRTRRounds = 4
+
 func mrtrFlow(peer *agentPeer, name, interloper string) error {
 	result, err := peer.callTool(name, map[string]any{}, elicitationExtra())
 	if err != nil {
 		return err
 	}
-	for round := 0; result["resultType"] == "input_required" && round < 4; round++ {
+	for round := 0; result["resultType"] == "input_required"; round++ {
+		if round == maxMRTRRounds {
+			return fmt.Errorf("%s: still input_required after %d rounds", name, maxMRTRRounds)
+		}
 		if interloper != "" {
 			if _, callErr := peer.callTool(interloper, map[string]any{}, nil); callErr != nil {
 				return callErr
 			}
 			interloper = ""
 		}
-		extra := elicitationExtra()
-		extra["inputResponses"] = inputResponses(result)
-		if state, ok := result["requestState"]; ok {
-			extra["requestState"] = state
-		}
-		result, err = peer.callTool(name, map[string]any{}, extra)
+		result, err = peer.callTool(name, map[string]any{}, nextRoundExtra(result))
 		if err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func nextRoundExtra(previous map[string]any) map[string]any {
+	extra := elicitationExtra()
+	extra["inputResponses"] = inputResponses(previous)
+	if state, ok := previous["requestState"]; ok {
+		extra["requestState"] = state
+	}
+	return extra
 }
 
 func elicitationExtra() map[string]any {

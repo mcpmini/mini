@@ -1,4 +1,3 @@
-# Every auth scenario fails at discovery: OAuth discovery refuses the suite's localhost mock servers.
 client:
   - auth/metadata-default # #606
   - auth/metadata-var1 # #606
