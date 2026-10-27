@@ -5,6 +5,8 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"io"
+	"log/slog"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/clock"
@@ -15,10 +17,18 @@ import (
 
 func newPerSessionDispatch(t *testing.T, conn *transport.FakeConnection) (*Server, dispatchParams) {
 	t.Helper()
-	session := newSession(clock.System())
+	fakeClock := clock.NewFake()
+	session := newSession(fakeClock)
 	t.Cleanup(session.Close)
 	session.GetOrSetConn("svc", conn)
-	return newInternalTestServer(t), dispatchParams{
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	srv := New(Params{
+		Config: cfg, ConfigDir: t.TempDir(), Clock: fakeClock,
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	t.Cleanup(srv.Close)
+	return srv, dispatchParams{
 		Upstream: &upstreamServer{cfg: config.ServerConfig{Name: "svc", SessionMode: config.SessionModePerSession}},
 		Tool:     "test", Session: session,
 	}
