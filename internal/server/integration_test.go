@@ -39,9 +39,6 @@ func setupFSServer(t *testing.T, allowedDir string) (*server.Server, context.Can
 		Name:    "fs",
 		Command: "npx",
 		Args:    []string{"-y", "@modelcontextprotocol/server-filesystem", allowedDir},
-		Permissions: &config.PermissionsConfig{
-			Protected: []string{"write_file", "create_directory", "move_file", "delete_file"},
-		},
 	}
 	if err := srv.AddUpstream(ctx, sc); err != nil {
 		t.Fatalf("connect to filesystem MCP: %v", err)
@@ -86,7 +83,7 @@ func TestWithRealFilesystemMCP(t *testing.T) {
 	t.Run("configure status shows fs server", func(t *testing.T) { fsTestStatusShowsFS(t, srv) })
 }
 
-func newProtectedFSServer(t *testing.T) (*server.Server, string) {
+func newWritableFSServer(t *testing.T) (*server.Server, string) {
 	t.Helper()
 	if _, err := exec.LookPath("npx"); err != nil {
 		t.Skip("npx not available")
@@ -100,9 +97,6 @@ func newProtectedFSServer(t *testing.T) (*server.Server, string) {
 		Name:    "fs",
 		Command: "npx",
 		Args:    []string{"-y", "@modelcontextprotocol/server-filesystem", tmpDir},
-		Permissions: &config.PermissionsConfig{
-			Protected: []string{"write_file", "create_directory", "delete_file", "move_file"},
-		},
 	}
 	if err := srv.AddUpstream(ctx, sc); err != nil {
 		t.Fatalf("connect: %v", err)
@@ -110,8 +104,8 @@ func newProtectedFSServer(t *testing.T) (*server.Server, string) {
 	return srv, tmpDir
 }
 
-func TestWithRealFilesystemMCP_WriteProtected(t *testing.T) {
-	srv, tmpDir := newProtectedFSServer(t)
+func TestWithRealFilesystemMCP_WriteFile(t *testing.T) {
+	srv, tmpDir := newWritableFSServer(t)
 	testFile := filepath.Join(tmpDir, "hello.txt")
 	resp := serve(t, srv, callTool("fs__write_file", map[string]any{"path": testFile, "content": "hello from mini"}))
 	successText(t, resp)

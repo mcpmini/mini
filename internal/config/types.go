@@ -320,26 +320,9 @@ func (a *AuthConfig) Clone() *AuthConfig {
 	return &cp
 }
 
-// PermissionsConfig defines tool access tiers for a server.
 type PermissionsConfig struct {
-	// Default tier for tools not explicitly listed: "open" (default) or "protected"
-	Default PermissionLevel `yaml:"default"`
-
-	// Protected tools require execute_protected + human approval.
-	Protected []string `yaml:"protected"`
-
-	// Hidden tools are not visible in discover at all.
 	Hidden []string `yaml:"hidden"`
 }
-
-// PermissionLevel represents the access tier of a tool.
-type PermissionLevel string
-
-const (
-	PermOpen      PermissionLevel = "open"
-	PermProtected PermissionLevel = "protected"
-	PermHidden    PermissionLevel = "hidden"
-)
 
 // ProjectionConfig defines how to trim tool responses.
 type ProjectionConfig struct {

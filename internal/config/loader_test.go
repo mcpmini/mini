@@ -2,6 +2,7 @@ package config_test
 
 import (
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -210,31 +211,13 @@ func TestLoad_invalidHandshakeTimeout(t *testing.T) {
 func TestLoadServerConfig_withPermissions(t *testing.T) {
 	dir := t.TempDir()
 	configtest.WriteServer(t, dir, config.ServerConfig{
-		Name:    "ci",
-		Command: "mcp-ci",
-		Permissions: &config.PermissionsConfig{
-			Default:   "open",
-			Protected: []string{"deleteProject", "clearCache"},
-			Hidden:    []string{"internalDebug"},
-		},
+		Name:        "ci",
+		Command:     "mcp-ci",
+		Permissions: &config.PermissionsConfig{Hidden: []string{"internalDebug"}},
 	})
 	sc := mustLoadOneServer(t, dir)
-	assertPermissions(
-		assertPermissionsParams{T: t, Server: sc, WantProtected: 2, WantHidden: []string{"internalDebug"}},
-	)
-}
-
-func assertPermissions(params assertPermissionsParams) {
-	params.T.Helper()
-	if params.Server.Permissions == nil {
-		params.T.Fatal("expected permissions to be loaded")
-	}
-	perm := params.Server.Permissions
-	if len(perm.Protected) != params.WantProtected {
-		params.T.Errorf("expected %d protected tools, got %v", params.WantProtected, perm.Protected)
-	}
-	if len(perm.Hidden) != len(params.WantHidden) || perm.Hidden[0] != params.WantHidden[0] {
-		params.T.Errorf("expected hidden=%v, got %v", params.WantHidden, perm.Hidden)
+	if sc.Permissions == nil || !reflect.DeepEqual(sc.Permissions.Hidden, []string{"internalDebug"}) {
+		t.Errorf("loaded permissions = %+v, want hidden [internalDebug]", sc.Permissions)
 	}
 }
 
@@ -343,11 +326,4 @@ type assertNameValidityParams struct {
 	Invalid []string
 	Match   func(string) bool
 	Label   string
-}
-
-type assertPermissionsParams struct {
-	T             *testing.T
-	Server        config.ServerConfig
-	WantProtected int
-	WantHidden    []string
 }

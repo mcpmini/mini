@@ -6,12 +6,11 @@ This document explains the principles behind mini's bundled projection configs. 
 
 ## Tool visibility
 
-mini ships no visibility defaults: every upstream tool is visible, and none is protected. Approval is the client's job, and mini passes each tool's `readOnlyHint` and `destructiveHint` through unchanged so the client can use them. Users who want a tool hidden or protected list it in their own server file:
+mini ships no visibility defaults: every upstream tool is visible. Approval is the client's job, and mini passes each tool's `readOnlyHint` and `destructiveHint` through unchanged so the client can use them. Users who want a tool hidden list it in their own server file:
 
 ```yaml
 permissions:
   hidden: [delete_file]
-  protected: [merge_pull_request] # CLI calls require mini perm-call
 ```
 
 ---

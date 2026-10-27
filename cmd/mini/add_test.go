@@ -256,21 +256,6 @@ func TestRunAdd(t *testing.T) {
 		}
 	})
 
-	t.Run("--protected flag marks tool", func(t *testing.T) {
-		dir := t.TempDir()
-		var out bytes.Buffer
-		args := []string{"svc", "--protected", "delete_everything", "--", "run"}
-		if err := runAdd(dir, args, &out); err != nil {
-			t.Fatalf("runAdd: %v", err)
-		}
-		var sc config.ServerConfig
-		readServerYAML(readServerYAMLParams{T: t, ConfigDir: dir, Name: "svc", Out: &sc})
-		if sc.Permissions == nil || len(sc.Permissions.Protected) != 1 ||
-			sc.Permissions.Protected[0] != "delete_everything" {
-			t.Errorf("Protected = %v, want [delete_everything]", sc.Permissions)
-		}
-	})
-
 	t.Run("missing name returns error", func(t *testing.T) {
 		dir := t.TempDir()
 		err := runAdd(dir, []string{}, &bytes.Buffer{})

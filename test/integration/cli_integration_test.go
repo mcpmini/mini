@@ -317,29 +317,6 @@ func TestIntegrationCLI_add_NoURLOrCommand(t *testing.T) {
 	}
 }
 
-func TestIntegrationCLI_add_Protected(t *testing.T) {
-	t.Parallel()
-	cfg := t.TempDir()
-	_, _, code := runCLI(
-		t,
-		cfg,
-		"add",
-		"myserver",
-		"--url",
-		"http://example.com/mcp",
-		"--protected",
-		"list_items",
-		"--no-connect",
-	)
-	if code != 0 {
-		t.Fatalf("add --protected should exit 0, got %d", code)
-	}
-	data := testutil.ReadFile(t, filepath.Join(cfg, "servers", "myserver.yaml"))
-	if !strings.Contains(string(data), "protected") {
-		t.Errorf("server YAML should mention 'protected', got: %s", data)
-	}
-}
-
 func TestIntegrationCLI_add_Header(t *testing.T) {
 	t.Parallel()
 	cfg := t.TempDir()

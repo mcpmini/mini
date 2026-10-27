@@ -447,31 +447,6 @@ func TestIntegrationCLI_version_flag(t *testing.T) {
 	}
 }
 
-func TestIntegrationCLI_add_protectedTool(t *testing.T) {
-	t.Parallel()
-	bin := miniBin(t)
-	cfg := t.TempDir()
-	_, _, code := run(runParams{T: t, Bin: bin, ConfigDir: cfg, Args: []string{
-		"add",
-		"svc",
-		"--url",
-		"http://example.com/mcp",
-		"--protected",
-		"delete_item",
-		"--protected",
-		"create_item",
-	}},
-	)
-	if code != 0 {
-		t.Fatalf("add --protected should exit 0, got %d", code)
-	}
-	data := testutil.ReadFile(t, filepath.Join(cfg, "servers", "svc.yaml"))
-	yaml := string(data)
-	if !strings.Contains(yaml, "delete_item") || !strings.Contains(yaml, "create_item") {
-		t.Errorf("YAML should contain both protected tools, got: %s", yaml)
-	}
-}
-
 func TestIntegrationCLI_init_nullDeviceRejectedBeforeWriting(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	f, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)

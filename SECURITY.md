@@ -30,7 +30,6 @@ The highest-risk MCP tool mini exposes to agents is `add_server` (via `config`),
 - `auth` — a crafted auth config with a malicious `token_url` would receive the PKCE `code` + `code_verifier` during an OAuth exchange, enough to mint a token on behalf of the user. Auth setup must go through the CLI (`mini auth`) where endpoints are user-verified.
 - `headers` — a crafted header map like `{"Authorization": "Bearer <stolen-token>"}` plus an attacker URL would silently forward the token on every subsequent call.
 - `env` — credentials injected as environment variables into a spawned command.
-- `permissions` — an empty block would skip a vendor's bundled list of protected tools.
 - `projections` — `set_projection` is the one writer of projection rules.
 - timeouts — a handshake that never ends would hold the name's lock, and a zero tool timeout removes every call deadline.
 
@@ -99,15 +98,11 @@ Response files written to `~/.mini/internal/responses/` use:
 The `read` tool (proxy mode) validates requested paths using `filepath.EvalSymlinks` before checking they are within the response directory. Symlinks inside the store that point outside it are rejected — a symlink escape would allow reading arbitrary files accessible to the process user.
 
 
-## Tool visibility and CLI permissions
+## Tool visibility and approval
 
-| Setting | Applies to | Effect |
-|------|-----------|--------------|
-| `hidden` | MCP and CLI | Filtered from discovery |
-| `protected` | CLI only | `mini call` refuses it; `mini perm-call` can run it |
-| `open` (default) | CLI only | `mini call` and `mini perm-call` can run it |
+A tool listed under `permissions.hidden` is left out of discovery, and calls to it fail as not found, over MCP and in the CLI.
 
-Over MCP, mini exposes upstream tools directly. Use your MCP client's approval settings for writes; mini does not enforce `protected` there.
+mini does not approve calls. Over MCP it exposes upstream tools directly with their `readOnlyHint` and `destructiveHint` annotations, so use your MCP client's approval settings for writes. `mini call` runs any visible tool; gate it with your agent's shell permission rules.
 
 
 ## OAuth security

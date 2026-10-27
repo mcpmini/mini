@@ -12,7 +12,7 @@ import (
 
 type Registry struct {
 	mu       sync.RWMutex
-	tools    map[string]*ToolEntry // open + protected tools
+	tools    map[string]*ToolEntry
 	hidden   map[string]*ToolEntry // hidden tools (excluded from Lookup)
 	byServer map[string][]*ToolEntry
 }
@@ -49,13 +49,13 @@ func (r *Registry) addServerLocked(p ServerParams) {
 			slog.Default().Warn("alias collides; using real name",
 				"server", p.Name, "tool", def.Name, "alias", p.AliasByToolName[def.Name])
 		}
-		entry := buildEntry(entryParams{server: p.Name, def: def, perm: p.Perm, alias: resolution.AliasFor(def.Name)})
+		entry := buildEntry(entryParams{server: p.Name, def: def, alias: resolution.AliasFor(def.Name)})
 		if seen[entry.FullName] {
 			slog.Default().Warn("duplicate tool name from upstream; skipping", "server", p.Name, "tool", def.Name)
 			continue
 		}
 		seen[entry.FullName] = true
-		r.insertEntryLocked(p.Name, entry)
+		r.insertEntryLocked(p.Name, entry, p.Perm.Hides(def.Name))
 	}
 }
 
@@ -70,7 +70,6 @@ func toolDefNames(defs []transport.ToolDefinition) []string {
 type entryParams struct {
 	server string
 	def    transport.ToolDefinition
-	perm   *config.PermissionsConfig
 	alias  string
 }
 
@@ -78,16 +77,15 @@ func buildEntry(p entryParams) *ToolEntry {
 	name := ToolName{UpstreamName: p.def.Name, Alias: p.alias}
 	full := p.server + "." + name.Name()
 	return &ToolEntry{
-		Server:     p.server,
-		ToolName:   name,
-		FullName:   full,
-		Def:        p.def,
-		Permission: resolvePermission(p.def.Name, p.perm),
+		Server:   p.server,
+		ToolName: name,
+		FullName: full,
+		Def:      p.def,
 	}
 }
 
-func (r *Registry) insertEntryLocked(server string, entry *ToolEntry) {
-	if entry.Permission == config.PermHidden {
+func (r *Registry) insertEntryLocked(server string, entry *ToolEntry, hidden bool) {
+	if hidden {
 		r.hidden[entry.FullName] = entry
 		return
 	}
@@ -95,8 +93,6 @@ func (r *Registry) insertEntryLocked(server string, entry *ToolEntry) {
 	r.byServer[server] = append(r.byServer[server], entry)
 }
 
-// entryByFullNameLocked looks up an entry by its visible full name, searching
-// both the open/protected and hidden maps.
 func (r *Registry) entryByFullNameLocked(fullName string) (*ToolEntry, bool) {
 	if e, ok := r.tools[fullName]; ok {
 		return e, true
@@ -176,8 +172,4 @@ func (r *Registry) ToolCount(serverName string) int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return len(r.byServer[serverName])
-}
-
-func resolvePermission(toolName string, perm *config.PermissionsConfig) config.PermissionLevel {
-	return perm.LevelFor(toolName)
 }

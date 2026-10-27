@@ -113,34 +113,6 @@ func TestAlias_callByRealNameFails(t *testing.T) {
 	)
 }
 
-func TestAlias_protectedToolRoutesToRealTool(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-
-	fake := fakeConn("delete_repo")
-	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"deleted"}]}`)
-	perm := &config.PermissionsConfig{Protected: []string{"delete_repo"}}
-	proj := map[string]*config.ProjectionConfig{
-		"delete_repo": {Alias: "rm_repo"},
-	}
-	addTestConnection(
-		addConnectionParams{
-			T:          t,
-			Server:     srv,
-			Config:     config.ServerConfig{Name: "gh", Permissions: perm, Projections: proj},
-			Connection: fake,
-		},
-	)
-
-	resp := serve(t, srv, callTool("gh__rm_repo", map[string]any{}))
-
-	if text := toolResultText(t, resp); text == "" {
-		t.Fatal("expected non-empty response from the protected tool's alias")
-	}
-	if got := lastCalledTool(t, fake); got != "delete_repo" {
-		t.Errorf("upstream should have received real tool name, got %q", got)
-	}
-}
-
 func TestAlias_invalidAliasUsesRealName(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 

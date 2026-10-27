@@ -79,17 +79,15 @@ func TestIntegrationSecurity_PermissionCaseMismatch(t *testing.T) {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"MyTool": `{"id":1}`})
 	writeFakeServer(t, cfg, fakeServerParams{
-		ServerName: "svc",
-		Fixtures:   dir,
-		Permissions: &config.PermissionsConfig{
-			Protected: []string{"MyTool"},
-		},
+		ServerName:  "svc",
+		Fixtures:    dir,
+		Permissions: &config.PermissionsConfig{Hidden: []string{"MyTool"}},
 	})
 
 	client := startServer(t, cfg)
 	_, isErr := client.nativeCallError("svc", "mytool")
 	if !isErr {
-		t.Error("expected call to fail: 'mytool' should not bypass 'MyTool' protection via case mismatch")
+		t.Error("expected call to fail: 'mytool' should not bypass hiding 'MyTool' via case mismatch")
 	}
 	if strings.Contains(client.listTools(), "mytool") {
 		t.Error("'mytool' should not appear in list if 'MyTool' is registered (case-sensitive naming)")

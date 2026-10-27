@@ -9,27 +9,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
-	"github.com/mcpmini/mini/internal/transport"
 )
-
-func TestExecProtected(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	ctx := context.Background()
-	perm := &config.PermissionsConfig{Protected: []string{"sendMessage"}}
-	fake := &transport.FakeConnection{
-		Tools: []transport.ToolDefinition{{Name: "sendMessage"}},
-		Responses: map[string]json.RawMessage{
-			"tools/call": json.RawMessage(`{"content":[{"type":"text","text":"sent"}]}`),
-		},
-	}
-	srv.AddConnection(ctx, config.ServerConfig{Name: "slack", Permissions: perm}, fake)
-
-	resp := serve(t, srv, callTool("slack__sendMessage", map[string]any{"text": "hello"}))
-
-	if resp["error"] != nil {
-		t.Fatalf("unexpected error: %v", resp["error"])
-	}
-}
 
 func TestConfigureSetProjection(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
