@@ -24,7 +24,7 @@ Coverage is a way to find surprising unexercised code, not a score to optimize. 
 
 `test/conformancerun` runs the official MCP conformance suite's client scenarios against mini: tool calls, request metadata, HTTP headers, schemas and elicitation, in agent and CLI mode and against 2025-11-25 servers. CI runs it as the optional `conformance` job and writes failed checks to the job summary. Run it locally with `npm ci --prefix test/conformance && go run ./test/conformancerun [agent|cli|legacy|auth]`; set `CONFORMANCE_RESULTS` to keep the results somewhere other than a temp dir.
 
-Every listed scenario must pass outright: a failed check, a warning or an adapter error fails it. The scenario lists in `test/conformancerun/sets.go` hold only scenarios that pass, so a fix that makes a scenario pass adds it in the same PR. The exception is `auth`, which runs only on request and fails until mini can log in to localhost servers (#606).
+Every listed scenario must pass outright: a failed check, a warning, or an adapter error in a scenario that doesn't expect one fails it. The scenario lists in `test/conformancerun/sets.go` hold only scenarios that pass, so a fix that makes a scenario pass adds it in the same PR. The exception is `auth`, which runs only on request and fails until mini can log in to localhost servers (#606).
 
 ## Assert behavior that should remain true
 

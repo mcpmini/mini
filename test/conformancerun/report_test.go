@@ -40,14 +40,17 @@ func TestResultsDirReadsTheSuiteOutput(t *testing.T) {
 
 func TestRenderSummaryListsOnlyFailures(t *testing.T) {
 	summary := renderSummary([]outcome{
-		{Set: "agent", Scenario: "tools_call"},
-		{Set: "auth", Scenario: "auth/resource-mismatch", ExitCode: 1, Problems: []check{
+		{Set: "agent", Scenario: "tools_call", Ran: true},
+		{Set: "legacy", Scenario: "sep-2322-client-request-state"},
+		{Set: "auth", Scenario: "auth/resource-mismatch", ExitCode: 1, Ran: true, Problems: []check{
 			{ID: "resource-mismatch-rejected", Status: "FAILURE", Description: "Client MUST validate"},
 		}},
-		{Set: "cli", Scenario: "request-metadata", ExitCode: 1},
+		{Set: "cli", Scenario: "request-metadata", ExitCode: 1, Ran: true},
 	})
 	for _, want := range []string{
-		"1 of 3 scenarios passed.",
+		"1 of 4 scenarios passed.",
+		"### legacy: sep-2322-client-request-state (exit 0)",
+		"The suite saved no results",
 		"### auth: auth/resource-mismatch (exit 1)",
 		"- FAILURE `resource-mismatch-rejected`: Client MUST validate",
 		"### cli: request-metadata (exit 1)",

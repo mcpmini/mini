@@ -16,11 +16,12 @@ type outcome struct {
 	Set      string
 	Scenario string
 	ExitCode int
+	Ran      bool
 	Problems []check
 }
 
 func (o outcome) passed() bool {
-	return o.ExitCode == 0
+	return o.ExitCode == 0 && o.Ran
 }
 
 func anyFailed(outcomes []outcome) bool {
@@ -45,8 +46,8 @@ func runScenario(env runEnv, set scenarioSet, scenario string) (outcome, error) 
 	if writeErr := os.WriteFile(logPath, output, 0o600); writeErr != nil {
 		return outcome{}, writeErr
 	}
-	problems, err := scenarioProblems(output)
-	return outcome{Set: set.Name, Scenario: scenario, ExitCode: exitCode, Problems: problems}, err
+	problems, ran, err := scenarioProblems(output)
+	return outcome{Set: set.Name, Scenario: scenario, ExitCode: exitCode, Ran: ran, Problems: problems}, err
 }
 
 func runSuite(env runEnv, set scenarioSet, scenario string) ([]byte, int, error) {
@@ -63,17 +64,18 @@ func runSuite(env runEnv, set scenarioSet, scenario string) ([]byte, int, error)
 	return output, 0, err
 }
 
-func scenarioProblems(output []byte) ([]check, error) {
+func scenarioProblems(output []byte) ([]check, bool, error) {
 	dir, ok := resultsDir(output)
 	if !ok {
-		return nil, nil
+		return nil, false, nil
 	}
 	data, err := os.ReadFile(filepath.Join(dir, "checks.json"))
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
+		return nil, true, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
-	return problemChecks(data)
+	problems, err := problemChecks(data)
+	return problems, true, err
 }

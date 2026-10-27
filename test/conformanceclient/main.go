@@ -190,6 +190,8 @@ func runAuthSetup(params authSetupParams) error {
 	); err != nil {
 		return err
 	}
+	// A failed login is logged, not returned: the ls that follows decides the scenario, and some
+	// scenarios expect mini to refuse the server.
 	if params.Scenario == "auth/pre-registration" {
 		return runPreRegistration(params)
 	}

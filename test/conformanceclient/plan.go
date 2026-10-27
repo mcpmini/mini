@@ -38,27 +38,26 @@ type planParams struct {
 }
 
 func selectPlan(params planParams) []plannedCall {
-	scenario, ctx, tools, agent := params.Scenario, params.Context, params.Tools, params.Agent
-	if len(ctx.ToolCalls) > 0 {
-		return contextPlan(ctx.ToolCalls)
+	if len(params.Context.ToolCalls) > 0 {
+		return contextPlan(params.Context.ToolCalls)
 	}
-	if scenario == "json-schema-ref-no-deref" {
+	if params.Scenario == "json-schema-ref-no-deref" {
 		return nil
 	}
-	if scenario == "json-schema-2020-12-preservation" && agent {
-		return schemaEchoPlan(tools)
+	if params.Scenario == "json-schema-2020-12-preservation" && params.Agent {
+		return schemaEchoPlan(params.Tools)
 	}
-	if scenario == "tools_call" || scenario == "initialize" || isAuthScenario(scenario) {
-		if len(tools) == 0 {
+	if params.Scenario == "tools_call" || params.Scenario == "initialize" || isAuthScenario(params.Scenario) {
+		if len(params.Tools) == 0 {
 			return nil
 		}
 		args := map[string]any{"a": 2, "b": 3}
-		if isAuthScenario(scenario) {
+		if isAuthScenario(params.Scenario) {
 			args = map[string]any{}
 		}
-		return []plannedCall{{Name: tools[0].Name, Arguments: args}}
+		return []plannedCall{{Name: params.Tools[0].Name, Arguments: args}}
 	}
-	return schemaArgumentPlan(tools)
+	return schemaArgumentPlan(params.Tools)
 }
 
 func contextPlan(calls []toolCall) []plannedCall {

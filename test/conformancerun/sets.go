@@ -37,8 +37,7 @@ var scenarioSets = []scenarioSet{
 	}},
 }
 
-// auth stays out of default runs until mini can log in to localhost servers (#606):
-// every auth scenario's mock server is on localhost.
+// auth is opt-in until mini can log in to localhost servers, where every auth mock runs (#606).
 var defaultSets = []string{"agent", "cli", "legacy"}
 
 func selectSets(args []string) ([]scenarioSet, error) {

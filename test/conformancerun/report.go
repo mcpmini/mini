@@ -62,6 +62,11 @@ func renderSummary(outcomes []outcome) string {
 
 func writeFailure(summary *strings.Builder, o outcome) {
 	fmt.Fprintf(summary, "\n### %s: %s (exit %d)\n\n", o.Set, o.Scenario, o.ExitCode)
+	if !o.Ran {
+		summary.WriteString("The suite saved no results: it skipped the scenario or failed before running it. " +
+			"See the scenario's log.\n")
+		return
+	}
 	if len(o.Problems) == 0 {
 		summary.WriteString("No failed checks, so the adapter or mini errored. See the scenario's `stderr.txt`.\n")
 		return

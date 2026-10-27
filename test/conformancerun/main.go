@@ -102,7 +102,7 @@ func buildBinaries(env runEnv) error {
 
 func runSets(env runEnv, selected []scenarioSet) ([]outcome, error) {
 	var outcomes []outcome
-	// mini's OAuth callback uses fixed port 6464, so scenarios must run serially.
+	// auth scenarios log in through mini's fixed OAuth callback port 6464, so scenarios can't run in parallel.
 	for _, set := range selected {
 		for _, scenario := range set.Scenarios {
 			result, err := runScenario(env, set, scenario)
