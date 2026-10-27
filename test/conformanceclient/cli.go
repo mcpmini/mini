@@ -67,12 +67,23 @@ func callCLI(params cliCallParams) (map[string]any, error) {
 		Binary: params.Binary, Config: params.Config, Timeout: 60 * time.Second,
 		Args: []string{"call", "conf", params.Name, string(encoded)},
 	})
+	return callOutput(params.Name, result)
+}
+
+func callOutput(name string, result cliResult) (map[string]any, error) {
 	if result.err != nil {
-		return nil, fmt.Errorf("mini call %s: %w: %s", params.Name, result.err, result.combined())
+		return nil, fmt.Errorf("mini call %s: %w: %s", name, result.err, result.combined())
 	}
 	var envelope map[string]any
 	if err := json.Unmarshal([]byte(result.stdout), &envelope); err != nil {
-		return nil, fmt.Errorf("mini call %s: decode output: %w", params.Name, err)
+		return nil, fmt.Errorf("mini call %s: decode output: %w", name, err)
 	}
 	return envelope, nil
+}
+
+func listOutput(result cliResult) ([]tool, error) {
+	if result.err != nil {
+		return nil, fmt.Errorf("mini ls: %w: %s", result.err, result.combined())
+	}
+	return parseToolTable(result.stdout), nil
 }

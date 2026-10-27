@@ -98,24 +98,29 @@ func setupMini(params runParams) error {
 		Args: []string{"add", "conf", "--url", params.URL, "--no-connect"},
 	})
 	if result.err != nil {
-		fmt.Fprintln(os.Stderr, "mini add:", result.err, result.combined())
+		return fmt.Errorf("mini add: %w: %s", result.err, result.combined())
 	}
 	return nil
 }
 
 func scenarioTools(params runParams) ([]tool, *agentPeer, error) {
 	if params.Mode == "cli" {
-		return cliTools(params), nil, nil
+		tools, err := cliTools(params)
+		return tools, nil, err
 	}
 	peer, err := startAgent(agentStartParams{Binary: params.Binary, Config: params.Config})
 	if err != nil {
 		return nil, nil, err
 	}
 	tools, err := peer.tools()
-	return tools, peer, err
+	if err != nil {
+		closeAgent(peer)
+		return nil, nil, err
+	}
+	return tools, peer, nil
 }
 
-func cliTools(params runParams) []tool {
+func cliTools(params runParams) ([]tool, error) {
 	list := runCLI(cliParams{
 		Binary: params.Binary, Config: params.Config, Timeout: 60 * time.Second,
 		Args: []string{"ls", "conf"},
@@ -127,10 +132,7 @@ func cliTools(params runParams) []tool {
 			Args: []string{"ls", "conf"},
 		})
 	}
-	if list.err != nil {
-		fmt.Fprintln(os.Stderr, "mini ls:", list.err, list.combined())
-	}
-	return parseToolTable(list.stdout)
+	return listOutput(list)
 }
 
 func retryAuth(params runParams) {

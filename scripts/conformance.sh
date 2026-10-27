@@ -16,8 +16,6 @@ cli_2026=(tools_call request-metadata http-standard-headers http-custom-headers 
 auth_2026=(auth/metadata-default auth/metadata-var1 auth/metadata-var2 auth/metadata-var3 auth/basic-cimd auth/scope-from-www-authenticate auth/scope-from-scopes-supported auth/scope-omitted-when-undefined auth/scope-step-up auth/scope-retry-limit auth/token-endpoint-auth-basic auth/token-endpoint-auth-post auth/token-endpoint-auth-none auth/pre-registration auth/resource-mismatch auth/offline-access-scope auth/offline-access-not-supported auth/authorization-server-migration auth/iss-supported auth/iss-not-advertised auth/iss-supported-missing auth/iss-wrong-issuer auth/iss-unexpected auth/iss-normalized auth/metadata-issuer-mismatch)
 legacy_2025=(initialize tools_call json-schema-2020-12-preservation)
 
-# With --expected-failures the suite exits on its baseline verdict alone, which ignores warnings and a client
-# that exits with an error. Only scenarios that have a baseline entry get it, so every other scenario runs strict.
 has_baseline_entry() {
   grep -qE "^[[:space:]]*-[[:space:]]+$2([:[:space:]]|$)" "$1"
 }
@@ -31,6 +29,7 @@ run_set() {
   for scenario in "$@"; do
     local output_dir="$results/$set/$scenario"
     mkdir -p "$output_dir"
+    # Baseline mode ignores a client that exits with an error, so scenarios with no entry run without it.
     local baseline_args=()
     if has_baseline_entry "$root/$baseline" "$scenario"; then
       baseline_args=(--expected-failures "$root/$baseline")
