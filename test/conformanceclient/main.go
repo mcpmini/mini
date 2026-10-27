@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -146,23 +147,35 @@ func runPlan(params runParams, tools []tool, peer *agentPeer) error {
 	plan := selectPlan(planParams{
 		Scenario: params.Scenario, Context: params.Context, Tools: tools, Agent: params.Mode == "agent",
 	})
+	var failures []error
 	for _, call := range plan {
-		if err := executePlannedCall(params, peer, call); err != nil {
-			fmt.Fprintln(os.Stderr, "tool call:", err)
-		}
+		failures = append(failures, executePlannedCall(params, peer, call))
 	}
-	return nil
+	return errors.Join(failures...)
 }
 
 func executePlannedCall(params runParams, peer *agentPeer, call plannedCall) error {
 	if params.Mode == "agent" {
-		_, err := peer.callTool(call.Name, call.Arguments, nil)
-		return err
+		result, err := peer.callTool(call.Name, call.Arguments, nil)
+		if err != nil {
+			return err
+		}
+		return toolResultError(call.Name, result)
 	}
 	_, err := callCLI(cliCallParams{
 		Binary: params.Binary, Config: params.Config, Name: call.Name, Arguments: call.Arguments,
 	})
 	return err
+}
+
+func toolResultError(name string, result map[string]any) error {
+	if rpcError, failed := result["error"]; failed {
+		return fmt.Errorf("%s: protocol error %v", name, rpcError)
+	}
+	if result["isError"] == true {
+		return fmt.Errorf("%s: tool error %v", name, result["content"])
+	}
+	return nil
 }
 
 func closeAgent(peer *agentPeer) {

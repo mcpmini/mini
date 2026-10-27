@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os/exec"
 	"strings"
 	"time"
@@ -50,14 +51,6 @@ func parseToolTable(output string) []tool {
 
 func (result cliResult) combined() string { return result.stdout + result.stderr }
 
-func (result cliResult) jsonOutput() map[string]any {
-	var value map[string]any
-	if err := json.Unmarshal([]byte(result.stdout), &value); err != nil {
-		return map[string]any{}
-	}
-	return value
-}
-
 type cliCallParams struct {
 	Binary    string
 	Config    string
@@ -75,7 +68,11 @@ func callCLI(params cliCallParams) (map[string]any, error) {
 		Args: []string{"call", "conf", params.Name, string(encoded)},
 	})
 	if result.err != nil {
-		result.stdout = "{}"
+		return nil, fmt.Errorf("mini call %s: %w: %s", params.Name, result.err, result.combined())
 	}
-	return result.jsonOutput(), nil
+	var envelope map[string]any
+	if err := json.Unmarshal([]byte(result.stdout), &envelope); err != nil {
+		return nil, fmt.Errorf("mini call %s: decode output: %w", params.Name, err)
+	}
+	return envelope, nil
 }

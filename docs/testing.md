@@ -24,7 +24,7 @@ Coverage is a way to find surprising unexercised code, not a score to optimize. 
 
 `scripts/conformance.sh` runs the official MCP conformance suite's client scenarios against mini: tool calls, request metadata, HTTP headers, schemas, elicitation and OAuth. CI runs it as the optional `conformance` job. Run it locally with `npm ci --prefix test/conformance && scripts/conformance.sh [agent|cli|auth|legacy]`; set `CONFORMANCE_RESULTS` to keep the results somewhere other than a temp dir.
 
-Known failures live in the set's `test/conformance/<set>.baseline.yml`, one entry per scenario or `scenario:check-id`, each naming its issue. A run fails on a new failure and on a baseline entry that now passes, so a fix that makes a scenario pass removes its entry in the same PR.
+Known failures live in the set's `test/conformance/<set>.baseline.yml`, one entry per scenario or `scenario:check-id`, each naming its issue. A scenario with no entry must pass outright: a failed check, a warning or an adapter error fails it. A baseline entry that now passes also fails the run, so a fix that makes a scenario pass removes its entry in the same PR.
 
 ## Assert behavior that should remain true
 

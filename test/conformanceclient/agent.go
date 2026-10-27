@@ -110,7 +110,6 @@ func makeAgentRequest(id int64, method string, params map[string]any) (transport
 	}, nil
 }
 
-// A reply whose id doesn't match belongs to an earlier request that timed out, so it is dropped.
 func (peer *agentPeer) waitResponse(id int64, timeout time.Duration) (transport.Response, error) {
 	deadline := time.After(timeout)
 	for {
@@ -193,23 +192,52 @@ func (peer *agentPeer) tools() ([]tool, error) {
 }
 
 func (peer *agentPeer) pollTools() ([]tool, error) {
+	if err := peer.awaitUpstream(); err != nil {
+		return nil, err
+	}
+	result, err := peer.call("tools/list", map[string]any{}, 15*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	tools, err := decodeTools(result)
+	if err != nil {
+		return nil, err
+	}
+	return matchingTools(tools), nil
+}
+
+func (peer *agentPeer) awaitUpstream() error {
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
-		result, err := peer.call("tools/list", map[string]any{}, 15*time.Second)
+		result, err := peer.call("tools/call", map[string]any{
+			"name": "config", "arguments": map[string]any{"action": "status"},
+		}, 15*time.Second)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		tools, err := decodeTools(result)
-		if err != nil {
-			return nil, err
-		}
-		matching := matchingTools(tools)
-		if len(matching) > 0 {
-			return matching, nil
+		if upstreamReady(result) {
+			return nil
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
-	return nil, fmt.Errorf("no conf tools after 15 seconds")
+	return fmt.Errorf("server conf not ready after 15 seconds")
+}
+
+func upstreamReady(statusResult map[string]any) bool {
+	content, _ := statusResult["content"].([]any)
+	if len(content) == 0 {
+		return false
+	}
+	block, _ := content[0].(map[string]any)
+	text, _ := block["text"].(string)
+	var status struct {
+		Servers map[string]json.RawMessage `json:"servers"`
+	}
+	if err := json.Unmarshal([]byte(text), &status); err != nil {
+		return false
+	}
+	_, ready := status.Servers["conf"]
+	return ready
 }
 
 func matchingTools(tools []tool) []tool {
