@@ -21,7 +21,7 @@ type outcome struct {
 }
 
 func (o outcome) passed() bool {
-	return o.ExitCode == 0 && o.Ran
+	return o.ExitCode == 0 && o.Ran && len(o.Problems) == 0
 }
 
 func anyFailed(outcomes []outcome) bool {

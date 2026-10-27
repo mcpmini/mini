@@ -64,3 +64,19 @@ func TestRenderSummaryListsOnlyFailures(t *testing.T) {
 		t.Errorf("summary lists a passing scenario:\n%s", summary)
 	}
 }
+
+func TestWarningsFailSuccessfulSuiteProcess(t *testing.T) {
+	result := outcome{
+		Set: "auth", Scenario: "auth/scope-from-scopes-supported", Ran: true,
+		Problems: []check{{ID: "scope", Status: "WARNING", Description: "SHOULD use scope"}},
+	}
+	if !anyFailed([]outcome{result}) {
+		t.Fatal("runner passed a scenario with a warning and suite exit code zero")
+	}
+	summary := renderSummary([]outcome{result})
+	for _, want := range []string{"0 of 1 scenarios passed", "WARNING `scope`: SHOULD use scope"} {
+		if !strings.Contains(summary, want) {
+			t.Errorf("summary is missing %q:\n%s", want, summary)
+		}
+	}
+}
