@@ -49,13 +49,13 @@ func (r *Registry) addServerLocked(p ServerParams) {
 			slog.Default().Warn("alias collides; using real name",
 				"server", p.Name, "tool", def.Name, "alias", p.AliasByToolName[def.Name])
 		}
-		entry := buildEntry(entryParams{server: p.Name, def: def, perm: p.Perm, alias: resolution.AliasFor(def.Name)})
+		entry := buildEntry(entryParams{server: p.Name, def: def, alias: resolution.AliasFor(def.Name)})
 		if seen[entry.FullName] {
 			slog.Default().Warn("duplicate tool name from upstream; skipping", "server", p.Name, "tool", def.Name)
 			continue
 		}
 		seen[entry.FullName] = true
-		r.insertEntryLocked(p.Name, entry)
+		r.insertEntryLocked(p.Name, entry, p.Perm.Hides(def.Name))
 	}
 }
 
@@ -70,7 +70,6 @@ func toolDefNames(defs []transport.ToolDefinition) []string {
 type entryParams struct {
 	server string
 	def    transport.ToolDefinition
-	perm   *config.PermissionsConfig
 	alias  string
 }
 
@@ -82,12 +81,11 @@ func buildEntry(p entryParams) *ToolEntry {
 		ToolName: name,
 		FullName: full,
 		Def:      p.def,
-		Hidden:   p.perm.Hides(p.def.Name),
 	}
 }
 
-func (r *Registry) insertEntryLocked(server string, entry *ToolEntry) {
-	if entry.Hidden {
+func (r *Registry) insertEntryLocked(server string, entry *ToolEntry, hidden bool) {
+	if hidden {
 		r.hidden[entry.FullName] = entry
 		return
 	}

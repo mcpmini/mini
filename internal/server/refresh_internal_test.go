@@ -333,8 +333,7 @@ func TestToolListRefreshKeepsAliasesAndPermissions(t *testing.T) {
 	if got := readToolsList(s); !strings.Contains(got, "svc__alias") || strings.Contains(got, "secret") {
 		t.Fatalf("refreshed tools/list = %s; want the alias and no hidden tool", got)
 	}
-	entry, err := s.reg.Lookup("svc.alias")
-	if err != nil || entry.Hidden {
-		t.Fatalf("refreshed alias = %+v, %v; want a visible tool", entry, err)
+	if _, err := s.reg.Lookup("svc.alias"); err != nil {
+		t.Fatalf("refreshed alias lookup: %v", err)
 	}
 }

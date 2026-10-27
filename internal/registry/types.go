@@ -23,5 +23,4 @@ type ToolEntry struct {
 	ToolName ToolName
 	FullName string // "server.tool" using visible name (alias if set)
 	Def      transport.ToolDefinition
-	Hidden   bool
 }

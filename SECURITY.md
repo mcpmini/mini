@@ -30,7 +30,6 @@ The highest-risk MCP tool mini exposes to agents is `add_server` (via `config`),
 - `auth` — a crafted auth config with a malicious `token_url` would receive the PKCE `code` + `code_verifier` during an OAuth exchange, enough to mint a token on behalf of the user. Auth setup must go through the CLI (`mini auth`) where endpoints are user-verified.
 - `headers` — a crafted header map like `{"Authorization": "Bearer <stolen-token>"}` plus an attacker URL would silently forward the token on every subsequent call.
 - `env` — credentials injected as environment variables into a spawned command.
-- `permissions` — which tools are hidden is the user's choice.
 - `projections` — `set_projection` is the one writer of projection rules.
 - timeouts — a handshake that never ends would hold the name's lock, and a zero tool timeout removes every call deadline.
 
