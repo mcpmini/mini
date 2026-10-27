@@ -178,7 +178,7 @@ func (s *Server) handleToolsCall(ctx context.Context, params json.RawMessage, se
 	}
 	result, err := s.routeProxyTool(ctx, call, session)
 	if err != nil {
-		return normalizeToolCallError(call, err)
+		return normalizeToolCallError(err)
 	}
 	return normalizeToolCallResult(result), nil
 }
@@ -214,11 +214,9 @@ func (c toolCallRequest) mrtr() *transport.ToolCallMRTR {
 	return mrtr
 }
 
-func normalizeToolCallError(call toolCallRequest, err error) (any, error) {
-	if transport.IsModernVersion(call.Meta.ProtocolVersion) {
-		if rpcErr := missingCapabilityError(err); rpcErr != nil {
-			return nil, rpcErr
-		}
+func normalizeToolCallError(err error) (any, error) {
+	if rpcErr := missingCapabilityError(err); rpcErr != nil {
+		return nil, rpcErr
 	}
 	if errors.Is(err, errInvalidParams) {
 		return nil, err

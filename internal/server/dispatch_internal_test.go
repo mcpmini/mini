@@ -84,3 +84,38 @@ func TestCallPerSession_forwardsRetryFieldsAndReturnsTheInputRequest(t *testing.
 		t.Fatalf("per-session upstream received %s, want %s", conn.LastParams, want)
 	}
 }
+
+func TestDispatchPerSession_CapabilityErrorPreservesConnectionForNextCall(t *testing.T) {
+	upstreamErr := &transport.RPCError{
+		Code: transport.CodeMissingRequiredClientCapability, Message: "form elicitation required",
+		Data: json.RawMessage(`{"requiredCapabilities":{"elicitation":{"form":{}}}}`),
+	}
+	result := json.RawMessage(`{"resultType":"complete","content":[{"type":"text","text":"confirmed"}]}`)
+	conn := &transport.FakeConnection{
+		Responses: map[string]json.RawMessage{"tools/call": result}, Err: upstreamErr,
+	}
+	session := newSession(clock.System())
+	t.Cleanup(session.Close)
+	session.GetOrSetConn("svc", conn)
+	srv := newInternalTestServer(t)
+	call := dispatchParams{
+		Upstream: &upstreamServer{cfg: config.ServerConfig{Name: "svc", SessionMode: config.SessionModePerSession}},
+		Tool:     "confirm", Session: session, MRTR: &transport.ToolCallMRTR{},
+	}
+
+	if raw, err := srv.dispatchRawCall(t.Context(), call); !errors.Is(err, upstreamErr) || len(raw) != 0 {
+		t.Fatalf("first call = %s, %#v; want the original capability error and no result", raw, err)
+	}
+	if session.Conn("svc") != conn || conn.Closed {
+		t.Fatal("capability error evicted or closed the per-session connection")
+	}
+
+	conn.SetError(nil)
+	raw, err := srv.dispatchRawCall(t.Context(), call)
+	if err != nil || string(raw) != string(result) {
+		t.Fatalf("follow-up call = %s, %v; want successful result on the retained connection", raw, err)
+	}
+	if session.Conn("svc") != conn || conn.Closed {
+		t.Fatal("follow-up call did not retain the same usable connection")
+	}
+}
