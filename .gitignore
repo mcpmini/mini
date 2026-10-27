@@ -4,6 +4,7 @@
 /funclen
 /params
 /returns
+/test/conformance/node_modules/
 /run-eval
 test_escape
 *.test
