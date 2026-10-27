@@ -128,7 +128,7 @@ jobs:
       - name: Run conformance suite
         env:
           CONFORMANCE_RESULTS: ${{ runner.temp }}/conformance
-        run: scripts/conformance.sh
+        run: go run ./test/conformancerun
 
       - uses: actions/upload-artifact@v4
         if: always()
