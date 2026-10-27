@@ -77,6 +77,21 @@ func modernMRTRCall(id int, name string, arguments map[string]any) []byte {
 	return transporttest.ModernRequest(id, "tools/call", params)
 }
 
+func modernMRTRInitialCall(id int, name string, arguments map[string]any) []byte {
+	params := struct {
+		Name      string         `json:"name"`
+		Arguments map[string]any `json:"arguments"`
+		Meta      *mrtrCallMeta  `json:"_meta"`
+	}{
+		Name:      name,
+		Arguments: arguments,
+		Meta: &mrtrCallMeta{
+			ClientCapabilities: json.RawMessage(`{"elicitation":{"form":{}}}`),
+		},
+	}
+	return transporttest.ModernRequest(id, "tools/call", params)
+}
+
 func TestModernInputRequiredPassesThroughUnchanged(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	conn := addInputRequiredUpstream(t, srv)
@@ -107,23 +122,26 @@ func TestModernInputRequestRoundTripThroughModernHTTPUpstream(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.DangerousAllowPrivateURLs = true
 	srv := newTestServer(t, server.Params{Config: cfg})
-	retries := make(chan mrtrCallParams, 1)
+	upstreamCalls := make(chan mrtrCallParams, 2)
 	srv.ConnectUpstreams(t.Context(), []config.ServerConfig{
-		{Name: "svc", Transport: "http", URL: modernElicitingUpstream(t, retries)},
+		{Name: "svc", Transport: "http", URL: modernElicitingUpstream(t, upstreamCalls)},
 	})
 	// Proxy-mode tools/list waits for a connecting upstream, so the calls below find it ready.
 	serveModern(t, srv, transporttest.ModernRequest(0, "tools/list", nil))
-	call := transport.ToolCallParams{Name: "svc__confirm", Arguments: map[string]any{}}
-	first := responsesByID(serveModern(t, srv, transporttest.ModernRequest(1, "tools/call", call)))[1]
+	first := responsesByID(serveModern(t, srv, modernMRTRInitialCall(1, "svc__confirm", map[string]any{})))[1]
 	if string(first.Result) != inputRequiredResult {
 		t.Fatalf("first call result = %s, want the upstream input request %s", first.Result, inputRequiredResult)
+	}
+	initial := <-upstreamCalls
+	if initial.Meta == nil || string(initial.Meta.ClientCapabilities) != `{"elicitation":{"form":{}}}` {
+		t.Fatalf("upstream initial call capabilities = %+v, want form elicitation", initial.Meta)
 	}
 	second := responsesByID(serveModern(t, srv, modernMRTRCall(2, "svc__confirm", map[string]any{})))[2]
 	if result := decodeResult[transport.ToolCallResult](t, second); result.IsError || len(result.Content) == 0 ||
 		result.Content[0].Text != "confirmed" {
 		t.Fatalf("retry result = %s, want the completed call", second.Result)
 	}
-	retry := <-retries
+	retry := <-upstreamCalls
 	if string(retry.RequestState) != `"opaque-123"` || string(retry.InputResponses) != `{"r1":{"action":"accept"}}` ||
 		retry.Meta == nil || string(retry.Meta.ClientCapabilities) != `{"elicitation":{"form":{}}}` {
 		t.Fatalf("upstream retry = %+v, want the agent's answer, request state and only elicitation", retry)
@@ -132,7 +150,7 @@ func TestModernInputRequestRoundTripThroughModernHTTPUpstream(t *testing.T) {
 
 // modernElicitingUpstream speaks 2026-07-28 and asks for input on a first call, completing the retry
 // that carries the request state back.
-func modernElicitingUpstream(t *testing.T, retries chan<- mrtrCallParams) string {
+func modernElicitingUpstream(t *testing.T, calls chan<- mrtrCallParams) string {
 	t.Helper()
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -154,7 +172,7 @@ func modernElicitingUpstream(t *testing.T, retries chan<- mrtrCallParams) string
 				Writer: w,
 				ID:     req.ID,
 				Result: elicitingResult(
-					elicitingResultParams{T: t, Method: req.Method, Params: req.Params, Retries: retries},
+					elicitingResultParams{T: t, Method: req.Method, Params: req.Params, Calls: calls},
 				),
 			},
 		)
@@ -164,10 +182,10 @@ func modernElicitingUpstream(t *testing.T, retries chan<- mrtrCallParams) string
 }
 
 type elicitingResultParams struct {
-	T       *testing.T
-	Method  string
-	Params  json.RawMessage
-	Retries chan<- mrtrCallParams
+	T      *testing.T
+	Method string
+	Params json.RawMessage
+	Calls  chan<- mrtrCallParams
 }
 
 func elicitingResult(params elicitingResultParams) any {
@@ -183,10 +201,10 @@ func elicitingResult(params elicitingResultParams) any {
 		if err := json.Unmarshal(params.Params, &call); err != nil {
 			params.T.Errorf("decode tools/call params: %v", err)
 		}
+		params.Calls <- call
 		if len(call.RequestState) == 0 {
 			return json.RawMessage(inputRequiredResult)
 		}
-		params.Retries <- call
 		return transport.ToolCallResult{Content: []transport.ContentItem{{Type: "text", Text: "confirmed"}}}
 	}
 	return struct{}{}
