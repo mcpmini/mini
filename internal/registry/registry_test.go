@@ -121,7 +121,7 @@ func TestToolCount_hiddenNotCounted(t *testing.T) {
 	}
 }
 
-func TestResolvePermission_caseInsensitive(t *testing.T) {
+func TestHiddenMatchIsCaseInsensitive(t *testing.T) {
 	reg := registry.New()
 	perm := &config.PermissionsConfig{Hidden: []string{"AdminTool"}}
 	reg.AddServer(serverParams("srv", defs("admintool"), perm))

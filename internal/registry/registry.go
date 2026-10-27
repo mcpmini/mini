@@ -12,7 +12,7 @@ import (
 
 type Registry struct {
 	mu       sync.RWMutex
-	tools    map[string]*ToolEntry // visible tools
+	tools    map[string]*ToolEntry
 	hidden   map[string]*ToolEntry // hidden tools (excluded from Lookup)
 	byServer map[string][]*ToolEntry
 }
@@ -95,8 +95,6 @@ func (r *Registry) insertEntryLocked(server string, entry *ToolEntry) {
 	r.byServer[server] = append(r.byServer[server], entry)
 }
 
-// entryByFullNameLocked looks up an entry by its visible full name, searching
-// both the visible and hidden maps.
 func (r *Registry) entryByFullNameLocked(fullName string) (*ToolEntry, bool) {
 	if e, ok := r.tools[fullName]; ok {
 		return e, true
