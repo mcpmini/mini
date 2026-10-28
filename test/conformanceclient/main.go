@@ -93,7 +93,7 @@ func setupMini(params runParams) error {
 		})
 	}
 	result := runCLI(cliParams{
-		Binary: params.Binary, Config: params.Config, Timeout: 90 * time.Second,
+		Binary: params.Binary, Config: params.Config, Timeout: 60 * time.Second,
 		Args: []string{"add", "conf", "--url", params.URL, "--no-connect"},
 	})
 	if result.err != nil {
@@ -201,10 +201,10 @@ func runAuthSetup(params authSetupParams) error {
 
 func runOAuthAdd(params authSetupParams) {
 	result := runCLI(cliParams{
-		Binary: params.Binary, Config: params.Config, Timeout: 90 * time.Second,
+		Binary: params.Binary, Config: params.Config, Timeout: 60 * time.Second,
 		Args: []string{"add", "conf", "--url", params.URL},
 	})
-	logLoginFailure("mini add auth", result)
+	logNonFatalLoginFailure("mini add auth", result)
 }
 
 func runPreRegistration(params authSetupParams) error {
@@ -216,10 +216,10 @@ func runPreRegistration(params authSetupParams) error {
 		return err
 	}
 	result := runCLI(cliParams{
-		Binary: params.Binary, Config: params.Config, Timeout: 90 * time.Second,
+		Binary: params.Binary, Config: params.Config, Timeout: 60 * time.Second,
 		Args: []string{"auth", "conf"},
 	})
-	logLoginFailure("mini auth", result)
+	logNonFatalLoginFailure("mini auth", result)
 	return nil
 }
 
@@ -301,8 +301,7 @@ func nextRoundExtra(previous map[string]any) (*transport.ToolCallMRTR, error) {
 	return &transport.ToolCallMRTR{InputResponses: responses, RequestState: state}, nil
 }
 
-func logLoginFailure(operation string, result cliResult) {
-	// Some auth scenarios expect refusal; the following ls decides the outcome.
+func logNonFatalLoginFailure(operation string, result cliResult) {
 	if result.err != nil {
 		fmt.Fprintln(os.Stderr, operation+":", result.err, result.combined())
 	}

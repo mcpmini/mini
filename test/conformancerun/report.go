@@ -27,10 +27,18 @@ func scenarioChecks(data []byte, scenario string) ([]check, error) {
 		return nil, fmt.Errorf("decode checks.json: %w", err)
 	}
 	var problems []check
+	successful := false
 	for _, c := range checks {
+		successful = successful || c.Status == "SUCCESS"
 		if c.Status == "FAILURE" || c.Status == "WARNING" {
 			problems = append(problems, c)
 		}
+	}
+	if !successful {
+		problems = append(
+			problems,
+			check{ID: "scenario-exercised", Status: "FAILURE", Description: "Scenario produced no successful checks"},
+		)
 	}
 	for _, required := range requiredChecks(scenario) {
 		if !observedSuccess(checks, required) {

@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestProblemChecksKeepsFailuresAndWarnings(t *testing.T) {
+func TestScenarioChecksKeepsFailuresAndWarnings(t *testing.T) {
 	data := []byte(`[
 		{"id": "ok", "status": "SUCCESS", "description": "fine"},
 		{"id": "note", "status": "INFO", "description": "request seen"},
@@ -18,14 +18,14 @@ func TestProblemChecksKeepsFailuresAndWarnings(t *testing.T) {
 	]`)
 	got, err := scenarioChecks(data, "")
 	if err != nil {
-		t.Fatalf("problemChecks() error = %v", err)
+		t.Fatalf("scenarioChecks() error = %v", err)
 	}
 	want := []check{
 		{ID: "scope", Status: "WARNING", Description: "SHOULD use scope"},
 		{ID: "resource", Status: "FAILURE", Description: "MUST validate", ErrorMessage: "proceeded"},
 	}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("problemChecks() = %+v, want %+v", got, want)
+		t.Fatalf("scenarioChecks() = %+v, want %+v", got, want)
 	}
 }
 
@@ -134,5 +134,21 @@ func TestMetadataChecksRequireExercisedFields(t *testing.T) {
 	)
 	if problems, err := scenarioChecks(missing, "request-metadata"); err != nil || len(problems) != 1 {
 		t.Fatalf("unexercised version/header match passed: %v, %v", problems, err)
+	}
+}
+
+func TestScenarioRequiresSuccessfulCheck(t *testing.T) {
+	for _, data := range []string{`[]`, `[{"id":"initialize","status":"SKIPPED"}]`, `[{"id":"info","status":"INFO"}]`} {
+		problems, err := scenarioChecks([]byte(data), "initialize")
+		if err != nil || len(problems) == 0 {
+			t.Fatalf("unexercised scenario passed: %s; problems=%v err=%v", data, problems, err)
+		}
+	}
+	if problems, err := scenarioChecks(
+		[]byte(`[{"id":"mcp-client-initialization","status":"SUCCESS"}]`),
+		"initialize",
+	); err != nil ||
+		len(problems) != 0 {
+		t.Fatalf("exercised initialization rejected: %v %v", problems, err)
 	}
 }

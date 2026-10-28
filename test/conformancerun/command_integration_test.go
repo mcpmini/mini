@@ -87,7 +87,7 @@ func writeHelperResults() {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		panic(err)
 	}
-	data := "[]"
+	data := `[{"id":"fixture-exercised","status":"SUCCESS"}]`
 	if helperScenario() == "broken" {
 		data = "invalid JSON"
 	}

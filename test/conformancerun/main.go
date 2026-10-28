@@ -35,7 +35,8 @@ func run(args []string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return anyFailed(outcomes), report(env.Results, outcomes)
+	report(env.Results, outcomes)
+	return anyFailed(outcomes), nil
 }
 
 type runEnv struct {
@@ -104,8 +105,8 @@ func runSets(env runEnv, selected []scenarioSet) ([]outcome, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), env.Limits.defaults().Total)
 	defer cancel()
 	var outcomes []outcome
-	// Auth scenarios share mini's fixed OAuth callback port, so they can't run in parallel.
 	for _, set := range selected {
+		// Auth scenarios share mini's fixed OAuth callback port and cannot overlap.
 		for _, scenario := range set.Scenarios {
 			result, err := runScenario(ctx, scenarioRun{Env: env, Set: set, Name: scenario})
 			if err == nil && ctx.Err() != nil {
@@ -138,7 +139,6 @@ func saveSummary(results string, outcomes []outcome) error {
 	return nil
 }
 
-func report(results string, outcomes []outcome) error {
+func report(results string, outcomes []outcome) {
 	fmt.Printf("\n%s\nConformance results: %s\n", renderSummary(outcomes), results)
-	return nil
 }
