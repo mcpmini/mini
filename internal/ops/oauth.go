@@ -28,7 +28,7 @@ func DetectOAuth(ctx context.Context, p DetectOAuthParams) (bool, error) {
 		return true, nil
 	}
 	var uerr *transport.UnauthorizedError
-	if !errors.As(p.ConnErr, &uerr) || !auth.RequiresOAuth(ctx, sc.URL, uerr.WWWAuthenticate) {
+	if !errors.As(p.ConnErr, &uerr) || !auth.RequiresOAuth(ctx, sc, uerr.WWWAuthenticate) {
 		return false, nil
 	}
 	if err := config.MarkOAuthDetected(p.ConfigDir, sc.Name); err != nil {

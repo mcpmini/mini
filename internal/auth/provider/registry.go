@@ -23,6 +23,7 @@ type registryEntry struct {
 }
 
 type providerIdentity struct {
+	agentAdded bool
 	serverName string
 	configDir  string
 	serverURL  string
@@ -38,7 +39,7 @@ func (c *Registry) Close() {
 }
 
 // GetOrCreate returns the provider registered for params.ServerName, creating it on first use.
-// It errors if ConfigDir or ServerURL changed; AuthConfig drift is ignored because the provider owns it.
+// It errors if the server identity or provenance changed; AuthConfig drift is ignored because the provider owns it.
 func (c *Registry) GetOrCreate(params Params) (transport.AuthorizationProvider, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -97,9 +98,15 @@ func (c *Registry) CommitAuthorizedToken(params Params, login *auth.Login) error
 }
 
 func identityFrom(p Params) providerIdentity {
-	return providerIdentity{serverName: p.ServerName, configDir: p.ConfigDir, serverURL: p.ServerURL}
+	return providerIdentity{
+		serverName: p.ServerName,
+		configDir:  p.ConfigDir,
+		serverURL:  p.ServerURL,
+		agentAdded: p.AgentAdded,
+	}
 }
 
 func (a providerIdentity) matches(p Params) bool {
-	return a.serverName == p.ServerName && a.configDir == p.ConfigDir && a.serverURL == p.ServerURL
+	return a.serverName == p.ServerName && a.configDir == p.ConfigDir && a.serverURL == p.ServerURL &&
+		a.agentAdded == p.AgentAdded
 }

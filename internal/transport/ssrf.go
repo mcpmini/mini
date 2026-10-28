@@ -12,7 +12,15 @@ import (
 // loopback hostnames, and direct references to private/loopback IP ranges.
 // Hostname-based references to internal services (e.g. "internal.corp") are
 // not blocked here because that would require DNS resolution at validation time.
-func ValidateURL(rawURL string) error {
+func ValidateURL(rawURL string) error { return (SSRFPolicy{}).ValidateURL(rawURL) }
+
+// SSRFPolicy permits private networks only when explicitly authorized by the caller.
+// Link-local, unspecified, multicast and reserved destinations remain blocked.
+type SSRFPolicy struct {
+	AllowPrivateNetworks bool
+}
+
+func (p SSRFPolicy) ValidateURL(rawURL string) error {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return fmt.Errorf("invalid URL: %w", err)
@@ -20,18 +28,18 @@ func ValidateURL(rawURL string) error {
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return fmt.Errorf("URL scheme must be http or https, got %q", u.Scheme)
 	}
-	return validateHost(u.Hostname())
+	return p.validateHost(u.Hostname())
 }
 
-func validateHost(host string) error {
-	if isPrivateHostname(host) {
+func (p SSRFPolicy) validateHost(host string) error {
+	if !p.AllowPrivateNetworks && isPrivateHostname(host) {
 		return fmt.Errorf("URL host %q resolves to a private/loopback address", host)
 	}
 	ip := net.ParseIP(host)
 	if ip == nil {
 		return nil
 	}
-	return validatePrivateIP(host, ip)
+	return p.validateIP(host, ip)
 }
 
 func isPrivateHostname(host string) bool {
@@ -39,7 +47,21 @@ func isPrivateHostname(host string) bool {
 		strings.HasSuffix(host, ".local") || strings.HasSuffix(host, ".internal")
 }
 
-func isPrivateIP(ip net.IP) bool {
+// IsPrivateNetworkIP identifies RFC 1918/4193, loopback and CGNAT addresses.
+func IsPrivateNetworkIP(ip net.IP) bool {
+	return ip.IsPrivate() || ip.IsLoopback() || cgnatRange.Contains(ip)
+}
+
+var cgnatRange = func() *net.IPNet {
+	//nolint:errcheck // fixed source literal defines the shared private-network range.
+	_, block, _ := net.ParseCIDR("100.64.0.0/10")
+	return block
+}()
+
+func (p SSRFPolicy) blocksIP(ip net.IP) bool {
+	if !p.AllowPrivateNetworks && IsPrivateNetworkIP(ip) {
+		return true
+	}
 	for _, cidr := range ssrfPrivateRanges {
 		if cidr.Contains(ip) {
 			return true
@@ -49,16 +71,16 @@ func isPrivateIP(ip net.IP) bool {
 }
 
 // NAT64 (64:ff9b::/96): To4() does not unmap it, so ip[12:16] bypasses IPv4 range checks without this.
-func validatePrivateIP(host string, ip net.IP) error {
+func (p SSRFPolicy) validateIP(host string, ip net.IP) error {
 	if v4 := ip.To4(); v4 != nil {
 		ip = v4
 	}
 	if ip16 := ip.To16(); ip16 != nil && nat64Prefix.Contains(ip16) {
-		if isPrivateIP(net.IP(ip16[12:16])) {
+		if p.blocksIP(net.IP(ip16[12:16])) {
 			return fmt.Errorf("URL host %q resolves to a private/loopback address", host)
 		}
 	}
-	if isPrivateIP(ip) {
+	if p.blocksIP(ip) {
 		return fmt.Errorf("URL host %q resolves to a private/loopback address", host)
 	}
 	return nil
@@ -70,13 +92,19 @@ func validatePrivateIP(host string, ip net.IP) error {
 // add_server time could later resolve to a private IP if the attacker controls DNS.
 // Dials using the first validated IP directly to prevent TOCTOU.
 func SSRFSafeDialer() func(context.Context, string, string) (net.Conn, error) {
+	return (SSRFPolicy{}).DialContext()
+}
+
+// DialContext validates every resolved address and dials an exact validated IP.
+func (p SSRFPolicy) DialContext() func(context.Context, string, string) (net.Conn, error) {
 	d := &net.Dialer{}
 	return func(ctx context.Context, network, addr string) (net.Conn, error) {
-		return dialSSRFSafe(ssrfDialParams{ctx: ctx, dialer: d, network: network, address: addr})
+		return dialSSRFSafe(ssrfDialParams{ctx: ctx, dialer: d, network: network, address: addr, policy: p})
 	}
 }
 
 type ssrfDialParams struct {
+	policy  SSRFPolicy
 	ctx     context.Context
 	dialer  *net.Dialer
 	network string
@@ -89,22 +117,22 @@ func dialSSRFSafe(p ssrfDialParams) (net.Conn, error) {
 		return nil, err
 	}
 	if ip := net.ParseIP(host); ip != nil {
-		if validationErr := validatePrivateIP(host, ip); validationErr != nil {
+		if validationErr := p.policy.validateIP(host, ip); validationErr != nil {
 			return nil, fmt.Errorf("connection blocked: %w", validationErr)
 		}
 		return p.dialer.DialContext(p.ctx, p.network, p.address)
 	}
-	safe, err := resolveSSRFSafe(p.ctx, host, port)
+	safe, err := p.policy.resolve(p.ctx, host, port)
 	if err != nil {
 		return nil, err
 	}
 	return p.dialer.DialContext(p.ctx, p.network, safe)
 }
 
-// resolveSSRFSafe resolves host, validates all returned IPs are non-private,
-// and returns the first IP as a host:port string for dialing.
-func resolveSSRFSafe(ctx context.Context, host, port string) (string, error) {
-	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+var lookupSSRFHost = net.DefaultResolver.LookupIPAddr
+
+func (p SSRFPolicy) resolve(ctx context.Context, host, port string) (string, error) {
+	ips, err := lookupSSRFHost(ctx, host)
 	if err != nil {
 		return "", err
 	}
@@ -112,7 +140,7 @@ func resolveSSRFSafe(ctx context.Context, host, port string) (string, error) {
 		return "", fmt.Errorf("no addresses resolved for %s", host)
 	}
 	for _, a := range ips {
-		if err := validatePrivateIP(a.IP.String(), a.IP); err != nil {
+		if err := p.validateIP(a.IP.String(), a.IP); err != nil {
 			return "", fmt.Errorf("connection to %s blocked (resolved to %s): %w", host, a.IP, err)
 		}
 	}
@@ -121,10 +149,10 @@ func resolveSSRFSafe(ctx context.Context, host, port string) (string, error) {
 
 var ssrfPrivateRanges = func() []*net.IPNet {
 	cidrs := []string{
-		"0.0.0.0/8", "127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
-		"169.254.0.0/16", "100.64.0.0/10",
+		"0.0.0.0/8",
+		"169.254.0.0/16",
 		"224.0.0.0/4", "198.18.0.0/15", "240.0.0.0/4",
-		"::1/128", "::/128", "fc00::/7", "fe80::/10", "ff00::/8",
+		"::/128", "fe80::/10", "ff00::/8",
 	}
 	nets := make([]*net.IPNet, 0, len(cidrs))
 	for _, c := range cidrs {

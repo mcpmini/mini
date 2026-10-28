@@ -22,6 +22,8 @@ mini opens your browser to the provider's sign-in page and prints the URL in cas
 
 The login is tied to the MCP's URL, `client_id` and `token_url` as they were when you logged in. If you change any of them, mini stops sending the old token and asks you to run `mini auth linear` again; restart your agents afterward, as in [Applying changes](#applying-changes).
 
+OAuth supports private and loopback destinations, including CGNAT networks such as Tailscale, when your configured MCP server resolves entirely to private or loopback addresses. Each login and refresh contacts that server through pinned addresses. A non-redirect response from the configured origin enables private destinations for the remaining OAuth requests; link-local, unspecified, multicast and reserved addresses remain blocked. Servers added by agents retain the stricter OAuth network policy, even when `dangerous_allow_private_urls` permits their MCP connection. Redirects remain blocked.
+
 ## requires a custom OAuth app
 
 Open the MCP's file first. If its comment says to create a token, as GitHub's does, follow [requires manual configuration](#requires-manual-configuration) instead; a token is quicker than an OAuth app.

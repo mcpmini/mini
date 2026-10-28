@@ -347,9 +347,9 @@ func answersWithOAuth(_ context.Context, configDir string, sc config.ServerConfi
 }
 
 func registersOnlyAt(selfRegistering ...string) discoverFunc {
-	return func(_ context.Context, serverURL string) (*auth.ServerMeta, error) {
-		if slices.Contains(selfRegistering, serverURL) {
-			return &auth.ServerMeta{RegistrationURL: serverURL + "/register"}, nil
+	return func(_ context.Context, sc config.ServerConfig) (*auth.ServerMeta, error) {
+		if slices.Contains(selfRegistering, sc.URL) {
+			return &auth.ServerMeta{RegistrationURL: sc.URL + "/register"}, nil
 		}
 		return &auth.ServerMeta{}, nil
 	}

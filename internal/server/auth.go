@@ -194,6 +194,7 @@ func (s *Server) commitTokenUnlessRemoved(install upstreamInstall, login *auth.L
 func (s *Server) providerParamsFor(sc config.ServerConfig) provider.Params {
 	return provider.Params{
 		AuthConfig: sc.Auth,
+		AgentAdded: sc.AgentAdded,
 		ConfigDir:  s.configDir,
 		ServerName: sc.Name,
 		ServerURL:  sc.URL,

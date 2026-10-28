@@ -34,7 +34,7 @@ func TestRefresh_expiredToken_returnsNewTokenAndSendsResource(t *testing.T) {
 	mock.AccessToken = "refreshed-access-token"
 	ac := mock.AuthConfig()
 	ac.ResourceURL = "https://resource.example.com/mcp"
-	newTok, err := auth.Refresh(context.Background(), ac, loaded)
+	newTok, err := auth.Refresh(context.Background(), refreshParams(t, config.ServerConfig{Auth: ac}, loaded))
 	if err != nil {
 		t.Fatalf("Refresh: %v", err)
 	}
@@ -60,7 +60,10 @@ func TestRefresh_sendsTheClientSecretVerbatim(t *testing.T) {
 	ac.TokenEndpointAuthMethod = "client_secret_post"
 	expired := &oauth2.Token{AccessToken: "old", RefreshToken: "r", Expiry: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)}
 
-	if _, err := auth.Refresh(context.Background(), ac, expired); err != nil {
+	if _, err := auth.Refresh(
+		context.Background(),
+		refreshParams(t, config.ServerConfig{Auth: ac}, expired),
+	); err != nil {
 		t.Fatalf("Refresh: %v", err)
 	}
 
@@ -87,7 +90,10 @@ func TestRefresh_redirectResponse_failsWithoutFollowing(t *testing.T) {
 
 	ac := &config.AuthConfig{ClientID: "client", TokenURL: redirect.URL}
 	token := &oauth2.Token{AccessToken: "expired", RefreshToken: "refresh", Expiry: time.Now().Add(-time.Hour)}
-	if _, err := auth.Refresh(context.Background(), ac, token); err == nil {
+	if _, err := auth.Refresh(
+		context.Background(),
+		refreshParams(t, config.ServerConfig{Auth: ac}, token),
+	); err == nil {
 		t.Fatal("expected redirected token refresh to fail")
 	}
 	if targetCalled {
@@ -122,7 +128,7 @@ func TestRefresh_authStyleFallback_sendsResourceOnBothAttempts(t *testing.T) {
 		ClientID: "client", ClientSecret: "secret", TokenURL: tokenServer.URL, ResourceURL: resource,
 	}
 	token := &oauth2.Token{AccessToken: "expired", RefreshToken: "old-refresh", Expiry: time.Now().Add(-time.Hour)}
-	got, err := auth.Refresh(context.Background(), ac, token)
+	got, err := auth.Refresh(context.Background(), refreshParams(t, config.ServerConfig{Auth: ac}, token))
 	if err != nil {
 		t.Fatalf("Refresh: %v", err)
 	}
@@ -166,4 +172,16 @@ func TestExchangeCode_withResourceURL_sendsResourceToTokenEndpoint(t *testing.T)
 	if len(capturedResourceValues) != 1 || capturedResourceValues[0] != resourceURL {
 		t.Errorf("resource values at token endpoint = %q, want [%q]", capturedResourceValues, resourceURL)
 	}
+}
+
+func refreshParams(t *testing.T, sc config.ServerConfig, token *oauth2.Token) auth.RefreshParams {
+	t.Helper()
+	if sc.URL == "" {
+		sc.URL = "https://8.8.8.8/mcp"
+		if sc.Auth.ResourceURL != "" {
+			sc.URL = sc.Auth.ResourceURL
+		}
+		sc.AgentAdded = true
+	}
+	return auth.RefreshParams{Server: sc, Login: authtest.LoginFor(t, sc, token)}
 }

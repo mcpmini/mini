@@ -103,7 +103,7 @@ func (s Setup) discover() discoverFunc {
 	if s.Discover != nil {
 		return s.Discover
 	}
-	return auth.Discover
+	return auth.DiscoverServer
 }
 
 func (s Setup) probe() probeFunc {

@@ -81,8 +81,8 @@ func setupFor(configDir string, list ...agents.Agent) initcmd.Setup {
 	return initcmd.Setup{ConfigDir: configDir, Import: list, Discover: selfRegistering}
 }
 
-func selfRegistering(_ context.Context, serverURL string) (*auth.ServerMeta, error) {
-	return &auth.ServerMeta{RegistrationURL: serverURL + "/register"}, nil
+func selfRegistering(_ context.Context, sc config.ServerConfig) (*auth.ServerMeta, error) {
+	return &auth.ServerMeta{RegistrationURL: sc.URL + "/register"}, nil
 }
 
 // oauthEntry is a catalog server that declares OAuth, so writing it needs no probe.

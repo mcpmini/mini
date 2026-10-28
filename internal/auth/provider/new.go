@@ -9,6 +9,7 @@ import (
 )
 
 type Params struct {
+	AgentAdded bool
 	AuthConfig *config.AuthConfig
 	ConfigDir  string
 	ServerName string
@@ -37,5 +38,10 @@ func buildTokenProvider(p Params) (*tokenProvider, error) {
 }
 
 func configuredServer(p Params) config.ServerConfig {
-	return config.ServerConfig{Name: p.ServerName, URL: p.ServerURL, Auth: p.AuthConfig.Clone()}
+	return config.ServerConfig{
+		Name:       p.ServerName,
+		URL:        p.ServerURL,
+		Auth:       p.AuthConfig.Clone(),
+		AgentAdded: p.AgentAdded,
+	}
 }

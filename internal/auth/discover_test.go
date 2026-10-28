@@ -12,6 +12,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
+	"github.com/mcpmini/mini/internal/config"
 )
 
 func TestDiscover_rootASMeta(t *testing.T) {
@@ -441,7 +442,7 @@ func TestRequiresOAuth_bearerChallengeShortCircuitsWithoutNetworkCall(t *testing
 	}))
 	defer srv.Close()
 
-	if !auth.RequiresOAuth(context.Background(), srv.URL+"/mcp", `Bearer realm="mcp"`) {
+	if !auth.RequiresOAuth(context.Background(), config.ServerConfig{URL: srv.URL + "/mcp"}, `Bearer realm="mcp"`) {
 		t.Fatal("expected true for a Bearer challenge")
 	}
 	if called {
@@ -453,7 +454,7 @@ func TestRequiresOAuth_nonBearerSchemeIsNotOAuth(t *testing.T) {
 	srv := httptest.NewServer(http.NotFoundHandler())
 	defer srv.Close()
 
-	if auth.RequiresOAuth(context.Background(), srv.URL, `Basic realm="internal"`) {
+	if auth.RequiresOAuth(context.Background(), config.ServerConfig{URL: srv.URL}, `Basic realm="internal"`) {
 		t.Fatal("expected false for a Basic challenge — it's a legitimate non-OAuth auth mechanism")
 	}
 }
@@ -469,7 +470,7 @@ func TestRequiresOAuth_nonBearerSchemeSkipsPRMFallback(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if auth.RequiresOAuth(context.Background(), srv.URL, `Basic realm="internal"`) {
+	if auth.RequiresOAuth(context.Background(), config.ServerConfig{URL: srv.URL}, `Basic realm="internal"`) {
 		t.Fatal(
 			"expected false — a Basic challenge is decisive even if a PRM document coincidentally exists at the same origin",
 		)
@@ -487,7 +488,7 @@ func TestRequiresOAuth_prmDocumentConfirmsOAuth(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if !auth.RequiresOAuth(context.Background(), srv.URL, "") {
+	if !auth.RequiresOAuth(context.Background(), config.ServerConfig{URL: srv.URL}, "") {
 		t.Fatal("expected true when a PRM document exists")
 	}
 }
@@ -496,7 +497,7 @@ func TestRequiresOAuth_noHeaderNoPRM_returnsFalse(t *testing.T) {
 	srv := httptest.NewServer(http.NotFoundHandler())
 	defer srv.Close()
 
-	if auth.RequiresOAuth(context.Background(), srv.URL, "") {
+	if auth.RequiresOAuth(context.Background(), config.ServerConfig{URL: srv.URL}, "") {
 		t.Fatal("expected false when neither header nor PRM document confirms OAuth")
 	}
 }

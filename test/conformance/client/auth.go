@@ -10,16 +10,40 @@ import (
 // The suite's authorization servers approve every request, so following the redirects completes a login.
 const loginBrowserCommand = "curl -sS -L -o /dev/null --max-time 20"
 
+// basic-cimd passes only when the client_id is the suite's fixed client metadata document URL.
+const suiteClientMetadataURL = "https://conformance-test.local/client-metadata.json"
+
 func setUpAuth(sc scenario, mini miniCLI) error {
 	cfg := config.DefaultConfig()
 	cfg.BrowserCommand = loginBrowserCommand
 	if err := mini.writeConfig(cfg); err != nil {
 		return err
 	}
-	if sc.Name == "auth/pre-registration" {
+	switch sc.Name {
+	case "auth/pre-registration":
 		return preRegister(sc, mini)
+	case "auth/basic-cimd":
+		return registerByMetadataDocument(sc, mini)
 	}
 	logLoginFailure("mini add", mini.add(sc.ServerURL))
+	return nil
+}
+
+func registerByMetadataDocument(sc scenario, mini miniCLI) error {
+	if err := mini.add(sc.ServerURL, "--no-connect").failure("mini add"); err != nil {
+		return err
+	}
+	err := mini.updateServer(func(server *config.ServerConfig) {
+		if server.Auth == nil {
+			server.Auth = &config.AuthConfig{Type: config.AuthTypeOAuth2}
+		}
+		server.Auth.ClientID = suiteClientMetadataURL
+		server.Auth.TokenEndpointAuthMethod = "none"
+	})
+	if err != nil {
+		return err
+	}
+	logLoginFailure("mini auth", mini.auth())
 	return nil
 }
 

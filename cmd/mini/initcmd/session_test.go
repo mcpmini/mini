@@ -307,11 +307,11 @@ type fakeDiscovery struct {
 	discovered []string
 }
 
-func (f *fakeDiscovery) discover(_ context.Context, serverURL string) (*auth.ServerMeta, error) {
+func (f *fakeDiscovery) discover(_ context.Context, sc config.ServerConfig) (*auth.ServerMeta, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.discovered = append(f.discovered, serverURL)
-	if meta, ok := f.metas[serverURL]; ok {
+	f.discovered = append(f.discovered, sc.URL)
+	if meta, ok := f.metas[sc.URL]; ok {
 		return meta, nil
 	}
 	return nil, errors.New("discovery failed")

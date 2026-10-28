@@ -308,8 +308,9 @@ func TestResolveEndpoints_rejectsLoopbackDiscoveredEndpoints(t *testing.T) {
 			defer asSrv.Close()
 
 			sc := &config.ServerConfig{
-				URL:  asSrv.URL + "/mcp",
-				Auth: &config.AuthConfig{Type: "oauth2", Issuer: asSrv.URL, ClientID: "pre-configured"},
+				AgentAdded: true,
+				URL:        asSrv.URL + "/mcp",
+				Auth:       &config.AuthConfig{Type: "oauth2", Issuer: asSrv.URL, ClientID: "pre-configured"},
 			}
 			_, err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(t.TempDir(), "srv"))
 			if err == nil {

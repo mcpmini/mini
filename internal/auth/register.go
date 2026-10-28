@@ -52,7 +52,7 @@ type RegistrationResult struct {
 
 // Register performs RFC 7591 dynamic client registration, requesting
 // token_endpoint_auth_method "none" (public client with PKCE).
-func Register(ctx context.Context, registrationURL, callbackURI string) (RegistrationResult, error) {
+func (f *oauthHTTPFlow) register(ctx context.Context, registrationURL, callbackURI string) (RegistrationResult, error) {
 	//nolint:errcheck // registration fields are fixed strings and string slices.
 	body, _ := json.Marshal(registrationRequest{
 		ClientName:              "mini",
@@ -63,7 +63,7 @@ func Register(ctx context.Context, registrationURL, callbackURI string) (Registr
 		// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/b488c16623e5202a3961e551886044577ae0f096/docs/specification/2026-07-28/basic/authorization/client-registration.mdx?plain=1#L160-L167
 		ApplicationType: "native",
 	})
-	resp, err := postRegistration(ctx, registrationURL, body)
+	resp, err := f.postRegistration(ctx, registrationURL, body)
 	if err != nil {
 		return RegistrationResult{}, err
 	}
@@ -72,13 +72,16 @@ func Register(ctx context.Context, registrationURL, callbackURI string) (Registr
 	return parseRegistrationResponse(resp, registrationURL)
 }
 
-func postRegistration(ctx context.Context, url string, body []byte) (*http.Response, error) {
+func (f *oauthHTTPFlow) postRegistration(ctx context.Context, url string, body []byte) (*http.Response, error) {
+	if err := requireHTTPURL(url); err != nil {
+		return nil, err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	return noRedirectClient.Do(req)
+	return f.client.Do(req)
 }
 
 func parseRegistrationResponse(resp *http.Response, url string) (RegistrationResult, error) {

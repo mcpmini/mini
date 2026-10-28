@@ -100,6 +100,19 @@ func (m miniCLI) createServer(sc config.ServerConfig) error {
 	return err
 }
 
+func (m miniCLI) updateServer(edit func(*config.ServerConfig)) error {
+	server, err := config.LoadServer(m.configDir, serverName)
+	if err != nil {
+		return fmt.Errorf("load server config: %w", err)
+	}
+	edit(&server)
+	data, err := config.EncodeServerFile(server)
+	if err != nil {
+		return fmt.Errorf("encode server config: %w", err)
+	}
+	return os.WriteFile(config.ServerPath(m.configDir, serverName), data, 0o600)
+}
+
 func parseToolTable(output string) []string {
 	var names []string
 	inRows := false

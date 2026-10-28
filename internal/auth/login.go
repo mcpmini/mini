@@ -80,8 +80,10 @@ func LoadLoginFor(configDir string, sc config.ServerConfig) (*Login, error) {
 	return login, nil
 }
 
+var ErrLoginMismatch = errors.New("the login was made for other settings")
+
 func mismatchedLogin(cause error) error {
-	return fmt.Errorf("the login was made for other settings (%w)", cause)
+	return fmt.Errorf("%w (%w)", ErrLoginMismatch, cause)
 }
 
 // RefreshConfig is configured with the endpoint and client the login was issued for, never anything

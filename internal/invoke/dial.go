@@ -73,6 +73,7 @@ func attachAuthProvider(cfg *transport.HTTPConnectionConfig, p DialParams) error
 	}
 	params := provider.Params{
 		AuthConfig: p.Server.Auth,
+		AgentAdded: p.Server.AgentAdded,
 		ConfigDir:  p.ConfigDir,
 		ServerName: p.Server.Name,
 		ServerURL:  p.Server.URL,
