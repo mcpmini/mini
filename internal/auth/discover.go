@@ -3,9 +3,9 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"mime"
 	"net/http"
 	"net/url"
 	"strings"
@@ -24,12 +24,14 @@ type ServerMeta struct {
 	RegistrationURL       string
 	CIMDSupported         bool
 	Scopes                []string // from WWW-Authenticate scope param or PRM scopes_supported (spec priority)
+	Resource              string
 }
 
 // asRef is the result of authorization-server discovery: which AS to use and what scopes it suggests.
 type asRef struct {
-	URL    string
-	Scopes []string
+	URL      string
+	Scopes   []string
+	Resource string
 }
 
 // WWW-Authenticate scope takes priority over PRM scopes_supported per MCP spec §Scope Selection Strategy.
@@ -41,11 +43,11 @@ func preferScopes(primary, fallback []string) []string {
 	return fallback
 }
 
-// DiscoverServer discovers OAuth metadata using the configured server's private-network policy.
+// DiscoverServer discovers OAuth metadata using the configured server's network provenance.
 func DiscoverServer(ctx context.Context, sc config.ServerConfig) (*ServerMeta, error) {
-	f := newOAuthHTTPFlow(ctx, sc)
-	defer f.closeIdleConnections()
-	return f.discover(ctx, sc.URL)
+	flow := newOAuthHTTPFlow(ctx, sc)
+	defer flow.closeIdleConnections()
+	return flow.discover(ctx, sc.URL)
 }
 
 func (f *oauthHTTPFlow) discover(ctx context.Context, serverURL string) (*ServerMeta, error) {
@@ -53,11 +55,19 @@ func (f *oauthHTTPFlow) discover(ctx context.Context, serverURL string) (*Server
 	if err != nil {
 		return nil, err
 	}
+
 	meta, err := f.discoverASMeta(ctx, ref.URL)
 	if err != nil {
 		return nil, err
 	}
+	if ref.Resource == "" {
+		ref.Resource, err = CanonicalResourceURI(serverURL)
+		if err != nil {
+			return nil, err
+		}
+	}
 	meta.Scopes = preferScopes(ref.Scopes, meta.Scopes)
+	meta.Resource = ref.Resource
 	return meta, nil
 }
 
@@ -90,7 +100,7 @@ func (f *oauthHTTPFlow) asURLFromWWWAuthenticate(ctx context.Context, serverURL 
 	if rmURL == "" {
 		return asRef{Scopes: scopesFromHeader}, nil
 	}
-	prmRef, err := f.fetchASURLFromPRM(ctx, rmURL)
+	prmRef, err := f.fetchASURLFromPRM(ctx, prmFetchParams{MetadataURL: rmURL, ExpectedResource: serverURL})
 	prmRef.Scopes = preferScopes(scopesFromHeader, prmRef.Scopes)
 	return prmRef, err
 }
@@ -112,97 +122,11 @@ func parseWWWAuthParam(header, param string) string {
 }
 
 func (f *oauthHTTPFlow) asURLFromPRMProbe(ctx context.Context, serverURL string) (asRef, error) {
-	u, err := url.Parse(serverURL)
+	discovery, err := parsePRMDiscovery(serverURL)
 	if err != nil {
-		return asRef{}, fmt.Errorf("parse server URL: %w", err)
+		return asRef{}, err
 	}
-	if u.Scheme == "" || u.Host == "" {
-		return asRef{}, fmt.Errorf("server URL has no scheme/host: %q", serverURL)
-	}
-	base := u.Scheme + "://" + u.Host
-	return f.probePRMCandidates(ctx, base, strings.TrimRight(u.Path, "/"))
-}
-
-func prmCandidateURLs(base, path string) []string {
-	candidates := []string{base + "/.well-known/oauth-protected-resource" + path}
-	if path != "" {
-		candidates = append(candidates, base+"/.well-known/oauth-protected-resource")
-	}
-	return candidates
-}
-
-func (f *oauthHTTPFlow) probePRMCandidates(ctx context.Context, base, path string) (asRef, error) {
-	var transientErr error
-	for _, c := range prmCandidateURLs(base, path) {
-		ref, err := f.fetchASURLFromPRM(ctx, c)
-		if err != nil {
-			transientErr = err
-			continue
-		}
-		if ref.URL != "" {
-			return ref, nil
-		}
-	}
-	if transientErr != nil {
-		return asRef{}, transientErr
-	}
-	return asRef{URL: base}, nil // fall back to treating the MCP server host as the AS
-}
-
-type protectedResourceMeta struct {
-	AuthorizationServers []string `json:"authorization_servers"`
-	ScopesSupported      []string `json:"scopes_supported"`
-}
-
-func requireHTTPURL(rawURL string) error {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return fmt.Errorf("invalid HTTP(S) URL: %w", err)
-	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return fmt.Errorf("unsupported protocol scheme %q in URL", u.Scheme)
-	}
-	if u.Host == "" {
-		return fmt.Errorf("URL must be absolute HTTP(S)")
-	}
-	return nil
-}
-
-func (f *oauthHTTPFlow) fetchASURLFromPRM(ctx context.Context, prmURL string) (asRef, error) {
-	resp, err := f.doDiscoveryRequest(ctx, prmURL)
-	if err != nil {
-		if ctx.Err() != nil {
-			return asRef{}, ctx.Err()
-		}
-		return asRef{}, fmt.Errorf("fetch protected resource metadata from %s: %w", prmURL, err)
-	}
-	//nolint:errcheck // status and metadata determine the result; Close releases the response stream.
-	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusNotFound {
-		return asRef{}, nil
-	}
-	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
-		return asRef{}, fmt.Errorf("fetch protected resource metadata: status %d from %s", resp.StatusCode, prmURL)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return asRef{}, nil
-	}
-	return decodePRM(resp, prmURL)
-}
-
-func decodePRM(resp *http.Response, prmURL string) (asRef, error) {
-	var meta protectedResourceMeta
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxAuthBodyBytes)).Decode(&meta); err != nil {
-		// Catch-all hosts answer every path with a 200 HTML page; only a body labeled JSON is a broken PRM.
-		if !isJSONContentType(resp.Header.Get("Content-Type")) {
-			return asRef{}, nil
-		}
-		return asRef{}, fmt.Errorf("decode protected resource metadata from %s: %w", prmURL, err)
-	}
-	if len(meta.AuthorizationServers) == 0 {
-		return asRef{}, nil
-	}
-	return asRef{URL: meta.AuthorizationServers[0], Scopes: meta.ScopesSupported}, nil
+	return f.probePRMCandidates(ctx, discovery)
 }
 
 func (f *oauthHTTPFlow) discoverASMeta(ctx context.Context, asURL string) (*ServerMeta, error) {
@@ -299,9 +223,17 @@ func decodeASMeta(body io.Reader, metaURL string) (*ServerMeta, error) {
 // requireIssuer refuses metadata naming another issuer, which could steer a login's code and
 // tokens to a server other than the one the MCP server named. The spec forbids normalizing either.
 // https://github.com/modelcontextprotocol/modelcontextprotocol/blob/8e12bf3c/docs/specification/2026-07-28/basic/authorization/authorization-server-discovery.mdx?plain=1#L94
+var errIssuerMismatch = errors.New("authorization server metadata issuer mismatch")
+
 func requireIssuer(meta *ServerMeta, issuer, metaURL string) error {
 	if meta.Issuer != issuer {
-		return fmt.Errorf("oauth discovery: metadata at %s names issuer %q, not %q", metaURL, meta.Issuer, issuer)
+		return fmt.Errorf(
+			"oauth discovery: %w: metadata at %s names issuer %q, not %q",
+			errIssuerMismatch,
+			metaURL,
+			meta.Issuer,
+			issuer,
+		)
 	}
 	return nil
 }
@@ -322,14 +254,6 @@ func fallbackMeta(base string) *ServerMeta {
 	}
 }
 
-func isJSONContentType(ct string) bool {
-	mediaType, _, err := mime.ParseMediaType(ct)
-	if err != nil {
-		return false
-	}
-	return mediaType == "application/json" || strings.HasSuffix(mediaType, "+json")
-}
-
 func (f *oauthHTTPFlow) doDiscoveryRequest(ctx context.Context, metaURL string) (*http.Response, error) {
 	if err := requireHTTPURL(metaURL); err != nil {
 		return nil, err
@@ -340,8 +264,6 @@ func (f *oauthHTTPFlow) doDiscoveryRequest(ctx context.Context, metaURL string) 
 	}
 	return f.client.Do(req)
 }
-
-const maxAuthBodyBytes = 64 << 10
 
 // RequiresOAuth reports whether a server's 401 is confirmed (per RFC 9728) to need OAuth.
 func RequiresOAuth(ctx context.Context, sc config.ServerConfig, wwwAuthenticate string) bool {
@@ -357,13 +279,11 @@ func RequiresOAuth(ctx context.Context, sc config.ServerConfig, wwwAuthenticate 
 	}
 	f := newOAuthHTTPFlow(ctx, sc)
 	defer f.closeIdleConnections()
-	u, err := url.Parse(serverURL)
-	if err != nil || u.Scheme == "" || u.Host == "" {
+	discovery, err := parsePRMDiscovery(serverURL)
+	if err != nil {
 		return false
 	}
-	base := u.Scheme + "://" + u.Host
-	path := strings.TrimRight(u.Path, "/")
-	for _, c := range prmCandidateURLs(base, path) {
+	for _, c := range discovery.Candidates {
 		//nolint:errcheck // a failed candidate does not rule out another PRM discovery URL.
 		if ref, _ := f.fetchASURLFromPRM(ctx, c); ref.URL != "" {
 			return true

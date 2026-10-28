@@ -52,7 +52,8 @@ func TestRegistrationIsBoundToIssuerEvenWhenTokenEndpointMatches(t *testing.T) {
 	current.Store(&first.server.URL)
 	resource := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{"authorization_servers": []string{*current.Load()}}) //nolint:errcheck
+		json.NewEncoder(w).
+			Encode(map[string]any{"resource": "http://" + r.Host + "/mcp", "authorization_servers": []string{*current.Load()}})
 	}))
 	t.Cleanup(resource.Close)
 	dir := t.TempDir()

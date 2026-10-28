@@ -12,11 +12,14 @@ import (
 
 // Login is a token with the server, token endpoint and client it was issued for.
 type Login struct {
-	Resource string        `json:"resource"`
-	Issuer   string        `json:"issuer"`
-	TokenURL string        `json:"token_url"`
-	Client   LoginClient   `json:"client"`
-	Token    *oauth2.Token `json:"token"`
+	// Resource is the token audience.
+	Resource string `json:"resource"`
+	// ServerURL is the canonical configured endpoint binding.
+	ServerURL string        `json:"server_url"`
+	Issuer    string        `json:"issuer"`
+	TokenURL  string        `json:"token_url"`
+	Client    LoginClient   `json:"client"`
+	Token     *oauth2.Token `json:"token"`
 }
 
 // LoginClient is the OAuth client a login was issued to.
@@ -33,8 +36,8 @@ func (l *Login) validate() error {
 	if !validLoginIssuer(l.Issuer) {
 		return errors.New("login record has no valid issuer; log in again")
 	}
-	if l.Resource == "" || l.TokenURL == "" || l.Client.ID == "" || l.Token == nil {
-		return errors.New("login record is missing its resource, token_url, client or token")
+	if l.ServerURL == "" || l.Resource == "" || l.TokenURL == "" || l.Client.ID == "" || l.Token == nil {
+		return errors.New("login record is missing its server_url, resource, token_url, client or token")
 	}
 	if err := requireHTTPURL(l.TokenURL); err != nil {
 		return fmt.Errorf("login record token_url: %w", err)
@@ -48,8 +51,8 @@ func (l *Login) validate() error {
 
 // MatchesConfig returns why the login can't be used with sc, or nil when it can.
 func (l *Login) MatchesConfig(sc config.ServerConfig) error {
-	resource, err := CanonicalResourceURI(sc.URL)
-	if err != nil || resource != l.Resource {
+	configuredURL, err := CanonicalResourceURI(sc.URL)
+	if err != nil || configuredURL != l.ServerURL {
 		return errors.New("the server URL changed")
 	}
 	if sc.Auth != nil && sc.Auth.Issuer != "" && sc.Auth.Issuer != l.Issuer {

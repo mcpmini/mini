@@ -100,7 +100,7 @@ func TestResolveEndpoints_refusesAServerWithAnUnsetVariable(t *testing.T) {
 	}
 }
 
-func TestApplyResourceURL_canonicalizesResourceURL(t *testing.T) {
+func TestCanonicalResourceURI(t *testing.T) {
 	tests := []struct {
 		name string
 		url  string
@@ -122,12 +122,12 @@ func TestApplyResourceURL_canonicalizesResourceURL(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			sc := configuredOAuthServer(tc.url)
-			if err := auth.ApplyResourceURL(sc); err != nil {
-				t.Fatalf("ApplyResourceURL: %v", err)
+			got, err := auth.CanonicalResourceURI(tc.url)
+			if err != nil {
+				t.Fatalf("CanonicalResourceURI: %v", err)
 			}
-			if sc.Auth.ResourceURL != tc.want {
-				t.Errorf("ResourceURL = %q, want %q", sc.Auth.ResourceURL, tc.want)
+			if got != tc.want {
+				t.Errorf("CanonicalResourceURI = %q, want %q", got, tc.want)
 			}
 		})
 	}
@@ -331,9 +331,11 @@ func TestResolveEndpoints_scopesAutoPopulatedFromPRM(t *testing.T) {
 	})
 	defer asSrv.Close()
 
+	var expectedResource string
 	prmSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+			"resource":              expectedResource,
 			"authorization_servers": []string{asSrv.URL},
 			"scopes_supported":      []string{"channels:read", "chat:write"},
 		})
@@ -346,6 +348,7 @@ func TestResolveEndpoints_scopesAutoPopulatedFromPRM(t *testing.T) {
 		w.WriteHeader(http.StatusUnauthorized)
 	}))
 	defer mcpSrv.Close()
+	expectedResource = mcpSrv.URL + "/mcp"
 
 	sc := &config.ServerConfig{
 		URL:  mcpSrv.URL + "/mcp",
@@ -402,5 +405,33 @@ func TestValidateOAuthServer(t *testing.T) {
 				t.Errorf("ValidateOAuthServer() error = %v, wantErr = %v", err, tc.wantErr)
 			}
 		})
+	}
+}
+
+func TestResolveEndpointsRejectsInvalidConfiguredEndpoints(t *testing.T) {
+	as := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+		"authorization_endpoint":           "https://as.example/authorize",
+		"token_endpoint":                   "https://as.example/token",
+		"code_challenge_methods_supported": []string{"S256"},
+	})
+	defer as.Close()
+	for _, endpoint := range []string{
+		"https://user@as.example/endpoint", "https://as.example/endpoint#fragment", "http:opaque",
+	} {
+		for _, field := range []string{"authorization_endpoint", "token_endpoint"} {
+			t.Run(field+"/"+endpoint, func(t *testing.T) {
+				ac := &config.AuthConfig{Type: "oauth2"}
+				if field == "authorization_endpoint" {
+					ac.AuthURL = endpoint
+				} else {
+					ac.TokenURL = endpoint
+				}
+				sc := &config.ServerConfig{URL: as.URL + "/mcp", Auth: ac}
+				_, err := auth.ResolveEndpoints(t.Context(), sc, resolveParams(t.TempDir(), "server"))
+				if err == nil || !strings.Contains(err.Error(), field+" must be an absolute HTTP(S) URL") {
+					t.Fatalf("ResolveEndpoints error = %v, want invalid %s", err, field)
+				}
+			})
+		}
 	}
 }

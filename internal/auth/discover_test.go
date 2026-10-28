@@ -44,6 +44,7 @@ func TestDiscover_pathInsertedASMeta(t *testing.T) {
 			// PRM returns an AS URL that has the same host but a path
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+				"resource":              "http://" + r.Host + "/mcp",
 				"authorization_servers": []string{"http://" + r.Host + "/tenant"},
 			})
 		case "/.well-known/oauth-authorization-server/tenant":
@@ -82,11 +83,13 @@ func TestDiscover_wwwAuthenticateHeader(t *testing.T) {
 	})
 	defer asSrv.Close()
 
+	var expectedResource string
 	prmSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/.well-known/oauth-protected-resource/v1/mcp":
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+				"resource":              expectedResource,
 				"authorization_servers": []string{asSrv.URL},
 			})
 		default:
@@ -101,6 +104,7 @@ func TestDiscover_wwwAuthenticateHeader(t *testing.T) {
 		w.WriteHeader(http.StatusUnauthorized)
 	}))
 	defer mcpSrv.Close()
+	expectedResource = mcpSrv.URL + "/v1/mcp"
 
 	meta, err := auth.Discover(context.Background(), mcpSrv.URL+"/v1/mcp")
 	if err != nil {
@@ -256,9 +260,11 @@ func TestDiscover_scopesFromPRM(t *testing.T) {
 	})
 	defer asSrv.Close()
 
+	var expectedResource string
 	prmSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+			"resource":              expectedResource,
 			"authorization_servers": []string{asSrv.URL},
 			"scopes_supported":      []string{"channels:read", "chat:write"},
 		})
@@ -271,6 +277,7 @@ func TestDiscover_scopesFromPRM(t *testing.T) {
 		w.WriteHeader(http.StatusUnauthorized)
 	}))
 	defer mcpSrv.Close()
+	expectedResource = mcpSrv.URL
 
 	meta, err := auth.Discover(context.Background(), mcpSrv.URL)
 	if err != nil {
@@ -295,10 +302,12 @@ func TestDiscover_wwwAuthScopePreservedWhenPRMHasNoAS(t *testing.T) {
 	}))
 	defer emptyPRM.Close()
 
-	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var mcpSrv *httptest.Server
+	mcpSrv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/.well-known/oauth-protected-resource" {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{"authorization_servers": []string{asSrv.URL}}) //nolint:errcheck
+			json.NewEncoder(w).
+				Encode(map[string]any{"resource": mcpSrv.URL, "authorization_servers": []string{asSrv.URL}})
 			return
 		}
 		w.Header().Set("WWW-Authenticate",
@@ -334,6 +343,7 @@ func TestDiscover_scopesFromPRMProbePath(t *testing.T) {
 		case "/.well-known/oauth-protected-resource":
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+				"resource":              "http://" + r.Host,
 				"authorization_servers": []string{asSrv.URL},
 				"scopes_supported":      []string{"read", "write"},
 			})
@@ -381,9 +391,11 @@ func TestDiscover_scopeFromWWWAuthenticateBeforesPRM(t *testing.T) {
 	})
 	defer asSrv.Close()
 
+	var expectedResource string
 	prmSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+			"resource":              expectedResource,
 			"authorization_servers": []string{asSrv.URL},
 			"scopes_supported":      []string{"channels:read", "chat:write"},
 		})
@@ -397,6 +409,7 @@ func TestDiscover_scopeFromWWWAuthenticateBeforesPRM(t *testing.T) {
 		w.WriteHeader(http.StatusUnauthorized)
 	}))
 	defer mcpSrv.Close()
+	expectedResource = mcpSrv.URL
 
 	meta, err := auth.Discover(context.Background(), mcpSrv.URL)
 	if err != nil {
@@ -466,7 +479,9 @@ func TestRequiresOAuth_nonBearerSchemeSkipsPRMFallback(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"authorization_servers":["https://as.example.com"]}`)) //nolint:errcheck
+		w.Write(
+			[]byte(`{"resource":"http://` + r.Host + `","authorization_servers":["https://as.example.com"]}`),
+		) //nolint:errcheck
 	}))
 	defer srv.Close()
 
@@ -484,7 +499,9 @@ func TestRequiresOAuth_prmDocumentConfirmsOAuth(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"authorization_servers":["https://as.example.com"]}`)) //nolint:errcheck
+		w.Write(
+			[]byte(`{"resource":"http://` + r.Host + `","authorization_servers":["https://as.example.com"]}`),
+		) //nolint:errcheck
 	}))
 	defer srv.Close()
 

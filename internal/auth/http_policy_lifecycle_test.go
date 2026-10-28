@@ -137,11 +137,12 @@ func TestOAuthRefreshClosesOwnedIdleConnections(t *testing.T) {
 	origin, connections := idleTrackingSource(t)
 	sc := config.ServerConfig{URL: origin + "/mcp", Auth: &config.AuthConfig{ClientID: "configured"}}
 	login := &Login{
-		Resource: sc.URL,
-		Issuer:   origin,
-		TokenURL: origin + "/token",
-		Client:   LoginClient{ID: "configured", Configured: true},
-		Token:    &oauth2.Token{RefreshToken: "refresh"},
+		Resource:  sc.URL,
+		ServerURL: sc.URL,
+		Issuer:    origin,
+		TokenURL:  origin + "/token",
+		Client:    LoginClient{ID: "configured", Configured: true},
+		Token:     &oauth2.Token{RefreshToken: "refresh"},
 	}
 	token, err := Refresh(t.Context(), RefreshParams{Server: sc, Login: login})
 	if err != nil || token.AccessToken != "fresh" {

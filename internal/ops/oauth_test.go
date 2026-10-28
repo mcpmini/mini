@@ -4,6 +4,7 @@ package ops_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -32,7 +33,11 @@ func prmServer(t *testing.T, withPRM bool) string {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"authorization_servers":["https://as.example.com"]}`)) //nolint:errcheck
+		metadata := map[string]any{
+			"resource":              "http://" + r.Host,
+			"authorization_servers": []string{"https://as.example.com"},
+		}
+		json.NewEncoder(w).Encode(metadata) //nolint:errcheck
 	}))
 	t.Cleanup(srv.Close)
 	return srv.URL

@@ -47,11 +47,12 @@ func LoginFor(t testing.TB, sc config.ServerConfig, token *oauth2.Token) *auth.L
 		t.Fatalf("canonical resource: %v", err)
 	}
 	login := &auth.Login{
-		Resource: resource,
-		Issuer:   "https://as.example.com",
-		TokenURL: discoveredTokenURL,
-		Client:   auth.LoginClient{ID: registeredClientID},
-		Token:    token,
+		Resource:  resource,
+		ServerURL: resource,
+		Issuer:    "https://as.example.com",
+		TokenURL:  discoveredTokenURL,
+		Client:    auth.LoginClient{ID: registeredClientID},
+		Token:     token,
 	}
 	if sc.Auth != nil {
 		login.Issuer = cmp.Or(sc.Auth.Issuer, login.Issuer)

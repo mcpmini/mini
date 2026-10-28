@@ -174,7 +174,8 @@ func stalledAuthInitialize(t *testing.T, issuer string) (string, <-chan struct{}
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{"authorization_servers": []string{issuer}}) //nolint:errcheck
+			metadata := map[string]any{"resource": "http://" + r.Host, "authorization_servers": []string{issuer}}
+			json.NewEncoder(w).Encode(metadata) //nolint:errcheck
 			return
 		}
 		select {

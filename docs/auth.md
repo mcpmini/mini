@@ -24,6 +24,8 @@ The login is tied to the MCP's URL, `client_id` and `token_url` as they were whe
 
 OAuth supports private and loopback destinations, including CGNAT networks such as Tailscale, when your configured MCP server resolves entirely to private or loopback addresses. Each login and refresh contacts that server through pinned addresses. A non-redirect response from the configured origin enables private destinations for the remaining OAuth requests; link-local, unspecified, multicast and reserved addresses remain blocked. Servers added by agents retain the stricter OAuth network policy, even when `dangerous_allow_private_urls` permits their MCP connection. Redirects remain blocked.
 
+If login reports that the metadata resource is missing or does not contain the MCP URL, check the URL in the server file. The resource must be on the same server and cover the MCP's path. If the URL is correct, ask the provider to publish a resource that identifies the MCP and covers its path; mini stops rather than authorize against a different resource.
+
 ## requires a custom OAuth app
 
 Open the MCP's file first. If its comment says to create a token, as GitHub's does, follow [requires manual configuration](#requires-manual-configuration) instead; a token is quicker than an OAuth app.

@@ -26,17 +26,17 @@ var scenarioSets = []scenarioSet{
 		"initialize", "tools_call", "json-schema-2020-12-preservation",
 	}},
 	{Name: "auth", Mode: "cli", Version: "2026-07-28", Scenarios: []string{
-		"auth/metadata-default", "auth/metadata-var1", "auth/basic-cimd",
+		"auth/metadata-default", "auth/metadata-var1", "auth/metadata-var2", "auth/basic-cimd",
 		"auth/scope-from-scopes-supported", "auth/scope-omitted-when-undefined", "auth/scope-retry-limit",
 		"auth/token-endpoint-auth-basic", "auth/token-endpoint-auth-post", "auth/token-endpoint-auth-none",
-		"auth/pre-registration",
+		"auth/pre-registration", "auth/resource-mismatch",
 		"auth/offline-access-scope", "auth/offline-access-not-supported", "auth/authorization-server-migration",
 		"auth/iss-supported", "auth/iss-not-advertised", "auth/iss-supported-missing",
 		"auth/iss-wrong-issuer", "auth/iss-unexpected", "auth/iss-normalized", "auth/metadata-issuer-mismatch",
 	}},
 	{Name: "auth-pending", Mode: "cli", Version: "2026-07-28", Scenarios: []string{
-		"auth/metadata-var2", "auth/metadata-var3", "auth/scope-from-www-authenticate",
-		"auth/scope-step-up", "auth/resource-mismatch",
+		"auth/metadata-var3", "auth/scope-from-www-authenticate",
+		"auth/scope-step-up",
 	}},
 }
 
