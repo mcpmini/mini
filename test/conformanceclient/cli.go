@@ -39,9 +39,22 @@ func runCLI(params cliParams) cliResult {
 
 func parseToolTable(output string) []tool {
 	var tools []tool
+	rows := false
 	for _, line := range strings.Split(output, "\n") {
+		if strings.TrimSpace(line) == "No tools available." {
+			return nil
+		}
+		if strings.TrimSpace(line) == "" {
+			if rows {
+				break
+			}
+			continue
+		}
 		fields := strings.Fields(line)
-		if len(fields) == 0 || fields[0] == "TOOL" || strings.HasSuffix(strings.TrimSpace(line), ":") {
+		if !rows {
+			if len(fields) >= 2 && fields[0] == "TOOL" && fields[1] == "HINTS" {
+				rows = true
+			}
 			continue
 		}
 		tools = append(tools, tool{Name: fields[0]})

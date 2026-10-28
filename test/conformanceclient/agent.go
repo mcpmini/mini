@@ -160,15 +160,9 @@ func decodeAgentResponse(response transport.Response) (map[string]any, error) {
 }
 
 func marshalAgentParams(params map[string]any) (json.RawMessage, error) {
-	capabilities := any(map[string]any{"elicitation": map[string]any{"form": map[string]any{}}})
-	if supplied, ok := params["_meta"].(map[string]any); ok {
-		if custom, exists := supplied[capsMeta]; exists {
-			capabilities = custom
-		}
-	}
 	meta := map[string]any{
 		versionMeta: modernVersion,
-		capsMeta:    capabilities,
+		capsMeta:    map[string]any{"elicitation": map[string]any{"form": map[string]any{}}},
 		infoMeta:    map[string]any{"name": "spec-harness", "version": "0.1"},
 	}
 	fields := make(map[string]any, len(params)+1)

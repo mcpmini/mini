@@ -3,6 +3,7 @@
 package main
 
 import (
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -38,6 +39,17 @@ func TestResultsDirReadsTheSuiteOutput(t *testing.T) {
 	}
 }
 
+func TestScenarioWithoutChecksWasNotRun(t *testing.T) {
+	output := []byte("Results saved to " + filepath.Join(t.TempDir(), "agent", "tools_call-1") + "\n")
+	_, ran, err := scenarioProblems(output)
+	if err != nil {
+		t.Fatalf("scenarioProblems() error = %v", err)
+	}
+	if ran {
+		t.Fatal("scenarioProblems() ran = true, want false when checks.json is missing")
+	}
+}
+
 func TestRenderSummaryListsOnlyFailures(t *testing.T) {
 	summary := renderSummary([]outcome{
 		{Set: "agent", Scenario: "tools_call", Ran: true},
@@ -65,7 +77,7 @@ func TestRenderSummaryListsOnlyFailures(t *testing.T) {
 	}
 }
 
-func TestWarningsFailSuccessfulSuiteProcess(t *testing.T) {
+func TestRunnerRejectsWarningChecks(t *testing.T) {
 	result := outcome{
 		Set: "auth", Scenario: "auth/scope-from-scopes-supported", Ran: true,
 		Problems: []check{{ID: "scope", Status: "WARNING", Description: "SHOULD use scope"}},

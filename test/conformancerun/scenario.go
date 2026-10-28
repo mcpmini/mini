@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -53,8 +54,21 @@ func runScenario(env runEnv, set scenarioSet, scenario string) (outcome, error) 
 func runSuite(env runEnv, set scenarioSet, scenario string) ([]byte, int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), scenarioTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, env.Suite, "client", "--command", env.Adapter,
-		"--scenario", scenario, "--spec-version", set.Version, "--output-dir", filepath.Join(env.Results, set.Name))
+	cmd := exec.CommandContext(
+		ctx,
+		env.Suite,
+		"client",
+		"--command",
+		env.Adapter,
+		"--scenario",
+		scenario,
+		"--spec-version",
+		set.Version,
+		"--timeout",
+		strconv.FormatInt(scenarioTimeout.Milliseconds(), 10),
+		"--output-dir",
+		filepath.Join(env.Results, set.Name),
+	)
 	cmd.Env = append(os.Environ(), "MINI_BIN="+env.Mini, "MINI_CONFORMANCE_MODE="+set.Mode)
 	output, err := cmd.CombinedOutput()
 	var exitErr *exec.ExitError
@@ -71,7 +85,7 @@ func scenarioProblems(output []byte) ([]check, bool, error) {
 	}
 	data, err := os.ReadFile(filepath.Join(dir, "checks.json"))
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, true, nil
+		return nil, false, nil
 	}
 	if err != nil {
 		return nil, true, err

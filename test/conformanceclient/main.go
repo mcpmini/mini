@@ -264,7 +264,7 @@ func runMRTR(peer *agentPeer) error {
 const maxMRTRRounds = 4
 
 func mrtrFlow(peer *agentPeer, name, interloper string) error {
-	result, err := peer.callTool(name, map[string]any{}, elicitationExtra())
+	result, err := peer.callTool(name, map[string]any{}, nil)
 	if err != nil {
 		return err
 	}
@@ -287,18 +287,10 @@ func mrtrFlow(peer *agentPeer, name, interloper string) error {
 }
 
 func nextRoundExtra(previous map[string]any) map[string]any {
-	extra := elicitationExtra()
+	extra := make(map[string]any, 2)
 	extra["inputResponses"] = inputResponses(previous)
 	if state, ok := previous["requestState"]; ok {
 		extra["requestState"] = state
 	}
 	return extra
-}
-
-func elicitationExtra() map[string]any {
-	return map[string]any{
-		"_meta": map[string]any{
-			capsMeta: map[string]any{"elicitation": map[string]any{"form": map[string]any{}}},
-		},
-	}
 }

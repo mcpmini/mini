@@ -9,10 +9,13 @@ import (
 )
 
 func TestParseToolTable(t *testing.T) {
-	output := "TOOL DESCRIPTION\nalpha first tool\nsection:\nbeta second tool\n"
+	output := "TOOL  HINTS\nalpha  read-only\nbeta  destructive\n\nDetails: mini ls conf <tool>\n"
 	want := []tool{{Name: "alpha"}, {Name: "beta"}}
 	if got := parseToolTable(output); !reflect.DeepEqual(got, want) {
 		t.Fatalf("parseToolTable() = %#v, want %#v", got, want)
+	}
+	if got := parseToolTable("No tools available.\n"); got != nil {
+		t.Fatalf("parseToolTable(empty table) = %#v, want nil", got)
 	}
 }
 
