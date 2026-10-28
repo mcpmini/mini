@@ -5,13 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 type HTTPStatusError struct {
-	Method     string
-	StatusCode int
-	Body       string
-	RPC        *RPCError
+	Method          string
+	StatusCode      int
+	Body            string
+	RPC             *RPCError
+	WWWAuthenticate string
 }
 
 func (e *HTTPStatusError) Error() string {
@@ -108,10 +110,13 @@ func sameJSONID(raw json.RawMessage, id any) bool {
 func nonRetryableHTTPError(resp *http.Response, method string, errBody []byte) error {
 	if resp.StatusCode == http.StatusUnauthorized {
 		return fmt.Errorf("http %s: status %d: %w", method, resp.StatusCode,
-			&UnauthorizedError{WWWAuthenticate: resp.Header.Get("WWW-Authenticate")})
+			&UnauthorizedError{WWWAuthenticate: strings.Join(resp.Header.Values("WWW-Authenticate"), ", ")})
 	}
 	body := string(errBody)
-	return &HTTPStatusError{Method: method, StatusCode: resp.StatusCode, Body: body, RPC: parseHTTPStatusRPC(errBody)}
+	return &HTTPStatusError{
+		Method: method, StatusCode: resp.StatusCode, Body: body, RPC: parseHTTPStatusRPC(errBody),
+		WWWAuthenticate: strings.Join(resp.Header.Values("WWW-Authenticate"), ", "),
+	}
 }
 
 func parseHTTPStatusRPC(body []byte) *RPCError {

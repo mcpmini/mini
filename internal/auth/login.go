@@ -12,6 +12,7 @@ import (
 
 // Login is a token with the server, token endpoint and client it was issued for.
 type Login struct {
+	consumedChallenge *Challenge
 	// Resource is the token audience.
 	Resource string `json:"resource"`
 	// ServerURL is the canonical configured endpoint binding.
@@ -19,6 +20,7 @@ type Login struct {
 	Issuer    string        `json:"issuer"`
 	TokenURL  string        `json:"token_url"`
 	Client    LoginClient   `json:"client"`
+	Scopes    []string      `json:"scopes,omitempty"`
 	Token     *oauth2.Token `json:"token"`
 }
 

@@ -52,7 +52,12 @@ func SaveLogin(configDir, serverName string, l *Login) error {
 	if err != nil {
 		return err
 	}
-	return fileio.ReplaceFile(path, data, fileio.ReplaceOptions{Perm: 0o600})
+	if err := fileio.ReplaceFile(path, data, fileio.ReplaceOptions{Perm: 0o600}); err != nil {
+		return err
+	}
+	clearConsumedChallenge(configDir, serverName, l.consumedChallenge)
+	l.consumedChallenge = nil
+	return nil
 }
 
 func IsNotFound(err error) bool {
@@ -108,9 +113,11 @@ func DeleteCredentials(configDir, serverName string) error {
 	return errors.Join(errs...)
 }
 
-// CredentialPaths are the files holding a server's login: its token and its registered client.
+// CredentialPaths are the files holding a server's OAuth state.
 func CredentialPaths(configDir, serverName string) []string {
-	return []string{TokenPath(configDir, serverName), registrationPath(configDir, serverName)}
+	return []string{
+		TokenPath(configDir, serverName), registrationPath(configDir, serverName), challengePath(configDir, serverName),
+	}
 }
 
 func TokenPath(configDir, serverName string) string {

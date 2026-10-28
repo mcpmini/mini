@@ -42,7 +42,8 @@ func (f *pinnedOAuthFixture) serve(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/mcp":
 		f.source.Add(1)
-		http.NotFound(w, r)
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		w.WriteHeader(http.StatusUnauthorized)
 	case "/.well-known/oauth-protected-resource/mcp", "/.well-known/oauth-protected-resource":
 		f.metadata.Add(1)
 		if f.skipPRM {

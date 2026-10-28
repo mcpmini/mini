@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/mcpmini/mini/internal/transport"
@@ -58,11 +59,12 @@ type cliDriver struct {
 }
 
 func (d cliDriver) tools() ([]transport.ToolDefinition, error) {
-	names, err := d.mini.listTools()
-	if err != nil && d.reauthorize && isUnauthorized(err) {
-		logLoginFailure("mini auth retry", d.mini.auth())
-		names, err = d.mini.listTools()
-	}
+	var names []string
+	err := d.withReauthorization(func() error {
+		var listErr error
+		names, listErr = d.mini.listTools()
+		return listErr
+	})
 	tools := make([]transport.ToolDefinition, 0, len(names))
 	for _, name := range names {
 		tools = append(tools, transport.ToolDefinition{Name: name})
@@ -71,7 +73,21 @@ func (d cliDriver) tools() ([]transport.ToolDefinition, error) {
 }
 
 func (d cliDriver) callTool(call toolCall) (toolResult, error) {
-	return toolResult{ResultType: transport.ResultComplete}, d.mini.call(call)
+	err := d.withReauthorization(func() error { return d.mini.call(call) })
+	return toolResult{ResultType: transport.ResultComplete}, err
+}
+
+// withReauthorization runs `mini auth` and tries once more when an auth scenario's request is refused, as a user
+// does after a scope challenge; mini doesn't retry a failed call itself.
+func (d cliDriver) withReauthorization(attempt func() error) error {
+	err := attempt()
+	if err == nil || !d.reauthorize || !isUnauthorized(err) {
+		return err
+	}
+	if authErr := d.mini.auth().failure("mini auth retry"); authErr != nil {
+		return errors.Join(err, authErr)
+	}
+	return attempt()
 }
 
 func (cliDriver) close() error { return nil }

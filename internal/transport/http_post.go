@@ -83,11 +83,25 @@ func (c *HTTPConnection) doPost(ctx context.Context, call httpCall) (postResult,
 	if err != nil {
 		return postResult{sentAuth: sentAuth}, &ConnectionError{Err: fmt.Errorf("http %s: %w", call.Method, err)}
 	}
+	c.observeAuthorizationChallenge(resp)
 	//nolint:errcheck // processResponse determines the result; Close releases the response stream.
 	defer resp.Body.Close()
 	result, err := c.processResponse(resp, call.Request, sentSessionID)
 	result.sentAuth = sentAuth
 	return result, err
+}
+
+func (c *HTTPConnection) observeAuthorizationChallenge(resp *http.Response) {
+	if resp.StatusCode != http.StatusUnauthorized && resp.StatusCode != http.StatusForbidden {
+		return
+	}
+	observer, ok := c.authProvider.(AuthorizationChallengeObserver)
+	if !ok {
+		return
+	}
+	observer.ObserveAuthorizationChallenge(AuthorizationChallenge{
+		StatusCode: resp.StatusCode, WWWAuthenticate: strings.Join(resp.Header.Values("WWW-Authenticate"), ", "),
+	})
 }
 
 func (c *HTTPConnection) buildHTTPRequest(ctx context.Context, call httpCall) (*http.Request, string, error) {

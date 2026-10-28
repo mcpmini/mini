@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 var noRedirectClient = newAuthHTTPClient()
@@ -23,15 +24,17 @@ type ServerMeta struct {
 	TokenURL              string
 	RegistrationURL       string
 	CIMDSupported         bool
+	RequiredScopes        []string
 	Scopes                []string // from WWW-Authenticate scope param or PRM scopes_supported (spec priority)
 	Resource              string
 }
 
 // asRef is the result of authorization-server discovery: which AS to use and what scopes it suggests.
 type asRef struct {
-	URL      string
-	Scopes   []string
-	Resource string
+	URL            string
+	Scopes         []string
+	RequiredScopes []string
+	Resource       string
 }
 
 // WWW-Authenticate scope takes priority over PRM scopes_supported per MCP spec §Scope Selection Strategy.
@@ -51,7 +54,18 @@ func DiscoverServer(ctx context.Context, sc config.ServerConfig) (*ServerMeta, e
 }
 
 func (f *oauthHTTPFlow) discover(ctx context.Context, serverURL string) (*ServerMeta, error) {
-	ref, err := f.discoverASURL(ctx, serverURL)
+	return f.discoverMetadata(ctx, serverURL, nil)
+}
+
+func (f *oauthHTTPFlow) discoverMetadata(
+	ctx context.Context,
+	serverURL string,
+	challenge *Challenge,
+) (*ServerMeta, error) {
+	if err := requireHTTPURL(serverURL); err != nil {
+		return nil, err
+	}
+	ref, err := f.discoverASURL(ctx, serverURL, challenge)
 	if err != nil {
 		return nil, err
 	}
@@ -67,58 +81,73 @@ func (f *oauthHTTPFlow) discover(ctx context.Context, serverURL string) (*Server
 		}
 	}
 	meta.Scopes = preferScopes(ref.Scopes, meta.Scopes)
+	meta.RequiredScopes = ref.RequiredScopes
 	meta.Resource = ref.Resource
 	return meta, nil
 }
 
-func (f *oauthHTTPFlow) discoverASURL(ctx context.Context, serverURL string) (asRef, error) {
-	wwwRef, err := f.asURLFromWWWAuthenticate(ctx, serverURL)
-	if err != nil || wwwRef.URL != "" {
-		return wwwRef, err
+func (f *oauthHTTPFlow) discoverASURL(ctx context.Context, serverURL string, saved *Challenge) (asRef, error) {
+	challenge := saved
+	if f.origin != nil || challenge == nil || parseWWWAuthParam(challenge.WWWAuthenticate, "resource_metadata") == "" {
+		var err error
+		challenge, err = f.probeAuthorizationChallenge(ctx, serverURL)
+		if err != nil {
+			challenge = nil
+		}
 	}
-	probeRef, err := f.asURLFromPRMProbe(ctx, serverURL)
-	probeRef.Scopes = preferScopes(wwwRef.Scopes, probeRef.Scopes)
-	return probeRef, err
+	ref, err := f.discoverFromChallenge(ctx, serverURL, challenge)
+	if saved != nil {
+		ref = withRequiredScopes(ref, saved.WWWAuthenticate)
+	}
+	return ref, err
 }
 
-func (f *oauthHTTPFlow) asURLFromWWWAuthenticate(ctx context.Context, serverURL string) (asRef, error) {
-	resp, err := f.doDiscoveryRequest(ctx, serverURL)
-	if err != nil {
-		if ctx.Err() != nil {
-			return asRef{}, ctx.Err()
-		}
-		return asRef{}, nil
+func (f *oauthHTTPFlow) discoverFromChallenge(
+	ctx context.Context,
+	serverURL string,
+	challenge *Challenge,
+) (asRef, error) {
+	if challenge == nil {
+		return f.asURLFromPRMProbe(ctx, serverURL)
 	}
-	//nolint:errcheck // discovery status and headers determine the result; Close releases the response stream.
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusUnauthorized {
-		return asRef{}, nil
+	ref, err := f.asRefFromChallenge(ctx, serverURL, challenge)
+	if err != nil || ref.URL != "" {
+		return ref, err
 	}
-	header := resp.Header.Get("WWW-Authenticate")
+	ref, err = f.asURLFromPRMProbe(ctx, serverURL)
+	return withRequiredScopes(ref, challenge.WWWAuthenticate), err
+}
+
+func withRequiredScopes(ref asRef, header string) asRef {
+	if scopes := strings.Fields(parseWWWAuthParam(header, "scope")); len(scopes) > 0 {
+		ref.Scopes, ref.RequiredScopes = scopes, scopes
+	}
+	return ref
+}
+
+func (f *oauthHTTPFlow) probeAuthorizationChallenge(ctx context.Context, serverURL string) (*Challenge, error) {
+	err := transport.ProbeAuthorization(ctx, transport.ProbeAuthorizationParams{
+		URL: serverURL, Client: f.client, Clock: f.clock,
+	})
+	var unauthorized *transport.UnauthorizedError
+	if errors.As(err, &unauthorized) &&
+		ValidAuthorizationChallenge(http.StatusUnauthorized, unauthorized.WWWAuthenticate) {
+		return &Challenge{
+			ServerURL: serverURL, StatusCode: http.StatusUnauthorized, WWWAuthenticate: unauthorized.WWWAuthenticate,
+		}, nil
+	}
+	return nil, err
+}
+
+func (f *oauthHTTPFlow) asRefFromChallenge(ctx context.Context, serverURL string, challenge *Challenge) (asRef, error) {
+	header := challenge.WWWAuthenticate
+	ref := withRequiredScopes(asRef{}, header)
 	rmURL := parseWWWAuthParam(header, "resource_metadata")
-	scopesFromHeader := strings.Fields(parseWWWAuthParam(header, "scope"))
 	if rmURL == "" {
-		return asRef{Scopes: scopesFromHeader}, nil
+		return ref, nil
 	}
 	prmRef, err := f.fetchASURLFromPRM(ctx, prmFetchParams{MetadataURL: rmURL, ExpectedResource: serverURL})
-	prmRef.Scopes = preferScopes(scopesFromHeader, prmRef.Scopes)
-	return prmRef, err
-}
-
-func parseWWWAuthParam(header, param string) string {
-	// RFC 6750: the auth-scheme token (e.g. "Bearer") precedes the key=value params.
-	rest := header
-	if i := strings.IndexByte(header, ' '); i >= 0 {
-		rest = header[i+1:]
-	}
-	for _, field := range strings.Split(rest, ",") {
-		field = strings.TrimSpace(field)
-		val, ok := strings.CutPrefix(field, param+`="`)
-		if ok {
-			return strings.TrimSuffix(val, `"`)
-		}
-	}
-	return ""
+	return withRequiredScopes(prmRef, header), err
 }
 
 func (f *oauthHTTPFlow) asURLFromPRMProbe(ctx context.Context, serverURL string) (asRef, error) {
@@ -265,14 +294,13 @@ func (f *oauthHTTPFlow) doDiscoveryRequest(ctx context.Context, metaURL string) 
 	return f.client.Do(req)
 }
 
-// RequiresOAuth reports whether a server's 401 is confirmed (per RFC 9728) to need OAuth.
+// RequiresOAuth reports whether a server's 401 is confirmed to need OAuth.
 func RequiresOAuth(ctx context.Context, sc config.ServerConfig, wwwAuthenticate string) bool {
 	serverURL := sc.URL
-	scheme := strings.ToLower(strings.TrimSpace(wwwAuthenticate))
-	if strings.HasPrefix(scheme, "bearer") {
+	if bearerChallenge(wwwAuthenticate) {
 		return true
 	}
-	if scheme != "" {
+	if strings.TrimSpace(wwwAuthenticate) != "" {
 		// A non-Bearer scheme (Basic, Digest, ...) is decisive on its own — a PRM document
 		// that happens to exist at the same origin doesn't apply to this specific challenge.
 		return false

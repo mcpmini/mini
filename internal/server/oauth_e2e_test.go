@@ -290,7 +290,7 @@ func TestStartAuth_e2e_withStaleToken_browserTokenUsedOnFirstRequest(t *testing.
 		vt := acceptedToken
 		mu.Unlock()
 		if vt == "" || r.Header.Get("Authorization") != "Bearer "+vt {
-			if r.Method == http.MethodPost {
+			if r.Method == http.MethodPost && r.Header.Get("Authorization") != "" {
 				unauthorizedAfterAuth.Add(1)
 			}
 			w.Header().Set("WWW-Authenticate", "Bearer")

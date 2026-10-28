@@ -57,12 +57,17 @@ func listToolDetail(p toolDetailParams) error {
 }
 
 func fetchTools(configDir, serverName string) ([]transport.ToolDefinition, func(), error) {
-	conn, err := dialServer(configDir, serverName)
+	cfg, sc, err := loadOneServer(configDir, serverName, os.Stderr)
+	if err != nil {
+		return nil, nil, err
+	}
+	conn, err := dialConfiguredServer(configDir, cfg, sc)
 	if err != nil {
 		return nil, nil, err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	toolList, err := conn.ListTools(ctx)
+	recordAuthorizationFailure(configDir, *sc, err)
 	if err != nil {
 		cancel()
 		conn.Close() //nolint:errcheck // Preserve the ListTools error; closing a killed stdio process may report its exit status.
@@ -75,11 +80,7 @@ func fetchTools(configDir, serverName string) ([]transport.ToolDefinition, func(
 	}, nil
 }
 
-func dialServer(configDir, serverName string) (transport.Connection, error) {
-	cfg, sc, err := loadOneServer(configDir, serverName, os.Stderr)
-	if err != nil {
-		return nil, err
-	}
+func dialConfiguredServer(configDir string, cfg *config.Config, sc *config.ServerConfig) (transport.Connection, error) {
 	ctx := context.Background()
 	if sc.Auth != nil && sc.Auth.Type == config.AuthTypeOAuth2 {
 		injectToken(ctx, configDir, sc)
@@ -87,7 +88,7 @@ func dialServer(configDir, serverName string) (transport.Connection, error) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	conn, err := invoke.Dial(ctx, invoke.DialParams{Logger: logger, Config: cfg, Server: *sc, Clock: clock.System()})
 	if err != nil {
-		return nil, fmt.Errorf("connect to %s: %w", serverName, err)
+		return nil, fmt.Errorf("connect to %s: %w", sc.Name, err)
 	}
 	return conn, nil
 }

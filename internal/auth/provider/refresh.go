@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"golang.org/x/oauth2"
@@ -133,7 +134,7 @@ func sameLogin(a, b *auth.Login) bool {
 		return a == b
 	}
 	return a.Issuer == b.Issuer && a.Resource == b.Resource && a.ServerURL == b.ServerURL && a.TokenURL == b.TokenURL &&
-		a.Client == b.Client &&
+		a.Client == b.Client && slices.Equal(a.Scopes, b.Scopes) &&
 		sameToken(a.Token, b.Token)
 }
 
@@ -144,6 +145,7 @@ func sameToken(a, b *oauth2.Token) bool {
 
 func cloneLogin(l *auth.Login) *auth.Login {
 	clone := *l
+	clone.Scopes = append([]string(nil), l.Scopes...)
 	token := *l.Token
 	clone.Token = &token
 	return &clone

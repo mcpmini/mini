@@ -22,13 +22,17 @@ func DetectOAuth(ctx context.Context, p DetectOAuthParams) (bool, error) {
 	if !MayNeedOAuth(sc) {
 		return false, nil
 	}
+	alreadyDetected := config.IsOAuthDetected(p.ConfigDir, sc.Name)
+	var uerr *transport.UnauthorizedError
+	if !errors.As(p.ConnErr, &uerr) {
+		return alreadyDetected, nil
+	}
 	// Skip re-running the PRM probe and rewriting the marker on every
 	// reconnect backoff cycle against a persistently-401 upstream.
-	if config.IsOAuthDetected(p.ConfigDir, sc.Name) {
+	if alreadyDetected {
 		return true, nil
 	}
-	var uerr *transport.UnauthorizedError
-	if !errors.As(p.ConnErr, &uerr) || !auth.RequiresOAuth(ctx, sc, uerr.WWWAuthenticate) {
+	if !auth.RequiresOAuth(ctx, sc, uerr.WWWAuthenticate) {
 		return false, nil
 	}
 	if err := config.MarkOAuthDetected(p.ConfigDir, sc.Name); err != nil {

@@ -16,7 +16,6 @@ func TestSelectSets(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "default includes passing auth", args: nil, want: []string{"agent", "cli", "legacy", "auth"}},
-		{name: "auth-pending on request", args: []string{"auth-pending"}, want: []string{"auth-pending"}},
 		{name: "unknown set", args: []string{"server"}, wantErr: true},
 		{name: "two sets", args: []string{"agent", "cli"}, wantErr: true},
 	}
