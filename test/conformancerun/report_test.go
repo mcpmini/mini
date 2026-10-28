@@ -16,7 +16,7 @@ func TestProblemChecksKeepsFailuresAndWarnings(t *testing.T) {
 		{"id": "scope", "status": "WARNING", "description": "SHOULD use scope"},
 		{"id": "resource", "status": "FAILURE", "description": "MUST validate", "errorMessage": "proceeded"}
 	]`)
-	got, err := problemChecks(data)
+	got, err := scenarioChecks(data, "")
 	if err != nil {
 		t.Fatalf("problemChecks() error = %v", err)
 	}
@@ -41,7 +41,7 @@ func TestResultsDirReadsTheSuiteOutput(t *testing.T) {
 
 func TestScenarioWithoutChecksWasNotRun(t *testing.T) {
 	output := []byte("Results saved to " + filepath.Join(t.TempDir(), "agent", "tools_call-1") + "\n")
-	_, ran, err := scenarioProblems(output)
+	_, ran, err := scenarioProblems(output, "")
 	if err != nil {
 		t.Fatalf("scenarioProblems() error = %v", err)
 	}
@@ -90,5 +90,49 @@ func TestRunnerRejectsWarningChecks(t *testing.T) {
 		if !strings.Contains(summary, want) {
 			t.Errorf("summary is missing %q:\n%s", want, summary)
 		}
+	}
+}
+
+func TestToolHeaderChecksRequireObservedToolCallSuccess(t *testing.T) {
+	for _, data := range []string{
+		`[]`,
+		`[{"id":"sep-2243-client-includes-standard-headers","name":"ClientMcpMethodHeader_tools_list","status":"SUCCESS"}]`,
+		`[{"id":"sep-2243-client-includes-standard-headers","name":"ClientMcpMethodHeader_tools_call","status":"SUCCESS"},{"id":"sep-2243-client-includes-standard-headers","name":"ClientMcpNameHeader_tools_call","status":"SKIPPED"}]`,
+	} {
+		problems, err := scenarioChecks([]byte(data), "http-standard-headers")
+		if err != nil || len(problems) == 0 {
+			t.Fatalf("unexercised tool headers passed: %s; problems=%v err=%v", data, problems, err)
+		}
+	}
+	data := []byte(
+		`[{"id":"sep-2243-client-includes-standard-headers","name":"ClientMcpMethodHeader_tools_call","status":"SUCCESS"},{"id":"sep-2243-client-includes-standard-headers","name":"ClientMcpNameHeader_tools_call","status":"SUCCESS"},{"id":"sep-2243-client-includes-standard-headers","name":"ClientMcpMethodHeader_prompts_list","status":"SKIPPED"}]`,
+	)
+	if problems, err := scenarioChecks(data, "http-standard-headers"); err != nil || len(problems) != 0 {
+		t.Fatalf("exercised tool headers failed: %v, %v", problems, err)
+	}
+}
+
+func TestMetadataChecksRequireExercisedFields(t *testing.T) {
+	data := []byte(`[
+  {"id":"sep-2575-http-client-sends-version-header","status":"SUCCESS"},
+  {"id":"sep-2575-client-populates-meta","status":"SUCCESS"},
+  {"id":"sep-2575-client-sends-client-info","status":"SUCCESS"},
+  {"id":"sep-2575-http-version-header-matches-meta","status":"SUCCESS"},
+  {"id":"sep-2575-client-retry-supported-version","status":"SUCCESS"},
+  {"id":"sep-2575-client-declares-elicitation-capability","status":"SKIPPED"}
+ ]`)
+	if problems, err := scenarioChecks(data, "request-metadata"); err != nil || len(problems) != 0 {
+		t.Fatalf("metadata fixture with no tools failed: %v, %v", problems, err)
+	}
+	missing := []byte(
+		strings.Replace(
+			string(data),
+			`"sep-2575-http-version-header-matches-meta","status":"SUCCESS"`,
+			`"sep-2575-http-version-header-matches-meta","status":"SKIPPED"`,
+			1,
+		),
+	)
+	if problems, err := scenarioChecks(missing, "request-metadata"); err != nil || len(problems) != 1 {
+		t.Fatalf("unexercised version/header match passed: %v, %v", problems, err)
 	}
 }

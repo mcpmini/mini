@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 func main() {
@@ -190,8 +192,6 @@ func runAuthSetup(params authSetupParams) error {
 	); err != nil {
 		return err
 	}
-	// A failed login is logged, not returned: the ls that follows decides the scenario, and some
-	// scenarios expect mini to refuse the server.
 	if params.Scenario == "auth/pre-registration" {
 		return runPreRegistration(params)
 	}
@@ -204,9 +204,7 @@ func runOAuthAdd(params authSetupParams) {
 		Binary: params.Binary, Config: params.Config, Timeout: 90 * time.Second,
 		Args: []string{"add", "conf", "--url", params.URL},
 	})
-	if result.err != nil {
-		fmt.Fprintln(os.Stderr, "mini add auth:", result.err, result.combined())
-	}
+	logLoginFailure("mini add auth", result)
 }
 
 func runPreRegistration(params authSetupParams) error {
@@ -221,9 +219,7 @@ func runPreRegistration(params authSetupParams) error {
 		Binary: params.Binary, Config: params.Config, Timeout: 90 * time.Second,
 		Args: []string{"auth", "conf"},
 	})
-	if result.err != nil {
-		fmt.Fprintln(os.Stderr, "mini auth:", result.err, result.combined())
-	}
+	logLoginFailure("mini auth", result)
 	return nil
 }
 
@@ -278,7 +274,11 @@ func mrtrFlow(peer *agentPeer, name, interloper string) error {
 			}
 			interloper = ""
 		}
-		result, err = peer.callTool(name, map[string]any{}, nextRoundExtra(result))
+		extra, extraErr := nextRoundExtra(result)
+		if extraErr != nil {
+			return extraErr
+		}
+		result, err = peer.callTool(name, map[string]any{}, extra)
 		if err != nil {
 			return err
 		}
@@ -286,11 +286,24 @@ func mrtrFlow(peer *agentPeer, name, interloper string) error {
 	return nil
 }
 
-func nextRoundExtra(previous map[string]any) map[string]any {
-	extra := make(map[string]any, 2)
-	extra["inputResponses"] = inputResponses(previous)
-	if state, ok := previous["requestState"]; ok {
-		extra["requestState"] = state
+func nextRoundExtra(previous map[string]any) (*transport.ToolCallMRTR, error) {
+	responses, err := json.Marshal(inputResponses(previous))
+	if err != nil {
+		return nil, err
 	}
-	return extra
+	var state json.RawMessage
+	if value, ok := previous["requestState"]; ok {
+		state, err = json.Marshal(value)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &transport.ToolCallMRTR{InputResponses: responses, RequestState: state}, nil
+}
+
+func logLoginFailure(operation string, result cliResult) {
+	// Some auth scenarios expect refusal; the following ls decides the outcome.
+	if result.err != nil {
+		fmt.Fprintln(os.Stderr, operation+":", result.err, result.combined())
+	}
 }

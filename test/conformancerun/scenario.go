@@ -4,14 +4,9 @@ import (
 	"context"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
-	"time"
 )
-
-const scenarioTimeout = 5 * time.Minute
 
 type outcome struct {
 	Set      string
@@ -19,10 +14,11 @@ type outcome struct {
 	ExitCode int
 	Ran      bool
 	Problems []check
+	Error    string
 }
 
 func (o outcome) passed() bool {
-	return o.ExitCode == 0 && o.Ran && len(o.Problems) == 0
+	return o.Error == "" && o.ExitCode == 0 && o.Ran && len(o.Problems) == 0
 }
 
 func anyFailed(outcomes []outcome) bool {
@@ -34,51 +30,32 @@ func anyFailed(outcomes []outcome) bool {
 	return false
 }
 
-func runScenario(env runEnv, set scenarioSet, scenario string) (outcome, error) {
+type scenarioRun struct {
+	Env  runEnv
+	Set  scenarioSet
+	Name string
+}
+
+func runScenario(ctx context.Context, run scenarioRun) (outcome, error) {
+	env, set, scenario := run.Env, run.Set, run.Name
+	result := outcome{Set: set.Name, Scenario: scenario, ExitCode: -1}
 	dir := filepath.Join(env.Results, set.Name)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return outcome{}, err
+		return result, err
 	}
-	output, exitCode, err := runSuite(env, set, scenario)
-	if err != nil {
-		return outcome{}, err
-	}
+	output, exitCode, runErr := runSuite(ctx, run)
+	result.ExitCode = exitCode
 	logPath := filepath.Join(dir, strings.ReplaceAll(scenario, "/", "_")+".log")
-	if writeErr := os.WriteFile(logPath, output, 0o600); writeErr != nil {
-		return outcome{}, writeErr
+	writeErr := os.WriteFile(logPath, output, 0o600)
+	problems, ran, parseErr := scenarioProblems(output, scenario)
+	result.Problems, result.Ran = problems, ran
+	if runErr == nil && strings.Contains(string(output), "Client timed out") {
+		runErr = errors.New("suite client timeout")
 	}
-	problems, ran, err := scenarioProblems(output)
-	return outcome{Set: set.Name, Scenario: scenario, ExitCode: exitCode, Ran: ran, Problems: problems}, err
+	return result, errors.Join(runErr, writeErr, parseErr)
 }
 
-func runSuite(env runEnv, set scenarioSet, scenario string) ([]byte, int, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), scenarioTimeout)
-	defer cancel()
-	cmd := exec.CommandContext(
-		ctx,
-		env.Suite,
-		"client",
-		"--command",
-		env.Adapter,
-		"--scenario",
-		scenario,
-		"--spec-version",
-		set.Version,
-		"--timeout",
-		strconv.FormatInt(scenarioTimeout.Milliseconds(), 10),
-		"--output-dir",
-		filepath.Join(env.Results, set.Name),
-	)
-	cmd.Env = append(os.Environ(), "MINI_BIN="+env.Mini, "MINI_CONFORMANCE_MODE="+set.Mode)
-	output, err := cmd.CombinedOutput()
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
-		return output, exitErr.ExitCode(), nil
-	}
-	return output, 0, err
-}
-
-func scenarioProblems(output []byte) ([]check, bool, error) {
+func scenarioProblems(output []byte, scenario string) ([]check, bool, error) {
 	dir, ok := resultsDir(output)
 	if !ok {
 		return nil, false, nil
@@ -90,6 +67,6 @@ func scenarioProblems(output []byte) ([]check, bool, error) {
 	if err != nil {
 		return nil, true, err
 	}
-	problems, err := problemChecks(data)
+	problems, err := scenarioChecks(data, scenario)
 	return problems, true, err
 }

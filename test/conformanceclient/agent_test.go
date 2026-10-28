@@ -4,6 +4,7 @@ package main
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -61,5 +62,55 @@ func TestUpstreamReady(t *testing.T) {
 				t.Fatalf("upstreamReady() = %v, want %v", got, test.want)
 			}
 		})
+	}
+}
+
+func TestAgentToolRetryPreservesWireStateAndMetadata(t *testing.T) {
+	previous := map[string]any{"requestState": `{"opaque":"\\value"}`, "inputRequests": map[string]any{
+		"roots": map[string]any{"method": "roots/list"},
+	}}
+	extra, err := nextRoundExtra(previous)
+	if err != nil {
+		t.Fatal(err)
+	}
+	params := transport.NewToolCallParams("conf__retry", map[string]any{}, extra)
+	params.Meta = agentMeta()
+	request, err := makeAgentRequest(7, "tools/call", params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(request.Params, &fields); err != nil {
+		t.Fatal(err)
+	}
+	var state string
+	if err := json.Unmarshal(fields["requestState"], &state); err != nil || state != previous["requestState"] {
+		t.Fatalf("state=%q err=%v", state, err)
+	}
+	if string(fields["inputResponses"]) != `{"roots":{"roots":[]}}` {
+		t.Fatalf("inputResponses=%s", fields["inputResponses"])
+	}
+	assertFormCapability(t, fields["_meta"])
+}
+
+func TestAgentFreshCallOmitsRetryFields(t *testing.T) {
+	fresh := transport.NewToolCallParams("conf__fresh", map[string]any{}, nil)
+	fresh.Meta = agentMeta()
+	encoded, err := marshalAgentParams(fresh)
+	if err != nil || strings.Contains(string(encoded), "requestState") ||
+		strings.Contains(string(encoded), "inputResponses") {
+		t.Fatalf("fresh params=%s err=%v", encoded, err)
+	}
+}
+
+func assertFormCapability(t *testing.T, data json.RawMessage) {
+	t.Helper()
+	var meta struct {
+		Capabilities struct {
+			Elicitation json.RawMessage `json:"elicitation"`
+		} `json:"io.modelcontextprotocol/clientCapabilities"`
+	}
+	if err := json.Unmarshal(data, &meta); err != nil || string(meta.Capabilities.Elicitation) != `{"form":{}}` {
+		t.Fatalf("metadata=%s err=%v", data, err)
 	}
 }

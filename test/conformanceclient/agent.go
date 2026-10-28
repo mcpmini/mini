@@ -15,13 +15,6 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-const (
-	modernVersion = "2026-07-28"
-	versionMeta   = "io.modelcontextprotocol/protocolVersion"
-	capsMeta      = "io.modelcontextprotocol/clientCapabilities"
-	infoMeta      = "io.modelcontextprotocol/clientInfo"
-)
-
 type agentPeer struct {
 	command *exec.Cmd
 	input   io.WriteCloser
@@ -80,7 +73,7 @@ func (peer *agentPeer) close() error {
 	return waitErr
 }
 
-func (peer *agentPeer) call(method string, params map[string]any, timeout time.Duration) (map[string]any, error) {
+func (peer *agentPeer) call(method string, params any, timeout time.Duration) (map[string]any, error) {
 	id := peer.request.Add(1)
 	message, err := makeAgentRequest(id, method, params)
 	if err != nil {
@@ -100,7 +93,7 @@ func (peer *agentPeer) call(method string, params map[string]any, timeout time.D
 	return decodeAgentResponse(answer)
 }
 
-func makeAgentRequest(id int64, method string, params map[string]any) (transport.Request, error) {
+func makeAgentRequest(id int64, method string, params any) (transport.Request, error) {
 	encodedParams, err := marshalAgentParams(params)
 	if err != nil {
 		return transport.Request{}, err
@@ -159,19 +152,35 @@ func decodeAgentResponse(response transport.Response) (map[string]any, error) {
 	return decoded, nil
 }
 
-func marshalAgentParams(params map[string]any) (json.RawMessage, error) {
-	meta := map[string]any{
-		versionMeta: modernVersion,
-		capsMeta:    map[string]any{"elicitation": map[string]any{"form": map[string]any{}}},
-		infoMeta:    map[string]any{"name": "spec-harness", "version": "0.1"},
+func agentMeta() *transport.RequestMeta {
+	return &transport.RequestMeta{
+		ProtocolVersion:    transport.ModernVersions[0],
+		ClientInfo:         &transport.ClientInfo{Name: "spec-harness", Version: "0.1"},
+		ClientCapabilities: &transport.ClientCapabilities{Elicitation: json.RawMessage(`{"form":{}}`)},
 	}
-	fields := make(map[string]any, len(params)+1)
-	for key, value := range params {
-		fields[key] = value
+}
+
+func marshalAgentParams(params any) (json.RawMessage, error) {
+	if call, ok := params.(transport.ToolCallParams); ok {
+		return json.Marshal(call)
+	}
+	encoded, err := json.Marshal(params)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err = json.Unmarshal(encoded, &fields); err != nil {
+		return nil, err
+	}
+	meta, err := json.Marshal(agentMeta())
+	if err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		fields = make(map[string]json.RawMessage)
 	}
 	fields["_meta"] = meta
-	encoded, err := json.Marshal(fields)
-	return encoded, err
+	return json.Marshal(fields)
 }
 
 func (peer *agentPeer) tools() ([]tool, error) {
@@ -255,11 +264,13 @@ func decodeTools(value map[string]any) ([]tool, error) {
 	return tools, nil
 }
 
-func (peer *agentPeer) callTool(name string, args, extra map[string]any) (map[string]any, error) {
-	params := map[string]any{"name": "conf__" + name, "arguments": args}
-	for key, value := range extra {
-		params[key] = value
-	}
+func (peer *agentPeer) callTool(
+	name string,
+	args map[string]any,
+	extra *transport.ToolCallMRTR,
+) (map[string]any, error) {
+	params := transport.NewToolCallParams("conf__"+name, args, extra)
+	params.Meta = agentMeta()
 	result, err := peer.call("tools/call", params, 30*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", name, err)

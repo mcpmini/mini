@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -44,6 +43,7 @@ type runEnv struct {
 	Adapter string
 	Mini    string
 	Results string
+	Limits  runLimits
 }
 
 func prepare() (runEnv, func(), error) {
@@ -101,32 +101,44 @@ func buildBinaries(env runEnv) error {
 }
 
 func runSets(env runEnv, selected []scenarioSet) ([]outcome, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), env.Limits.defaults().Total)
+	defer cancel()
 	var outcomes []outcome
-	// auth scenarios log in through mini's fixed OAuth callback port 6464, so scenarios can't run in parallel.
+	// Auth scenarios share mini's fixed OAuth callback port, so they can't run in parallel.
 	for _, set := range selected {
 		for _, scenario := range set.Scenarios {
-			result, err := runScenario(env, set, scenario)
-			if err != nil {
-				return nil, fmt.Errorf("%s %s: %w", set.Name, scenario, err)
+			result, err := runScenario(ctx, scenarioRun{Env: env, Set: set, Name: scenario})
+			if err == nil && ctx.Err() != nil {
+				err = fmt.Errorf("total scenario budget exhausted: %w", ctx.Err())
 			}
-			fmt.Printf("%s: %s (exit %d)\n", set.Name, scenario, result.ExitCode)
+			if err != nil {
+				result.Error = err.Error()
+			}
 			outcomes = append(outcomes, result)
+			fmt.Printf("%s: %s (exit %d)\n", set.Name, scenario, result.ExitCode)
+			if err := saveSummary(env.Results, outcomes); err != nil {
+				return outcomes, err
+			}
+			if ctx.Err() != nil {
+				return outcomes, nil
+			}
 		}
 	}
 	return outcomes, nil
 }
 
-func report(results string, outcomes []outcome) error {
-	summary := renderSummary(outcomes)
-	fmt.Printf("\n%s\nConformance results: %s\n", summary, results)
-	path := os.Getenv("GITHUB_STEP_SUMMARY")
-	if path == "" {
-		return nil
-	}
-	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-	if err != nil {
+func saveSummary(results string, outcomes []outcome) error {
+	summary := []byte(renderSummary(outcomes))
+	if err := os.WriteFile(filepath.Join(results, "summary.md"), summary, 0o600); err != nil {
 		return err
 	}
-	_, writeErr := file.WriteString(summary)
-	return errors.Join(writeErr, file.Close())
+	if path := os.Getenv("GITHUB_STEP_SUMMARY"); path != "" {
+		return os.WriteFile(path, summary, 0o600)
+	}
+	return nil
+}
+
+func report(results string, outcomes []outcome) error {
+	fmt.Printf("\n%s\nConformance results: %s\n", renderSummary(outcomes), results)
+	return nil
 }
