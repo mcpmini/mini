@@ -278,7 +278,7 @@ type AuthConfig struct {
 	Scopes       []string `yaml:"scopes,omitempty"`
 
 	// RFC 7591 field from dynamic client registration; controls how ClientSecret
-	// is sent to the token endpoint ("client_secret_basic" or "client_secret_post").
+	// is sent to the token endpoint ("client_secret_basic", "client_secret_post", or "none").
 	TokenEndpointAuthMethod string `yaml:"token_endpoint_auth_method,omitempty"`
 
 	// ResourceURL is the canonical URI of the MCP server sent as the RFC 8707

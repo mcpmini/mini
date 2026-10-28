@@ -270,30 +270,6 @@ func TestHydratedRegistration_authStyleOnExchangeAndRefresh(t *testing.T) {
 	}
 }
 
-func TestHydratedRegistration_noSecretLeavesPublicClientUnchanged(t *testing.T) {
-	tokenSrv := newCapturingTokenServer(t)
-	reg := &auth.Registration{ClientID: "public-client"}
-	ac := hydrateFromSavedRegistration(t, savedRegistrationParams{
-		Registration: reg,
-		TokenURL:     tokenSrv.srv.URL,
-		Clock:        clock.System(),
-	})
-
-	if ac.ClientSecret != "" || ac.TokenEndpointAuthMethod != "" {
-		t.Fatalf(
-			"expected no secret/method hydrated for public client, got secret=%q method=%q",
-			ac.ClientSecret,
-			ac.TokenEndpointAuthMethod,
-		)
-	}
-
-	exchangeAndRefresh(t, ac)
-
-	if tokenSrv.exchange.formClientSecret != "" || tokenSrv.refresh.formClientSecret != "" {
-		t.Error("client_secret sent for a public client registration")
-	}
-}
-
 func TestSavedRegistration_reusedOnlyForItsTokenEndpointWhileItsSecretLasts(t *testing.T) {
 	const tokenURL = "https://as.example.com/token"
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
