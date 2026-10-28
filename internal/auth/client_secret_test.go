@@ -178,6 +178,21 @@ func assertPostAuth(t *testing.T, p authAssertionParams) {
 	}
 }
 
+func assertPublicAuth(t *testing.T, p authAssertionParams) {
+	t.Helper()
+	if p.Observation.authorizationHeader != "" {
+		t.Errorf(
+			"%s: unexpected Authorization header for public client: %q", p.Label, p.Observation.authorizationHeader,
+		)
+	}
+	if p.Observation.formClientID != p.ClientID {
+		t.Errorf("%s: form client_id = %q, want %q", p.Label, p.Observation.formClientID, p.ClientID)
+	}
+	if p.Observation.formClientSecret != "" {
+		t.Errorf("%s: client_secret sent for public client: %q", p.Label, p.Observation.formClientSecret)
+	}
+}
+
 func TestHydratedRegistration_authStyleOnExchangeAndRefresh(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -210,6 +225,19 @@ func TestHydratedRegistration_authStyleOnExchangeAndRefresh(t *testing.T) {
 			},
 			wantMethod: "client_secret_basic",
 			assertFn:   assertBasicAuth,
+		},
+		{
+			name: "public client with explicit none",
+			reg: &auth.Registration{
+				ClientID: "public-none-client", TokenEndpointAuthMethod: "none",
+			},
+			wantMethod: "none",
+			assertFn:   assertPublicAuth,
+		},
+		{
+			name:     "public client with omitted method",
+			reg:      &auth.Registration{ClientID: "public-unspecified-client"},
+			assertFn: assertPublicAuth,
 		},
 	}
 	for _, tc := range cases {
@@ -477,6 +505,18 @@ func TestFreshDCR_exchangeUsesCorrectAuthStyle(t *testing.T) {
 			},
 			assertFn: assertBasicAuth,
 		},
+		{
+			name: "public client with explicit none",
+			dcr: map[string]any{
+				"client_id": "dcr-public-none", "token_endpoint_auth_method": "none",
+			},
+			assertFn: assertPublicAuth,
+		},
+		{
+			name:     "public client with omitted method",
+			dcr:      map[string]any{"client_id": "dcr-public-unspecified"},
+			assertFn: assertPublicAuth,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -484,8 +524,8 @@ func TestFreshDCR_exchangeUsesCorrectAuthStyle(t *testing.T) {
 
 			exchangeAndRefresh(t, ac)
 
-			clientID := tc.dcr["client_id"].(string)
-			clientSecret := tc.dcr["client_secret"].(string)
+			clientID, _ := tc.dcr["client_id"].(string)
+			clientSecret, _ := tc.dcr["client_secret"].(string)
 			tc.assertFn(t, authAssertionParams{
 				Label:        "exchange",
 				Observation:  tokenSrv.exchange,

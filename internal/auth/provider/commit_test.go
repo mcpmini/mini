@@ -204,6 +204,18 @@ func assertRefreshedAs(t *testing.T, endpoint *authtest.TokenServer, clientID st
 	}
 }
 
+func assertPublicRefreshClient(t *testing.T, endpoint *authtest.TokenServer, clientID string) {
+	t.Helper()
+	endpoint.Mu.Lock()
+	defer endpoint.Mu.Unlock()
+	if endpoint.LastClientID != clientID || endpoint.LastBasicAuth != "" {
+		t.Errorf(
+			"refresh client_id = %q, Basic user = %q; want public client %q",
+			endpoint.LastClientID, endpoint.LastBasicAuth, clientID,
+		)
+	}
+}
+
 func TestCommitAuthorizedToken_saveFails_providerUnchanged(t *testing.T) {
 	f := newCommitFixture(t)
 	params := f.params()
@@ -317,7 +329,7 @@ func TestCommitAuthorizedToken_loginAfterEditingClientID_isSavedAndUsed(t *testi
 	if _, err := p.RefreshAuthorization(context.Background(), "Bearer browser-access"); err != nil {
 		t.Fatalf("RefreshAuthorization: %v", err)
 	}
-	assertRefreshedAs(t, f.endpoint, "edited-client")
+	assertPublicRefreshClient(t, f.endpoint, "edited-client")
 }
 
 func TestRefreshAuthorization_adoptsAnotherProcesssLoginWithItsClient(t *testing.T) {
