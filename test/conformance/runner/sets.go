@@ -37,13 +37,28 @@ var scenarioSets = []scenarioSet{
 	}},
 }
 
+// requiredChecks must succeed in these scenarios, which otherwise pass with the checks they exist for skipped.
+var requiredChecks = map[string][]check{
+	"http-standard-headers": {
+		{ID: "sep-2243-client-includes-standard-headers", Name: "ClientMcpMethodHeader_tools_call"},
+		{ID: "sep-2243-client-includes-standard-headers", Name: "ClientMcpNameHeader_tools_call"},
+	},
+	"request-metadata": {
+		{ID: "sep-2575-http-client-sends-version-header"},
+		{ID: "sep-2575-client-populates-meta"},
+		{ID: "sep-2575-client-sends-client-info"},
+		{ID: "sep-2575-http-version-header-matches-meta"},
+		{ID: "sep-2575-client-retry-supported-version"},
+	},
+}
+
 // auth is opt-in until mini can log in to localhost servers, where every auth mock runs (#606).
 var defaultSets = []string{"agent", "cli", "legacy"}
 
 func selectSets(args []string) ([]scenarioSet, error) {
 	names := defaultSets
 	if len(args) > 1 {
-		return nil, fmt.Errorf("usage: conformancerun [%s]", strings.Join(setNames(), "|"))
+		return nil, fmt.Errorf("usage: go run ./test/conformance/runner [%s]", strings.Join(setNames(), "|"))
 	}
 	if len(args) == 1 {
 		names = args

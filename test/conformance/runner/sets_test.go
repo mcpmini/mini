@@ -4,6 +4,7 @@ package main
 
 import (
 	"reflect"
+	"slices"
 	"testing"
 )
 
@@ -33,5 +34,17 @@ func TestSelectSets(t *testing.T) {
 				t.Fatalf("selectSets(%v) = %v, want %v", test.args, names, test.want)
 			}
 		})
+	}
+}
+
+func TestRequiredChecksNameListedScenarios(t *testing.T) {
+	for scenario := range requiredChecks {
+		listed := false
+		for _, set := range scenarioSets {
+			listed = listed || slices.Contains(set.Scenarios, scenario)
+		}
+		if !listed {
+			t.Errorf("requiredChecks names %q, which no scenario set runs", scenario)
+		}
 	}
 }

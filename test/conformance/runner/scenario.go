@@ -7,28 +7,6 @@ import (
 	"strings"
 )
 
-type outcome struct {
-	Set      string
-	Scenario string
-	ExitCode int
-	Ran      bool
-	Problems []check
-	Error    string
-}
-
-func (o outcome) passed() bool {
-	return o.Error == "" && o.ExitCode == 0 && o.Ran && len(o.Problems) == 0
-}
-
-func anyFailed(outcomes []outcome) bool {
-	for _, o := range outcomes {
-		if !o.passed() {
-			return true
-		}
-	}
-	return false
-}
-
 type scenarioRun struct {
 	Env  runEnv
 	Set  scenarioSet
@@ -48,8 +26,8 @@ func runScenario(run scenarioRun) (outcome, error) {
 	writeErr := os.WriteFile(logPath, output, 0o600)
 	problems, ran, parseErr := scenarioProblems(output, scenario)
 	result.Problems, result.Ran = problems, ran
-	if runErr == nil && strings.Contains(string(output), "Client timed out") {
-		runErr = errors.New("suite client timeout")
+	if runErr == nil {
+		runErr = clientTimeoutError(output)
 	}
 	return result, errors.Join(runErr, writeErr, parseErr)
 }
@@ -68,4 +46,13 @@ func scenarioProblems(output []byte, scenario string) ([]check, bool, error) {
 	}
 	problems, err := scenarioChecks(data, scenario)
 	return problems, true, err
+}
+
+func resultsDir(output []byte) (string, bool) {
+	for line := range strings.Lines(string(output)) {
+		if dir, ok := strings.CutPrefix(line, "Results saved to "); ok {
+			return strings.TrimSpace(dir), true
+		}
+	}
+	return "", false
 }

@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 )
 
 const suitePath = "test/conformance/node_modules/.bin/conformance"
@@ -83,19 +82,4 @@ func runSets(env runEnv, selected []scenarioSet) ([]outcome, error) {
 		}
 	}
 	return outcomes, nil
-}
-
-func saveSummary(results string, outcomes []outcome) error {
-	summary := []byte(renderSummary(outcomes))
-	if err := os.WriteFile(filepath.Join(results, "summary.md"), summary, 0o600); err != nil {
-		return err
-	}
-	if path := os.Getenv("GITHUB_STEP_SUMMARY"); path != "" {
-		return os.WriteFile(path, summary, 0o600)
-	}
-	return nil
-}
-
-func report(results string, outcomes []outcome) {
-	fmt.Printf("\n%s\nConformance results: %s\n", renderSummary(outcomes), results)
 }

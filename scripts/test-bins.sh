@@ -14,7 +14,7 @@ go build -o "$dir/echomcp" ./cmd/echomcp >&2
 go build -race -tags test -ldflags "-X github.com/mcpmini/mini/internal/version.buildRevision=integration-test" -o "$dir/mini" ./cmd/mini >&2
 go build -tags integration -o "$dir/fakemcp" ./test/fakemcp >&2
 go build -o "$dir/structlint" ./tools/structlint >&2
-go build -o "$dir/conformanceclient" ./test/conformanceclient >&2
+go build -o "$dir/conformanceclient" ./test/conformance/client >&2
 
 echo "ECHOMCP_BIN=$dir/echomcp"
 echo "MINIMCP_BIN=$dir/mini"
