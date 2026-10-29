@@ -64,6 +64,8 @@ func (f *oauthHTTPFlow) resolveLogin(
 		return resolvedLogin{}, err
 	}
 	if challenge != nil && challenge.StatusCode == http.StatusForbidden {
+		// Step-up authorization preserves existing permissions when a challenge names only the new scopes.
+		// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/80041ab0a139a8f4fb3adbc99f7ae9113ea59671/docs/specification/2026-07-28/basic/authorization/index.mdx#L389-L394
 		mergePreviousScopes(p.ConfigDir, sc, issuer.Issuer)
 	}
 	resolved.challenge = challenge

@@ -24,7 +24,7 @@ The login is tied to the MCP's URL, `client_id` and `token_url` as they were whe
 
 OAuth works with MCPs you configure on localhost or private networks, including Tailscale. MCPs added by agents cannot use private OAuth destinations, even with `dangerous_allow_private_urls`.
 
-When an operation fails with an OAuth scope challenge, run `mini auth <name>`. Restart your agents as described in [Applying changes](#applying-changes), then retry the operation. A pending `403 insufficient_scope` challenge adds the required scopes and keeps the previous login's scopes when the server, issuer, audience and client still match. After a successful login, mini clears the consumed challenge. mini does not automatically repeat a failed tool call. Without a pending 403, authorization uses the configured scopes, or fresh discovery defaults when none are configured, plus any scopes required by the current challenge; it does not carry over the previous login's scopes.
+When an operation fails with an OAuth scope challenge, run `mini auth <name>`. Restart your agents as described in [Applying changes](#applying-changes), then retry the operation. mini does not automatically repeat a failed tool call.
 
 ## requires a custom OAuth app
 
