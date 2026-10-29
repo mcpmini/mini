@@ -167,7 +167,7 @@ func validateConfiguredEndpoint(endpoint, name string) error {
 		return nil
 	}
 	if err := requireHTTPURL(endpoint); err != nil {
-		return fmt.Errorf("oauth %s must be an absolute HTTP(S) URL: %w", name, err)
+		return fmt.Errorf("oauth %s: %w", name, err)
 	}
 	return nil
 }

@@ -14,8 +14,7 @@ import (
 // not blocked here because that would require DNS resolution at validation time.
 func ValidateURL(rawURL string) error { return (SSRFPolicy{}).ValidateURL(rawURL) }
 
-// SSRFPolicy permits private networks only when explicitly authorized by the caller.
-// Link-local, unspecified, multicast and reserved destinations remain blocked.
+// SSRFPolicy always blocks link-local, unspecified, multicast and reserved destinations.
 type SSRFPolicy struct {
 	AllowPrivateNetworks bool
 }
@@ -53,7 +52,7 @@ func IsPrivateNetworkIP(ip net.IP) bool {
 }
 
 var cgnatRange = func() *net.IPNet {
-	//nolint:errcheck // fixed source literal defines the shared private-network range.
+	//nolint:errcheck // a constant CIDR literal cannot fail to parse.
 	_, block, _ := net.ParseCIDR("100.64.0.0/10")
 	return block
 }()

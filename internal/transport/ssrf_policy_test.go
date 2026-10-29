@@ -69,3 +69,31 @@ func TestPrivateNetworkDialPinsValidatedDNS(t *testing.T) {
 		t.Fatalf("body=%q err=%v DNS calls=%d", body, err, calls)
 	}
 }
+
+type unguardedDefaultTransport struct{ calls int }
+
+func (tr *unguardedDefaultTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	tr.calls++
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader("")),
+		Request:    req,
+	}, nil
+}
+
+func TestStrictClientGuardsNonstandardDefaultTransport(t *testing.T) {
+	original := http.DefaultTransport
+	unguarded := &unguardedDefaultTransport{}
+	http.DefaultTransport = unguarded
+	t.Cleanup(func() { http.DefaultTransport = original })
+	client := NewNoRedirectClient(NoRedirectClientOptions{BlockPrivateIPs: true})
+	defer client.CloseIdleConnections()
+	response, err := client.Get("http://127.0.0.1:1")
+	if response != nil {
+		response.Body.Close()
+	}
+	if err == nil || !strings.Contains(err.Error(), "blocked") || unguarded.calls != 0 {
+		t.Fatalf("strict request used unguarded transport: %v calls=%d", err, unguarded.calls)
+	}
+}

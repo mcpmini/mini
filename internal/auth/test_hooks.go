@@ -5,7 +5,6 @@ package auth
 import (
 	"context"
 	"net"
-	"net/http"
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/transport"
@@ -13,11 +12,7 @@ import (
 
 func UseLoopbackHTTPClient() {
 	noRedirectClient = newAuthHTTPClient()
-	base, ok := http.DefaultTransport.(*http.Transport)
-	if !ok {
-		base = &http.Transport{}
-	}
-	noRedirectClient.Transport = base.Clone()
+	noRedirectClient.Transport = transport.NewHTTPTransport(transport.SSRFPolicy{AllowPrivateNetworks: true})
 }
 
 func UseProductionHTTPClient() {

@@ -18,18 +18,14 @@ type oauthHTTPFlow struct {
 	origin          *url.URL
 	addresses       []net.IPAddr
 	client          *http.Client
-	sourceValidated atomic.Bool
+	sourceContacted atomic.Bool
 	owned           []*http.Transport
 }
 
 func newAuthHTTPClient() *http.Client {
-	client := transport.NewNoRedirectClient(
+	return transport.NewNoRedirectClient(
 		transport.NoRedirectClientOptions{Timeout: 30 * time.Second, BlockPrivateIPs: true},
 	)
-	if client.Transport == nil {
-		client.Transport = &http.Transport{DialContext: transport.SSRFSafeDialer()}
-	}
-	return client
 }
 
 func newOAuthHTTPFlow(ctx context.Context, sc config.ServerConfig) *oauthHTTPFlow {
@@ -52,14 +48,10 @@ func newOAuthHTTPFlow(ctx context.Context, sc config.ServerConfig) *oauthHTTPFlo
 
 func (f *oauthHTTPFlow) configureClient() {
 	f.client = newAuthHTTPClient()
-	base, ok := http.DefaultTransport.(*http.Transport)
-	if !ok {
-		base = &http.Transport{}
-	}
-	pinned := base.Clone()
-	pinned.Proxy, pinned.DialContext = nil, f.dialOrigin
-	private := base.Clone()
-	private.Proxy, private.DialContext = nil, (transport.SSRFPolicy{AllowPrivateNetworks: true}).DialContext()
+	policy := transport.SSRFPolicy{AllowPrivateNetworks: true}
+	pinned := transport.NewHTTPTransport(policy)
+	pinned.DialContext = f.dialOrigin
+	private := transport.NewHTTPTransport(policy)
 	f.owned = []*http.Transport{pinned, private}
 	if strict, ok := f.client.Transport.(*http.Transport); ok {
 		f.owned = append(f.owned, strict)
@@ -130,7 +122,7 @@ func (f *oauthHTTPFlow) closeIdleConnections() {
 	}
 }
 
-func (f *oauthHTTPFlow) privateReady() bool { return f.origin != nil && f.sourceValidated.Load() }
+func (f *oauthHTTPFlow) privateReady() bool { return f.origin != nil && f.sourceContacted.Load() }
 
 type oauthFlowTransport struct {
 	flow                    *oauthHTTPFlow
@@ -141,7 +133,7 @@ func (t oauthFlowTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	if t.flow.sameOrigin(req.URL) {
 		resp, err := t.pinned.RoundTrip(req)
 		if err == nil && (resp.StatusCode < 300 || resp.StatusCode >= 400) {
-			t.flow.sourceValidated.Store(true)
+			t.flow.sourceContacted.Store(true)
 		}
 		return resp, err
 	}

@@ -36,10 +36,10 @@ func (l *Login) validate() error {
 	if l.Resource == "" || l.TokenURL == "" || l.Client.ID == "" || l.Token == nil {
 		return errors.New("login record is missing its resource, token_url, client or token")
 	}
-	endpoint, err := url.Parse(l.TokenURL)
-	if err != nil || (endpoint.Scheme != "http" && endpoint.Scheme != "https") || endpoint.Host == "" {
-		return errors.New("login record token_url is not an absolute HTTP URL")
+	if err := requireHTTPURL(l.TokenURL); err != nil {
+		return fmt.Errorf("login record token_url: %w", err)
 	}
+
 	if l.Client.Configured && (l.Client.Secret != "" || l.Client.AuthMethod != "") {
 		return errors.New("login record stores credentials for a configured client")
 	}

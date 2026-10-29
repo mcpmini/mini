@@ -141,19 +141,21 @@ func NewNoRedirectClient(opts NoRedirectClientOptions) *http.Client {
 		},
 	}
 	if opts.BlockPrivateIPs {
-		applySsrfTransport(client)
+		client.Transport = NewHTTPTransport(SSRFPolicy{})
 	}
 	return client
 }
 
-func applySsrfTransport(client *http.Client) {
-	dt, ok := http.DefaultTransport.(*http.Transport)
-	if ok {
-		t := dt.Clone()
-		t.DialContext = SSRFSafeDialer()
-		t.Proxy = nil
-		client.Transport = t
+// NewHTTPTransport enforces policy at dial time even when the default transport is customized.
+func NewHTTPTransport(policy SSRFPolicy) *http.Transport {
+	base, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		base = &http.Transport{}
 	}
+	tr := base.Clone()
+	tr.DialContext = policy.DialContext()
+	tr.Proxy = nil
+	return tr
 }
 
 func (c *HTTPConnection) Health(ctx context.Context) error {
