@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 )
 
 // AuthorizationProvider supplies the auth header value, re-read on every request.
@@ -98,7 +97,7 @@ func (c *HTTPConnection) sendOneWithAuthRetry(
 		}
 		c.observeAuthorizationChallenge(resp)
 		if resp.StatusCode == http.StatusUnauthorized {
-			wwwAuth := strings.Join(resp.Header.Values("WWW-Authenticate"), ", ")
+			wwwAuth := wwwAuthenticate(resp.Header)
 			//nolint:errcheck // the 401 and challenge determine auth handling; Close releases the response stream.
 			resp.Body.Close()
 			return sentAuth, &UnauthorizedError{WWWAuthenticate: wwwAuth}

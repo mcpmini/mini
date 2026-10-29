@@ -100,7 +100,7 @@ func (c *HTTPConnection) observeAuthorizationChallenge(resp *http.Response) {
 		return
 	}
 	observer.ObserveAuthorizationChallenge(AuthorizationChallenge{
-		StatusCode: resp.StatusCode, WWWAuthenticate: strings.Join(resp.Header.Values("WWW-Authenticate"), ", "),
+		StatusCode: resp.StatusCode, WWWAuthenticate: wwwAuthenticate(resp.Header),
 	})
 }
 

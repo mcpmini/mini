@@ -88,18 +88,18 @@ func (f *oauthHTTPFlow) discoverMetadata(
 
 func (f *oauthHTTPFlow) discoverASURL(ctx context.Context, serverURL string, saved *Challenge) (asRef, error) {
 	challenge := saved
-	if f.origin != nil || challenge == nil || parseWWWAuthParam(challenge.WWWAuthenticate, "resource_metadata") == "" {
-		var err error
-		challenge, err = f.probeAuthorizationChallenge(ctx, serverURL)
-		if err != nil {
-			challenge = nil
-		}
+	if f.needsFreshChallenge(challenge) {
+		challenge = f.probeAuthorizationChallenge(ctx, serverURL)
 	}
 	ref, err := f.discoverFromChallenge(ctx, serverURL, challenge)
 	if saved != nil {
 		ref = withRequiredScopes(ref, saved.WWWAuthenticate)
 	}
 	return ref, err
+}
+
+func (f *oauthHTTPFlow) needsFreshChallenge(saved *Challenge) bool {
+	return f.origin != nil || saved == nil || parseWWWAuthParam(saved.WWWAuthenticate, "resource_metadata") == ""
 }
 
 func (f *oauthHTTPFlow) discoverFromChallenge(
@@ -125,7 +125,7 @@ func withRequiredScopes(ref asRef, header string) asRef {
 	return ref
 }
 
-func (f *oauthHTTPFlow) probeAuthorizationChallenge(ctx context.Context, serverURL string) (*Challenge, error) {
+func (f *oauthHTTPFlow) probeAuthorizationChallenge(ctx context.Context, serverURL string) *Challenge {
 	err := transport.ProbeAuthorization(ctx, transport.ProbeAuthorizationParams{
 		URL: serverURL, Client: f.client, Clock: f.clock,
 	})
@@ -134,9 +134,10 @@ func (f *oauthHTTPFlow) probeAuthorizationChallenge(ctx context.Context, serverU
 		ValidAuthorizationChallenge(http.StatusUnauthorized, unauthorized.WWWAuthenticate) {
 		return &Challenge{
 			ServerURL: serverURL, StatusCode: http.StatusUnauthorized, WWWAuthenticate: unauthorized.WWWAuthenticate,
-		}, nil
+		}
 	}
-	return nil, err
+	// Failed probes fall back to well-known protected-resource metadata discovery.
+	return nil
 }
 
 func (f *oauthHTTPFlow) asRefFromChallenge(ctx context.Context, serverURL string, challenge *Challenge) (asRef, error) {

@@ -3,11 +3,13 @@
 package main
 
 import (
-	"fmt"
+	"context"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/transport"
@@ -22,22 +24,37 @@ func TestCLIRecordsScopeFailureForExplicitReauthorization(t *testing.T) {
 		Auth:      &config.AuthConfig{Type: config.AuthTypeOAuth2},
 	}
 	configtest.WriteServer(t, dir, sc)
-	failure := fmt.Errorf(
-		"invoke: %w",
-		&transport.HTTPStatusError{
-			StatusCode:      http.StatusForbidden,
-			WWWAuthenticate: `Bearer error="insufficient_scope", scope="write"`,
-		},
-	)
+	failure := scopeFailureFromHTTP(t)
+
 	recordAuthorizationFailure(dir, sc, failure)
 	got, err := auth.LoadChallenge(dir, sc.Name, sc.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.StatusCode != http.StatusForbidden ||
-		got.WWWAuthenticate != `Bearer error="insufficient_scope", scope="write"` {
+		got.WWWAuthenticate != `Basic realm="private", Bearer error="insufficient_scope", scope="write"` {
 		t.Fatalf("saved challenge = %#v", got)
 	}
+}
+
+func scopeFailureFromHTTP(t *testing.T) error {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Add("WWW-Authenticate", `Basic realm="private"`)
+		w.Header().Add("WWW-Authenticate", `Bearer error="insufficient_scope", scope="write"`)
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer srv.Close()
+	conn, err := transport.NewHTTPConnection(transport.HTTPConnectionConfig{URL: srv.URL, Clock: clock.System()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	_, err = conn.ListTools(context.Background())
+	if err == nil {
+		t.Fatal("scope failure unexpectedly succeeded")
+	}
+	return err
 }
 
 func TestCLIIgnoresNonOAuthFailures(t *testing.T) {

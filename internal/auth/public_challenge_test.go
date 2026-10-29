@@ -32,9 +32,6 @@ func checkPublicChallengeCase(t *testing.T, tc publicChallengeCase) {
 	t.Helper()
 	fixture := &publicChallengeTransport{status: tc.status, header: tc.header}
 	flow := &oauthHTTPFlow{client: &http.Client{Transport: fixture}, clock: clock.System()}
-	if flow.origin != nil {
-		t.Fatal("fixture must exercise public OAuth policy")
-	}
 	dir := t.TempDir()
 	for range 2 {
 		if scopes := checkPublicLoginDiscovery(t, flow, dir); strings.Join(scopes, " ") != tc.scopes {

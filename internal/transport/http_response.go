@@ -110,12 +110,12 @@ func sameJSONID(raw json.RawMessage, id any) bool {
 func nonRetryableHTTPError(resp *http.Response, method string, errBody []byte) error {
 	if resp.StatusCode == http.StatusUnauthorized {
 		return fmt.Errorf("http %s: status %d: %w", method, resp.StatusCode,
-			&UnauthorizedError{WWWAuthenticate: strings.Join(resp.Header.Values("WWW-Authenticate"), ", ")})
+			&UnauthorizedError{WWWAuthenticate: wwwAuthenticate(resp.Header)})
 	}
 	body := string(errBody)
 	return &HTTPStatusError{
 		Method: method, StatusCode: resp.StatusCode, Body: body, RPC: parseHTTPStatusRPC(errBody),
-		WWWAuthenticate: strings.Join(resp.Header.Values("WWW-Authenticate"), ", "),
+		WWWAuthenticate: wwwAuthenticate(resp.Header),
 	}
 }
 
@@ -138,4 +138,8 @@ func decodeHTTPStatusRPC(body []byte) (httpStatusRPCResponse, bool) {
 	err := json.Unmarshal(body, &response)
 	valid := err == nil && response.JsonRPC == JsonRPCVersion && len(response.ID) > 0 && response.Error != nil
 	return response, valid
+}
+
+func wwwAuthenticate(header http.Header) string {
+	return strings.Join(header.Values("WWW-Authenticate"), ", ")
 }
