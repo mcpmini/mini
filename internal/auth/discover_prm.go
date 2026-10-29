@@ -139,6 +139,10 @@ func decodePRM(resp *http.Response, p prmFetchParams) (asRef, error) {
 	return asRef{URL: meta.AuthorizationServers[0], Scopes: meta.ScopesSupported, Resource: meta.Resource}, nil
 }
 
+// Accept same-origin parent audiences for providers such as Slack, following the SDK's compatibility
+// policy rather than RFC 9728's exact comparison:
+// https://github.com/modelcontextprotocol/typescript-sdk/blob/3b73021a0a2272c0c04c3917bcdb03398b3ec63f/src/shared/auth-utils.ts#L25-L55
+// https://www.rfc-editor.org/rfc/rfc9728.html#section-3.3
 func validatePRMResource(resource, expected string) error {
 	if resource == "" {
 		return errors.New("resource is missing")
