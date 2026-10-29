@@ -1,3 +1,5 @@
+//go:build test
+
 package auth
 
 import (
@@ -68,13 +70,26 @@ func TestOAuthDiscoveryClosesOwnedIdleConnections(t *testing.T) {
 	assertConnectionsClosed(t, connections)
 }
 
+func TestOAuthMetadataResolutionClosesOwnedIdleConnections(t *testing.T) {
+	origin, connections := idleTrackingSource(t)
+	sc := config.ServerConfig{
+		URL:  origin + "/mcp",
+		Auth: &config.AuthConfig{ClientID: "configured", Issuer: origin},
+	}
+	resolved, err := ResolveEndpoints(t.Context(), &sc, BeginLoginParams{Clock: clock.System()})
+	if err != nil || resolved.Client.ID != "configured" || resolved.Issuer.Issuer != origin {
+		t.Fatalf("resolved metadata = %+v, error = %v", resolved, err)
+	}
+	assertConnectionsClosed(t, connections)
+}
+
 func TestOAuthFailedResolutionClosesOwnedIdleConnections(t *testing.T) {
 	origin, connections := idleTrackingSource(t)
 	sc := config.ServerConfig{
 		URL:  origin + "/mcp",
 		Auth: &config.AuthConfig{ClientID: "configured", Issuer: "https://other.example"},
 	}
-	if _, err := ResolveEndpoints(t.Context(), &sc, ResolveEndpointsParams{Clock: clock.System()}); err == nil {
+	if _, err := resolveEndpoints(t.Context(), &sc, BeginLoginParams{Clock: clock.System()}); err == nil {
 		t.Fatal("issuer mismatch accepted")
 	}
 	assertConnectionsClosed(t, connections)
@@ -88,7 +103,7 @@ func TestBrowserLoginOwnsResolvedIdleConnections(t *testing.T) {
 				URL:  origin + "/mcp",
 				Auth: &config.AuthConfig{ClientID: "configured", Issuer: origin},
 			}
-			resolved, err := ResolveEndpoints(t.Context(), &sc, ResolveEndpointsParams{Clock: clock.System()})
+			resolved, err := resolveEndpoints(t.Context(), &sc, BeginLoginParams{Clock: clock.System()})
 			if err != nil {
 				t.Fatal(err)
 			}

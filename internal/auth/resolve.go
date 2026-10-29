@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/transport"
 )
@@ -25,28 +24,18 @@ func ApplyBearerToken(sc *config.ServerConfig, accessToken string) {
 	sc.Headers[sc.Auth.HeaderName()] = "Bearer " + accessToken
 }
 
-type ResolveEndpointsParams struct {
-	ConfigDir  string
-	ServerName string
-	// Clock drives the client_secret_expires_at comparison during registration hydration.
-	Clock clock.Clock
-}
-
-// ResolvedLogin is the client a login uses and the authorization server it expects to answer.
-type ResolvedLogin struct {
+type resolvedLogin struct {
 	Client LoginClient
 	Issuer ExpectedIssuer
 	flow   *oauthHTTPFlow
 }
 
-// ResolveEndpoints discovers the authorization server, binds client credentials to its issuer,
-// and fills missing OAuth endpoints. ResourceURL is canonicalized from the server URL.
-func ResolveEndpoints(ctx context.Context, sc *config.ServerConfig, p ResolveEndpointsParams) (ResolvedLogin, error) {
+func resolveEndpoints(ctx context.Context, sc *config.ServerConfig, p BeginLoginParams) (resolvedLogin, error) {
 	if sc.UnsetEnv != nil {
-		return ResolvedLogin{}, sc.UnsetEnv
+		return resolvedLogin{}, sc.UnsetEnv
 	}
 	if err := ApplyResourceURL(sc); err != nil {
-		return ResolvedLogin{}, err
+		return resolvedLogin{}, err
 	}
 	flow := newOAuthHTTPFlow(ctx, *sc)
 	resolved, err := flow.resolveLogin(ctx, sc, p)
@@ -59,8 +48,8 @@ func ResolveEndpoints(ctx context.Context, sc *config.ServerConfig, p ResolveEnd
 func (f *oauthHTTPFlow) resolveLogin(
 	ctx context.Context,
 	sc *config.ServerConfig,
-	p ResolveEndpointsParams,
-) (ResolvedLogin, error) {
+	p BeginLoginParams,
+) (resolvedLogin, error) {
 	a := sc.Auth
 	if a.ClientID == "" {
 		// A configured secret belongs to a configured client; never send it with a registered or CIMD id.
@@ -68,18 +57,18 @@ func (f *oauthHTTPFlow) resolveLogin(
 	}
 	meta, issuer, err := f.discoverForLogin(ctx, sc.URL, a)
 	if err != nil {
-		return ResolvedLogin{}, err
+		return resolvedLogin{}, err
 	}
 	if a.ClientID != "" {
 		if err = validateConfiguredIssuer(a, meta); err != nil {
-			return ResolvedLogin{}, err
+			return resolvedLogin{}, err
 		}
-		return ResolvedLogin{Client: LoginClient{ID: a.ClientID, Configured: true}, Issuer: issuer, flow: f}, nil
+		return resolvedLogin{Client: LoginClient{ID: a.ClientID, Configured: true}, Issuer: issuer, flow: f}, nil
 	}
 	client, err := resolveClient(ctx, ClientRegParams{
 		ConfigDir: p.ConfigDir, ServerName: p.ServerName, AuthConfig: a, Meta: meta, Now: p.Clock.Now(), flow: f,
 	})
-	return ResolvedLogin{Client: client, Issuer: issuer, flow: f}, err
+	return resolvedLogin{Client: client, Issuer: issuer, flow: f}, err
 }
 
 func (f *oauthHTTPFlow) discoverForLogin(

@@ -13,6 +13,7 @@ import (
 
 	"golang.org/x/oauth2"
 
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 )
 
@@ -32,7 +33,12 @@ type BrowserLogin struct {
 	flow      *oauthHTTPFlow
 }
 
-type BeginLoginParams = ResolveEndpointsParams
+type BeginLoginParams struct {
+	ConfigDir  string
+	ServerName string
+	// Clock drives the client_secret_expires_at comparison during registration hydration.
+	Clock clock.Clock
+}
 
 // BeginLogin binds the callback port before discovery, so a busy port fails before a client is
 // registered.
@@ -44,7 +50,7 @@ func BeginLogin(ctx context.Context, sc config.ServerConfig, p BeginLoginParams)
 	// A caller's config that gained a discovered client_id would read it as configured and refuse
 	// the login it just made.
 	sc.Auth = sc.Auth.Clone()
-	resolved, resolveErr := ResolveEndpoints(ctx, &sc, p)
+	resolved, resolveErr := resolveEndpoints(ctx, &sc, p)
 	if resolveErr != nil {
 		listener.Close() //nolint:errcheck // listener cleanup cannot replace the endpoint-resolution error returned to the caller
 		return nil, fmt.Errorf("resolve oauth endpoints: %w", resolveErr)
@@ -71,7 +77,7 @@ func listenCallback(ctx context.Context, ac *config.AuthConfig) (net.Listener, e
 
 // startBrowserLogin takes ownership of listener and resolved.flow, closing both on failure.
 // ac must be resolved because the login records its ResourceURL and TokenURL.
-func startBrowserLogin(ac *config.AuthConfig, listener net.Listener, resolved ResolvedLogin) (*BrowserLogin, error) {
+func startBrowserLogin(ac *config.AuthConfig, listener net.Listener, resolved resolvedLogin) (*BrowserLogin, error) {
 	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
 	if !ok {
 		resolved.flow.closeIdleConnections()

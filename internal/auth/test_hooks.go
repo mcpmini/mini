@@ -10,6 +10,17 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
+type ResolveEndpointsParams = BeginLoginParams
+
+type ResolvedLogin = resolvedLogin
+
+// ResolveEndpoints releases its temporary HTTP attempt after resolving metadata for tests.
+func ResolveEndpoints(ctx context.Context, sc *config.ServerConfig, p BeginLoginParams) (ResolvedLogin, error) {
+	resolved, err := resolveEndpoints(ctx, sc, p)
+	resolved.flow.closeIdleConnections()
+	return resolved, err
+}
+
 func UseLoopbackHTTPClient() {
 	noRedirectClient = newAuthHTTPClient()
 	noRedirectClient.Transport = transport.NewHTTPTransport(transport.SSRFPolicy{AllowPrivateNetworks: true})

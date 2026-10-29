@@ -116,7 +116,7 @@ func testPinnedOAuthExchange(t *testing.T, skipPRM bool) {
 	login, err := BeginLogin(
 		context.Background(),
 		sc,
-		ResolveEndpointsParams{ConfigDir: t.TempDir(), ServerName: "pinned", Clock: clock.System()},
+		BeginLoginParams{ConfigDir: t.TempDir(), ServerName: "pinned", Clock: clock.System()},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -195,10 +195,10 @@ func TestMixedDNSDoesNotReachPrivateSource(t *testing.T) {
 		return []net.IPAddr{{IP: net.ParseIP("127.0.0.1")}, {IP: net.ParseIP("8.8.8.8")}}, nil
 	}
 	sc := config.ServerConfig{URL: f.origin + "/mcp", Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2}}
-	if _, err := ResolveEndpoints(
+	if _, err := resolveEndpoints(
 		context.Background(),
 		&sc,
-		ResolveEndpointsParams{Clock: clock.System()},
+		BeginLoginParams{Clock: clock.System()},
 	); err == nil {
 		t.Fatal("mixed DNS discovery succeeded")
 	}
