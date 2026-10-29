@@ -124,6 +124,15 @@ jobs:
       - name: Install conformance suite
         run: npm ci --prefix test/conformance
 
+      - name: Restore go build cache
+        uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cache/go-build
+          key: go-build-conformance-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-build-conformance-${{ runner.os }}-${{ hashFiles('go.sum') }}-
+            go-build-unit-${{ runner.os }}-${{ hashFiles('go.sum') }}-
+
       - name: Build test helpers
         run: |
           testbin=$(mktemp -d)
