@@ -22,7 +22,7 @@ Coverage is a way to find surprising unexercised code, not a score to optimize. 
 
 ## Conformance suite
 
-`test/conformance/runner` runs the official MCP conformance suite's client scenarios against mini: tool calls, request metadata, HTTP headers, schemas and elicitation, in agent and CLI mode and against 2025-11-25 servers. CI runs it as the optional `conformance` job and writes failed checks to the job summary. To run it locally, install the suite with `npm ci --prefix test/conformance`, build the binaries with `scripts/test-bins.sh DIR` and export the lines it prints, then run `go run ./test/conformance/runner [agent|cli|legacy|auth]`; set `CONFORMANCE_RESULTS` to keep the results somewhere other than a temp dir.
+`test/conformance/runner` runs the official MCP conformance suite's client scenarios against mini: tool calls, request metadata, HTTP headers, schemas and elicitation, in agent and CLI mode and against 2025-11-25 servers. CI runs it as the required `conformance` job and writes failed checks to the job summary. To run it locally, install the suite with `npm ci --prefix test/conformance`, build the binaries with `scripts/test-bins.sh DIR` and export the lines it prints, then run `go run ./test/conformance/runner [agent|cli|legacy|auth]`; set `CONFORMANCE_RESULTS` to keep the results somewhere other than a temp dir.
 
 Every scenario must produce a successful check. Standard-header scenarios must exercise tools/call headers. The request-metadata fixture has no tools; it checks metadata and version negotiation on discovery/list requests, while tool-dependent checks may be skipped.
 

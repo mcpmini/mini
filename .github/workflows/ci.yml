@@ -107,7 +107,6 @@ jobs:
 
   conformance:
     runs-on: ubuntu-latest
-    continue-on-error: true
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
@@ -124,6 +123,15 @@ jobs:
 
       - name: Install conformance suite
         run: npm ci --prefix test/conformance
+
+      - name: Restore go build cache
+        uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cache/go-build
+          key: go-build-conformance-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-build-conformance-${{ runner.os }}-${{ hashFiles('go.sum') }}-
+            go-build-unit-${{ runner.os }}-${{ hashFiles('go.sum') }}-
 
       - name: Build test helpers
         run: |
@@ -143,11 +151,11 @@ jobs:
 
   ci:
     runs-on: ubuntu-latest
-    needs: [lint, unit, integration]
+    needs: [lint, unit, integration, conformance]
     if: always()
     steps:
       - name: All checks passed
         run: |
-          if [[ "${{ needs.lint.result }}" != "success" || "${{ needs.unit.result }}" != "success" || "${{ needs.integration.result }}" != "success" ]]; then
+          if [[ "${{ needs.lint.result }}" != "success" || "${{ needs.unit.result }}" != "success" || "${{ needs.integration.result }}" != "success" || "${{ needs.conformance.result }}" != "success" ]]; then
             exit 1
           fi
