@@ -12,7 +12,6 @@ const (
 	schemaEchoTool = "json_schema_echo"
 )
 
-// addNumbersArguments answer the suite's add_numbers tool, the first tool in tools_call and initialize.
 var addNumbersArguments = map[string]any{"a": 2, "b": 3}
 
 type objectSchema struct {
@@ -26,7 +25,6 @@ type schemaProperty struct {
 	Format  string     `json:"format"`
 }
 
-// schemaType is a JSON Schema type, which may be a list of types; only the first one is used.
 type schemaType string
 
 func (t *schemaType) UnmarshalJSON(data []byte) error {
@@ -58,7 +56,6 @@ func planFor(sc scenario, tools []transport.ToolDefinition) []toolCall {
 	}
 }
 
-// contextPlan makes the calls the suite asked for, sending {} rather than null for missing arguments.
 func contextPlan(calls []toolCall) []toolCall {
 	planned := make([]toolCall, 0, len(calls))
 	for _, call := range calls {
@@ -77,7 +74,6 @@ func firstToolPlan(tools []transport.ToolDefinition, args map[string]any) []tool
 	return []toolCall{{Name: tools[0].Name, Arguments: args}}
 }
 
-// schemaEchoPlan sends the schema tool's input schema back unchanged, so the suite can check mini kept it intact.
 func schemaEchoPlan(tools []transport.ToolDefinition) []toolCall {
 	for _, tool := range tools {
 		if tool.Name == schemaTool && len(tool.InputSchema) > 0 {

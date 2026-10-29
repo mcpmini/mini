@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"reflect"
@@ -33,10 +34,60 @@ func TestFailedMiniCommandsAreErrors(t *testing.T) {
 	}
 }
 
-func TestCLIDriverCannotAnswerInputRequests(t *testing.T) {
-	_, err := cliDriver{}.callTool(toolCall{Name: "stateful", Round: &transport.ToolCallMRTR{}})
-	if err == nil {
-		t.Fatal("cliDriver.callTool() error = nil for an MRTR round")
+type agentInput struct{ bytes.Buffer }
+
+func (*agentInput) Close() error { return nil }
+
+func TestAgentCallRejectsToolAndProtocolErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		response transport.Response
+		want     string
+	}{
+		{name: "tool error", response: transport.Response{Result: json.RawMessage(`{"isError":true,"content":[{"type":"text","text":"denied"}]}`)}, want: "tool error: denied"},
+		{name: "protocol error", response: transport.Response{Error: &transport.RPCError{Code: -32602, Message: "bad"}}, want: "protocol error -32602: bad"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := scriptedAgent(tc.response)
+			_, err := d.callTool(toolCall{Name: "tool"})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("callTool() error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func scriptedAgent(response transport.Response) *agentDriver {
+	response.ID = float64(1)
+	d := &agentDriver{input: &agentInput{}, replies: make(chan agentReply, 1)}
+	d.replies <- agentReply{response: response}
+	return d
+}
+
+func TestAgentCallPreservesInputRequests(t *testing.T) {
+	d := scriptedAgent(
+		transport.Response{
+			Result: json.RawMessage(
+				`{"resultType":"input_required","requestState":"opaque","inputRequests":{"r":{"method":"roots/list"}}}`,
+			),
+		},
+	)
+	got, err := d.callTool(toolCall{Name: "tool"})
+	if err != nil || got.ResultType != transport.ResultInputRequired ||
+		string(got.RequestState) != `"opaque"` || got.InputRequests["r"].Method != "roots/list" {
+		t.Fatalf("callTool() = %+v, %v; want pending input request and state", got, err)
+	}
+}
+
+func TestMiniCallOutput(t *testing.T) {
+	if err := callOutput("tool", cliResult{stdout: "not json"}); err == nil {
+		t.Error("callOutput(not JSON) error = nil")
+	}
+	if err := callOutput("tool", cliResult{stdout: `{"data":"ok"}`, err: errors.New("exit status 1")}); err == nil {
+		t.Error("callOutput(failed command) error = nil")
+	}
+	if err := callOutput("tool", cliResult{stdout: `{"data":"ok"}`}); err != nil {
+		t.Errorf("callOutput(success) error = %v", err)
 	}
 }
 

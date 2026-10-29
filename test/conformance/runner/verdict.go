@@ -2,9 +2,7 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
-	"strings"
 )
 
 type checkStatus string
@@ -52,8 +50,6 @@ func anyFailed(outcomes []outcome) bool {
 	return false
 }
 
-// scenarioChecks returns every reason a scenario's checks.json fails it. The suite passes a scenario whose
-// warnings or skipped checks leave nothing exercised, so the runner holds it to more.
 func scenarioChecks(data []byte, scenario string) ([]check, error) {
 	var checks []check
 	if err := json.Unmarshal(data, &checks); err != nil {
@@ -107,12 +103,4 @@ func observedSuccess(checks []check, required check) bool {
 		}
 	}
 	return false
-}
-
-// clientTimeoutError names the suite's client timeout, which would otherwise read as an adapter error in the summary.
-func clientTimeoutError(output []byte) error {
-	if strings.Contains(string(output), "Client timed out") {
-		return errors.New("suite client timeout")
-	}
-	return nil
 }

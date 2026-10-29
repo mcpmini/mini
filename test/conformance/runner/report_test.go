@@ -152,3 +152,12 @@ func TestScenarioRequiresSuccessfulCheck(t *testing.T) {
 		t.Fatalf("exercised initialization rejected: %v %v", problems, err)
 	}
 }
+
+func TestClientTimeoutIsNamed(t *testing.T) {
+	if err := clientTimeoutError([]byte("Checks:\n\nClient timed out after 90000ms\n")); err == nil {
+		t.Error("clientTimeoutError() = nil for output reporting a client timeout")
+	}
+	if err := clientTimeoutError([]byte("Checks:\n")); err != nil {
+		t.Errorf("clientTimeoutError() = %v for output without a timeout", err)
+	}
+}

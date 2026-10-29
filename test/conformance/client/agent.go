@@ -24,7 +24,6 @@ const (
 	closeTimeout    = 5 * time.Second
 )
 
-// agentDriver speaks MCP to `mini connect` over stdio, as an agent would.
 type agentDriver struct {
 	command *exec.Cmd
 	input   io.WriteCloser
@@ -38,8 +37,7 @@ type agentReply struct {
 	err      error
 }
 
-// listParams carries only the request metadata every modern request needs.
-type listParams struct {
+type metaOnlyParams struct {
 	Meta *transport.RequestMeta `json:"_meta"`
 }
 
@@ -63,12 +61,15 @@ func openAgent(mini miniCLI) (*agentDriver, error) {
 	}
 	d := &agentDriver{command: command, input: input, replies: make(chan agentReply, 16), cancel: cancel}
 	go d.readReplies(bufio.NewReader(stdout))
-	return d, d.handshake()
+	if err := d.handshake(); err != nil {
+		return nil, errors.Join(err, d.close())
+	}
+	return d, nil
 }
 
 func (d *agentDriver) handshake() error {
 	if err := d.request(
-		rpcCall{Method: "server/discover", Params: listParams{Meta: agentMeta()}, Timeout: requestTimeout},
+		rpcCall{Method: "server/discover", Params: metaOnlyParams{Meta: agentMeta()}, Timeout: requestTimeout},
 		nil,
 	); err != nil {
 		return err
@@ -93,7 +94,7 @@ func (d *agentDriver) close() error {
 func (d *agentDriver) tools() ([]transport.ToolDefinition, error) {
 	var listed transport.ToolsListResult
 	if err := d.request(
-		rpcCall{Method: "tools/list", Params: listParams{Meta: agentMeta()}, Timeout: requestTimeout},
+		rpcCall{Method: "tools/list", Params: metaOnlyParams{Meta: agentMeta()}, Timeout: requestTimeout},
 		&listed,
 	); err != nil {
 		return nil, err
@@ -118,6 +119,7 @@ func (d *agentDriver) callTool(call toolCall) (toolResult, error) {
 	); err != nil {
 		return toolResult{}, fmt.Errorf("%s: %w", call.Name, err)
 	}
+
 	if result.IsError {
 		return toolResult{}, fmt.Errorf("%s: tool error: %s", call.Name, contentText(result.Content))
 	}
@@ -138,7 +140,6 @@ func agentMeta() *transport.RequestMeta {
 	}
 }
 
-// awaitUpstream waits until mini has connected to the scenario's server, so tools/list includes its tools.
 func (d *agentDriver) awaitUpstream() error {
 	status := agentToolCall(toolCall{Name: "config", Arguments: map[string]any{"action": "status"}})
 	for deadline := time.Now().Add(readyTimeout); time.Now().Before(deadline); time.Sleep(readyPoll) {
@@ -190,6 +191,7 @@ func (d *agentDriver) request(call rpcCall, result any) error {
 	if err != nil {
 		return err
 	}
+
 	if response.Error != nil {
 		return fmt.Errorf("protocol error %d: %s", response.Error.Code, response.Error.Message)
 	}

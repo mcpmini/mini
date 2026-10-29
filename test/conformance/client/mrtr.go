@@ -47,14 +47,13 @@ func runMRTR(d driver) error {
 	return err
 }
 
-// completeRounds answers input requests until the tool completes. The suite checks that a call to
-// unrelatedTool between rounds carries none of the other tool's inputResponses or requestState.
 func completeRounds(d driver, name, unrelatedTool string) error {
 	result, err := d.callTool(bareCall(name))
 	for round := 0; err == nil && result.ResultType == transport.ResultInputRequired; round++ {
 		if round == maxMRTRRounds {
 			return fmt.Errorf("%s: still input_required after %d rounds", name, maxMRTRRounds)
 		}
+		// The suite checks that this call carries none of the pending tool's inputResponses or requestState.
 		if unrelatedTool != "" {
 			if _, unrelatedErr := d.callTool(bareCall(unrelatedTool)); unrelatedErr != nil {
 				return unrelatedErr

@@ -7,12 +7,13 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
-// The suite's authorization servers approve every request, so following the authorization URL's redirects to
-// mini's callback completes the login without a browser.
+// The suite's authorization servers approve every request, so following the redirects completes a login.
 const loginBrowserCommand = "curl -sS -L -o /dev/null --max-time 20"
 
 func setUpAuth(sc scenario, mini miniCLI) error {
-	if err := mini.writeConfig(config.Config{BrowserCommand: loginBrowserCommand}); err != nil {
+	cfg := config.DefaultConfig()
+	cfg.BrowserCommand = loginBrowserCommand
+	if err := mini.writeConfig(cfg); err != nil {
 		return err
 	}
 	if sc.Name == "auth/pre-registration" {

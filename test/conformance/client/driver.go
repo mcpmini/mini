@@ -2,13 +2,11 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-// mode is how the adapter reaches mini: as an MCP agent over stdio, or through the direct CLI.
 type mode string
 
 const (
@@ -54,7 +52,6 @@ func openDriver(sc scenario, mini miniCLI) (driver, error) {
 	return openAgent(mini)
 }
 
-// cliDriver lists and calls tools through `mini ls` and `mini call`, which can't answer input requests.
 type cliDriver struct {
 	mini        miniCLI
 	reauthorize bool
@@ -74,9 +71,6 @@ func (d cliDriver) tools() ([]transport.ToolDefinition, error) {
 }
 
 func (d cliDriver) callTool(call toolCall) (toolResult, error) {
-	if call.Round != nil {
-		return toolResult{}, errors.New("mini call cannot answer input requests")
-	}
 	return toolResult{ResultType: transport.ResultComplete}, d.mini.call(call)
 }
 

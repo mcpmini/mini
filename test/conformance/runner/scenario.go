@@ -56,3 +56,10 @@ func resultsDir(output []byte) (string, bool) {
 	}
 	return "", false
 }
+
+func clientTimeoutError(output []byte) error {
+	if strings.Contains(string(output), "Client timed out") {
+		return errors.New("suite client timeout")
+	}
+	return nil
+}

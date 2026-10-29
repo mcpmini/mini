@@ -1,5 +1,5 @@
-// Command client plays the agent for the official MCP conformance suite: the suite starts it with a
-// scenario's server URL, and it drives mini against that server.
+// Command conformanceclient is the client command the official MCP conformance suite starts for each scenario.
+// It connects mini to the scenario's server and uses it as an agent would, over stdio or through the CLI.
 package main
 
 import (
@@ -45,7 +45,6 @@ type scenario struct {
 	Context   scenarioContext
 }
 
-// scenarioContext is the suite's MCP_CONFORMANCE_CONTEXT; each scenario fills only the fields it uses.
 type scenarioContext struct {
 	ToolCalls    []toolCall `json:"toolCalls"`
 	ClientID     string     `json:"client_id"`

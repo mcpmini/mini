@@ -21,7 +21,6 @@ const (
 	cliTimeout = 60 * time.Second
 )
 
-// miniCLI runs one mini binary against one scenario's config dir.
 type miniCLI struct {
 	bin       string
 	configDir string
@@ -75,17 +74,20 @@ func (m miniCLI) call(call toolCall) error {
 	if err != nil {
 		return err
 	}
-	result := m.run("call", serverName, call.Name, string(encoded))
-	if err := result.failure("mini call " + call.Name); err != nil {
+	return callOutput(call.Name, m.run("call", serverName, call.Name, string(encoded)))
+}
+
+func callOutput(name string, result cliResult) error {
+	if err := result.failure("mini call " + name); err != nil {
 		return err
 	}
 	if !json.Valid([]byte(result.stdout)) {
-		return fmt.Errorf("mini call %s: output is not JSON: %s", call.Name, result.stdout)
+		return fmt.Errorf("mini call %s: output is not JSON: %s", name, result.stdout)
 	}
 	return nil
 }
 
-func (m miniCLI) writeConfig(cfg config.Config) error {
+func (m miniCLI) writeConfig(cfg *config.Config) error {
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return err
@@ -98,7 +100,6 @@ func (m miniCLI) createServer(sc config.ServerConfig) error {
 	return err
 }
 
-// parseToolTable reads tool names from `mini ls <server>`, which only prints a table.
 func parseToolTable(output string) []string {
 	var names []string
 	inRows := false
@@ -119,7 +120,6 @@ func parseToolTable(output string) []string {
 	return names
 }
 
-// isUnauthorized matches mini's CLI error text; the CLI reports no machine-readable auth failure.
 func isUnauthorized(err error) bool {
 	text := err.Error()
 	return strings.Contains(text, "unauthorized (") ||
