@@ -220,11 +220,11 @@ func decodeASMeta(body io.Reader, metaURL string) (*ServerMeta, error) {
 	}, nil
 }
 
+var errIssuerMismatch = errors.New("authorization server metadata issuer mismatch")
+
 // requireIssuer refuses metadata naming another issuer, which could steer a login's code and
 // tokens to a server other than the one the MCP server named. The spec forbids normalizing either.
 // https://github.com/modelcontextprotocol/modelcontextprotocol/blob/8e12bf3c/docs/specification/2026-07-28/basic/authorization/authorization-server-discovery.mdx?plain=1#L94
-var errIssuerMismatch = errors.New("authorization server metadata issuer mismatch")
-
 func requireIssuer(meta *ServerMeta, issuer, metaURL string) error {
 	if meta.Issuer != issuer {
 		return fmt.Errorf(
