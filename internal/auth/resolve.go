@@ -169,7 +169,11 @@ func (f *oauthHTTPFlow) discoverAndApply(ctx context.Context, p discoveryParams)
 		return nil, fmt.Errorf("discover oauth endpoints: %w", err)
 	}
 	a.ResourceURL = meta.Resource
-	return meta, f.applyDiscoveredEndpoints(a, meta)
+	if err := f.applyDiscoveredEndpoints(a, meta); err != nil {
+		return meta, err
+	}
+	applyDiscoveredScopes(a, meta)
+	return meta, nil
 }
 
 func (f *oauthHTTPFlow) applyDiscoveredEndpoints(a *config.AuthConfig, meta *ServerMeta) error {
@@ -189,12 +193,15 @@ func (f *oauthHTTPFlow) applyDiscoveredEndpoints(a *config.AuthConfig, meta *Ser
 	} else if err := validateConfiguredEndpoint(a.TokenURL, "token_endpoint"); err != nil {
 		return err
 	}
+	return nil
+}
+
+func applyDiscoveredScopes(a *config.AuthConfig, meta *ServerMeta) {
 	if len(a.Scopes) == 0 {
 		a.Scopes = meta.Scopes
 	} else {
 		a.Scopes = stableScopes(a.Scopes, meta.RequiredScopes)
 	}
-	return nil
 }
 
 var endpointValidator = transport.ValidateURL

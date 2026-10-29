@@ -18,50 +18,64 @@ type publicChallengeCase struct {
 }
 
 func TestPublicLoginDiscoveryFromSavedChallenge(t *testing.T) {
-	for _, tc := range []publicChallengeCase{
+	for _, tc := range publicChallengeCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := &publicChallengeTransport{status: tc.status, header: tc.header}
+			flow := &oauthHTTPFlow{client: &http.Client{Transport: fixture}, clock: clock.System()}
+			dir := t.TempDir()
+			for range 2 {
+				sc := config.ServerConfig{
+					Name: "srv",
+					URL:  "https://8.8.8.8/mcp",
+					Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2},
+				}
+				recordPublicTokenFailure(t, flow.client, publicTokenFailure{dir: dir, server: sc})
+				_, issuer, err := flow.discoverForLogin(context.Background(), &sc, savedChallenge(dir, sc.Name, sc.URL))
+				if err != nil || issuer.Issuer != "https://8.8.8.8/custom-as" {
+					t.Fatalf("login discovery issuer = %q, err = %v", issuer.Issuer, err)
+				}
+				if strings.Join(sc.Auth.Scopes, " ") != tc.scopes {
+					t.Fatalf("login scopes = %v, want %q", sc.Auth.Scopes, tc.scopes)
+				}
+			}
+			if fixture.probes != tc.probes || fixture.tokenRequests != 2 || fixture.wellKnown != 0 {
+				t.Fatalf(
+					"anonymous/token/well-known requests = %d/%d/%d, want %d/2/0",
+					fixture.probes,
+					fixture.tokenRequests,
+					fixture.wellKnown,
+					tc.probes,
+				)
+			}
+		})
+	}
+}
+
+func publicChallengeCases() []publicChallengeCase {
+	return []publicChallengeCase{
 		{name: "expired token", header: `Bearer error="invalid_token"`, scopes: "read", status: 401, probes: 2},
-		{name: "expired token required scopes", header: `Bearer error="invalid_token", scope="write"`, scopes: "write", status: 401, probes: 2},
-		{name: "cached metadata", header: `Bearer resource_metadata="https://8.8.8.8/custom-prm", scope="write"`, scopes: "write", status: 401, probes: 0},
-		{name: "scope failure", header: `Bearer error="insufficient_scope", scope="write"`, scopes: "write", status: 403, probes: 2},
-	} {
-		t.Run(tc.name, func(t *testing.T) { checkPublicChallengeCase(t, tc) })
+		{
+			name:   "expired token required scopes",
+			header: `Bearer error="invalid_token", scope="write"`,
+			scopes: "write",
+			status: 401,
+			probes: 2,
+		},
+		{
+			name:   "cached metadata",
+			header: `Bearer resource_metadata="https://8.8.8.8/custom-prm", scope="write"`,
+			scopes: "write",
+			status: 401,
+			probes: 0,
+		},
+		{
+			name:   "scope failure",
+			header: `Bearer error="insufficient_scope", scope="write"`,
+			scopes: "write",
+			status: 403,
+			probes: 2,
+		},
 	}
-}
-
-func checkPublicChallengeCase(t *testing.T, tc publicChallengeCase) {
-	t.Helper()
-	fixture := &publicChallengeTransport{status: tc.status, header: tc.header}
-	flow := &oauthHTTPFlow{client: &http.Client{Transport: fixture}, clock: clock.System()}
-	dir := t.TempDir()
-	for range 2 {
-		if scopes := checkPublicLoginDiscovery(t, flow, dir); strings.Join(scopes, " ") != tc.scopes {
-			t.Fatalf("login scopes = %v, want %q", scopes, tc.scopes)
-		}
-	}
-	if fixture.probes != tc.probes || fixture.tokenRequests != 2 || fixture.wellKnown != 0 {
-		t.Fatalf(
-			"anonymous/token/well-known requests = %d/%d/%d, want %d/2/0",
-			fixture.probes,
-			fixture.tokenRequests,
-			fixture.wellKnown,
-			tc.probes,
-		)
-	}
-}
-
-func checkPublicLoginDiscovery(t *testing.T, flow *oauthHTTPFlow, dir string) []string {
-	t.Helper()
-	sc := config.ServerConfig{
-		Name: "srv",
-		URL:  "https://8.8.8.8/mcp",
-		Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2},
-	}
-	recordPublicTokenFailure(t, flow.client, publicTokenFailure{dir: dir, server: sc})
-	_, issuer, err := flow.discoverForLogin(context.Background(), &sc, savedChallenge(dir, sc.Name, sc.URL))
-	if err != nil || issuer.Issuer != "https://8.8.8.8/custom-as" {
-		t.Fatalf("login discovery issuer = %q, err = %v", issuer.Issuer, err)
-	}
-	return sc.Auth.Scopes
 }
 
 type publicTokenFailure struct {
