@@ -132,6 +132,9 @@ type oauthFlowTransport struct {
 func (t oauthFlowTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if t.flow.sameOrigin(req.URL) {
 		resp, err := t.pinned.RoundTrip(req)
+		// Trust private metadata destinations only after reaching the pinned, user-configured source;
+		// an uncontacted URL must not grant access to the private network (mini policy).
+		// https://www.rfc-editor.org/rfc/rfc9728.html#section-7.7
 		if err == nil && (resp.StatusCode < 300 || resp.StatusCode >= 400) {
 			t.flow.sourceContacted.Store(true)
 		}

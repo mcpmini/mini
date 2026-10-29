@@ -25,17 +25,15 @@ func ApplyBearerToken(sc *config.ServerConfig, accessToken string) {
 }
 
 type resolvedLogin struct {
-	Client LoginClient
-	Issuer ExpectedIssuer
-	flow   *oauthHTTPFlow
+	Client    LoginClient
+	Issuer    ExpectedIssuer
+	flow      *oauthHTTPFlow
+	ServerURL string
 }
 
 func resolveEndpoints(ctx context.Context, sc *config.ServerConfig, p BeginLoginParams) (resolvedLogin, error) {
 	if sc.UnsetEnv != nil {
 		return resolvedLogin{}, sc.UnsetEnv
-	}
-	if err := ApplyResourceURL(sc); err != nil {
-		return resolvedLogin{}, err
 	}
 	flow := newOAuthHTTPFlow(ctx, *sc)
 	resolved, err := flow.resolveLogin(ctx, sc, p)
@@ -50,7 +48,12 @@ func (f *oauthHTTPFlow) resolveLogin(
 	sc *config.ServerConfig,
 	p BeginLoginParams,
 ) (resolvedLogin, error) {
+	serverURL, err := CanonicalResourceURI(sc.URL)
+	if err != nil {
+		return resolvedLogin{}, err
+	}
 	a := sc.Auth
+	resolved := resolvedLogin{ServerURL: serverURL, flow: f}
 	if a.ClientID == "" {
 		// A configured secret belongs to a configured client; never send it with a registered or CIMD id.
 		a.ClientSecret, a.TokenEndpointAuthMethod = "", ""
@@ -59,16 +62,11 @@ func (f *oauthHTTPFlow) resolveLogin(
 	if err != nil {
 		return resolvedLogin{}, err
 	}
-	if a.ClientID != "" {
-		if err = validateConfiguredIssuer(a, meta); err != nil {
-			return resolvedLogin{}, err
-		}
-		return resolvedLogin{Client: LoginClient{ID: a.ClientID, Configured: true}, Issuer: issuer, flow: f}, nil
-	}
-	client, err := resolveClient(ctx, ClientRegParams{
+	resolved.Issuer = issuer
+	resolved.Client, err = resolveClient(ctx, ClientRegParams{
 		ConfigDir: p.ConfigDir, ServerName: p.ServerName, AuthConfig: a, Meta: meta, Now: p.Clock.Now(), flow: f,
 	})
-	return resolvedLogin{Client: client, Issuer: issuer, flow: f}, err
+	return resolved, err
 }
 
 func (f *oauthHTTPFlow) discoverForLogin(
@@ -123,6 +121,7 @@ func (f *oauthHTTPFlow) discoverAndApply(
 	if err != nil {
 		return nil, fmt.Errorf("discover oauth endpoints: %w", err)
 	}
+	a.ResourceURL = meta.Resource
 	return meta, f.applyDiscoveredEndpoints(a, meta)
 }
 
@@ -188,6 +187,12 @@ type ClientRegParams struct {
 }
 
 func resolveClient(ctx context.Context, p ClientRegParams) (LoginClient, error) {
+	if p.AuthConfig.ClientID != "" {
+		if err := validateConfiguredIssuer(p.AuthConfig, p.Meta); err != nil {
+			return LoginClient{}, err
+		}
+		return LoginClient{ID: p.AuthConfig.ClientID, Configured: true}, nil
+	}
 	reg, err := LoadRegistration(p.ConfigDir, p.ServerName)
 	if err != nil && !IsNotFound(err) {
 		return LoginClient{}, err

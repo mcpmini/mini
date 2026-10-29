@@ -90,12 +90,7 @@ func startBrowserLogin(ac *config.AuthConfig, listener net.Listener, resolved re
 		closed:    make(chan struct{}),
 		oauth2Cfg: cfg,
 		verifier:  verifier,
-		login: Login{
-			Resource: ac.ResourceURL,
-			Issuer:   resolved.Issuer.Issuer,
-			TokenURL: ac.TokenURL,
-			Client:   resolved.Client,
-		},
+		login:     loginSnapshot(ac, resolved),
 		authURL: buildAuthURL(cfg, buildAuthURLParams{
 			state: state, verifier: verifier,
 			resourceURL: ac.ResourceURL, extraAuthParams: ac.ExtraAuthParams,
@@ -104,6 +99,16 @@ func startBrowserLogin(ac *config.AuthConfig, listener net.Listener, resolved re
 	}
 	login.serve(listener, callbackHandler(callbackExpectation{state: state, issuer: resolved.Issuer}, login.results))
 	return login, nil
+}
+
+func loginSnapshot(ac *config.AuthConfig, resolved resolvedLogin) Login {
+	return Login{
+		Resource:  ac.ResourceURL,
+		ServerURL: resolved.ServerURL,
+		Issuer:    resolved.Issuer.Issuer,
+		TokenURL:  ac.TokenURL,
+		Client:    resolved.Client,
+	}
 }
 
 func buildPKCEConfig(ac *config.AuthConfig, callbackPort int) (*oauth2.Config, string, string) {

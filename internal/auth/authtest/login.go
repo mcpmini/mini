@@ -3,6 +3,7 @@
 package authtest
 
 import (
+	"cmp"
 	"net"
 	"testing"
 
@@ -21,7 +22,11 @@ func StartLogin(t *testing.T, ac *config.AuthConfig) *auth.BrowserLogin {
 	login, err := auth.StartBrowserLogin(
 		ac,
 		listener,
-		auth.ResolvedLogin{Client: client, Issuer: auth.ExpectedIssuer{Issuer: ac.Issuer}},
+		auth.ResolvedLogin{
+			Client:    client,
+			Issuer:    auth.ExpectedIssuer{Issuer: ac.Issuer},
+			ServerURL: cmp.Or(ac.ResourceURL, "https://mcp.example.test/mcp"),
+		},
 	)
 	if err != nil {
 		t.Fatalf("StartBrowserLogin: %v", err)

@@ -150,9 +150,15 @@ func TestRegister_emptyClientID(t *testing.T) {
 }
 
 func TestRegister_invalidURL(t *testing.T) {
-	_, err := auth.Register(context.Background(), "://bad", auth.ResolvedCallbackURI(nil))
-	if err == nil {
-		t.Error("expected error for invalid URL")
+	for _, endpoint := range []string{
+		"://bad", "https://user@as.example/register", "https://as.example/register#fragment", "http:opaque",
+	} {
+		t.Run(endpoint, func(t *testing.T) {
+			_, err := auth.Register(t.Context(), endpoint, auth.ResolvedCallbackURI(nil))
+			if err == nil {
+				t.Fatal("Register accepted invalid URL")
+			}
+		})
 	}
 }
 

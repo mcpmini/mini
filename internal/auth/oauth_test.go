@@ -4,6 +4,9 @@ package auth_test
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -275,5 +278,73 @@ func TestSavedLoginRetainsIssuerAndRejectsConfiguredIssuerChange(t *testing.T) {
 	sc.Auth.Issuer += "/"
 	if _, err := auth.LoadLoginFor(dir, sc); err == nil || !strings.Contains(err.Error(), "issuer changed") {
 		t.Fatalf("changed issuer load error = %v", err)
+	}
+}
+
+func TestSavedLoginSeparatesResourceFromTransportBinding(t *testing.T) {
+	sc := config.ServerConfig{Name: "srv", URL: "https://resource.example/mcp"}
+	login := &auth.Login{
+		Resource:  "https://resource.example",
+		ServerURL: sc.URL,
+		Issuer:    "https://issuer.example",
+		TokenURL:  "https://issuer.example/token",
+		Client:    auth.LoginClient{ID: "client"},
+		Token:     &oauth2.Token{AccessToken: "access"},
+	}
+	dir := t.TempDir()
+	if err := auth.SaveLogin(dir, sc.Name, login); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := auth.LoadLoginFor(dir, sc); err != nil {
+		t.Fatalf("load login for original transport endpoint: %v", err)
+	}
+
+	sc.URL = "https://resource.example/other"
+	if _, err := auth.LoadLoginFor(dir, sc); err == nil || !strings.Contains(err.Error(), "server URL changed") {
+		t.Fatalf("load login for changed endpoint sharing resource = %v, want endpoint mismatch", err)
+	}
+
+	missingBinding := *login
+	missingBinding.ServerURL = ""
+	if err := auth.SaveLogin(t.TempDir(), sc.Name, &missingBinding); err == nil {
+		t.Fatal("saved login without required server endpoint binding")
+	}
+}
+
+func TestSavedRootAudienceIsUsedForRefresh(t *testing.T) {
+	mock := authtest.NewTokenServer(t)
+	var mcp *httptest.Server
+	mcp = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/prm" {
+			json.NewEncoder(w).
+				Encode(map[string]any{"resource": mcp.URL, "authorization_servers": []string{mock.Srv.URL}})
+			return
+		}
+		w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="`+mcp.URL+`/prm"`)
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer mcp.Close()
+	sc := config.ServerConfig{Name: "srv", URL: mcp.URL + "/mcp", Auth: mock.AuthConfig()}
+	sc.Auth.ResourceURL = sc.URL
+	login := authtest.LoginFor(t, sc, &oauth2.Token{RefreshToken: "refresh"})
+	login.Resource = mcp.URL
+	dir := t.TempDir()
+	if err := auth.SaveLogin(dir, sc.Name, login); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := auth.LoadLoginFor(dir, sc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := auth.Refresh(
+		t.Context(),
+		auth.RefreshParams{Server: sc, Login: saved},
+	); err != nil {
+		t.Fatal(err)
+	}
+	mock.Mu.Lock()
+	defer mock.Mu.Unlock()
+	if len(mock.ResourceValues) != 1 || mock.ResourceValues[0] != mcp.URL {
+		t.Fatalf("refresh resource = %q, want saved root audience %q", mock.ResourceValues, mcp.URL)
 	}
 }

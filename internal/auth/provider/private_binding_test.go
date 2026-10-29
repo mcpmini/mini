@@ -18,7 +18,7 @@ import (
 )
 
 func TestPrivateRefreshBindingMismatchRequiresReauthorizationWithoutRetry(t *testing.T) {
-	for _, mismatch := range []string{"issuer", "token"} {
+	for _, mismatch := range []string{"issuer", "token", "resource"} {
 		t.Run(mismatch, func(t *testing.T) {
 			var hits, tokens atomic.Int32
 			source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -44,15 +44,19 @@ func TestPrivateRefreshBindingMismatchRequiresReauthorizationWithoutRetry(t *tes
 			defer source.Close()
 			dir := t.TempDir()
 			login := &auth.Login{
-				Resource: source.URL + "/mcp",
-				Issuer:   source.URL,
-				TokenURL: source.URL + "/token",
-				Client:   auth.LoginClient{ID: "cid", Configured: true},
-				Token:    storedToken(clock.NewFake().Now()),
+				Resource:  source.URL + "/mcp",
+				ServerURL: source.URL + "/mcp",
+				Issuer:    source.URL,
+				TokenURL:  source.URL + "/token",
+				Client:    auth.LoginClient{ID: "cid", Configured: true},
+				Token:     storedToken(clock.NewFake().Now()),
 			}
-			if mismatch == "issuer" {
+			switch mismatch {
+			case "issuer":
 				login.Issuer = "https://old.example"
-			} else {
+			case "resource":
+				login.Resource = source.URL + "/old"
+			default:
 				login.TokenURL = source.URL + "/old-token"
 			}
 			if err := auth.SaveLogin(dir, "srv", login); err != nil {

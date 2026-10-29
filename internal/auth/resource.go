@@ -5,18 +5,7 @@ import (
 	"net"
 	"net/url"
 	"strings"
-
-	"github.com/mcpmini/mini/internal/config"
 )
-
-func ApplyResourceURL(sc *config.ServerConfig) error {
-	resourceURL, err := CanonicalResourceURI(sc.URL)
-	if err != nil {
-		return err
-	}
-	sc.Auth.ResourceURL = resourceURL
-	return nil
-}
 
 func CanonicalResourceURI(raw string) (string, error) {
 	u, err := url.Parse(raw)

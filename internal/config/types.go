@@ -281,9 +281,7 @@ type AuthConfig struct {
 	// is sent to the token endpoint ("client_secret_basic", "client_secret_post", or "none").
 	TokenEndpointAuthMethod string `yaml:"token_endpoint_auth_method,omitempty"`
 
-	// ResourceURL is the canonical URI of the MCP server sent as the RFC 8707
-	// resource parameter in auth and token requests. Populated automatically
-	// from the server URL during discovery; not set by users in YAML.
+	// ResourceURL is the token audience sent as the RFC 8707 resource parameter.
 	ResourceURL string `yaml:"-"`
 
 	// CallbackPort overrides the loopback port for the OAuth2 redirect URI.

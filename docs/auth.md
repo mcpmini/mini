@@ -22,7 +22,7 @@ mini opens your browser to the provider's sign-in page and prints the URL in cas
 
 The login is tied to the MCP's URL, `client_id` and `token_url` as they were when you logged in. If you change any of them, mini stops sending the old token and asks you to run `mini auth linear` again; restart your agents afterward, as in [Applying changes](#applying-changes).
 
-OAuth supports private and loopback destinations, including CGNAT networks such as Tailscale, when your configured MCP server resolves entirely to private or loopback addresses. Each login and refresh contacts that server through pinned addresses. A non-redirect response from the configured origin enables private destinations for the remaining OAuth requests; link-local, unspecified, multicast and reserved addresses remain blocked. Servers added by agents retain the stricter OAuth network policy, even when `dangerous_allow_private_urls` permits their MCP connection. Redirects remain blocked.
+OAuth works with MCPs you configure on localhost or private networks, including Tailscale. MCPs added by agents cannot use private OAuth destinations, even with `dangerous_allow_private_urls`.
 
 ## requires a custom OAuth app
 
@@ -172,6 +172,7 @@ Common errors:
 - **`` <name> is not logged in; run `mini auth <name>` ``** or **`` <name> requires OAuth authorization; run `mini auth <name>` ``**: run `mini auth <name>`.
 - **`` <name> requires re-authorization; run `mini auth <name>` ``**: the saved login expired and couldn't be refreshed. Run `mini auth <name>`.
 - **`unauthorized (WWW-Authenticate: ...)`**: the MCP rejected the token or key in the file, or the file has none and the MCP needs one. Check the value, or see [requires manual configuration](#requires-manual-configuration).
+- **`invalid protected resource metadata`**: check the MCP URL in its server file. If the URL is correct, report the error to the provider so it can correct its OAuth metadata.
 - **`<field>: NAME isn't set where mini runs`** (or `aren't set` for several): see [Environment variables](#environment-variables).
 - **`<field>: ${NAME} isn't expanded`**: `${...}` was used in a field that doesn't expand it. See [Environment variables](#environment-variables).
 

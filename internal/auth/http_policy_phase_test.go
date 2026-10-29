@@ -105,7 +105,7 @@ func TestPrivateOAuthForbiddenDestinationsAfterSource(t *testing.T) {
 type fallbackMetadataTransport struct{}
 
 func (fallbackMetadataTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	body := `{"authorization_servers":["https://public.example"]}`
+	body := `{"resource":"https://public.example/mcp","authorization_servers":["https://public.example"]}`
 	if strings.Contains(req.URL.Path, "oauth-authorization-server") {
 		body = `{"issuer":"https://public.example","authorization_endpoint":"https://public.example/auth","token_endpoint":"https://public.example/token","code_challenge_methods_supported":["S256"]}`
 	}

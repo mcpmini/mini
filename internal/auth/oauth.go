@@ -3,6 +3,7 @@ package auth
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -135,10 +136,16 @@ func Refresh(ctx context.Context, p RefreshParams) (*oauth2.Token, error) {
 func (f *oauthHTTPFlow) validateRefreshBinding(ctx context.Context, p RefreshParams) error {
 	meta, err := f.discover(ctx, p.Server.URL)
 	if err != nil {
+		if errors.Is(err, errIssuerMismatch) {
+			return mismatchedLogin(err)
+		}
 		return err
 	}
 	if meta.Issuer != p.Login.Issuer {
 		return mismatchedLogin(fmt.Errorf("private OAuth refresh issuer differs from the saved issuer"))
+	}
+	if meta.Resource != p.Login.Resource {
+		return mismatchedLogin(fmt.Errorf("private OAuth refresh resource differs from the saved audience"))
 	}
 	if p.Server.Auth != nil && p.Server.Auth.TokenURL == p.Login.TokenURL {
 		return nil

@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -21,6 +22,7 @@ type pinnedOAuthFixture struct {
 	origin                                         string
 	source, metadata, registration, tokens, public atomic.Int32
 	issuerMismatch                                 atomic.Bool
+	resourceMismatch                               atomic.Bool
 	mismatch                                       atomic.Bool
 }
 
@@ -47,7 +49,11 @@ func (f *pinnedOAuthFixture) serve(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
-		json.NewEncoder(w).Encode(map[string]any{"authorization_servers": []string{f.origin}})
+		resource := f.origin + "/mcp"
+		if f.resourceMismatch.Load() {
+			resource = f.origin
+		}
+		json.NewEncoder(w).Encode(map[string]any{"resource": resource, "authorization_servers": []string{f.origin}})
 	case "/.well-known/oauth-authorization-server":
 		f.metadata.Add(1)
 		token := f.origin + "/token"
@@ -147,29 +153,31 @@ func testPinnedOAuthExchange(t *testing.T, skipPRM bool) {
 }
 
 func TestPrivateRefreshFreshBinding(t *testing.T) {
-	for _, mismatch := range []string{"none", "token", "issuer", "configured override"} {
+	for _, mismatch := range []string{"none", "token", "issuer", "configured override", "resource", "resource with configured override"} {
 		t.Run(mismatch, func(t *testing.T) {
 			f := newPinnedOAuthFixture(t)
 			f.mismatch.Store(mismatch == "token" || mismatch == "configured override")
 			f.issuerMismatch.Store(mismatch == "issuer")
+			f.resourceMismatch.Store(mismatch == "resource" || mismatch == "resource with configured override")
 			lookups := installRebindingNetwork(t, f)
 			sc := config.ServerConfig{
 				URL:  f.origin + "/mcp",
 				Auth: &config.AuthConfig{Issuer: f.origin, TokenURL: f.origin + "/token", ClientID: "saved-client"},
 			}
 			login := &Login{
-				Resource: sc.URL,
-				Issuer:   f.origin,
-				TokenURL: f.origin + "/token",
-				Client:   LoginClient{ID: "saved-client", Configured: true},
-				Token:    &oauth2.Token{RefreshToken: "saved-refresh"},
+				Resource:  sc.URL,
+				ServerURL: sc.URL,
+				Issuer:    f.origin,
+				TokenURL:  f.origin + "/token",
+				Client:    LoginClient{ID: "saved-client", Configured: true},
+				Token:     &oauth2.Token{RefreshToken: "saved-refresh"},
 			}
-			if mismatch != "configured override" {
+			if mismatch != "configured override" && mismatch != "resource with configured override" {
 				sc.Auth.TokenURL = ""
 			}
 			token, err := Refresh(context.Background(), RefreshParams{Server: sc, Login: login})
 			if mismatch != "none" && mismatch != "configured override" {
-				if err == nil || f.tokens.Load() != 0 {
+				if !errors.Is(err, ErrLoginMismatch) || f.tokens.Load() != 0 {
 					t.Fatalf("mismatch refresh = %v, %v; posts=%d", token, err, f.tokens.Load())
 				}
 			} else if err != nil || token.AccessToken != "pinned-token" || f.tokens.Load() != 1 {

@@ -34,7 +34,8 @@ func privateOAuthServer(t *testing.T, opts privateOAuthOptions) (*httptest.Serve
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/.well-known/oauth-protected-resource/mcp":
-			json.NewEncoder(w).Encode(map[string]any{"authorization_servers": []string{base}})
+			json.NewEncoder(w).
+				Encode(map[string]any{"resource": base + "/mcp", "authorization_servers": []string{base}})
 		case "/.well-known/oauth-authorization-server":
 			json.NewEncoder(w).Encode(map[string]any{
 				"issuer":                           base,
