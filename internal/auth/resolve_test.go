@@ -428,7 +428,7 @@ func TestResolveEndpointsRejectsInvalidConfiguredEndpoints(t *testing.T) {
 				}
 				sc := &config.ServerConfig{URL: as.URL + "/mcp", Auth: ac}
 				_, err := auth.ResolveEndpoints(t.Context(), sc, resolveParams(t.TempDir(), "server"))
-				if err == nil || !strings.Contains(err.Error(), field+" must be an absolute HTTP(S) URL") {
+				if err == nil || !strings.Contains(err.Error(), field+": URL must be an absolute HTTP(S) URL") {
 					t.Fatalf("ResolveEndpoints error = %v, want invalid %s", err, field)
 				}
 			})
