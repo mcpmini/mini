@@ -21,20 +21,23 @@ func configFrom(ac *config.AuthConfig) *oauth2.Config {
 		Endpoint: oauth2.Endpoint{
 			AuthURL:   ac.AuthURL,
 			TokenURL:  ac.TokenURL,
-			AuthStyle: tokenAuthStyle(ac.TokenEndpointAuthMethod),
+			AuthStyle: tokenAuthStyle(ac),
 		},
 	}
 }
 
-func tokenAuthStyle(method string) oauth2.AuthStyle {
-	switch method {
+func tokenAuthStyle(ac *config.AuthConfig) oauth2.AuthStyle {
+	switch ac.TokenEndpointAuthMethod {
 	case "client_secret_basic":
 		return oauth2.AuthStyleInHeader
-	case "client_secret_post":
+	case "client_secret_post", "none":
 		return oauth2.AuthStyleInParams
-	default:
-		return oauth2.AuthStyleAutoDetect
+	case "":
+		if ac.ClientSecret == "" {
+			return oauth2.AuthStyleInParams
+		}
 	}
+	return oauth2.AuthStyleAutoDetect
 }
 
 func oauthHTTPContextForClient(ctx context.Context, base *http.Client, resourceURL string) context.Context {
