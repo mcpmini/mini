@@ -12,11 +12,8 @@ import (
 )
 
 const (
-	suiteTimeout = 90 * time.Second
-	// The suite reports its own timeout; this later deadline only catches a suite that never returns.
-	scenarioDeadline = suiteTimeout + 15*time.Second
-	// The suite signals only its client shell, so mini can outlive it holding the output pipes open.
-	pipeWaitDelay = 5 * time.Second
+	suiteTimeout      = 90 * time.Second
+	hungSuiteDeadline = suiteTimeout + 15*time.Second
 )
 
 func suiteArgs(env runEnv, set scenarioSet, scenario string) []string {
@@ -28,11 +25,11 @@ func suiteArgs(env runEnv, set scenarioSet, scenario string) []string {
 }
 
 func runSuite(run scenarioRun) ([]byte, int, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), scenarioDeadline)
+	ctx, cancel := context.WithTimeout(context.Background(), hungSuiteDeadline)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, run.Env.Suite, suiteArgs(run.Env, run.Set, run.Name)...)
-	cmd.Env = append(os.Environ(), "MINI_CONFORMANCE_MODE="+run.Set.Mode)
-	cmd.WaitDelay = pipeWaitDelay
+	// test-bins.sh builds mini with -race, whose default one-second exit delay would add up over every CLI call.
+	cmd.Env = append(os.Environ(), "MINI_CONFORMANCE_MODE="+run.Set.Mode, "GORACE=atexit_sleep_ms=0")
 	output, err := cmd.CombinedOutput()
 	exitCode, runErr := commandResult(ctx, err)
 	return output, exitCode, runErr
