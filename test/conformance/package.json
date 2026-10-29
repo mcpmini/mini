@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "description": "Pins the official MCP conformance suite that test/conformance/runner runs against mini.",
+  "devDependencies": {
+    "@modelcontextprotocol/conformance": "0.2.0-alpha.12"
+  }
+}

@@ -20,6 +20,14 @@ A bug fix usually deserves a regression that reaches the old failure through a p
 
 Coverage is a way to find surprising unexercised code, not a score to optimize. There is no global percentage target or routine mutation-testing requirement. A race-detector pass covers only paths and processes actually run with race instrumentation.
 
+## Conformance suite
+
+`test/conformance/runner` runs the official MCP conformance suite's client scenarios against mini: tool calls, request metadata, HTTP headers, schemas and elicitation, in agent and CLI mode and against 2025-11-25 servers. CI runs it as the optional `conformance` job and writes failed checks to the job summary. To run it locally, install the suite with `npm ci --prefix test/conformance`, build the binaries with `scripts/test-bins.sh DIR` and export the lines it prints, then run `go run ./test/conformance/runner [agent|cli|legacy|auth]`; set `CONFORMANCE_RESULTS` to keep the results somewhere other than a temp dir.
+
+Every scenario must produce a successful check. Standard-header scenarios must exercise tools/call headers. The request-metadata fixture has no tools; it checks metadata and version negotiation on discovery/list requests, while tool-dependent checks may be skipped.
+
+Every listed scenario must pass outright: a failed check, a warning, or an adapter error in a scenario that doesn't expect one fails it. The scenario lists in `test/conformance/runner/sets.go` hold only scenarios that pass, so a fix that makes a scenario pass adds it in the same PR. The exception is `auth`, which runs only on request and fails until mini can log in to localhost servers (#606).
+
 ## Assert behavior that should remain true
 
 Prefer an observable result, error, state transition, outbound call, or forbidden side effect that the product promises. Make the decisive assertion easy to find. A test that only proves setup succeeded, checks a static value, or matches incidental fixture content gives weak protection.
