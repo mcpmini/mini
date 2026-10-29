@@ -40,7 +40,7 @@ func runSuiteHelper(mode string) {
 	}
 	fmt.Printf("child-pid=%d\npartial output retained\n", child.Process.Pid)
 	if mode != "exit" {
-		_ = child.Wait()
+		_ = child.Wait() // The parent kills this group; its resulting exit status is irrelevant.
 	}
 }
 
@@ -50,7 +50,9 @@ func runChildHelper() {
 	if _, err := ready.Write([]byte{1}); err != nil {
 		panic(err)
 	}
-	_ = ready.Close()
+	if err := ready.Close(); err != nil {
+		panic(err)
+	}
 	time.Sleep(time.Minute)
 }
 
@@ -141,7 +143,7 @@ func assertChildStopped(t *testing.T, output []byte) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = syscall.Kill(pid, syscall.SIGKILL) }()
+	defer func() { _ = syscall.Kill(pid, syscall.SIGKILL) }() // Best-effort cleanup also runs when the child is already gone.
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
 		status, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "stat=").Output()

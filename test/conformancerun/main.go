@@ -109,9 +109,6 @@ func runSets(env runEnv, selected []scenarioSet) ([]outcome, error) {
 		// Auth scenarios share mini's fixed OAuth callback port and cannot overlap.
 		for _, scenario := range set.Scenarios {
 			result, err := runScenario(ctx, scenarioRun{Env: env, Set: set, Name: scenario})
-			if err == nil && ctx.Err() != nil {
-				err = fmt.Errorf("total scenario budget exhausted: %w", ctx.Err())
-			}
 			if err != nil {
 				result.Error = err.Error()
 			}
