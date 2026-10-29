@@ -103,11 +103,9 @@ func startBrowserLogin(ac *config.AuthConfig, listener net.Listener, resolved re
 
 func loginSnapshot(ac *config.AuthConfig, resolved resolvedLogin) Login {
 	return Login{
-		Resource:  ac.ResourceURL,
-		ServerURL: resolved.ServerURL,
-		Issuer:    resolved.Issuer.Issuer,
-		TokenURL:  ac.TokenURL,
-		Client:    resolved.Client,
+		consumedChallenge: resolved.challenge,
+		Resource:          ac.ResourceURL, ServerURL: resolved.ServerURL, Issuer: resolved.Issuer.Issuer,
+		TokenURL: ac.TokenURL, Client: resolved.Client, Scopes: append([]string(nil), ac.Scopes...),
 	}
 }
 

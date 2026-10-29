@@ -71,10 +71,20 @@ func (e *UnauthorizedError) Error() string {
 	return fmt.Sprintf("unauthorized (WWW-Authenticate: %q)", e.WWWAuthenticate)
 }
 
+type AuthorizationChallenge struct {
+	StatusCode      int
+	WWWAuthenticate string
+}
+
+type AuthorizationChallengeObserver interface {
+	ObserveAuthorizationChallenge(AuthorizationChallenge)
+}
+
 type HTTPConnectionConfig struct {
 	URL     string
 	Headers map[string]string
 	Clock   clock.Clock
+	Client  *http.Client
 	// ClientTimeout is the hard network-level deadline. Zero means 60 seconds.
 	ClientTimeout time.Duration
 	// DisableRetryOnRateLimit disables automatic 429/503 retry. When true,
@@ -95,6 +105,12 @@ func NewHTTPConnection(cfg HTTPConnectionConfig) (*HTTPConnection, error) {
 	if cfg.AuthProvider != nil && cfg.AuthHeaderName == "" {
 		return nil, fmt.Errorf("HTTPConnectionConfig.AuthHeaderName is required when AuthProvider is set")
 	}
+	client := cfg.Client
+	if client == nil {
+		client = NewNoRedirectClient(NoRedirectClientOptions{
+			Timeout: resolveClientTimeout(cfg.ClientTimeout), BlockPrivateIPs: cfg.BlockPrivateIPs,
+		})
+	}
 	listenerCtx, listenerCancel := context.WithCancel(context.Background())
 	return &HTTPConnection{
 		url:                     cfg.URL,
@@ -103,15 +119,10 @@ func NewHTTPConnection(cfg HTTPConnectionConfig) (*HTTPConnection, error) {
 		authProvider:            cfg.AuthProvider,
 		authHeaderName:          cfg.AuthHeaderName,
 		disableRetryOnRateLimit: cfg.DisableRetryOnRateLimit,
-		client: NewNoRedirectClient(
-			NoRedirectClientOptions{
-				Timeout:         resolveClientTimeout(cfg.ClientTimeout),
-				BlockPrivateIPs: cfg.BlockPrivateIPs,
-			},
-		),
-		clock:          cfg.Clock,
-		listenerCtx:    listenerCtx,
-		listenerCancel: listenerCancel,
+		client:                  client,
+		clock:                   cfg.Clock,
+		listenerCtx:             listenerCtx,
+		listenerCancel:          listenerCancel,
 	}, nil
 }
 

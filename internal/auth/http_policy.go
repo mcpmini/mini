@@ -10,11 +10,13 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
 type oauthHTTPFlow struct {
+	clock           clock.Clock
 	origin          *url.URL
 	addresses       []net.IPAddr
 	client          *http.Client
@@ -29,7 +31,7 @@ func newAuthHTTPClient() *http.Client {
 }
 
 func newOAuthHTTPFlow(ctx context.Context, sc config.ServerConfig) *oauthHTTPFlow {
-	f := &oauthHTTPFlow{client: noRedirectClient}
+	f := &oauthHTTPFlow{client: noRedirectClient, clock: clock.System()}
 	if sc.AgentAdded {
 		return f
 	}

@@ -6,6 +6,7 @@ import (
 	"context"
 	"net"
 
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/transport"
 )
@@ -51,20 +52,31 @@ func BufferCallbackCode(l *BrowserLogin, code string) {
 }
 
 func Discover(ctx context.Context, serverURL string) (*ServerMeta, error) {
-	return (&oauthHTTPFlow{client: noRedirectClient}).discover(ctx, serverURL)
+	return (&oauthHTTPFlow{client: noRedirectClient, clock: clock.System()}).discover(ctx, serverURL)
 }
 
 func DiscoverAndApply(ctx context.Context, serverURL string, a *config.AuthConfig) (*ServerMeta, error) {
-	return (&oauthHTTPFlow{client: noRedirectClient}).discoverAndApply(ctx, serverURL, a)
+	return (&oauthHTTPFlow{client: noRedirectClient, clock: clock.System()}).discoverAndApply(
+		ctx,
+		discoveryParams{ServerURL: serverURL, Auth: a},
+	)
 }
 
 func Register(ctx context.Context, registrationURL, callbackURI string) (RegistrationResult, error) {
-	return (&oauthHTTPFlow{client: noRedirectClient}).register(ctx, registrationURL, callbackURI)
+	return (&oauthHTTPFlow{client: noRedirectClient, clock: clock.System()}).register(ctx, registrationURL, callbackURI)
 }
 
 func StartBrowserLogin(ac *config.AuthConfig, listener net.Listener, resolved ResolvedLogin) (*BrowserLogin, error) {
 	if resolved.flow == nil {
-		resolved.flow = &oauthHTTPFlow{client: noRedirectClient}
+		resolved.flow = &oauthHTTPFlow{client: noRedirectClient, clock: clock.System()}
 	}
 	return startBrowserLogin(ac, listener, resolved)
+}
+
+func SaveChallenge(dir, name string, challenge Challenge) error {
+	return saveChallenge(dir, name, challenge)
+}
+
+func LoadChallenge(dir, name, serverURL string) (*Challenge, error) {
+	return loadChallenge(dir, name, serverURL)
 }

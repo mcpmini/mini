@@ -24,6 +24,8 @@ The login is tied to the MCP's URL, `client_id` and `token_url` as they were whe
 
 OAuth works with MCPs you configure on localhost or private networks, including Tailscale. MCPs added by agents cannot use private OAuth destinations, even with `dangerous_allow_private_urls`.
 
+When an operation fails with an OAuth scope challenge, run `mini auth <name>`. Restart your agents as described in [Applying changes](#applying-changes), then retry the operation. mini does not automatically repeat a failed tool call.
+
 ## requires a custom OAuth app
 
 Open the MCP's file first. If its comment says to create a token, as GitHub's does, follow [requires manual configuration](#requires-manual-configuration) instead; a token is quicker than an OAuth app.
@@ -70,7 +72,7 @@ Saved registrations and logins are bound to their issuer. Records from an older 
 that binding are not reused: dynamic clients are registered again, and saved logins require
 `mini auth <name>` again. Supplying a new issuer does not make an old registration valid.
 
-mini requests the scopes the MCP advertises. A list under `auth.scopes` replaces them, so include every scope you need. If port 6464 is taken, set `auth.callback_port` and register that port in the redirect URI instead. If the provider rejects the redirect URI, compare the app's registered URI with the `redirect_uri` in the URL `mini auth` prints, port included.
+mini requests the scopes in the MCP's authorization challenge, falling back to the scopes advertised in its metadata. A list under `auth.scopes` replaces the metadata defaults; scopes required by a challenge are still included. If port 6464 is taken, set `auth.callback_port` and register that port in the redirect URI instead. If the provider rejects the redirect URI, compare the app's registered URI with the `redirect_uri` in the URL `mini auth` prints, port included.
 
 ## requires manual configuration
 

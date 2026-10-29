@@ -177,6 +177,7 @@ func executeRaw(ctx context.Context, conn transport.Connection, cc callContext) 
 			Clock: cc.clock, Conn: conn, Server: cc.serverName, Tool: cc.toolName, Params: cc.params,
 		},
 	)
+	recordAuthorizationFailure(cc.configDir, *cc.sc, err)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "mini: %v\n", err)
 		os.Exit(1)
@@ -196,6 +197,7 @@ func executeProjected(p executeProjectedParams) {
 	defer store.Close()
 
 	result, err := invoke.Invoke(p.ctx, buildInvokeParams(p.conn, p.call, store))
+	recordAuthorizationFailure(p.call.configDir, *p.call.sc, err)
 	exitOnCallError(err)
 	exitOnEnvelopeError(result.Envelope)
 	exitOnCallError(printCallOutput(result.Envelope, p.mode))

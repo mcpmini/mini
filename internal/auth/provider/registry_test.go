@@ -4,6 +4,7 @@ package provider_test
 
 import (
 	"context"
+	"net/http"
 	"sync"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 func TestProviderRegistry_sameServer_returnsSameProvider(t *testing.T) {
@@ -205,6 +207,23 @@ func TestProviderRegistry_forget(t *testing.T) {
 
 		if got, err := old.Authorization(context.Background()); err == nil {
 			t.Errorf("forgotten provider authorized with %q", got)
+		}
+	})
+
+	t.Run("the forgotten provider cannot persist a late challenge", func(t *testing.T) {
+		dir := t.TempDir()
+		registry := provider.NewRegistry()
+		old, err := registry.GetOrCreate(oauthParams(dir, testServerURL))
+		if err != nil {
+			t.Fatal(err)
+		}
+		registry.Forget("srv")
+		observer := old.(transport.AuthorizationChallengeObserver)
+		observer.ObserveAuthorizationChallenge(transport.AuthorizationChallenge{
+			StatusCode: http.StatusUnauthorized, WWWAuthenticate: `Bearer resource_metadata="https://example.test/prm"`,
+		})
+		if _, err := auth.LoadChallenge(dir, "srv", testServerURL); !auth.IsNotFound(err) {
+			t.Fatalf("LoadChallenge after Forget = %v, want not found", err)
 		}
 	})
 

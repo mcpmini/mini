@@ -33,8 +33,6 @@ var scenarioSets = []scenarioSet{
 		"auth/offline-access-scope", "auth/offline-access-not-supported", "auth/authorization-server-migration",
 		"auth/iss-supported", "auth/iss-not-advertised", "auth/iss-supported-missing",
 		"auth/iss-wrong-issuer", "auth/iss-unexpected", "auth/iss-normalized", "auth/metadata-issuer-mismatch",
-	}},
-	{Name: "auth-pending", Mode: "cli", Version: "2026-07-28", Scenarios: []string{
 		"auth/metadata-var3", "auth/scope-from-www-authenticate",
 		"auth/scope-step-up",
 	}},

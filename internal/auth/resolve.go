@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"time"
 
@@ -29,6 +30,7 @@ type resolvedLogin struct {
 	Issuer    ExpectedIssuer
 	flow      *oauthHTTPFlow
 	ServerURL string
+	challenge *Challenge
 }
 
 func resolveEndpoints(ctx context.Context, sc *config.ServerConfig, p BeginLoginParams) (resolvedLogin, error) {
@@ -36,6 +38,7 @@ func resolveEndpoints(ctx context.Context, sc *config.ServerConfig, p BeginLogin
 		return resolvedLogin{}, sc.UnsetEnv
 	}
 	flow := newOAuthHTTPFlow(ctx, *sc)
+	flow.clock = p.Clock
 	resolved, err := flow.resolveLogin(ctx, sc, p)
 	if err != nil {
 		flow.closeIdleConnections()
@@ -54,14 +57,18 @@ func (f *oauthHTTPFlow) resolveLogin(
 	}
 	a := sc.Auth
 	resolved := resolvedLogin{ServerURL: serverURL, flow: f}
-	if a.ClientID == "" {
-		// A configured secret belongs to a configured client; never send it with a registered or CIMD id.
-		a.ClientSecret, a.TokenEndpointAuthMethod = "", ""
-	}
-	meta, issuer, err := f.discoverForLogin(ctx, sc.URL, a)
+	clearSecretWithoutClientID(a)
+	challenge := savedChallenge(p.ConfigDir, p.ServerName, sc.URL)
+	meta, issuer, err := f.discoverForLogin(ctx, sc, challenge)
 	if err != nil {
 		return resolvedLogin{}, err
 	}
+	if challenge != nil && challenge.StatusCode == http.StatusForbidden {
+		// Step-up authorization preserves existing permissions when a challenge names only the new scopes.
+		// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/80041ab0a139a8f4fb3adbc99f7ae9113ea59671/docs/specification/2026-07-28/basic/authorization/index.mdx#L389-L394
+		mergePreviousScopes(p.ConfigDir, sc, issuer.Issuer)
+	}
+	resolved.challenge = challenge
 	resolved.Issuer = issuer
 	resolved.Client, err = resolveClient(ctx, ClientRegParams{
 		ConfigDir: p.ConfigDir, ServerName: p.ServerName, AuthConfig: a, Meta: meta, Now: p.Clock.Now(), flow: f,
@@ -69,12 +76,27 @@ func (f *oauthHTTPFlow) resolveLogin(
 	return resolved, err
 }
 
+func clearSecretWithoutClientID(a *config.AuthConfig) {
+	if a.ClientID == "" {
+		// A configured secret belongs to a configured client; never send it with a registered or CIMD id.
+		a.ClientSecret, a.TokenEndpointAuthMethod = "", ""
+	}
+}
+
+func savedChallenge(configDir, serverName, serverURL string) *Challenge {
+	challenge, err := loadChallenge(configDir, serverName, serverURL)
+	if err != nil {
+		return nil
+	}
+	return challenge
+}
+
 func (f *oauthHTTPFlow) discoverForLogin(
 	ctx context.Context,
-	serverURL string,
-	a *config.AuthConfig,
+	sc *config.ServerConfig,
+	challenge *Challenge,
 ) (*ServerMeta, ExpectedIssuer, error) {
-	meta, err := f.discoverAndApply(ctx, serverURL, a)
+	meta, err := f.discoverAndApply(ctx, discoveryParams{ServerURL: sc.URL, Auth: sc.Auth, Challenge: challenge})
 	if err != nil {
 		return nil, ExpectedIssuer{}, err
 	}
@@ -82,6 +104,28 @@ func (f *oauthHTTPFlow) discoverForLogin(
 		return nil, ExpectedIssuer{}, fmt.Errorf("authorization server metadata is missing its issuer")
 	}
 	return meta, ExpectedIssuer{Issuer: meta.Issuer, AlwaysSent: meta.IssParameterSupported}, nil
+}
+
+func mergePreviousScopes(configDir string, sc *config.ServerConfig, issuer string) {
+	saved, err := LoadLoginFor(configDir, *sc)
+	if err == nil && saved.Issuer == issuer && saved.Resource == sc.Auth.ResourceURL {
+		sc.Auth.Scopes = stableScopes(saved.Scopes, sc.Auth.Scopes)
+	}
+}
+
+func stableScopes(groups ...[]string) []string {
+	seen := make(map[string]struct{})
+	var scopes []string
+	for _, group := range groups {
+		for _, scope := range group {
+			if _, exists := seen[scope]; scope == "" || exists {
+				continue
+			}
+			seen[scope] = struct{}{}
+			scopes = append(scopes, scope)
+		}
+	}
+	return scopes
 }
 
 func validateConfiguredIssuer(a *config.AuthConfig, meta *ServerMeta) error {
@@ -112,17 +156,24 @@ func portableClientID(a *config.AuthConfig) bool {
 		(a.TokenEndpointAuthMethod == "" || a.TokenEndpointAuthMethod == "none")
 }
 
-func (f *oauthHTTPFlow) discoverAndApply(
-	ctx context.Context,
-	serverURL string,
-	a *config.AuthConfig,
-) (*ServerMeta, error) {
-	meta, err := f.discover(ctx, serverURL)
+type discoveryParams struct {
+	ServerURL string
+	Auth      *config.AuthConfig
+	Challenge *Challenge
+}
+
+func (f *oauthHTTPFlow) discoverAndApply(ctx context.Context, p discoveryParams) (*ServerMeta, error) {
+	a := p.Auth
+	meta, err := f.discoverMetadata(ctx, p.ServerURL, p.Challenge)
 	if err != nil {
 		return nil, fmt.Errorf("discover oauth endpoints: %w", err)
 	}
 	a.ResourceURL = meta.Resource
-	return meta, f.applyDiscoveredEndpoints(a, meta)
+	if err := f.applyDiscoveredEndpoints(a, meta); err != nil {
+		return meta, err
+	}
+	applyDiscoveredScopes(a, meta)
+	return meta, nil
 }
 
 func (f *oauthHTTPFlow) applyDiscoveredEndpoints(a *config.AuthConfig, meta *ServerMeta) error {
@@ -142,10 +193,15 @@ func (f *oauthHTTPFlow) applyDiscoveredEndpoints(a *config.AuthConfig, meta *Ser
 	} else if err := validateConfiguredEndpoint(a.TokenURL, "token_endpoint"); err != nil {
 		return err
 	}
-	if len(a.Scopes) == 0 && len(meta.Scopes) > 0 {
-		a.Scopes = meta.Scopes
-	}
 	return nil
+}
+
+func applyDiscoveredScopes(a *config.AuthConfig, meta *ServerMeta) {
+	if len(a.Scopes) == 0 {
+		a.Scopes = meta.Scopes
+	} else {
+		a.Scopes = stableScopes(a.Scopes, meta.RequiredScopes)
+	}
 }
 
 var endpointValidator = transport.ValidateURL

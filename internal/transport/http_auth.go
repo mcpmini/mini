@@ -95,8 +95,9 @@ func (c *HTTPConnection) sendOneWithAuthRetry(
 		if err != nil {
 			return sentAuth, err
 		}
+		c.observeAuthorizationChallenge(resp)
 		if resp.StatusCode == http.StatusUnauthorized {
-			wwwAuth := resp.Header.Get("WWW-Authenticate")
+			wwwAuth := wwwAuthenticate(resp.Header)
 			//nolint:errcheck // the 401 and challenge determine auth handling; Close releases the response stream.
 			resp.Body.Close()
 			return sentAuth, &UnauthorizedError{WWWAuthenticate: wwwAuth}

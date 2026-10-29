@@ -130,7 +130,7 @@ func TestPublicMCPPrivateOAuthDenied(t *testing.T) {
 	if _, err := newOAuthHTTPFlow(
 		context.Background(),
 		sc,
-	).discoverAndApply(context.Background(), sc.URL, sc.Auth); err == nil {
+	).discoverAndApply(context.Background(), discoveryParams{ServerURL: sc.URL, Auth: sc.Auth}); err == nil {
 		t.Fatal("public MCP reached private OAuth metadata")
 	}
 	if requests.Load() != 0 {

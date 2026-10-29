@@ -65,6 +65,17 @@ func (p *tokenProvider) RefreshAuthorization(ctx context.Context, stale string) 
 	return bearerValue(p.login.Token), nil
 }
 
+func (p *tokenProvider) ObserveAuthorizationChallenge(challenge transport.AuthorizationChallenge) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.retired {
+		return
+	}
+	auth.RecordAuthorizationChallenge(p.configDir, p.server, auth.Challenge{
+		StatusCode: challenge.StatusCode, WWWAuthenticate: challenge.WWWAuthenticate,
+	})
+}
+
 var errRetired = errors.New("its server was removed")
 
 func (p *tokenProvider) retire() {
