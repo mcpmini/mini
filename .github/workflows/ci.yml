@@ -110,13 +110,13 @@ jobs:
     continue-on-error: true
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -125,12 +125,17 @@ jobs:
       - name: Install conformance suite
         run: npm ci --prefix test/conformance
 
+      - name: Build test helpers
+        run: |
+          testbin=$(mktemp -d)
+          scripts/test-bins.sh "$testbin" >> "$GITHUB_ENV"
+
       - name: Run conformance suite
         env:
           CONFORMANCE_RESULTS: ${{ runner.temp }}/conformance
         run: go run ./test/conformancerun
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: conformance-results

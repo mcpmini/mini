@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -36,14 +35,14 @@ type scenarioRun struct {
 	Name string
 }
 
-func runScenario(ctx context.Context, run scenarioRun) (outcome, error) {
+func runScenario(run scenarioRun) (outcome, error) {
 	env, set, scenario := run.Env, run.Set, run.Name
 	result := outcome{Set: set.Name, Scenario: scenario, ExitCode: -1}
 	dir := filepath.Join(env.Results, set.Name)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return result, err
 	}
-	output, exitCode, runErr := runSuite(ctx, run)
+	output, exitCode, runErr := runSuite(run)
 	result.ExitCode = exitCode
 	logPath := filepath.Join(dir, strings.ReplaceAll(scenario, "/", "_")+".log")
 	writeErr := os.WriteFile(logPath, output, 0o600)

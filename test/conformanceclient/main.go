@@ -51,11 +51,11 @@ func loadRunParams() (runParams, error) {
 		return runParams{}, fmt.Errorf("missing conformance server URL")
 	}
 	params := runParams{
-		Binary: os.Getenv("MINI_BIN"), Scenario: os.Getenv("MCP_CONFORMANCE_SCENARIO"),
+		Binary: os.Getenv("MINIMCP_BIN"), Scenario: os.Getenv("MCP_CONFORMANCE_SCENARIO"),
 		Mode: os.Getenv("MINI_CONFORMANCE_MODE"), URL: os.Args[len(os.Args)-1],
 	}
 	if params.Binary == "" {
-		return runParams{}, fmt.Errorf("MINI_BIN is required")
+		return runParams{}, fmt.Errorf("MINIMCP_BIN is required")
 	}
 	if params.Mode == "" {
 		params.Mode = "agent"
