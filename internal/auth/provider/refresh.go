@@ -67,7 +67,9 @@ func (p *tokenProvider) refreshLocked(stillNeeded func() bool) error {
 	}
 	refreshCtx, cancel := context.WithTimeout(p.lifetime, refreshTimeout)
 	defer cancel()
-	refreshed, err := auth.Refresh(refreshCtx, p.login.RefreshConfig(p.server.Auth), withoutAccessToken(token))
+	login := *p.login
+	login.Token = withoutAccessToken(token)
+	refreshed, err := auth.Refresh(refreshCtx, auth.RefreshParams{Server: p.server, Login: &login})
 	if err != nil {
 		return p.refreshFailureLocked(err)
 	}

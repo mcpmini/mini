@@ -82,6 +82,9 @@ func TestReconnect_transientTokenRefreshKeepsLoop(t *testing.T) {
 	defer tokenSrv.Close()
 
 	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if serveOAuthMetadata(w, r) {
+			return
+		}
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		w.WriteHeader(http.StatusUnauthorized)
 	}))
@@ -94,7 +97,7 @@ func TestReconnect_transientTokenRefreshKeepsLoop(t *testing.T) {
 
 	sc := config.ServerConfig{
 		Name: "svc", Transport: "http", URL: mcpSrv.URL,
-		Auth: &config.AuthConfig{Type: "oauth2", ClientID: "c", TokenURL: tokenSrv.URL},
+		Auth: &config.AuthConfig{Type: "oauth2", Issuer: mcpSrv.URL, ClientID: "c", TokenURL: tokenSrv.URL},
 	}
 	tok := &oauth2.Token{AccessToken: "old-access", RefreshToken: "old-refresh"}
 	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: configDir, ServerName: "svc", Server: sc, Token: tok})

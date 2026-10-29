@@ -36,10 +36,10 @@ func (l *Login) validate() error {
 	if l.Resource == "" || l.TokenURL == "" || l.Client.ID == "" || l.Token == nil {
 		return errors.New("login record is missing its resource, token_url, client or token")
 	}
-	endpoint, err := url.Parse(l.TokenURL)
-	if err != nil || (endpoint.Scheme != "http" && endpoint.Scheme != "https") || endpoint.Host == "" {
-		return errors.New("login record token_url is not an absolute HTTP URL")
+	if err := requireHTTPURL(l.TokenURL); err != nil {
+		return fmt.Errorf("login record token_url: %w", err)
 	}
+
 	if l.Client.Configured && (l.Client.Secret != "" || l.Client.AuthMethod != "") {
 		return errors.New("login record stores credentials for a configured client")
 	}
@@ -80,8 +80,10 @@ func LoadLoginFor(configDir string, sc config.ServerConfig) (*Login, error) {
 	return login, nil
 }
 
+var ErrLoginMismatch = errors.New("the login was made for other settings")
+
 func mismatchedLogin(cause error) error {
-	return fmt.Errorf("the login was made for other settings (%w)", cause)
+	return fmt.Errorf("%w (%w)", ErrLoginMismatch, cause)
 }
 
 // RefreshConfig is configured with the endpoint and client the login was issued for, never anything

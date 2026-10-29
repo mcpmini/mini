@@ -195,7 +195,7 @@ func ensureValidToken(p loginRefreshParams) (*oauth2.Token, error) {
 }
 
 func refreshAndSaveLogin(p loginRefreshParams) (*oauth2.Token, error) {
-	refreshed, err := auth.Refresh(p.ctx, p.login.RefreshConfig(p.server.Auth), p.login.Token)
+	refreshed, err := auth.Refresh(p.ctx, auth.RefreshParams{Server: *p.server, Login: p.login})
 	if err != nil {
 		printNotice(os.Stderr, "mini: refresh token for %s failed — run: mini auth %s\n", p.server.Name, p.server.Name)
 		return nil, err

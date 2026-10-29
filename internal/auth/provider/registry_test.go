@@ -250,3 +250,27 @@ func TestProviderRegistry_forget(t *testing.T) {
 		}
 	})
 }
+
+func TestProviderRegistry_changedProvenance_rejectedAndOriginalKept(t *testing.T) {
+	params := provider.Params{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2},
+		ConfigDir:  t.TempDir(),
+		ServerName: "local",
+		ServerURL:  "http://127.0.0.1/mcp",
+	}
+	registry := provider.NewRegistry()
+	t.Cleanup(registry.Close)
+	original, err := registry.GetOrCreate(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := params
+	changed.AgentAdded = true
+	if _, registryErr := registry.GetOrCreate(changed); registryErr == nil {
+		t.Fatal("agent server reused human provider")
+	}
+	again, err := registry.GetOrCreate(params)
+	if err != nil || original != again {
+		t.Fatalf("original provider = %v, error = %v", again, err)
+	}
+}

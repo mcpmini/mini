@@ -129,7 +129,10 @@ func exchangeAndRefresh(t *testing.T, ac *config.AuthConfig) {
 	token := pkceToken(t, ac)
 	// backdated so Refresh actually hits the token endpoint rather than returning the cached token
 	token.Expiry = time.Now().Add(-time.Hour)
-	if _, err := auth.Refresh(context.Background(), ac, token); err != nil {
+	if _, err := auth.Refresh(
+		context.Background(),
+		refreshParams(t, config.ServerConfig{Auth: ac}, token),
+	); err != nil {
 		t.Fatalf("Refresh: %v", err)
 	}
 }

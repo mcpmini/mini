@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/transport"
 )
@@ -25,59 +24,59 @@ func ApplyBearerToken(sc *config.ServerConfig, accessToken string) {
 	sc.Headers[sc.Auth.HeaderName()] = "Bearer " + accessToken
 }
 
-type ResolveEndpointsParams struct {
-	ConfigDir  string
-	ServerName string
-	// Clock drives the client_secret_expires_at comparison during registration hydration.
-	Clock clock.Clock
-}
-
-// ResolvedLogin is the client a login uses and the authorization server it expects to answer.
-type ResolvedLogin struct {
+type resolvedLogin struct {
 	Client LoginClient
 	Issuer ExpectedIssuer
+	flow   *oauthHTTPFlow
 }
 
-// ResolveEndpoints discovers the authorization server, binds client credentials to its issuer,
-// and fills missing OAuth endpoints. ResourceURL is canonicalized from the server URL.
-func ResolveEndpoints(ctx context.Context, sc *config.ServerConfig, p ResolveEndpointsParams) (ResolvedLogin, error) {
+func resolveEndpoints(ctx context.Context, sc *config.ServerConfig, p BeginLoginParams) (resolvedLogin, error) {
 	if sc.UnsetEnv != nil {
-		return ResolvedLogin{}, sc.UnsetEnv
+		return resolvedLogin{}, sc.UnsetEnv
 	}
 	if err := ApplyResourceURL(sc); err != nil {
-		return ResolvedLogin{}, err
+		return resolvedLogin{}, err
 	}
+	flow := newOAuthHTTPFlow(ctx, *sc)
+	resolved, err := flow.resolveLogin(ctx, sc, p)
+	if err != nil {
+		flow.closeIdleConnections()
+	}
+	return resolved, err
+}
+
+func (f *oauthHTTPFlow) resolveLogin(
+	ctx context.Context,
+	sc *config.ServerConfig,
+	p BeginLoginParams,
+) (resolvedLogin, error) {
 	a := sc.Auth
 	if a.ClientID == "" {
 		// A configured secret belongs to a configured client; never send it with a registered or CIMD id.
 		a.ClientSecret, a.TokenEndpointAuthMethod = "", ""
 	}
-	meta, issuer, err := discoverForLogin(ctx, sc.URL, a)
+	meta, issuer, err := f.discoverForLogin(ctx, sc.URL, a)
 	if err != nil {
-		return ResolvedLogin{}, err
+		return resolvedLogin{}, err
 	}
 	if a.ClientID != "" {
 		if err = validateConfiguredIssuer(a, meta); err != nil {
-			return ResolvedLogin{}, err
+			return resolvedLogin{}, err
 		}
-		return ResolvedLogin{Client: LoginClient{ID: a.ClientID, Configured: true}, Issuer: issuer}, nil
+		return resolvedLogin{Client: LoginClient{ID: a.ClientID, Configured: true}, Issuer: issuer, flow: f}, nil
 	}
 	client, err := resolveClient(ctx, ClientRegParams{
-		ConfigDir:  p.ConfigDir,
-		ServerName: p.ServerName,
-		AuthConfig: a,
-		Meta:       meta,
-		Now:        p.Clock.Now(),
+		ConfigDir: p.ConfigDir, ServerName: p.ServerName, AuthConfig: a, Meta: meta, Now: p.Clock.Now(), flow: f,
 	})
-	return ResolvedLogin{Client: client, Issuer: issuer}, err
+	return resolvedLogin{Client: client, Issuer: issuer, flow: f}, err
 }
 
-func discoverForLogin(
+func (f *oauthHTTPFlow) discoverForLogin(
 	ctx context.Context,
 	serverURL string,
 	a *config.AuthConfig,
 ) (*ServerMeta, ExpectedIssuer, error) {
-	meta, err := DiscoverAndApply(ctx, serverURL, a)
+	meta, err := f.discoverAndApply(ctx, serverURL, a)
 	if err != nil {
 		return nil, ExpectedIssuer{}, err
 	}
@@ -115,27 +114,34 @@ func portableClientID(a *config.AuthConfig) bool {
 		(a.TokenEndpointAuthMethod == "" || a.TokenEndpointAuthMethod == "none")
 }
 
-// DiscoverAndApply fills in a's missing OAuth endpoints from the server's discovery metadata.
-func DiscoverAndApply(ctx context.Context, serverURL string, a *config.AuthConfig) (*ServerMeta, error) {
-	meta, err := Discover(ctx, serverURL)
+func (f *oauthHTTPFlow) discoverAndApply(
+	ctx context.Context,
+	serverURL string,
+	a *config.AuthConfig,
+) (*ServerMeta, error) {
+	meta, err := f.discover(ctx, serverURL)
 	if err != nil {
 		return nil, fmt.Errorf("discover oauth endpoints: %w", err)
 	}
-	return meta, applyDiscoveredEndpoints(a, meta)
+	return meta, f.applyDiscoveredEndpoints(a, meta)
 }
 
-func applyDiscoveredEndpoints(a *config.AuthConfig, meta *ServerMeta) error {
+func (f *oauthHTTPFlow) applyDiscoveredEndpoints(a *config.AuthConfig, meta *ServerMeta) error {
 	if a.AuthURL == "" {
-		if err := validateEndpointURL(meta.AuthURL, "authorization_endpoint"); err != nil {
+		if err := f.validateDiscoveredEndpoint(meta.AuthURL, "authorization_endpoint"); err != nil {
 			return err
 		}
 		a.AuthURL = meta.AuthURL
+	} else if err := validateConfiguredEndpoint(a.AuthURL, "authorization_endpoint"); err != nil {
+		return err
 	}
 	if a.TokenURL == "" {
-		if err := validateEndpointURL(meta.TokenURL, "token_endpoint"); err != nil {
+		if err := f.validateDiscoveredEndpoint(meta.TokenURL, "token_endpoint"); err != nil {
 			return err
 		}
 		a.TokenURL = meta.TokenURL
+	} else if err := validateConfiguredEndpoint(a.TokenURL, "token_endpoint"); err != nil {
+		return err
 	}
 	if len(a.Scopes) == 0 && len(meta.Scopes) > 0 {
 		a.Scopes = meta.Scopes
@@ -145,11 +151,28 @@ func applyDiscoveredEndpoints(a *config.AuthConfig, meta *ServerMeta) error {
 
 var endpointValidator = transport.ValidateURL
 
-func validateEndpointURL(endpoint, name string) error {
+func validateConfiguredEndpoint(endpoint, name string) error {
 	if endpoint == "" {
 		return nil
 	}
-	if err := endpointValidator(endpoint); err != nil {
+	if err := requireHTTPURL(endpoint); err != nil {
+		return fmt.Errorf("oauth %s: %w", name, err)
+	}
+	return nil
+}
+
+func (f *oauthHTTPFlow) validateDiscoveredEndpoint(endpoint, name string) error {
+	if err := validateConfiguredEndpoint(endpoint, name); err != nil {
+		return err
+	}
+	if endpoint == "" {
+		return nil
+	}
+	validate := endpointValidator
+	if f.privateReady() {
+		validate = (transport.SSRFPolicy{AllowPrivateNetworks: true}).ValidateURL
+	}
+	if err := validate(endpoint); err != nil {
 		return fmt.Errorf("oauth discovery: %s points to a disallowed host: %w", name, err)
 	}
 	return nil
@@ -161,6 +184,7 @@ type ClientRegParams struct {
 	AuthConfig *config.AuthConfig
 	Meta       *ServerMeta
 	Now        time.Time
+	flow       *oauthHTTPFlow
 }
 
 func resolveClient(ctx context.Context, p ClientRegParams) (LoginClient, error) {
@@ -201,7 +225,7 @@ func dynamicRegister(ctx context.Context, p ClientRegParams) (LoginClient, error
 	if err != nil {
 		return LoginClient{}, err
 	}
-	result, err := Register(ctx, regURL, ResolvedCallbackURI(a))
+	result, err := p.flow.register(ctx, regURL, ResolvedCallbackURI(a))
 	if err != nil {
 		return LoginClient{}, err
 	}

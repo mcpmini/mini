@@ -51,9 +51,10 @@ func newTestTokenEndpoint(t *testing.T) *testTokenEndpoint {
 }
 
 type testMCPUpstream struct {
-	srv           *httptest.Server
-	lastAuth      sync.Map
-	rejectWith401 atomic.Value
+	srv             *httptest.Server
+	lastAuth        sync.Map
+	rejectWith401   atomic.Value
+	refreshTokenURL atomic.Value
 }
 
 func (u *testMCPUpstream) lastAuthFor(method string) string {
@@ -63,6 +64,10 @@ func (u *testMCPUpstream) lastAuthFor(method string) string {
 }
 
 func (u *testMCPUpstream) serveHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		u.serveDiscovery(w, r)
+		return
+	}
 	authHdr := r.Header.Get("Authorization")
 	var req map[string]any
 	json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
@@ -84,6 +89,18 @@ func (u *testMCPUpstream) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, //nolint:errcheck
 			"result": map[string]any{"content": []any{map[string]any{"type": "text", "text": "ok"}}}})
 	}
+}
+
+func (u *testMCPUpstream) serveDiscovery(w http.ResponseWriter, r *http.Request) {
+	tokenURL, _ := u.refreshTokenURL.Load().(string)
+	if r.URL.Path != "/.well-known/oauth-authorization-server" || tokenURL == "" {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+		"issuer": u.srv.URL, "token_endpoint": tokenURL, "code_challenge_methods_supported": []string{"S256"},
+	})
 }
 
 func newTestMCPUpstream(t *testing.T) *testMCPUpstream {
@@ -114,6 +131,8 @@ func newOAuthTestSetup(t *testing.T, tok *oauth2.Token, clk clock.Clock) *oauthT
 	sc := oauthServerConfig(
 		oauthServerConfigParams{Name: "live", MCPURL: upstream.srv.URL, TokenURL: token.srv.URL, Enabled: true},
 	)
+	sc.Auth.Issuer = upstream.srv.URL
+	upstream.refreshTokenURL.Store(token.srv.URL)
 	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: configDir, ServerName: "live", Server: sc, Token: tok})
 	p := BuildServerParams{
 		Cfg: &config.Config{}, ConfigDir: configDir,

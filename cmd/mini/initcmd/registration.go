@@ -8,7 +8,7 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
-type discoverFunc func(ctx context.Context, serverURL string) (*auth.ServerMeta, error)
+type discoverFunc func(ctx context.Context, sc config.ServerConfig) (*auth.ServerMeta, error)
 
 // A browser login needs a client ID: the user's own app, one registered earlier, or one the
 // authorization server lets mini register itself.
@@ -32,7 +32,7 @@ type registrationCheck struct {
 func (c registrationCheck) selfRegisters(ctx context.Context) (selfRegisters, known bool) {
 	ctx, cancel := clock.WithTimeout(ctx, c.clock, oauthCheckTimeout)
 	defer cancel()
-	meta, err := c.discover(ctx, c.server.URL)
+	meta, err := c.discover(ctx, c.server)
 	if err != nil {
 		return false, false
 	}

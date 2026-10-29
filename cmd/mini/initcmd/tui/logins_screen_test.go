@@ -891,7 +891,7 @@ func TestRun_aByHandServerPointsAtTheFileItWillHaveInMini(t *testing.T) {
 	setup.Probe = func(_ context.Context, dir string, sc config.ServerConfig) error {
 		return config.MarkOAuthDetected(dir, sc.Name)
 	}
-	setup.Discover = func(context.Context, string) (*auth.ServerMeta, error) { return &auth.ServerMeta{}, nil }
+	setup.Discover = func(context.Context, config.ServerConfig) (*auth.ServerMeta, error) { return &auth.ServerMeta{}, nil }
 	token := catalog.Entry{Name: "github", URL: "https://mcp.github.example/mcp", Auth: catalog.AuthToken}
 	var view string
 	program := func(m tea.Model) error {

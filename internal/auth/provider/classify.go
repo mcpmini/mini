@@ -5,9 +5,14 @@ import (
 	"net/http"
 
 	"golang.org/x/oauth2"
+
+	"github.com/mcpmini/mini/internal/auth"
 )
 
 func refreshNeedsReauth(err error) bool {
+	if errors.Is(err, auth.ErrLoginMismatch) {
+		return true
+	}
 	var re *oauth2.RetrieveError
 	if !errors.As(err, &re) {
 		return false

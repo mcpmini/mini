@@ -400,8 +400,14 @@ func startTokenRefresh(t *testing.T, srv *Server) (finish func(), refreshed <-ch
 	epoch := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 	endpoint, refreshReached, finish := gatedTokenEndpoint(t)
 	sc := config.ServerConfig{
-		Name: "svc", URL: "http://127.0.0.1:1/mcp",
-		Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "c", TokenURL: endpoint + "/token"},
+		Name: "svc",
+		URL:  endpoint + "/mcp",
+		Auth: &config.AuthConfig{
+			Type:     config.AuthTypeOAuth2,
+			Issuer:   endpoint,
+			ClientID: "c",
+			TokenURL: endpoint + "/token",
+		},
 	}
 	authtest.SaveToken(t, authtest.TokenFile{
 		ConfigDir: srv.configDir, ServerName: "svc", Server: sc,

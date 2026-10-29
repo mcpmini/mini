@@ -9,18 +9,11 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
-	"github.com/mcpmini/mini/internal/transport"
+	"github.com/mcpmini/mini/internal/config"
 )
 
-// noRedirectClient is shared by discovery and registration. It blocks redirects
-// (prevents session-token exfiltration) and uses SSRFSafeDialer (prevents discovery
-// from probing internal network endpoints via attacker-controlled metadata URLs).
-var noRedirectClient = transport.NewNoRedirectClient(transport.NoRedirectClientOptions{
-	Timeout:         30 * time.Second,
-	BlockPrivateIPs: true,
-})
+var noRedirectClient = newAuthHTTPClient()
 
 // ServerMeta contains OAuth endpoints discovered for an MCP server.
 type ServerMeta struct {
@@ -48,13 +41,19 @@ func preferScopes(primary, fallback []string) []string {
 	return fallback
 }
 
-// Discover resolves OAuth endpoint metadata for an MCP server via RFC 9728 + RFC 8414.
-func Discover(ctx context.Context, serverURL string) (*ServerMeta, error) {
-	ref, err := discoverASURL(ctx, serverURL)
+// DiscoverServer discovers OAuth metadata using the configured server's private-network policy.
+func DiscoverServer(ctx context.Context, sc config.ServerConfig) (*ServerMeta, error) {
+	f := newOAuthHTTPFlow(ctx, sc)
+	defer f.closeIdleConnections()
+	return f.discover(ctx, sc.URL)
+}
+
+func (f *oauthHTTPFlow) discover(ctx context.Context, serverURL string) (*ServerMeta, error) {
+	ref, err := f.discoverASURL(ctx, serverURL)
 	if err != nil {
 		return nil, err
 	}
-	meta, err := discoverASMeta(ctx, ref.URL)
+	meta, err := f.discoverASMeta(ctx, ref.URL)
 	if err != nil {
 		return nil, err
 	}
@@ -62,18 +61,18 @@ func Discover(ctx context.Context, serverURL string) (*ServerMeta, error) {
 	return meta, nil
 }
 
-func discoverASURL(ctx context.Context, serverURL string) (asRef, error) {
-	wwwRef, err := asURLFromWWWAuthenticate(ctx, serverURL)
+func (f *oauthHTTPFlow) discoverASURL(ctx context.Context, serverURL string) (asRef, error) {
+	wwwRef, err := f.asURLFromWWWAuthenticate(ctx, serverURL)
 	if err != nil || wwwRef.URL != "" {
 		return wwwRef, err
 	}
-	probeRef, err := asURLFromPRMProbe(ctx, serverURL)
+	probeRef, err := f.asURLFromPRMProbe(ctx, serverURL)
 	probeRef.Scopes = preferScopes(wwwRef.Scopes, probeRef.Scopes)
 	return probeRef, err
 }
 
-func asURLFromWWWAuthenticate(ctx context.Context, serverURL string) (asRef, error) {
-	resp, err := doDiscoveryRequest(ctx, serverURL)
+func (f *oauthHTTPFlow) asURLFromWWWAuthenticate(ctx context.Context, serverURL string) (asRef, error) {
+	resp, err := f.doDiscoveryRequest(ctx, serverURL)
 	if err != nil {
 		if ctx.Err() != nil {
 			return asRef{}, ctx.Err()
@@ -91,7 +90,7 @@ func asURLFromWWWAuthenticate(ctx context.Context, serverURL string) (asRef, err
 	if rmURL == "" {
 		return asRef{Scopes: scopesFromHeader}, nil
 	}
-	prmRef, err := fetchASURLFromPRM(ctx, rmURL)
+	prmRef, err := f.fetchASURLFromPRM(ctx, rmURL)
 	prmRef.Scopes = preferScopes(scopesFromHeader, prmRef.Scopes)
 	return prmRef, err
 }
@@ -112,7 +111,7 @@ func parseWWWAuthParam(header, param string) string {
 	return ""
 }
 
-func asURLFromPRMProbe(ctx context.Context, serverURL string) (asRef, error) {
+func (f *oauthHTTPFlow) asURLFromPRMProbe(ctx context.Context, serverURL string) (asRef, error) {
 	u, err := url.Parse(serverURL)
 	if err != nil {
 		return asRef{}, fmt.Errorf("parse server URL: %w", err)
@@ -121,7 +120,7 @@ func asURLFromPRMProbe(ctx context.Context, serverURL string) (asRef, error) {
 		return asRef{}, fmt.Errorf("server URL has no scheme/host: %q", serverURL)
 	}
 	base := u.Scheme + "://" + u.Host
-	return probePRMCandidates(ctx, base, strings.TrimRight(u.Path, "/"))
+	return f.probePRMCandidates(ctx, base, strings.TrimRight(u.Path, "/"))
 }
 
 func prmCandidateURLs(base, path string) []string {
@@ -132,10 +131,10 @@ func prmCandidateURLs(base, path string) []string {
 	return candidates
 }
 
-func probePRMCandidates(ctx context.Context, base, path string) (asRef, error) {
+func (f *oauthHTTPFlow) probePRMCandidates(ctx context.Context, base, path string) (asRef, error) {
 	var transientErr error
 	for _, c := range prmCandidateURLs(base, path) {
-		ref, err := fetchASURLFromPRM(ctx, c)
+		ref, err := f.fetchASURLFromPRM(ctx, c)
 		if err != nil {
 			transientErr = err
 			continue
@@ -158,19 +157,19 @@ type protectedResourceMeta struct {
 func requireHTTPURL(rawURL string) error {
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return fmt.Errorf("invalid resource_metadata URL: %w", err)
+		return fmt.Errorf("invalid HTTP(S) URL: %w", err)
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
-		return fmt.Errorf("unsupported protocol scheme %q in resource_metadata URL", u.Scheme)
+		return fmt.Errorf("unsupported protocol scheme %q in URL", u.Scheme)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("URL must be absolute HTTP(S)")
 	}
 	return nil
 }
 
-func fetchASURLFromPRM(ctx context.Context, prmURL string) (asRef, error) {
-	if err := requireHTTPURL(prmURL); err != nil {
-		return asRef{}, err
-	}
-	resp, err := doDiscoveryRequest(ctx, prmURL)
+func (f *oauthHTTPFlow) fetchASURLFromPRM(ctx context.Context, prmURL string) (asRef, error) {
+	resp, err := f.doDiscoveryRequest(ctx, prmURL)
 	if err != nil {
 		if ctx.Err() != nil {
 			return asRef{}, ctx.Err()
@@ -206,13 +205,13 @@ func decodePRM(resp *http.Response, prmURL string) (asRef, error) {
 	return asRef{URL: meta.AuthorizationServers[0], Scopes: meta.ScopesSupported}, nil
 }
 
-func discoverASMeta(ctx context.Context, asURL string) (*ServerMeta, error) {
+func (f *oauthHTTPFlow) discoverASMeta(ctx context.Context, asURL string) (*ServerMeta, error) {
 	u, err := url.Parse(asURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse AS URL: %w", err)
 	}
 	for _, candidate := range asMetaCandidates(u) {
-		meta, err := fetchASMeta(ctx, candidate)
+		meta, err := f.fetchASMeta(ctx, candidate)
 		if err != nil {
 			return nil, err
 		}
@@ -253,8 +252,8 @@ type rawASMeta struct {
 	PKCEMethods           []string `json:"code_challenge_methods_supported"`
 }
 
-func fetchASMeta(ctx context.Context, metaURL string) (*ServerMeta, error) {
-	resp, err := doDiscoveryRequest(ctx, metaURL)
+func (f *oauthHTTPFlow) fetchASMeta(ctx context.Context, metaURL string) (*ServerMeta, error) {
+	resp, err := f.doDiscoveryRequest(ctx, metaURL)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -331,18 +330,22 @@ func isJSONContentType(ct string) bool {
 	return mediaType == "application/json" || strings.HasSuffix(mediaType, "+json")
 }
 
-func doDiscoveryRequest(ctx context.Context, metaURL string) (*http.Response, error) {
+func (f *oauthHTTPFlow) doDiscoveryRequest(ctx context.Context, metaURL string) (*http.Response, error) {
+	if err := requireHTTPURL(metaURL); err != nil {
+		return nil, err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, metaURL, nil)
 	if err != nil {
 		return nil, err
 	}
-	return noRedirectClient.Do(req)
+	return f.client.Do(req)
 }
 
 const maxAuthBodyBytes = 64 << 10
 
-// RequiresOAuth reports whether a 401 from serverURL is confirmed (per RFC 9728) to need OAuth.
-func RequiresOAuth(ctx context.Context, serverURL, wwwAuthenticate string) bool {
+// RequiresOAuth reports whether a server's 401 is confirmed (per RFC 9728) to need OAuth.
+func RequiresOAuth(ctx context.Context, sc config.ServerConfig, wwwAuthenticate string) bool {
+	serverURL := sc.URL
 	scheme := strings.ToLower(strings.TrimSpace(wwwAuthenticate))
 	if strings.HasPrefix(scheme, "bearer") {
 		return true
@@ -352,6 +355,8 @@ func RequiresOAuth(ctx context.Context, serverURL, wwwAuthenticate string) bool 
 		// that happens to exist at the same origin doesn't apply to this specific challenge.
 		return false
 	}
+	f := newOAuthHTTPFlow(ctx, sc)
+	defer f.closeIdleConnections()
 	u, err := url.Parse(serverURL)
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		return false
@@ -360,7 +365,7 @@ func RequiresOAuth(ctx context.Context, serverURL, wwwAuthenticate string) bool 
 	path := strings.TrimRight(u.Path, "/")
 	for _, c := range prmCandidateURLs(base, path) {
 		//nolint:errcheck // a failed candidate does not rule out another PRM discovery URL.
-		if ref, _ := fetchASURLFromPRM(ctx, c); ref.URL != "" {
+		if ref, _ := f.fetchASURLFromPRM(ctx, c); ref.URL != "" {
 			return true
 		}
 	}

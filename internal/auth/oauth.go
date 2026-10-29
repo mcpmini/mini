@@ -3,6 +3,7 @@ package auth
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -36,12 +37,12 @@ func tokenAuthStyle(method string) oauth2.AuthStyle {
 	}
 }
 
-func oauthHTTPContext(ctx context.Context, resourceURL string) context.Context {
+func oauthHTTPContextForClient(ctx context.Context, base *http.Client, resourceURL string) context.Context {
 	if resourceURL == "" {
-		return context.WithValue(ctx, oauth2.HTTPClient, noRedirectClient)
+		return context.WithValue(ctx, oauth2.HTTPClient, base)
 	}
-	client := *noRedirectClient
-	client.Transport = resourceTransport{base: effectiveTransport(noRedirectClient), resourceURL: resourceURL}
+	client := *base
+	client.Transport = resourceTransport{base: effectiveTransport(base), resourceURL: resourceURL}
 	return context.WithValue(ctx, oauth2.HTTPClient, &client)
 }
 
@@ -106,8 +107,41 @@ func buildAuthURL(cfg *oauth2.Config, p buildAuthURLParams) string {
 	return cfg.AuthCodeURL(p.state, opts...)
 }
 
-// Refresh exchanges a refresh token for a new access token.
-func Refresh(ctx context.Context, ac *config.AuthConfig, t *oauth2.Token) (*oauth2.Token, error) {
-	src := configFrom(ac).TokenSource(oauthHTTPContext(ctx, ac.ResourceURL), t)
+type RefreshParams struct {
+	Server config.ServerConfig
+	Login  *Login
+}
+
+// Refresh exchanges a refresh token while preserving its issuer, endpoint and client binding.
+func Refresh(ctx context.Context, p RefreshParams) (*oauth2.Token, error) {
+	if err := p.Login.MatchesConfig(p.Server); err != nil {
+		return nil, mismatchedLogin(err)
+	}
+	flow := newOAuthHTTPFlow(ctx, p.Server)
+	defer flow.closeIdleConnections()
+	if flow.origin != nil {
+		if err := flow.validateRefreshBinding(ctx, p); err != nil {
+			return nil, err
+		}
+	}
+	ac := p.Login.RefreshConfig(p.Server.Auth)
+	src := configFrom(ac).TokenSource(oauthHTTPContextForClient(ctx, flow.client, ac.ResourceURL), p.Login.Token)
 	return src.Token()
+}
+
+func (f *oauthHTTPFlow) validateRefreshBinding(ctx context.Context, p RefreshParams) error {
+	meta, err := f.discover(ctx, p.Server.URL)
+	if err != nil {
+		return err
+	}
+	if meta.Issuer != p.Login.Issuer {
+		return mismatchedLogin(fmt.Errorf("private OAuth refresh issuer differs from the saved issuer"))
+	}
+	if p.Server.Auth != nil && p.Server.Auth.TokenURL == p.Login.TokenURL {
+		return nil
+	}
+	if meta.TokenURL != p.Login.TokenURL {
+		return mismatchedLogin(fmt.Errorf("private OAuth refresh token endpoint differs from the saved endpoint"))
+	}
+	return nil
 }
