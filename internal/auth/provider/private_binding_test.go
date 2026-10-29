@@ -43,13 +43,14 @@ func TestPrivateRefreshBindingMismatchRequiresReauthorizationWithoutRetry(t *tes
 			}))
 			defer source.Close()
 			dir := t.TempDir()
+			clk := clock.NewFake()
 			login := &auth.Login{
 				Resource:  source.URL + "/mcp",
 				ServerURL: source.URL + "/mcp",
 				Issuer:    source.URL,
 				TokenURL:  source.URL + "/token",
 				Client:    auth.LoginClient{ID: "cid", Configured: true},
-				Token:     storedToken(clock.NewFake().Now()),
+				Token:     storedToken(clk.Now()),
 			}
 			switch mismatch {
 			case "issuer":
@@ -68,7 +69,7 @@ func TestPrivateRefreshBindingMismatchRequiresReauthorizationWithoutRetry(t *tes
 					ServerName: "srv",
 					ServerURL:  source.URL + "/mcp",
 					AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid"},
-					Clock:      clock.NewFake(),
+					Clock:      clk,
 				},
 			)
 			if err != nil {

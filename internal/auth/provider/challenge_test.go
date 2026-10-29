@@ -11,6 +11,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
@@ -29,23 +30,25 @@ func TestHTTP403PersistsScopeChallengeThroughProvider(t *testing.T) {
 	}))
 	defer mcp.Close()
 	dir := t.TempDir()
-	endpoint := newProviderFixture(t, providerSetup{Auth: &config.AuthConfig{
-		Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: "https://as.example.test/token",
-	}})
-	endpoint.params.ServerURL = mcp.URL + "/mcp"
-	login := loginFor(t, endpoint.params, &oauth2.Token{AccessToken: "access", TokenType: "Bearer"})
-	if err := auth.SaveLogin(dir, "srv", login); err != nil {
-		t.Fatal(err)
+	clk := clock.NewFake()
+	sc := config.ServerConfig{
+		Name: "srv", URL: mcp.URL + "/mcp",
+		Auth: &config.AuthConfig{
+			Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: "https://as.example.test/token",
+		},
 	}
+	authtest.SaveToken(t, authtest.TokenFile{
+		ConfigDir: dir, ServerName: sc.Name, Server: sc,
+		Token: &oauth2.Token{AccessToken: "access", TokenType: "Bearer"},
+	})
 	p, err := provider.New(provider.Params{
-		AuthConfig: endpoint.params.AuthConfig, ConfigDir: dir, ServerName: "srv",
-		ServerURL: mcp.URL + "/mcp", Clock: clock.NewFake(),
+		AuthConfig: sc.Auth, ConfigDir: dir, ServerName: sc.Name, ServerURL: sc.URL, Clock: clk,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	conn, err := transport.NewHTTPConnection(transport.HTTPConnectionConfig{
-		URL: mcp.URL + "/mcp", Clock: clock.NewFake(), ServerName: "srv",
+		URL: sc.URL, Clock: clk, ServerName: sc.Name,
 		AuthProvider: p, AuthHeaderName: "Authorization",
 	})
 	if err != nil {
@@ -55,7 +58,7 @@ func TestHTTP403PersistsScopeChallengeThroughProvider(t *testing.T) {
 	if _, listErr := conn.ListTools(context.Background()); listErr == nil {
 		t.Fatal("ListTools succeeded despite the scope challenge")
 	}
-	got, err := auth.LoadChallenge(dir, "srv", mcp.URL+"/mcp")
+	got, err := auth.LoadChallenge(dir, sc.Name, sc.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
