@@ -160,8 +160,43 @@ func TestBrowserLogin_closeWinsOverBufferedProviderError(t *testing.T) {
 	}
 }
 
+func TestPKCECallback_pageShowsOutcomeOffline(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		query   url.Values
+		status  int
+		heading string
+	}{
+		{name: "signedIn", query: url.Values{"code": {"synthetic-code"}}, status: http.StatusOK, heading: "You&#39;re signed in"},
+		{name: "providerError", query: url.Values{"error": {"access_denied"}}, status: http.StatusOK, heading: "Sign-in failed"},
+		{name: "stateMismatch", query: url.Values{"state": {"wrong-state"}}, status: http.StatusBadRequest, heading: "Sign-in failed"},
+		{name: "missingCode", query: url.Values{}, status: http.StatusBadRequest, heading: "Sign-in failed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			login := authtest.StartLogin(t, &config.AuthConfig{})
+			response := requestLoginCallback(t, login, tc.query)
+			if response.status != tc.status || !strings.Contains(response.body, "<h1>"+tc.heading+"</h1>") {
+				t.Fatalf(
+					"callback = %d %q, want %d with heading %q",
+					response.status,
+					response.body,
+					tc.status,
+					tc.heading,
+				)
+			}
+			if got := response.header.Get("Content-Type"); got != "text/html; charset=utf-8" {
+				t.Errorf("Content-Type = %q, want text/html; charset=utf-8", got)
+			}
+			if got := response.header.Get("Content-Security-Policy"); !strings.HasPrefix(got, "default-src 'none';") {
+				t.Errorf("Content-Security-Policy = %q, want default-src 'none' so the page loads nothing", got)
+			}
+		})
+	}
+}
+
 type loginCallbackResponse struct {
 	status int
+	header http.Header
 	body   string
 }
 
@@ -185,7 +220,7 @@ func requestLoginCallback(t *testing.T, login *auth.BrowserLogin, query url.Valu
 	if err != nil {
 		t.Fatal(err)
 	}
-	return loginCallbackResponse{status: resp.StatusCode, body: string(body)}
+	return loginCallbackResponse{status: resp.StatusCode, header: resp.Header, body: string(body)}
 }
 
 func waitForLogin(t *testing.T, login *auth.BrowserLogin) error {
