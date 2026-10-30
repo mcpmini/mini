@@ -22,34 +22,34 @@ var loginPageTemplate = template.Must(template.New("login").
 
 const offlineLoginPageCSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'"
 
-type loginPageServer struct {
+type loginTarget struct {
 	Name string
 	Host string
 }
 
-func newLoginPageServer(name, serverURL string) loginPageServer {
-	server := loginPageServer{Name: name}
+func newLoginTarget(name, serverURL string) loginTarget {
+	target := loginTarget{Name: name}
 	if u, err := url.Parse(serverURL); err == nil {
-		server.Host = u.Host
+		target.Host = u.Host
 	}
-	return server
+	return target
 }
 
 type loginPage struct {
-	Server loginPageServer
+	Target loginTarget
 	OK     bool
 	Detail string
 }
 
-func loginResultPage(server loginPageServer, err error) loginPage {
+func loginResultPage(target loginTarget, err error) loginPage {
 	if err != nil {
-		return failedLoginPage(server, err.Error())
+		return failedLoginPage(target, err.Error())
 	}
-	return loginPage{Server: server, OK: true}
+	return loginPage{Target: target, OK: true}
 }
 
-func failedLoginPage(server loginPageServer, detail string) loginPage {
-	return loginPage{Server: server, Detail: detail}
+func failedLoginPage(target loginTarget, detail string) loginPage {
+	return loginPage{Target: target, Detail: detail}
 }
 
 func writeLoginPage(w http.ResponseWriter, status int, page loginPage) {

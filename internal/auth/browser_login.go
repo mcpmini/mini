@@ -176,8 +176,8 @@ func (l *BrowserLogin) Close() error {
 
 func (l *BrowserLogin) serveCallback(listener net.Listener, state string, resolved resolvedLogin) {
 	want := callbackExpectation{state: state, issuer: resolved.Issuer}
-	page := newLoginPageServer(resolved.ServerName, resolved.ServerURL)
-	l.serve(listener, callbackHandler(want, page, l.results))
+	target := newLoginTarget(resolved.ServerName, resolved.ServerURL)
+	l.serve(listener, callbackHandler(want, target, l.results))
 }
 
 func (l *BrowserLogin) serve(listener net.Listener, handler http.Handler) {

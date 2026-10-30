@@ -160,38 +160,56 @@ func TestBrowserLogin_closeWinsOverBufferedProviderError(t *testing.T) {
 	}
 }
 
-func TestPKCECallback_pageNamesServerAndOutcomeOffline(t *testing.T) {
+func TestPKCECallback_pageShowsOutcomeOffline(t *testing.T) {
 	for _, tc := range []struct {
-		name    string
-		query   url.Values
-		status  int
-		outcome string
+		name        string
+		query       url.Values
+		status      int
+		outcome     string
+		namesServer bool
 	}{
-		{name: "signedIn", query: url.Values{"code": {"synthetic-code"}}, status: http.StatusOK, outcome: "Authorized"},
-		{name: "providerError", query: url.Values{"error": {"access_denied"}}, status: http.StatusOK, outcome: "Sign-in failed"},
-		{name: "stateMismatch", query: url.Values{"state": {"wrong-state"}}, status: http.StatusBadRequest, outcome: "Sign-in failed"},
-		{name: "missingCode", query: url.Values{}, status: http.StatusBadRequest, outcome: "Sign-in failed"},
+		{name: "signedIn", query: url.Values{"code": {"synthetic-code"}}, status: http.StatusOK, outcome: "Authorized", namesServer: true},
+		{name: "providerError", query: url.Values{"error": {"access_denied"}}, status: http.StatusOK, outcome: "Sign-in failed", namesServer: true},
+		{name: "missingCode", query: url.Values{}, status: http.StatusBadRequest, outcome: "Sign-in failed", namesServer: true},
+		{name: "stateMismatchHidesServer", query: url.Values{"state": {"wrong-state"}}, status: http.StatusBadRequest, outcome: "Sign-in failed"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			login := authtest.StartLogin(t, &config.AuthConfig{})
 			response := requestLoginCallback(t, login, tc.query)
-			if response.status != tc.status {
-				t.Fatalf("callback status = %d, want %d; body %q", response.status, tc.status, response.body)
+			if response.status != tc.status || !strings.Contains(response.body, tc.outcome) {
+				t.Fatalf(
+					"callback = %d, want %d with %q; body %q",
+					response.status,
+					tc.status,
+					tc.outcome,
+					response.body,
+				)
 			}
-			for _, want := range []string{
-				tc.outcome, ">example</h1>", ">mcp.example.test</p>", `rel="icon" type="image/png" href="data:image/png;base64,`,
-			} {
-				if !strings.Contains(response.body, want) {
-					t.Errorf("callback page lacks %q; body %q", want, response.body)
-				}
-			}
-			if got := response.header.Get("Content-Type"); got != "text/html; charset=utf-8" {
-				t.Errorf("Content-Type = %q, want text/html; charset=utf-8", got)
-			}
-			if got := response.header.Get("Content-Security-Policy"); !strings.HasPrefix(got, "default-src 'none';") {
-				t.Errorf("Content-Security-Policy = %q, want default-src 'none' so the page loads nothing", got)
-			}
+			requireLoginPageNamesServer(t, response.body, tc.namesServer)
+			requireOfflineLoginPage(t, response)
 		})
+	}
+}
+
+func requireLoginPageNamesServer(t *testing.T, body string, want bool) {
+	t.Helper()
+	for _, identity := range []string{">example</h1>", ">mcp.example.test</p>"} {
+		if strings.Contains(body, identity) != want {
+			t.Errorf("callback page contains %q = %v, want %v; body %q", identity, !want, want, body)
+		}
+	}
+}
+
+func requireOfflineLoginPage(t *testing.T, response loginCallbackResponse) {
+	t.Helper()
+	if got := response.header.Get("Content-Type"); got != "text/html; charset=utf-8" {
+		t.Errorf("Content-Type = %q, want text/html; charset=utf-8", got)
+	}
+	if got := response.header.Get("Content-Security-Policy"); !strings.HasPrefix(got, "default-src 'none';") {
+		t.Errorf("Content-Security-Policy = %q, want default-src 'none' so the page loads nothing", got)
+	}
+	if !strings.Contains(response.body, `rel="icon" type="image/png" href="data:image/png;base64,`) {
+		t.Errorf("callback page lacks the embedded mini favicon; body %q", response.body)
 	}
 }
 

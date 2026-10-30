@@ -87,17 +87,17 @@ type callbackExpectation struct {
 
 func callbackHandler(
 	want callbackExpectation,
-	server loginPageServer,
+	target loginTarget,
 	results chan<- loginCallbackResult,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := parseAuthorizationResponse(r.URL.Query())
 		if resp.state != want.state {
-			writeLoginPage(w, http.StatusBadRequest, failedLoginPage(server, "state mismatch"))
+			writeLoginPage(w, http.StatusBadRequest, failedLoginPage(loginTarget{}, "state mismatch"))
 			return
 		}
 		completeLoginCallback(loginCallbackParams{
-			writer: w, response: resp, issuer: want.issuer, server: server, results: results,
+			writer: w, response: resp, issuer: want.issuer, target: target, results: results,
 		})
 	})
 }
@@ -106,17 +106,17 @@ type loginCallbackParams struct {
 	writer   http.ResponseWriter
 	response authorizationResponse
 	issuer   ExpectedIssuer
-	server   loginPageServer
+	target   loginTarget
 	results  chan<- loginCallbackResult
 }
 
 func completeLoginCallback(p loginCallbackParams) {
 	result, complete := callbackResult(p.response, p.issuer)
 	if !complete {
-		writeLoginPage(p.writer, http.StatusBadRequest, failedLoginPage(p.server, "missing code"))
+		writeLoginPage(p.writer, http.StatusBadRequest, failedLoginPage(p.target, "missing code"))
 		return
 	}
-	writeLoginPage(p.writer, http.StatusOK, loginResultPage(p.server, result.err))
+	writeLoginPage(p.writer, http.StatusOK, loginResultPage(p.target, result.err))
 	select {
 	case p.results <- result:
 	default:

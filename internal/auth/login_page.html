@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>{{if .OK}}{{.Server.Name}} connected{{else}}Sign-in failed{{end}} · mini</title>
+<title>{{with .Target.Name}}{{.}} {{end}}{{if .OK}}authorized{{else}}sign-in failed{{end}} · mini</title>
 <link rel="icon" type="image/png" href="{{miniIcon}}">
 <style>
 :root {
@@ -94,12 +94,14 @@ h1.rise { animation-delay: .15s; }
     Sign-in failed
     {{- end}}
   </p>
-  <h1 class="rise">{{.Server.Name}}</h1>
-  {{- with .Server.Host}}
+  {{- with .Target.Name}}
+  <h1 class="rise">{{.}}</h1>
+  {{- end}}
+  {{- with .Target.Host}}
   <p class="host rise">{{.}}</p>
   {{- end}}
   {{- if .OK}}
-  <p class="hint rise">{{.Server.Name}} is ready to use. You can close this tab.</p>
+  <p class="hint rise">You can close this tab.</p>
   {{- else}}
   <p class="hint rise">Close this tab and sign in again.</p>
   <p class="detail rise">{{.Detail}}</p>
