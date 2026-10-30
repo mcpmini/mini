@@ -53,16 +53,7 @@ h1 {
   overflow-wrap: anywhere;
 }
 .host { margin: 10px 0 0; color: var(--muted); font: 14px/1.4 var(--mono); }
-.rule {
-  width: 56px;
-  height: 3px;
-  margin: 28px 0 24px;
-  background: var(--accent);
-  border-radius: 2px;
-  transform-origin: left;
-  animation: grow .5s .45s cubic-bezier(.2, .7, .2, 1) both;
-}
-.hint { margin: 0; color: var(--muted); }
+.hint { margin: 28px 0 0; color: var(--muted); }
 .detail {
   margin: 20px 0 0;
   padding: 12px 14px;
@@ -86,7 +77,6 @@ h1.rise { animation-delay: .15s; }
 .host.rise { animation-delay: .25s; }
 .hint.rise, .detail.rise { animation-delay: .55s; }
 @keyframes draw { to { stroke-dashoffset: 0; } }
-@keyframes grow { from { transform: scaleX(0); } }
 @keyframes rise { from { opacity: 0; transform: translateY(10px); } }
 @media (prefers-reduced-motion: reduce) {
   *, .status path { animation: none !important; stroke-dashoffset: 0; }
@@ -108,7 +98,6 @@ h1.rise { animation-delay: .15s; }
   {{- with .Server.Host}}
   <p class="host rise">{{.}}</p>
   {{- end}}
-  <div class="rule" aria-hidden="true"></div>
   {{- if .OK}}
   <p class="hint rise">{{.Server.Name}} is ready to use. You can close this tab.</p>
   {{- else}}
