@@ -160,29 +160,30 @@ func TestBrowserLogin_closeWinsOverBufferedProviderError(t *testing.T) {
 	}
 }
 
-func TestPKCECallback_pageShowsOutcomeOffline(t *testing.T) {
+func TestPKCECallback_pageNamesServerAndOutcomeOffline(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		query   url.Values
 		status  int
-		heading string
+		outcome string
 	}{
-		{name: "signedIn", query: url.Values{"code": {"synthetic-code"}}, status: http.StatusOK, heading: "You&#39;re signed in"},
-		{name: "providerError", query: url.Values{"error": {"access_denied"}}, status: http.StatusOK, heading: "Sign-in failed"},
-		{name: "stateMismatch", query: url.Values{"state": {"wrong-state"}}, status: http.StatusBadRequest, heading: "Sign-in failed"},
-		{name: "missingCode", query: url.Values{}, status: http.StatusBadRequest, heading: "Sign-in failed"},
+		{name: "signedIn", query: url.Values{"code": {"synthetic-code"}}, status: http.StatusOK, outcome: "Authorized"},
+		{name: "providerError", query: url.Values{"error": {"access_denied"}}, status: http.StatusOK, outcome: "Sign-in failed"},
+		{name: "stateMismatch", query: url.Values{"state": {"wrong-state"}}, status: http.StatusBadRequest, outcome: "Sign-in failed"},
+		{name: "missingCode", query: url.Values{}, status: http.StatusBadRequest, outcome: "Sign-in failed"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			login := authtest.StartLogin(t, &config.AuthConfig{})
 			response := requestLoginCallback(t, login, tc.query)
-			if response.status != tc.status || !strings.Contains(response.body, "<h1>"+tc.heading+"</h1>") {
-				t.Fatalf(
-					"callback = %d %q, want %d with heading %q",
-					response.status,
-					response.body,
-					tc.status,
-					tc.heading,
-				)
+			if response.status != tc.status {
+				t.Fatalf("callback status = %d, want %d; body %q", response.status, tc.status, response.body)
+			}
+			for _, want := range []string{
+				tc.outcome, ">example</h1>", ">mcp.example.test</p>", `rel="icon" type="image/png" href="data:image/png;base64,`,
+			} {
+				if !strings.Contains(response.body, want) {
+					t.Errorf("callback page lacks %q; body %q", want, response.body)
+				}
 			}
 			if got := response.header.Get("Content-Type"); got != "text/html; charset=utf-8" {
 				t.Errorf("Content-Type = %q, want text/html; charset=utf-8", got)

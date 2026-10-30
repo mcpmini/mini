@@ -97,7 +97,7 @@ func startBrowserLogin(ac *config.AuthConfig, listener net.Listener, resolved re
 		}),
 		flow: resolved.flow,
 	}
-	login.serve(listener, callbackHandler(callbackExpectation{state: state, issuer: resolved.Issuer}, login.results))
+	login.serveCallback(listener, state, resolved)
 	return login, nil
 }
 
@@ -172,6 +172,12 @@ func (l *BrowserLogin) Close() error {
 	l.stopServing()
 	l.flow.closeIdleConnections()
 	return nil
+}
+
+func (l *BrowserLogin) serveCallback(listener net.Listener, state string, resolved resolvedLogin) {
+	want := callbackExpectation{state: state, issuer: resolved.Issuer}
+	page := newLoginPageServer(resolved.ServerName, resolved.ServerURL)
+	l.serve(listener, callbackHandler(want, page, l.results))
 }
 
 func (l *BrowserLogin) serve(listener net.Listener, handler http.Handler) {
