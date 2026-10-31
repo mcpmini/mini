@@ -280,6 +280,9 @@ func TestStdioCancellationSkipsHandshakeAndDeliveredResponses(t *testing.T) {
 			ch := conn.pending.register(1)
 			if method == "tools/call" {
 				conn.pending.deliver(int64(1), &Response{Result: json.RawMessage(`{}`)})
+				// The reader has claimed the entry, but its response has not reached the caller,
+				// so only the cancelled context is ready.
+				ch = make(chan *Response)
 			}
 			ctx, cancel := context.WithCancel(t.Context())
 			cancel()
