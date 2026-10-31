@@ -24,9 +24,11 @@ type oauthHTTPFlow struct {
 	owned           []*http.Transport
 }
 
+const authRequestTimeout = 30 * time.Second
+
 func newAuthHTTPClient() *http.Client {
 	return transport.NewNoRedirectClient(
-		transport.NoRedirectClientOptions{Timeout: 30 * time.Second, BlockPrivateIPs: true},
+		transport.NoRedirectClientOptions{Timeout: authRequestTimeout, BlockPrivateIPs: true},
 	)
 }
 

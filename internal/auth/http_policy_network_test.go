@@ -129,7 +129,8 @@ func testPinnedOAuthExchange(t *testing.T, skipPRM bool) {
 		t.Fatal(err)
 	}
 	defer login.Close()
-	login.results <- loginCallbackResult{code: "pinned-code"}
+	token, err := login.exchange("pinned-code")
+	login.results <- loginCallbackResult{token: token, err: err}
 	saved, err := login.Wait(context.Background())
 	if err != nil || saved.Token.AccessToken != "pinned-token" {
 		t.Fatalf("exchange = %v, %v", saved, err)
