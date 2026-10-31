@@ -76,59 +76,6 @@ func miniInputControlSchema() map[string]any {
 	}
 }
 
-func setProxyOutputSchema(tool map[string]any) {
-	schema, ok := tool["outputSchema"].(map[string]any)
-	if !ok {
-		if tool["outputSchema"] == nil {
-			delete(tool, "outputSchema")
-		}
-		return
-	}
-	if !isObjectSchema(schema) {
-		return
-	}
-	properties := schemaProperties(schema)
-	if _, upstreamOwnsKey := properties["__mini"]; upstreamOwnsKey {
-		return
-	}
-	properties["__mini"] = miniOutputMetaSchema()
-}
-
-func isObjectSchema(schema map[string]any) bool {
-	if schema["type"] == "object" {
-		return true
-	}
-	_, hasProperties := schema["properties"].(map[string]any)
-	return hasProperties
-}
-
-func miniOutputMetaSchema() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"msg":       map[string]any{"type": "string"},
-			"file":      map[string]any{"type": "string"},
-			"excluded":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-			"truncated": truncatedItemsSchema(),
-		},
-	}
-}
-
-func truncatedItemsSchema() map[string]any {
-	return map[string]any{
-		"type": "array",
-		"items": map[string]any{
-			"type":     "object",
-			"required": []string{"path"},
-			"properties": map[string]any{
-				"path":  map[string]any{"type": "string"},
-				"chars": map[string]any{"type": "integer"},
-				"items": map[string]any{"type": "integer"},
-			},
-		},
-	}
-}
-
 func parseSchema(raw json.RawMessage, fallback func() map[string]any) map[string]any {
 	if !json.Valid(raw) {
 		return fallback()

@@ -140,16 +140,74 @@ func TestProxySchema_OutputSchema(t *testing.T) {
 			`{"type":"object","properties":{"__mini":MINI}}`,
 		},
 		{
-			"array root unchanged",
-			json.RawMessage(`{"type":"array","items":{"type":"string"}}`),
-			`{"type":"array","items":{"type":"string"}}`,
+			"array root items also allow a trailing notice",
+			json.RawMessage(`{"type":["null","array"],"items":{"type":"string"},"minItems":1,"maxItems":5}`),
+			`{"type":["null","array"],"items":{"anyOf":[{"type":"string"},NOTICE_ITEM]}}`,
 		},
+		{"array root without items unchanged", json.RawMessage(`{"type":"array"}`), `{"type":"array"}`},
 		{
 			"upstream __mini property kept",
 			json.RawMessage(`{"type":"object","properties":{"__mini":{"type":"string"}},"required":["__mini"]}`),
-			`{"type":"object","properties":{"__mini":{"type":"string"}},"required":["__mini"]}`,
+			`{"type":"object","properties":{"__mini":{"type":"string"}}}`,
 		},
 		{"non-object root unchanged", json.RawMessage(`true`), `true`},
+		{
+			"oneOf root becomes anyOf with __mini in each object branch",
+			json.RawMessage(`{"oneOf":[` +
+				`{"type":"object","properties":{"title":{"type":"string"}},"required":["title"],"additionalProperties":false},` +
+				`{"type":"object","properties":{"sha":{"type":"string"}},"required":["sha"],"additionalProperties":false},` +
+				`{"type":"null"}]}`),
+			`{"properties":{"__mini":MINI},"anyOf":[` +
+				`{"type":"object","properties":{"title":{"type":"string"},"__mini":MINI},"additionalProperties":false},` +
+				`{"type":"object","properties":{"sha":{"type":"string"},"__mini":MINI},"additionalProperties":false},` +
+				`{"type":"null"}]}`,
+		},
+		{
+			"oneOf beside anyOf is kept as an anyOf inside allOf",
+			json.RawMessage(`{"type":"object","anyOf":[{"type":"object"}],"oneOf":[{"type":"object"}]}`),
+			`{"type":"object","properties":{"__mini":MINI},"anyOf":[{"type":"object","properties":{"__mini":MINI}}],` +
+				`"allOf":[{"properties":{"__mini":MINI},"anyOf":[{"type":"object","properties":{"__mini":MINI}}]}]}`,
+		},
+		{
+			"trim-sensitive keywords are dropped at every depth, types and enums kept",
+			json.RawMessage(`{"type":"object","required":["id"],"minProperties":1,"dependentRequired":{"a":["b"]},` +
+				`"properties":{"id":{"type":"string","pattern":"\\S","minLength":1,"format":"uuid","enum":["x"]},` +
+				`"tags":{"type":"array","minItems":1,"maxItems":3,"contains":{"const":"a"},"minContains":1,` +
+				`"items":{"type":"object","required":["k"],"properties":{"k":{"type":"string"}}}}},` +
+				`"$defs":{"Ref":{"type":"object","required":["r"]}}}`),
+			`{"type":"object","properties":{"id":{"type":"string","enum":["x"]},` +
+				`"tags":{"type":"array","items":{"type":"object","properties":{"k":{"type":"string"}}}},"__mini":MINI},` +
+				`"$defs":{"Ref":{"type":"object"}}}`,
+		},
+		{
+			"properties named like keywords are kept",
+			json.RawMessage(
+				`{"type":"object","properties":{"required":{"type":"boolean"},"format":{"type":"string"}}}`,
+			),
+			`{"type":"object","properties":{"required":{"type":"boolean"},"format":{"type":"string"},"__mini":MINI}}`,
+		},
+		{
+			"not and if are untouched because loosening them would tighten the schema",
+			json.RawMessage(`{"type":"object","properties":{"a":{"not":{"required":["x"]}},` +
+				`"b":{"if":{"required":["y"]},"then":{"required":["z"]}}}}`),
+			`{"type":"object","properties":{"a":{"not":{"required":["x"]}},"b":{"if":{"required":["y"]},"then":{}},"__mini":MINI}}`,
+		},
+		{
+			"$ref root falls back to a plain object",
+			json.RawMessage(`{"$ref":"#/$defs/Out","$defs":{"Out":{"type":"object","additionalProperties":false}}}`),
+			`{"type":"object"}`,
+		},
+		{
+			"union branch through $ref falls back to a plain object",
+			json.RawMessage(`{"anyOf":[{"$ref":"#/$defs/Out"}],"$defs":{"Out":{"type":"object"}}}`),
+			`{"type":"object"}`,
+		},
+		{"string root falls back to any value", json.RawMessage(`{"type":"string","minLength":3}`), `{}`},
+		{
+			"closed tuple array falls back to any value",
+			json.RawMessage(`{"type":"array","prefixItems":[{"type":"string"}],"items":false}`),
+			`{}`,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -179,6 +237,11 @@ func assertOutputSchema(t *testing.T, tool map[string]any, want string) {
 		return
 	}
 	maskMiniMetaSchema(t, got)
+	want = strings.ReplaceAll(
+		want,
+		"NOTICE_ITEM",
+		`{"type":"object","properties":{"__mini":MINI},"required":["__mini"]}`,
+	)
 	var wantValue any
 	if err := json.Unmarshal([]byte(strings.ReplaceAll(want, "MINI", `"MINI"`)), &wantValue); err != nil {
 		t.Fatal(err)
@@ -214,12 +277,23 @@ func TestProxySchema_NullUpstreamSchemaDoesNotPanic(t *testing.T) {
 
 func maskMiniMetaSchema(t *testing.T, schema any) {
 	t.Helper()
-	object, _ := schema.(map[string]any)
-	props, _ := object["properties"].(map[string]any)
-	meta, ok := props["__mini"].(map[string]any)
-	if !ok {
-		return
+	switch v := schema.(type) {
+	case []any:
+		for _, item := range v {
+			maskMiniMetaSchema(t, item)
+		}
+	case map[string]any:
+		maskMiniMetaProperty(t, v)
+		for _, sub := range v {
+			maskMiniMetaSchema(t, sub)
+		}
 	}
+}
+
+func maskMiniMetaProperty(t *testing.T, object map[string]any) {
+	t.Helper()
+	props, _ := object["properties"].(map[string]any)
+	meta, _ := props["__mini"].(map[string]any)
 	metaProps, ok := meta["properties"].(map[string]any)
 	if !ok {
 		return
