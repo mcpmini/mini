@@ -203,7 +203,7 @@ func (l *BrowserLogin) serve(listener net.Listener, handler http.Handler) {
 	})
 }
 
-// A callback that already arrived wins: the login can still finish without the server.
+// A callback result already buffered wins: the login can still finish without the server.
 func (l *BrowserLogin) reportServeFailure(err error) {
 	select {
 	case l.results <- loginCallbackResult{err: fmt.Errorf("oauth callback server: %w", err)}:
