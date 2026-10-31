@@ -7,27 +7,51 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/http/httptrace"
+	"sync/atomic"
 
 	"github.com/mcpmini/mini/internal/clock"
 )
 
+type postAttempt struct {
+	req     *http.Request
+	call    httpCall
+	written atomic.Bool
+}
+
+func newPostAttempt(req *http.Request, call httpCall) *postAttempt {
+	attempt := &postAttempt{call: call}
+	trace := &httptrace.ClientTrace{WroteRequest: func(info httptrace.WroteRequestInfo) {
+		attempt.written.Store(info.Err == nil)
+	}}
+	attempt.req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
+	return attempt
+}
+
 // A modern upstream treats the closed response stream itself as the cancellation:
 // https://github.com/modelcontextprotocol/modelcontextprotocol/blob/ab3a39c13bd23be691c2760e1c6c5c15a64582e1/docs/specification/2026-07-28/basic/transports/streamable-http.mdx#L233-L238
-func (c *HTTPConnection) cancelAbandonedRequest(req *http.Request, call httpCall, err error) {
-	if call.modernVersion != "" || !methodAcceptsCancellation(call.Method) || !abandonedByCaller(req, err) {
+func (c *HTTPConnection) cancelIfAbandoned(ctx context.Context, attempt *postAttempt, err error) {
+	if attempt.call.modernVersion != "" || !methodAcceptsCancellation(attempt.call.Method) ||
+		!attempt.written.Load() || !abandonedWhileWaiting(ctx, err) {
 		return
 	}
-	ctx, cancel := clock.WithTimeout(context.WithoutCancel(req.Context()), c.clock, upstreamCancelTimeout)
+	noticeCtx, cancel := clock.WithTimeout(context.WithoutCancel(ctx), c.clock, upstreamCancelTimeout)
 	defer cancel()
-	if err := c.postCancellation(ctx, req, call.ID); err != nil {
+	if err := c.postCancellation(noticeCtx, attempt.req, attempt.call.ID); err != nil {
 		slog.Debug("send upstream cancellation", "err", err)
 	}
 }
 
-func abandonedByCaller(req *http.Request, err error) bool {
-	ctxErr := req.Context().Err()
-	return ctxErr != nil && errors.Is(err, ctxErr)
+// Besides the caller's context, http.Client.Timeout ends a wait that tool_timeout "0" or a
+// tool_timeout above it leaves open.
+func abandonedWhileWaiting(ctx context.Context, err error) bool {
+	if ctxErr := ctx.Err(); ctxErr != nil && errors.Is(err, ctxErr) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
 func (c *HTTPConnection) postCancellation(ctx context.Context, original *http.Request, id any) error {

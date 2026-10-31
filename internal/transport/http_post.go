@@ -74,18 +74,15 @@ func nextRetryDelay(delay time.Duration, backoff *time.Duration) time.Duration {
 }
 
 func (c *HTTPConnection) doPost(ctx context.Context, call httpCall) (postResult, error) {
-	// Otherwise client.Do fails with the context error and the unsent request draws a notice.
-	if err := ctx.Err(); err != nil {
-		return postResult{}, err
-	}
 	httpReq, sentAuth, err := c.buildHTTPRequest(ctx, call)
 	if err != nil {
 		return postResult{}, err
 	}
 	sentSessionID := httpReq.Header.Get("Mcp-Session-Id")
-	resp, err := c.client.Do(httpReq)
+	attempt := newPostAttempt(httpReq, call)
+	resp, err := c.client.Do(attempt.req)
 	if err != nil {
-		c.cancelAbandonedRequest(httpReq, call, err)
+		c.cancelIfAbandoned(ctx, attempt, err)
 		return postResult{sentAuth: sentAuth}, &ConnectionError{Err: fmt.Errorf("http %s: %w", call.Method, err)}
 	}
 	c.observeAuthorizationChallenge(resp)
@@ -93,7 +90,7 @@ func (c *HTTPConnection) doPost(ctx context.Context, call httpCall) (postResult,
 	defer resp.Body.Close()
 	result, err := c.processResponse(resp, call.Request, sentSessionID)
 	result.sentAuth = sentAuth
-	c.cancelAbandonedRequest(httpReq, call, err)
+	c.cancelIfAbandoned(ctx, attempt, err)
 	return result, err
 }
 

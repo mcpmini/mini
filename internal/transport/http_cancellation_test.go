@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"testing"
 	"time"
 
@@ -265,5 +267,79 @@ func checkHTTPCompletedAttempt(t *testing.T, outcome string) {
 	}
 	if next := receiveRequest(t, requests); next.Method != "ping" {
 		t.Fatalf("unexpected cancellation: %s", next.Method)
+	}
+}
+
+type cancelBeforeWriteTransport struct {
+	cancel  context.CancelFunc
+	methods []string
+}
+
+func (f *cancelBeforeWriteTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	var body Request
+	_ = json.NewDecoder(req.Body).Decode(&body)
+	f.methods = append(f.methods, body.Method)
+	f.cancel()
+	return nil, req.Context().Err()
+}
+
+func TestHTTPCancellationSkipsAttemptCancelledBeforeWrite(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	transport := &cancelBeforeWriteTransport{cancel: cancel}
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{
+		URL: "http://upstream.invalid/mcp", Clock: clock.System(), Client: &http.Client{Transport: transport},
+	})
+	if _, err := conn.rpc(ctx, "tools/call", nil); !errors.Is(err, context.Canceled) {
+		t.Fatalf("rpc error = %v", err)
+	}
+	if len(transport.methods) != 1 {
+		t.Fatalf("requests = %q, want only the unsent tools/call", transport.methods)
+	}
+}
+
+func TestHTTPAbandonedWhileWaiting(t *testing.T) {
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+	clientTimeout := &url.Error{Op: "Post", URL: "/", Err: &net.DNSError{IsTimeout: true}}
+	tests := []struct {
+		name string
+		ctx  context.Context
+		err  error
+		want bool
+	}{
+		{
+			name: "caller cancelled",
+			ctx:  cancelled,
+			err:  fmt.Errorf("read response: %w", context.Canceled),
+			want: true,
+		},
+		{name: "client timeout", ctx: t.Context(), err: clientTimeout, want: true},
+		{
+			name: "client timeout reading body",
+			ctx:  t.Context(),
+			err:  fmt.Errorf("read response: %w", clientTimeout),
+			want: true,
+		},
+		{
+			name: "connection reset",
+			ctx:  t.Context(),
+			err:  &url.Error{Op: "Post", URL: "/", Err: errors.New("connection reset")},
+			want: false,
+		},
+		{
+			name: "rpc error after caller left",
+			ctx:  cancelled,
+			err:  &RPCError{Code: -32603},
+			want: false,
+		},
+		{name: "completed", ctx: t.Context(), err: nil, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := abandonedWhileWaiting(tt.ctx, tt.err); got != tt.want {
+				t.Fatalf("abandonedWhileWaiting = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
