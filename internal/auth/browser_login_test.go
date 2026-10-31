@@ -205,6 +205,17 @@ func TestPKCECallback_rejectedExchangeIsReportedOnThePage(t *testing.T) {
 	}
 }
 
+func TestPKCECallback_largeExchangeErrorIsTrimmedOnThePage(t *testing.T) {
+	mock := authtest.NewTokenServer(t)
+	mock.RespondWith(http.StatusBadGateway, strings.Repeat("<p>bad gateway</p>", 50_000))
+	login := authtest.StartLogin(t, mock.AuthConfig())
+
+	response := requestLoginCallback(t, login, url.Values{"code": {"synthetic-code"}})
+	if !strings.Contains(response.body, "Sign-in failed") || len(response.body) > 16_000 {
+		t.Fatalf("callback page = %d bytes, want a trimmed Sign-in failed page", len(response.body))
+	}
+}
+
 func TestPKCECallback_closingTheTabMidExchangeStillCompletesLogin(t *testing.T) {
 	mock := authtest.NewTokenServer(t)
 	exchangeStarted, releaseExchange := make(chan struct{}), make(chan struct{})
@@ -213,9 +224,9 @@ func TestPKCECallback_closingTheTabMidExchangeStillCompletesLogin(t *testing.T) 
 	tab, closeTab := context.WithCancel(context.Background())
 	tabClosed := sendCallbackFromTab(t, tab, login)
 
-	<-exchangeStarted
+	waitForSignal(t, "the token exchange to start", exchangeStarted)
 	closeTab()
-	<-tabClosed
+	waitForSignal(t, "the tab's request to end", tabClosed)
 	close(releaseExchange)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -398,7 +409,7 @@ func TestBrowserLogin_closeWinsOverBufferedCode(t *testing.T) {
 	mock := authtest.NewTokenServer(t)
 	login := authtest.StartLogin(t, mock.AuthConfig())
 
-	auth.BufferCallbackCode(login, "test-auth-code")
+	auth.ExchangeCallbackCode(login, "test-auth-code")
 	login.Close() //nolint:errcheck
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -424,23 +435,24 @@ func TestBrowserLogin_closeCancelsExchangeAndDiscardsToken(t *testing.T) {
 	mock.HoldReady, mock.HoldGate, mock.HoldCanceled = exchangeStarted, releaseExchange, exchangeCanceled
 	defer close(releaseExchange)
 	login := authtest.StartLogin(t, mock.AuthConfig())
-	callbackDone := make(chan struct{})
-	go func() {
-		defer close(callbackDone)
-		authtest.CompleteAuthorization(t, login.AuthURL(), "test-auth-code")
-	}()
+	callbackDone := sendCallbackFromTab(t, context.Background(), login)
 	waitDone := waitInBackground(login)
-	<-exchangeStarted
+	waitForSignal(t, "the token exchange to start", exchangeStarted)
 
 	login.Close() //nolint:errcheck
 
-	select {
-	case <-exchangeCanceled:
-	case <-time.After(5 * time.Second):
-		t.Fatal("Close left the token exchange running")
-	}
+	waitForSignal(t, "Close to cancel the token exchange", exchangeCanceled)
 	if err := <-waitDone; !errors.Is(err, auth.ErrLoginClosed) {
 		t.Errorf("Wait returned %v after Close, want ErrLoginClosed", err)
 	}
-	<-callbackDone
+	waitForSignal(t, "the callback request to end", callbackDone)
+}
+
+func waitForSignal(t *testing.T, what string, ch <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-ch:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timed out waiting for %s", what)
+	}
 }

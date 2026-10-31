@@ -35,8 +35,8 @@ type providerError struct {
 }
 
 func (e *providerError) Error() string {
-	code := printableLoginText(e.code)
-	description := printableLoginText(e.description)
+	code := printableLoginText(e.code, loginFieldBytes)
+	description := printableLoginText(e.description, loginFieldBytes)
 	if description == "" {
 		return fmt.Sprintf("oauth authorization failed: %s", code)
 	}
@@ -76,7 +76,7 @@ func (e ExpectedIssuer) check(resp authorizationResponse) error {
 	if e.Issuer != "" && *resp.iss != e.Issuer {
 		return fmt.Errorf(
 			"oauth authorization response came from issuer %q, not %q",
-			printableLoginText(*resp.iss),
+			printableLoginText(*resp.iss, loginFieldBytes),
 			e.Issuer,
 		)
 	}
@@ -142,13 +142,19 @@ func callbackOutcomeOf(resp authorizationResponse, issuer ExpectedIssuer) (outco
 	return callbackOutcome{code: resp.code}, resp.code != ""
 }
 
-func printableLoginText(value string) string {
+const (
+	loginFieldBytes = 256
+	// Holds an issuer or provider error in full: two loginFieldBytes fields plus their prefix.
+	loginPageDetailBytes = 1024
+)
+
+func printableLoginText(value string, maxBytes int) string {
 	var out strings.Builder
 	for _, r := range value {
 		if !unicode.IsPrint(r) {
 			continue
 		}
-		if out.Len()+utf8.RuneLen(r) > 256 {
+		if out.Len()+utf8.RuneLen(r) > maxBytes {
 			break
 		}
 		out.WriteRune(r)
