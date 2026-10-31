@@ -5,17 +5,18 @@ var trimSensitiveKeywords = []string{
 	"required", "dependentRequired", "minProperties",
 	"minLength", "pattern", "format",
 	"minItems", "maxItems", "contains", "minContains",
+	"unevaluatedItems", // items "contains" marked as evaluated would otherwise be rejected
 }
 
 // The walk never enters "not" or "if": loosening what they test would tighten the schema.
 var subschemaKeys = []string{
 	"anyOf", "allOf", "prefixItems", "items", "additionalProperties",
-	"then", "else", "propertyNames", "unevaluatedProperties", "unevaluatedItems",
+	"then", "else", "propertyNames", "unevaluatedProperties",
 }
 
 var subschemaMapKeys = []string{"properties", "patternProperties", "$defs", "definitions", "dependentSchemas"}
 
-var arrayItemKeys = []string{"items", "prefixItems", "unevaluatedItems"}
+var arrayItemKeys = []string{"items", "prefixItems"}
 
 func setProxyOutputSchema(tool map[string]any) {
 	schema, ok := tool["outputSchema"].(map[string]any)
@@ -159,9 +160,8 @@ func allowMiniInBranch(branch any) bool {
 	return allowMiniNotice(schema)
 }
 
-// A cut list can end inside prefixItems, which would put the notice in a positional slot.
 func allowMiniItem(schema map[string]any) bool {
-	if hasAnyKey(schema, []string{"unevaluatedItems", "prefixItems"}) {
+	if _, positional := schema["prefixItems"]; positional {
 		return false
 	}
 	items, hasItems := schema["items"]
