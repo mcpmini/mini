@@ -34,10 +34,16 @@ func (u *projectUnit) project(cfg *config.ProjectionConfig, defaults *projection
 }
 
 func (u *projectUnit) carry(notice *response.ProjectionMeta) {
-	if m, ok := u.result.Summary.(map[string]any); ok {
-		m["__mini"] = notice
-		u.changed = true
+	switch v := u.result.Summary.(type) {
+	case map[string]any:
+		v["__mini"] = notice
+	case []any: // Clients that show only structuredContent would otherwise never see the list was cut.
+		v = append(v, map[string]any{"__mini": notice})
+		u.result.Summary = v
+	default:
+		return
 	}
+	u.changed = true
 }
 
 func (u *projectUnit) text() (string, error) {
@@ -107,7 +113,7 @@ func (d *resultDoc) appendTextUnit(units []projectUnit, i int, text string) []pr
 
 func pickCarrier(units []projectUnit, hasStructured bool) *projectUnit {
 	if hasStructured {
-		if isMiniFreeObject(units[0].value) {
+		if _, isArray := units[0].value.([]any); isArray || isMiniFreeObject(units[0].value) {
 			return &units[0]
 		}
 		return nil
