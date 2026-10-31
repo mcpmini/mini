@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
-	"time"
 
 	"github.com/mcpmini/mini/internal/clock"
 )
@@ -40,19 +39,25 @@ func (c *StdioConnection) rpc(ctx context.Context, method string, params json.Ra
 		c.abandonAfterFailedWrite(ctx, err)
 		return nil, err
 	}
-	return c.awaitResponse(ctx, id, ch)
+	return c.awaitResponse(ctx, awaitResponseParams{ID: id, Method: method, Response: ch})
 }
 
-func (c *StdioConnection) awaitResponse(ctx context.Context, id int64, ch chan *Response) (json.RawMessage, error) {
+type awaitResponseParams struct {
+	ID       int64
+	Method   string
+	Response chan *Response
+}
+
+func (c *StdioConnection) awaitResponse(ctx context.Context, p awaitResponseParams) (json.RawMessage, error) {
 	select {
 	case <-ctx.Done():
-		if c.pending.remove(id) && c.isModern() {
-			c.cancelUpstreamRequest(context.WithoutCancel(ctx), id)
+		if c.pending.remove(p.ID) && methodAcceptsCancellation(p.Method) {
+			c.cancelUpstreamRequest(context.WithoutCancel(ctx), p.ID)
 		}
 		return nil, ctx.Err()
 	case <-c.done:
 		return nil, fmt.Errorf("connection closed")
-	case resp := <-ch:
+	case resp := <-p.Response:
 		if resp.Error != nil {
 			return nil, resp.Error
 		}
@@ -77,18 +82,14 @@ func (c *StdioConnection) callToolsPage(ctx context.Context, cursor string) (too
 	return decodeToolsListPage(raw, c.clock.Now(), c.negotiatedModernVersion())
 }
 
-// A best-effort notice for a caller that has already given up, so it gets only a short bound.
-const stdioCancelWriteTimeout = 250 * time.Millisecond
-
 func (c *StdioConnection) cancelUpstreamRequest(parent context.Context, id int64) {
-	ctx, cancel := clock.WithTimeout(parent, c.clock, stdioCancelWriteTimeout)
+	ctx, cancel := clock.WithTimeout(parent, c.clock, upstreamCancelTimeout)
 	defer cancel()
-	params, err := json.Marshal(CancelledParams{RequestID: json.RawMessage(strconv.FormatInt(id, 10))})
+	notification, err := cancelledNotification(json.RawMessage(strconv.FormatInt(id, 10)))
 	if err != nil {
 		c.logger.Debug("encode upstream cancellation", "err", err)
 		return
 	}
-	notification := Notification{JsonRPC: JsonRPCVersion, Method: NotificationCancelled, Params: params}
 	if err := c.writeJSONContext(ctx, notification); err != nil {
 		c.logger.Debug("send upstream cancellation", "err", err)
 		c.abandonAfterFailedWrite(ctx, err)

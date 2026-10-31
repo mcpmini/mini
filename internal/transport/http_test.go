@@ -472,7 +472,10 @@ func TestHTTPClientTimeout_defaultAllowsLongRunning(t *testing.T) {
 
 func TestHTTPClientTimeout_contextFiresBeforeClientTimeout(t *testing.T) {
 	srv := newHungServer(t)
-	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, ClientTimeout: 10 * time.Minute})
+	conn := mustLegacyHTTPConn(
+		t,
+		HTTPConnectionConfig{URL: srv.URL, Clock: clock.System(), ClientTimeout: 10 * time.Minute},
+	)
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 	start := time.Now()
