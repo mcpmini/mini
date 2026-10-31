@@ -48,7 +48,8 @@ func ResetEndpointValidation() {
 }
 
 func BufferCallbackCode(l *BrowserLogin, code string) {
-	l.results <- loginCallbackResult{code: code}
+	token, err := l.exchange(code)
+	l.results <- loginCallbackResult{token: token, err: err}
 }
 
 func Discover(ctx context.Context, serverURL string) (*ServerMeta, error) {

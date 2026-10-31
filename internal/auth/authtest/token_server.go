@@ -1,6 +1,7 @@
 package authtest
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -31,6 +32,7 @@ type TokenServer struct {
 	LastResource   string
 	HoldReady      chan struct{}
 	HoldGate       chan struct{}
+	HoldCanceled   chan struct{}
 	OverrideStatus int
 	OverrideBody   []byte
 }
@@ -59,11 +61,12 @@ func (m *TokenServer) handleToken(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "refresh rejected", status)
 		return
 	}
-	m.waitForGate()
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
+	// net/http only notices a client hanging up once the body is consumed.
+	m.waitForGate(r.Context())
 	m.captureRequestFields(r)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
@@ -85,14 +88,23 @@ func (m *TokenServer) serveOverride(w http.ResponseWriter) bool {
 	return true
 }
 
-func (m *TokenServer) waitForGate() {
+func (m *TokenServer) waitForGate(ctx context.Context) {
 	m.Mu.Lock()
-	ready, gate := m.HoldReady, m.HoldGate
-	m.HoldReady, m.HoldGate = nil, nil
+	ready, gate, canceled := m.HoldReady, m.HoldGate, m.HoldCanceled
+	m.HoldReady, m.HoldGate, m.HoldCanceled = nil, nil, nil
 	m.Mu.Unlock()
-	if ready != nil {
-		close(ready)
+	if ready == nil {
+		return
+	}
+	close(ready)
+	if canceled == nil {
 		<-gate
+		return
+	}
+	select {
+	case <-gate:
+	case <-ctx.Done():
+		close(canceled)
 	}
 }
 
