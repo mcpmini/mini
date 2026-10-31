@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>{{with .Target.Name}}{{.}} {{end}}{{if .OK}}authorized{{else}}sign-in failed{{end}} · mini</title>
+<title>{{with .Target.Name}}{{.}} {{end}}{{if .OK}}connected{{else}}sign-in failed{{end}} · mini</title>
 <link rel="icon" type="image/png" href="{{miniIcon}}">
 <style>
 :root {
@@ -53,7 +53,9 @@ h1 {
   overflow-wrap: anywhere;
 }
 .host { margin: 10px 0 0; color: var(--muted); font: 14px/1.4 var(--mono); }
+.message { margin: 28px 0 0; }
 .hint { margin: 28px 0 0; color: var(--muted); }
+.message + .hint { margin-top: 2px; }
 .detail {
   margin: 20px 0 0;
   padding: 12px 14px;
@@ -75,7 +77,7 @@ footer img { width: 16px; height: 16px; margin-right: 8px; border-radius: 4px; v
 .rise { animation: rise .55s cubic-bezier(.2, .7, .2, 1) both; }
 h1.rise { animation-delay: .15s; }
 .host.rise { animation-delay: .25s; }
-.hint.rise, .detail.rise { animation-delay: .55s; }
+.message.rise, .hint.rise, .detail.rise { animation-delay: .55s; }
 @keyframes draw { to { stroke-dashoffset: 0; } }
 @keyframes rise { from { opacity: 0; transform: translateY(10px); } }
 @media (prefers-reduced-motion: reduce) {
@@ -88,7 +90,7 @@ h1.rise { animation-delay: .15s; }
   <p class="status rise">
     {{- if .OK}}
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 12.5l5 5L19.5 7"/></svg>
-    Authorized
+    Connected
     {{- else}}
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
     Sign-in failed
@@ -101,6 +103,7 @@ h1.rise { animation-delay: .15s; }
   <p class="host rise">{{.}}</p>
   {{- end}}
   {{- if .OK}}
+  <p class="message rise">{{with .Target.Name}}{{.}} is now{{else}}Now{{end}} connected to mini.</p>
   <p class="hint rise">You can close this tab.</p>
   {{- else}}
   <p class="hint rise">Close this tab and sign in again.</p>
