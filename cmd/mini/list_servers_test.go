@@ -56,6 +56,40 @@ func TestRunListShowsConnectionStates(t *testing.T) {
 }
 
 func TestProbeServerListDoesNotSerializeConnections(t *testing.T) {
+	srv := buildStatusServer(config.DefaultConfig(), t.TempDir())
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	rows := probeServerList(ctx, srv, config.Servers{Loaded: slowServerWaitingOnHealthyServer(t)})
+	if rows[0].State != "failed" || rows[1].State != "ready" {
+		t.Fatalf("states = %q, %q; want failed, ready", rows[0].State, rows[1].State)
+	}
+}
+
+func TestPrintStatusTableDoesNotSerializeConnections(t *testing.T) {
+	srv := buildStatusServer(config.DefaultConfig(), t.TempDir())
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	var out bytes.Buffer
+	failed, err := printStatusTable(statusTableParams{
+		Context: ctx,
+		Server:  srv,
+		Out:     &out,
+		Servers: config.Servers{Loaded: slowServerWaitingOnHealthyServer(t)},
+	})
+	if err != nil {
+		t.Fatalf("printStatusTable: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if !failed || len(lines) != 3 || !strings.HasPrefix(lines[1], "slow ") ||
+		!strings.HasPrefix(strings.Join(strings.Fields(lines[2]), " "), "healthy http ok ") {
+		t.Fatalf("failed = %v, status table:\n%s\nwant slow failed then healthy ok", failed, out.String())
+	}
+}
+
+func slowServerWaitingOnHealthyServer(t *testing.T) []config.ServerConfig {
+	t.Helper()
 	ready := fakeUnauthenticatedMCPServer(t)
 	readyStarted := make(chan struct{})
 	var start sync.Once
@@ -75,16 +109,9 @@ func TestProbeServerListDoesNotSerializeConnections(t *testing.T) {
 	}))
 	t.Cleanup(slow.Close)
 	t.Cleanup(func() { close(releaseSlow) })
-	srv := buildStatusServer(config.DefaultConfig(), t.TempDir())
-	defer srv.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	rows := probeServerList(ctx, srv, config.Servers{Loaded: []config.ServerConfig{
+	return []config.ServerConfig{
 		{Name: "slow", Transport: "http", URL: slow.URL},
 		{Name: "healthy", Transport: "http", URL: healthy.URL},
-	}})
-	if rows[0].State != "failed" || rows[1].State != "ready" {
-		t.Fatalf("states = %q, %q; want failed, ready", rows[0].State, rows[1].State)
 	}
 }
 
