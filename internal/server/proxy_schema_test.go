@@ -180,6 +180,12 @@ func TestProxySchema_OutputSchema(t *testing.T) {
 				`"$defs":{"Ref":{"type":"object"}}}`,
 		},
 		{
+			"unevaluatedItems goes with contains so matched items stay allowed",
+			json.RawMessage(`{"type":"object","properties":{"matches":{"type":"array","contains":{"type":"integer"},` +
+				`"unevaluatedItems":false}}}`),
+			`{"type":"object","properties":{"matches":{"type":"array"},"__mini":MINI}}`,
+		},
+		{
 			"properties named like keywords are kept",
 			json.RawMessage(
 				`{"type":"object","properties":{"required":{"type":"boolean"},"format":{"type":"string"}}}`,
