@@ -272,13 +272,13 @@ func TestStdioCancellationGivesUpOnItsTurnToWrite(t *testing.T) {
 	}
 }
 
-func TestStdioCancellationSkipsInitializeAndDeliveredResponses(t *testing.T) {
-	for _, method := range []string{"initialize", "tools/call"} {
+func TestStdioCancellationSkipsHandshakeAndDeliveredResponses(t *testing.T) {
+	for _, method := range []string{"initialize", "server/discover", "tools/call"} {
 		t.Run(method, func(t *testing.T) {
 			var written strings.Builder
 			conn := newWriteOnlyConn(discardWriteCloser{Writer: &written})
 			ch := conn.pending.register(1)
-			if method != "initialize" {
+			if method == "tools/call" {
 				conn.pending.deliver(int64(1), &Response{Result: json.RawMessage(`{}`)})
 			}
 			ctx, cancel := context.WithCancel(t.Context())

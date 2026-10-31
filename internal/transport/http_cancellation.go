@@ -12,10 +12,10 @@ import (
 	"github.com/mcpmini/mini/internal/clock"
 )
 
+// A modern upstream treats the closed response stream itself as the cancellation:
+// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/ab3a39c13bd23be691c2760e1c6c5c15a64582e1/docs/specification/2026-07-28/basic/transports/streamable-http.mdx#L233-L238
 func (c *HTTPConnection) cancelAbandonedRequest(req *http.Request, call httpCall, err error) {
-	ctxErr := req.Context().Err()
-	if call.modernVersion != "" || call.Method == "initialize" || call.Method == "server/discover" ||
-		ctxErr == nil || !errors.Is(err, ctxErr) {
+	if call.modernVersion != "" || !methodAcceptsCancellation(call.Method) || !abandonedByCaller(req, err) {
 		return
 	}
 	ctx, cancel := clock.WithTimeout(context.WithoutCancel(req.Context()), c.clock, upstreamCancelTimeout)
@@ -23,6 +23,11 @@ func (c *HTTPConnection) cancelAbandonedRequest(req *http.Request, call httpCall
 	if err := c.postCancellation(ctx, req, call.ID); err != nil {
 		slog.Debug("send upstream cancellation", "err", err)
 	}
+}
+
+func abandonedByCaller(req *http.Request, err error) bool {
+	ctxErr := req.Context().Err()
+	return ctxErr != nil && errors.Is(err, ctxErr)
 }
 
 func (c *HTTPConnection) postCancellation(ctx context.Context, original *http.Request, id any) error {
@@ -41,16 +46,18 @@ func (c *HTTPConnection) postCancellation(ctx context.Context, original *http.Re
 	return nil
 }
 
+// The notice reuses the original request's headers so it reaches the same session with the
+// same credentials, even if a concurrent call has since rotated either.
 func buildCancellationRequest(ctx context.Context, original *http.Request, id any) (*http.Request, error) {
 	rawID, err := json.Marshal(id)
 	if err != nil {
 		return nil, err
 	}
-	params, err := json.Marshal(CancelledParams{RequestID: rawID})
+	notification, err := cancelledNotification(rawID)
 	if err != nil {
 		return nil, err
 	}
-	body, err := json.Marshal(Notification{JsonRPC: JsonRPCVersion, Method: NotificationCancelled, Params: params})
+	body, err := json.Marshal(notification)
 	if err != nil {
 		return nil, err
 	}

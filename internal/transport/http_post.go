@@ -74,6 +74,7 @@ func nextRetryDelay(delay time.Duration, backoff *time.Duration) time.Duration {
 }
 
 func (c *HTTPConnection) doPost(ctx context.Context, call httpCall) (postResult, error) {
+	// Otherwise client.Do fails with the context error and the unsent request draws a notice.
 	if err := ctx.Err(); err != nil {
 		return postResult{}, err
 	}

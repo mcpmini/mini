@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
-	"time"
 
 	"github.com/mcpmini/mini/internal/clock"
 )
@@ -52,7 +51,7 @@ type awaitResponseParams struct {
 func (c *StdioConnection) awaitResponse(ctx context.Context, p awaitResponseParams) (json.RawMessage, error) {
 	select {
 	case <-ctx.Done():
-		if c.pending.remove(p.ID) && p.Method != "initialize" {
+		if c.pending.remove(p.ID) && methodAcceptsCancellation(p.Method) {
 			c.cancelUpstreamRequest(context.WithoutCancel(ctx), p.ID)
 		}
 		return nil, ctx.Err()
@@ -83,18 +82,14 @@ func (c *StdioConnection) callToolsPage(ctx context.Context, cursor string) (too
 	return decodeToolsListPage(raw, c.clock.Now(), c.negotiatedModernVersion())
 }
 
-// A best-effort notice for a caller that has already given up, so it gets only a short bound.
-const upstreamCancelTimeout = 250 * time.Millisecond
-
 func (c *StdioConnection) cancelUpstreamRequest(parent context.Context, id int64) {
 	ctx, cancel := clock.WithTimeout(parent, c.clock, upstreamCancelTimeout)
 	defer cancel()
-	params, err := json.Marshal(CancelledParams{RequestID: json.RawMessage(strconv.FormatInt(id, 10))})
+	notification, err := cancelledNotification(json.RawMessage(strconv.FormatInt(id, 10)))
 	if err != nil {
 		c.logger.Debug("encode upstream cancellation", "err", err)
 		return
 	}
-	notification := Notification{JsonRPC: JsonRPCVersion, Method: NotificationCancelled, Params: params}
 	if err := c.writeJSONContext(ctx, notification); err != nil {
 		c.logger.Debug("send upstream cancellation", "err", err)
 		c.abandonAfterFailedWrite(ctx, err)
