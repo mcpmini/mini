@@ -162,19 +162,28 @@ func TestBrowserLogin_closeWinsOverBufferedProviderError(t *testing.T) {
 
 func TestPKCECallback_pageShowsOutcomeOffline(t *testing.T) {
 	for _, tc := range []struct {
-		name        string
-		query       url.Values
-		status      int
-		outcome     string
-		namesServer bool
+		name           string
+		query          url.Values
+		rejectExchange bool
+		status         int
+		outcome        string
+		namesServer    bool
 	}{
 		{name: "signedIn", query: url.Values{"code": {"synthetic-code"}}, status: http.StatusOK, outcome: "example is now connected to mini.", namesServer: true},
+		{
+			name: "exchangeRejected", query: url.Values{"code": {"synthetic-code"}}, rejectExchange: true,
+			status: http.StatusOK, outcome: "Sign-in failed", namesServer: true,
+		},
 		{name: "providerError", query: url.Values{"error": {"access_denied"}}, status: http.StatusOK, outcome: "Sign-in failed", namesServer: true},
 		{name: "missingCode", query: url.Values{}, status: http.StatusBadRequest, outcome: "Sign-in failed", namesServer: true},
 		{name: "stateMismatchHidesServer", query: url.Values{"state": {"wrong-state"}}, status: http.StatusBadRequest, outcome: "Sign-in failed"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			login := authtest.StartLogin(t, &config.AuthConfig{})
+			mock := authtest.NewTokenServer(t)
+			if tc.rejectExchange {
+				mock.RespondWith(http.StatusBadRequest, `{"error":"invalid_grant"}`)
+			}
+			login := authtest.StartLogin(t, mock.AuthConfig())
 			response := requestLoginCallback(t, login, tc.query)
 			if response.status != tc.status || !strings.Contains(response.body, tc.outcome) {
 				t.Fatalf(
@@ -188,6 +197,41 @@ func TestPKCECallback_pageShowsOutcomeOffline(t *testing.T) {
 			requireLoginPageNamesServer(t, response.body, tc.namesServer)
 			requireOfflineLoginPage(t, response)
 		})
+	}
+}
+
+func TestPKCECallback_rejectedExchangeIsReportedOnThePage(t *testing.T) {
+	mock := authtest.NewTokenServer(t)
+	mock.RespondWith(http.StatusBadRequest, `{"error":"invalid_grant","error_description":"code expired"}`)
+	login := authtest.StartLogin(t, mock.AuthConfig())
+
+	response := requestLoginCallback(t, login, url.Values{"code": {"synthetic-code"}})
+	if strings.Contains(response.body, "Connected") || !strings.Contains(response.body, "invalid_grant") {
+		t.Fatalf("callback page = %q, want the rejected exchange instead of Connected", response.body)
+	}
+	if err := waitForLogin(t, login); err == nil || !strings.Contains(err.Error(), "invalid_grant") {
+		t.Fatalf("Wait error = %v, want the rejected exchange", err)
+	}
+}
+
+func TestPKCECallback_repeatedRedirectExchangesOnce(t *testing.T) {
+	mock := authtest.NewTokenServer(t)
+	login := authtest.StartLogin(t, mock.AuthConfig())
+	query := url.Values{"code": {"synthetic-code"}}
+
+	first := requestLoginCallback(t, login, query)
+	repeat := requestLoginCallback(t, login, query)
+	if first.status != http.StatusOK || !strings.Contains(first.body, "example is now connected to mini.") {
+		t.Fatalf("first callback = %d %q, want the connected page", first.status, first.body)
+	}
+	if repeat.status != http.StatusConflict || strings.Contains(repeat.body, "Connected") {
+		t.Fatalf("repeated callback = %d %q, want 409 without claiming success", repeat.status, repeat.body)
+	}
+	if hits := mock.Hits.Load(); hits != 1 {
+		t.Fatalf("token endpoint hits = %d, want 1", hits)
+	}
+	if err := waitForLogin(t, login); err != nil {
+		t.Fatalf("Wait error = %v, want the first callback's token", err)
 	}
 }
 
@@ -338,19 +382,30 @@ func waitInBackground(login *auth.BrowserLogin) <-chan error {
 	return done
 }
 
-func TestBrowserLogin_closeDuringExchangeDiscardsToken(t *testing.T) {
+func TestBrowserLogin_closeCancelsExchangeAndDiscardsToken(t *testing.T) {
 	mock := authtest.NewTokenServer(t)
 	exchangeStarted, releaseExchange := make(chan struct{}), make(chan struct{})
-	mock.HoldReady, mock.HoldGate = exchangeStarted, releaseExchange
+	exchangeCanceled := make(chan struct{})
+	mock.HoldReady, mock.HoldGate, mock.HoldCanceled = exchangeStarted, releaseExchange, exchangeCanceled
+	defer close(releaseExchange)
 	login := authtest.StartLogin(t, mock.AuthConfig())
-	authtest.CompleteAuthorization(t, login.AuthURL(), "test-auth-code")
+	callbackDone := make(chan struct{})
+	go func() {
+		defer close(callbackDone)
+		authtest.CompleteAuthorization(t, login.AuthURL(), "test-auth-code")
+	}()
 	waitDone := waitInBackground(login)
 	<-exchangeStarted
 
 	login.Close() //nolint:errcheck
-	close(releaseExchange)
 
+	select {
+	case <-exchangeCanceled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close left the token exchange running")
+	}
 	if err := <-waitDone; !errors.Is(err, auth.ErrLoginClosed) {
 		t.Errorf("Wait returned %v after Close, want ErrLoginClosed", err)
 	}
+	<-callbackDone
 }
