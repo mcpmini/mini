@@ -170,11 +170,13 @@ func TestProxySchema_OutputSchema(t *testing.T) {
 		},
 		{
 			"trim-sensitive keywords are dropped at every depth, types and enums kept",
-			json.RawMessage(`{"type":"object","required":["id"],"minProperties":1,"dependentRequired":{"a":["b"]},` +
-				`"properties":{"id":{"type":"string","pattern":"\\S","minLength":1,"format":"uuid","enum":["x"]},` +
-				`"tags":{"type":"array","minItems":1,"maxItems":3,"contains":{"const":"a"},"minContains":1,` +
-				`"items":{"type":"object","required":["k"],"properties":{"k":{"type":"string"}}}}},` +
-				`"$defs":{"Ref":{"type":"object","required":["r"]}}}`),
+			json.RawMessage(
+				`{"type":"object","required":["id"],"minProperties":1,"maxProperties":9,"dependentRequired":{"a":["b"]},` +
+					`"properties":{"id":{"type":"string","pattern":"\\S","minLength":1,"format":"uuid","enum":["x"]},` +
+					`"tags":{"type":"array","minItems":1,"maxItems":3,"contains":{"const":"a"},"minContains":1,` +
+					`"items":{"type":"object","required":["k"],"properties":{"k":{"type":"string"}}}}},` +
+					`"$defs":{"Ref":{"type":"object","required":["r"]}}}`,
+			),
 			`{"type":"object","properties":{"id":{"type":"string","enum":["x"]},` +
 				`"tags":{"type":"array","items":{"type":"object","properties":{"k":{"type":"string"}}}},"__mini":MINI},` +
 				`"$defs":{"Ref":{"type":"object"}}}`,
@@ -208,6 +210,12 @@ func TestProxySchema_OutputSchema(t *testing.T) {
 		{
 			"a not reaching $defs through $ref keeps only the root type",
 			json.RawMessage(`{"type":"object","properties":{"value":{"not":{"$ref":"#/$defs/NonEmpty"}}},` +
+				`"$defs":{"NonEmpty":{"type":"string","minLength":1}}}`),
+			`{"type":"object"}`,
+		},
+		{
+			"an if reaching $defs through $ref keeps only the root type",
+			json.RawMessage(`{"type":"object","properties":{"value":{"if":{"$ref":"#/$defs/NonEmpty"},"then":{}}},` +
 				`"$defs":{"NonEmpty":{"type":"string","minLength":1}}}`),
 			`{"type":"object"}`,
 		},
