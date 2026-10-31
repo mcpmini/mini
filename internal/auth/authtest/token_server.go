@@ -65,7 +65,6 @@ func (m *TokenServer) handleToken(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
-	// net/http only notices a client hanging up once the body is consumed.
 	m.waitForGate(r.Context())
 	m.captureRequestFields(r)
 	w.Header().Set("Content-Type", "application/json")
