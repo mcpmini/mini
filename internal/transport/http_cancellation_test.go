@@ -21,87 +21,163 @@ type capturedRequest struct {
 	Headers http.Header
 }
 
-func receiveRequest(t *testing.T, requests <-chan capturedRequest) capturedRequest {
-	t.Helper()
-	select {
-	case req := <-requests:
-		return req
-	case <-time.After(3 * time.Second):
-		t.Fatal("upstream did not receive the expected request")
-		return capturedRequest{}
-	}
+type upstreamReply func(w http.ResponseWriter, r *http.Request, req Request) (handled bool)
+
+type upstreamBehavior struct {
+	hold                string
+	startHeldResponse   bool
+	replyBeforeDefaults upstreamReply
 }
 
-func TestHTTPLegacyCancellationPreservesRequestIdentity(t *testing.T) {
-	for _, flush := range []bool{false, true} {
-		t.Run(fmt.Sprint("response_started=", flush), func(t *testing.T) { checkHTTPLegacyCancellation(t, flush) })
-	}
+type recordingUpstream struct {
+	URL      string
+	requests chan capturedRequest
+	behavior upstreamBehavior
 }
 
-func checkHTTPLegacyCancellation(t *testing.T, flush bool) {
-	requests := make(chan capturedRequest, 8)
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+func newRecordingUpstream(t *testing.T, behavior upstreamBehavior) *recordingUpstream {
+	up := &recordingUpstream{requests: make(chan capturedRequest, 8), behavior: behavior}
+	up.URL = newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		var req Request
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Error(err)
 			return
 		}
-		if req.Method == "tools/call" && flush {
-			w.WriteHeader(http.StatusOK)
-			w.(http.Flusher).Flush()
-		}
-		requests <- capturedRequest{Request: req, Headers: r.Header.Clone()}
-		if req.Method == "tools/call" {
-			<-r.Context().Done()
-			return
-		}
-		if req.Method == NotificationCancelled {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
+		up.serve(w, r, req)
+	}).URL
+	return up
+}
+
+func (up *recordingUpstream) serve(w http.ResponseWriter, r *http.Request, req Request) {
+	held := req.Method == up.behavior.hold
+	if held && up.behavior.startHeldResponse {
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+	}
+	up.requests <- capturedRequest{Request: req, Headers: r.Header.Clone()}
+	reply := up.behavior.replyBeforeDefaults
+	switch {
+	case held:
+		<-r.Context().Done()
+	case reply != nil && reply(w, r, req):
+	default:
 		_, _ = w.Write(okRPCResponse(req.ID))
-	})
-	provider := &fakeAuthProvider{current: "Bearer original", next: "Bearer refreshed"}
-	conn := mustLegacyHTTPConn(
-		t,
-		HTTPConnectionConfig{
-			URL:            srv.URL,
-			Clock:          clock.System(),
-			AuthProvider:   provider,
-			AuthHeaderName: "Authorization",
-			Headers:        map[string]string{"X-Custom": "kept"},
-		},
-	)
-	conn.initialized = true
-	conn.storeSessionID("original-session")
-	ctx, cancel := context.WithCancel(t.Context())
-	result := make(chan error, 1)
-	go func() { _, err := conn.Call(ctx, "tools/call", nil); result <- err }()
-	call := receiveRequest(t, requests)
-	conn.storeSessionID("replacement-session")
-	provider.setCurrentAuth("Bearer replacement")
-	cancel()
-	notice := receiveRequest(t, requests)
-	assertHTTPCancellation(t, call, notice)
-	if err := <-result; !errors.Is(err, context.Canceled) {
-		t.Fatalf("Call error = %v", err)
-	}
-	if provider.refreshCount() != 0 || provider.authorizationCalls() != 1 {
-		t.Fatal("cancellation entered authentication machinery")
-	}
-	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
-		t.Fatal(err)
-	}
-	if next := receiveRequest(t, requests); next.Method != "ping" {
-		t.Fatalf("unexpected retry: %s", next.Method)
 	}
 }
 
-func assertHTTPCancellation(t *testing.T, call, notice capturedRequest) {
+func (up *recordingUpstream) expectNext(t *testing.T, method string) capturedRequest {
+	t.Helper()
+	select {
+	case req := <-up.requests:
+		if req.Method != method {
+			t.Fatalf("upstream received %q, want %q", req.Method, method)
+		}
+		return req
+	case <-time.After(3 * time.Second):
+		t.Fatalf("upstream did not receive %q", method)
+		return capturedRequest{}
+	}
+}
+
+func (up *recordingUpstream) assertNoOtherRequest(t *testing.T, conn *HTTPConnection) {
+	t.Helper()
+	if _, err := conn.rpc(t.Context(), "ping", nil); err != nil {
+		t.Fatal(err)
+	}
+	up.expectNext(t, "ping")
+}
+
+func rejectNotice(w http.ResponseWriter, _ *http.Request, req Request) bool {
+	if req.Method != NotificationCancelled {
+		return false
+	}
+	w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
+	w.WriteHeader(http.StatusUnauthorized)
+	return true
+}
+
+func holdNotice(_ http.ResponseWriter, r *http.Request, req Request) bool {
+	if req.Method != NotificationCancelled {
+		return false
+	}
+	<-r.Context().Done()
+	return true
+}
+
+type inFlightCall struct {
+	cancel context.CancelFunc
+	result chan error
+}
+
+func startToolCall(t *testing.T, conn *HTTPConnection, call httpCall) *inFlightCall {
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	inFlight := &inFlightCall{cancel: cancel, result: make(chan error, 1)}
+	go func() { _, err := conn.send(ctx, call); inFlight.result <- err }()
+	return inFlight
+}
+
+func (c *inFlightCall) wait(t *testing.T) error {
+	t.Helper()
+	select {
+	case err := <-c.result:
+		return err
+	case <-time.After(3 * time.Second):
+		t.Fatal("call did not return")
+		return nil
+	}
+}
+
+func assertCanceled(t *testing.T, err error) {
+	t.Helper()
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled", err)
+	}
+}
+
+var legacyToolCall = httpCall{Request: Request{Method: "tools/call"}}
+
+func TestHTTPLegacyCancellationPreservesRequestIdentity(t *testing.T) {
+	for _, started := range []bool{false, true} {
+		t.Run(fmt.Sprint("response_started=", started), func(t *testing.T) { checkHTTPLegacyCancellation(t, started) })
+	}
+}
+
+func checkHTTPLegacyCancellation(t *testing.T, responseStarted bool) {
+	up := newRecordingUpstream(t, upstreamBehavior{
+		hold: "tools/call", startHeldResponse: responseStarted, replyBeforeDefaults: rejectNotice,
+	})
+	provider := &observingAuthProvider{
+		fakeAuthProvider: fakeAuthProvider{current: "Bearer original", next: "Bearer refreshed"},
+	}
+	conn := newSessionHTTPConn(t, up.URL, provider)
+	call := startToolCall(t, conn, legacyToolCall)
+	sent := up.expectNext(t, "tools/call")
+	conn.storeSessionID("replacement-session")
+	provider.setCurrentAuth("Bearer replacement")
+	call.cancel()
+	assertCancels(t, up.expectNext(t, NotificationCancelled), sent)
+	assertCanceled(t, call.wait(t))
+	if provider.refreshCount() != 0 || provider.authorizationCalls() != 1 || len(provider.observed) != 0 {
+		t.Fatal("cancellation entered authentication machinery")
+	}
+	up.assertNoOtherRequest(t, conn)
+}
+
+func newSessionHTTPConn(t *testing.T, url string, provider AuthorizationProvider) *HTTPConnection {
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{
+		URL: url, Clock: clock.System(), AuthProvider: provider, AuthHeaderName: "Authorization",
+		Headers: map[string]string{"X-Custom": "kept"},
+	})
+	conn.initialized = true
+	conn.storeSessionID("original-session")
+	return conn
+}
+
+func assertCancels(t *testing.T, notice, call capturedRequest) {
 	t.Helper()
 	var params CancelledParams
-	if notice.Method != NotificationCancelled || notice.ID != nil || json.Unmarshal(notice.Params, &params) != nil ||
-		!sameJSONID(params.RequestID, call.ID) {
+	if notice.ID != nil || json.Unmarshal(notice.Params, &params) != nil || !sameJSONID(params.RequestID, call.ID) {
 		t.Fatalf("notice %+v does not cancel call %v", notice.Request, call.ID)
 	}
 	for _, key := range []string{"Authorization", "Mcp-Session-Id", "Mcp-Protocol-Version", "X-Custom"} {
@@ -112,161 +188,89 @@ func assertHTTPCancellation(t *testing.T, call, notice capturedRequest) {
 }
 
 func TestHTTPCancellationSkipsHandshakeAndModernRequests(t *testing.T) {
-	for _, method := range []string{"initialize", "server/discover", "tools/call"} {
-		t.Run(method, func(t *testing.T) { checkHTTPNoCancellation(t, method) })
-	}
-}
-
-func checkHTTPNoCancellation(t *testing.T, method string) {
-	requests := make(chan capturedRequest, 8)
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
-		var req Request
-		_ = json.NewDecoder(r.Body).Decode(&req)
-		requests <- capturedRequest{Request: req}
-		if req.Method == method {
-			<-r.Context().Done()
-			return
-		}
-		_, _ = w.Write(okRPCResponse(req.ID))
-	})
-	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Clock: clock.System()})
-	ctx, cancel := context.WithCancel(t.Context())
-	call := httpCall{Request: Request{Method: method}}
-	if method == "tools/call" {
-		call.modernVersion = ModernVersions[0]
-	}
-	result := make(chan error, 1)
-	go func() { _, err := conn.send(ctx, call); result <- err }()
-	_ = receiveRequest(t, requests)
-	cancel()
-	if err := <-result; !errors.Is(err, context.Canceled) {
-		t.Fatalf("send error = %v", err)
-	}
-	if _, err := conn.rpc(t.Context(), "ping", nil); err != nil {
-		t.Fatal(err)
-	}
-	if next := receiveRequest(t, requests); next.Method != "ping" {
-		t.Fatalf("unexpected cancellation: %s", next.Method)
+	modernToolCall := httpCall{Request: Request{Method: "tools/call"}, modernVersion: ModernVersions[0]}
+	for _, call := range []httpCall{
+		{Request: Request{Method: "initialize"}},
+		{Request: Request{Method: "server/discover"}},
+		modernToolCall,
+	} {
+		t.Run(call.Method+call.modernVersion, func(t *testing.T) {
+			up := newRecordingUpstream(t, upstreamBehavior{hold: call.Method})
+			conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: up.URL, Clock: clock.System()})
+			inFlight := startToolCall(t, conn, call)
+			up.expectNext(t, call.Method)
+			inFlight.cancel()
+			assertCanceled(t, inFlight.wait(t))
+			up.assertNoOtherRequest(t, conn)
+		})
 	}
 }
 
 func TestHTTPCancellationNoticeIsBounded(t *testing.T) {
-	requests := make(chan capturedRequest, 8)
-	srv := newJsonRPCServer(t, func(_ http.ResponseWriter, r *http.Request) {
-		var req Request
-		_ = json.NewDecoder(r.Body).Decode(&req)
-		requests <- capturedRequest{Request: req}
-		<-r.Context().Done()
-	})
+	up := newRecordingUpstream(t, upstreamBehavior{hold: "tools/call", replyBeforeDefaults: holdNotice})
 	fakeClock := clock.NewFake()
-	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Clock: fakeClock})
-	ctx, cancel := context.WithCancel(t.Context())
-	result := make(chan error, 1)
-	go func() { _, err := conn.rpc(ctx, "tools/call", nil); result <- err }()
-	_ = receiveRequest(t, requests)
-	cancel()
-	_ = receiveRequest(t, requests)
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: up.URL, Clock: fakeClock})
+	call := startToolCall(t, conn, legacyToolCall)
+	up.expectNext(t, "tools/call")
+	call.cancel()
+	up.expectNext(t, NotificationCancelled)
 	fakeClock.Advance(upstreamCancelTimeout)
-	select {
-	case err := <-result:
-		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("rpc error = %v", err)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("cancellation waited beyond its delivery deadline")
-	}
+	assertCanceled(t, call.wait(t))
 }
 
-func TestHTTPCancellationDoesNotObserveNoticeChallenge(t *testing.T) {
-	requests := make(chan capturedRequest, 4)
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
-		var req Request
-		_ = json.NewDecoder(r.Body).Decode(&req)
-		requests <- capturedRequest{Request: req}
-		if req.Method == NotificationCancelled {
-			w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-		<-r.Context().Done()
-	})
-	provider := &observingAuthProvider{}
-	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{
-		URL: srv.URL, Clock: clock.System(), AuthProvider: provider, AuthHeaderName: "Authorization",
-	})
+func TestHTTPCancellationSkipsPreCancelledCall(t *testing.T) {
+	up := newRecordingUpstream(t, upstreamBehavior{})
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: up.URL, Clock: clock.System()})
 	ctx, cancel := context.WithCancel(t.Context())
-	result := make(chan error, 1)
-	go func() {
-		_, err := conn.send(ctx, httpCall{Request: Request{Method: "tools/call"}})
-		result <- err
-	}()
-	if req := receiveRequest(t, requests); req.Method != "tools/call" {
-		t.Fatalf("initial request = %q", req.Method)
-	}
 	cancel()
-	if req := receiveRequest(t, requests); req.Method != NotificationCancelled {
-		t.Fatalf("request after cancellation = %q", req.Method)
-	}
-	if err := <-result; !errors.Is(err, context.Canceled) {
-		t.Fatalf("send error = %v", err)
-	}
-	if len(provider.observed) != 0 {
-		t.Fatalf("cancellation challenge was observed: %#v", provider.observed)
-	}
+	_, err := conn.send(ctx, legacyToolCall)
+	assertCanceled(t, err)
+	up.assertNoOtherRequest(t, conn)
 }
 
-func TestHTTPCancellationSkipsUnsentAndCompletedAttempts(t *testing.T) {
-	for _, outcome := range []string{"pre-cancelled", "success", "rpc-error", "backoff"} {
+func TestHTTPCancellationSkipsCompletedAttempts(t *testing.T) {
+	for _, outcome := range []string{"success", "rpc-error", "backoff"} {
 		t.Run(outcome, func(t *testing.T) { checkHTTPCompletedAttempt(t, outcome) })
 	}
 }
 
 func checkHTTPCompletedAttempt(t *testing.T, outcome string) {
-	requests := make(chan capturedRequest, 8)
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
-		var req Request
-		_ = json.NewDecoder(r.Body).Decode(&req)
-		requests <- capturedRequest{Request: req}
-		if req.Method == "tools/call" && outcome == "backoff" {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			return
-		}
-		if req.Method == "tools/call" && outcome == "rpc-error" {
-			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%v,"error":{"code":-32603,"message":"failed"}}`, req.ID)
-			return
-		}
-		_, _ = w.Write(okRPCResponse(req.ID))
-	})
+	up := newRecordingUpstream(t, upstreamBehavior{replyBeforeDefaults: completedToolCallReply(outcome)})
 	fakeClock := clock.NewFake()
-	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Clock: fakeClock})
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	if outcome == "pre-cancelled" {
-		cancel()
-	}
-	result := make(chan error, 1)
-	go func() { _, err := conn.rpc(ctx, "tools/call", nil); result <- err }()
-	if outcome != "pre-cancelled" {
-		_ = receiveRequest(t, requests)
-	}
+	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: up.URL, Clock: fakeClock})
+	call := startToolCall(t, conn, legacyToolCall)
+	up.expectNext(t, "tools/call")
 	if outcome == "backoff" {
-		wait, stop := context.WithTimeout(t.Context(), 3*time.Second)
-		defer stop()
-		if err := fakeClock.BlockUntilContext(wait, 1); err != nil {
-			t.Fatal(err)
-		}
-		cancel()
+		awaitRetryTimer(t, fakeClock)
+		call.cancel()
 	}
-	err := <-result
-	if (outcome == "success") != (err == nil) {
+	if err := call.wait(t); (outcome == "success") != (err == nil) {
 		t.Fatalf("%s error = %v", outcome, err)
 	}
-	cancel()
-	if _, err := conn.rpc(t.Context(), "ping", nil); err != nil {
-		t.Fatal(err)
+	call.cancel()
+	up.assertNoOtherRequest(t, conn)
+}
+
+func completedToolCallReply(outcome string) upstreamReply {
+	return func(w http.ResponseWriter, _ *http.Request, req Request) bool {
+		switch {
+		case req.Method != "tools/call" || outcome == "success":
+			return false
+		case outcome == "backoff":
+			w.WriteHeader(http.StatusServiceUnavailable)
+		default:
+			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%v,"error":{"code":-32603,"message":"failed"}}`, req.ID)
+		}
+		return true
 	}
-	if next := receiveRequest(t, requests); next.Method != "ping" {
-		t.Fatalf("unexpected cancellation: %s", next.Method)
+}
+
+func awaitRetryTimer(t *testing.T, fakeClock *clock.Fake) {
+	t.Helper()
+	wait, stop := context.WithTimeout(t.Context(), 3*time.Second)
+	defer stop()
+	if err := fakeClock.BlockUntilContext(wait, 1); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -290,56 +294,38 @@ func TestHTTPCancellationSkipsAttemptCancelledBeforeWrite(t *testing.T) {
 	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{
 		URL: "http://upstream.invalid/mcp", Clock: clock.System(), Client: &http.Client{Transport: transport},
 	})
-	if _, err := conn.rpc(ctx, "tools/call", nil); !errors.Is(err, context.Canceled) {
-		t.Fatalf("rpc error = %v", err)
-	}
+	_, err := conn.send(ctx, legacyToolCall)
+	assertCanceled(t, err)
 	if len(transport.methods) != 1 {
 		t.Fatalf("requests = %q, want only the unsent tools/call", transport.methods)
 	}
 }
 
 func TestHTTPAbandonedWhileWaiting(t *testing.T) {
-	cancelled, cancel := context.WithCancel(t.Context())
-	cancel()
+	live, cancelled := t.Context(), cancelledContext(t)
 	clientTimeout := &url.Error{Op: "Post", URL: "/", Err: &net.DNSError{IsTimeout: true}}
-	tests := []struct {
+	reset := &url.Error{Op: "Post", URL: "/", Err: errors.New("connection reset")}
+	for _, tt := range []struct {
 		name string
 		ctx  context.Context
 		err  error
 		want bool
 	}{
-		{
-			name: "caller cancelled",
-			ctx:  cancelled,
-			err:  fmt.Errorf("read response: %w", context.Canceled),
-			want: true,
-		},
-		{name: "client timeout", ctx: t.Context(), err: clientTimeout, want: true},
-		{
-			name: "client timeout reading body",
-			ctx:  t.Context(),
-			err:  fmt.Errorf("read response: %w", clientTimeout),
-			want: true,
-		},
-		{
-			name: "connection reset",
-			ctx:  t.Context(),
-			err:  &url.Error{Op: "Post", URL: "/", Err: errors.New("connection reset")},
-			want: false,
-		},
-		{
-			name: "rpc error after caller left",
-			ctx:  cancelled,
-			err:  &RPCError{Code: -32603},
-			want: false,
-		},
-		{name: "completed", ctx: t.Context(), err: nil, want: false},
+		{name: "caller cancelled", ctx: cancelled, err: fmt.Errorf("read response: %w", context.Canceled), want: true},
+		{name: "client timeout, as tool_timeout 0 leaves it", ctx: live, err: clientTimeout, want: true},
+		{name: "client timeout reading body", ctx: live, err: fmt.Errorf("read response: %w", clientTimeout), want: true},
+		{name: "connection reset", ctx: live, err: reset, want: false},
+		{name: "rpc error after caller left", ctx: cancelled, err: &RPCError{Code: -32603}, want: false},
+		{name: "completed", ctx: live, err: nil, want: false},
+	} {
+		if got := abandonedWhileWaiting(tt.ctx, tt.err); got != tt.want {
+			t.Errorf("%s: abandonedWhileWaiting = %v, want %v", tt.name, got, tt.want)
+		}
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := abandonedWhileWaiting(tt.ctx, tt.err); got != tt.want {
-				t.Fatalf("abandonedWhileWaiting = %v, want %v", got, tt.want)
-			}
-		})
-	}
+}
+
+func cancelledContext(t *testing.T) context.Context {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	return ctx
 }

@@ -30,9 +30,9 @@ func newPostAttempt(req *http.Request, call httpCall) *postAttempt {
 	return attempt
 }
 
-// A modern upstream treats the closed response stream itself as the cancellation:
-// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/ab3a39c13bd23be691c2760e1c6c5c15a64582e1/docs/specification/2026-07-28/basic/transports/streamable-http.mdx#L233-L238
 func (c *HTTPConnection) cancelIfAbandoned(ctx context.Context, attempt *postAttempt, err error) {
+	// A modern upstream treats the closed response stream itself as the cancellation:
+	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/ab3a39c13bd23be691c2760e1c6c5c15a64582e1/docs/specification/2026-07-28/basic/transports/streamable-http.mdx#L233-L238
 	if attempt.call.modernVersion != "" || !methodAcceptsCancellation(attempt.call.Method) ||
 		!attempt.written.Load() || !abandonedWhileWaiting(ctx, err) {
 		return
@@ -44,8 +44,6 @@ func (c *HTTPConnection) cancelIfAbandoned(ctx context.Context, attempt *postAtt
 	}
 }
 
-// Besides the caller's context, http.Client.Timeout ends a wait that tool_timeout "0" or a
-// tool_timeout above it leaves open.
 func abandonedWhileWaiting(ctx context.Context, err error) bool {
 	if ctxErr := ctx.Err(); ctxErr != nil && errors.Is(err, ctxErr) {
 		return true
@@ -70,8 +68,6 @@ func (c *HTTPConnection) postCancellation(ctx context.Context, original *http.Re
 	return nil
 }
 
-// The notice reuses the original request's headers so it reaches the same session with the
-// same credentials, even if a concurrent call has since rotated either.
 func buildCancellationRequest(ctx context.Context, original *http.Request, id any) (*http.Request, error) {
 	rawID, err := json.Marshal(id)
 	if err != nil {

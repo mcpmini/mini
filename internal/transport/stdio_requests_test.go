@@ -272,26 +272,36 @@ func TestStdioCancellationGivesUpOnItsTurnToWrite(t *testing.T) {
 	}
 }
 
-func TestStdioCancellationSkipsHandshakeAndDeliveredResponses(t *testing.T) {
-	for _, method := range []string{"initialize", "server/discover", "tools/call"} {
+func TestStdioCancellationSkipsHandshakeRequests(t *testing.T) {
+	for _, method := range []string{"initialize", "server/discover"} {
 		t.Run(method, func(t *testing.T) {
 			var written strings.Builder
 			conn := newWriteOnlyConn(discardWriteCloser{Writer: &written})
-			ch := conn.pending.register(1)
-			if method == "tools/call" {
-				conn.pending.deliver(int64(1), &Response{Result: json.RawMessage(`{}`)})
-				// The reader has claimed the entry, but its response has not reached the caller,
-				// so only the cancelled context is ready.
-				ch = make(chan *Response)
-			}
-			ctx, cancel := context.WithCancel(t.Context())
-			cancel()
-			_, _ = conn.awaitResponse(ctx, awaitResponseParams{ID: 1, Method: method, Response: ch})
+			response := conn.pending.register(1)
+			awaitCancelledResponse(conn, awaitResponseParams{ID: 1, Method: method, Response: response})
 			if written.Len() != 0 {
 				t.Fatalf("unexpected cancellation: %s", written.String())
 			}
 		})
 	}
+}
+
+func TestStdioCancellationSkipsResponseTheReaderAlreadyClaimed(t *testing.T) {
+	var written strings.Builder
+	conn := newWriteOnlyConn(discardWriteCloser{Writer: &written})
+	conn.pending.register(1)
+	conn.pending.deliver(int64(1), &Response{Result: json.RawMessage(`{}`)})
+	notYetHandedToCaller := make(chan *Response)
+	awaitCancelledResponse(conn, awaitResponseParams{ID: 1, Method: "tools/call", Response: notYetHandedToCaller})
+	if written.Len() != 0 {
+		t.Fatalf("unexpected cancellation: %s", written.String())
+	}
+}
+
+func awaitCancelledResponse(conn *StdioConnection, p awaitResponseParams) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, _ = conn.awaitResponse(ctx, p)
 }
 
 func TestStdioModernCallWithNonObjectParamsSendsNothing(t *testing.T) {

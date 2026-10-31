@@ -22,84 +22,90 @@ func TestIntegrationLegacyCancellationReachesUpstream(t *testing.T) {
 }
 
 func checkLegacyCancellation(t *testing.T, timeout string) {
-	calls, notices := make(chan json.RawMessage, 1), make(chan json.RawMessage, 1)
-	srv := cancellationUpstream(t, calls, notices)
-	cfg := t.TempDir()
-	configtest.WriteServer(
-		t,
-		cfg,
-		config.ServerConfig{Name: "svc", Transport: "sse", URL: srv.URL, ToolTimeout: timeout},
-	)
-	client := startServer(t, cfg)
-	result := make(chan bool, 1)
-	go func() { _, isErr := client.execToolAllowError("svc", "get_item", nil); result <- isErr }()
-	upstreamID := awaitCancellationID(t, calls)
+	up := newCancellationUpstream(t)
+	client := startServer(t, legacyHTTPServerConfig(t, up.URL, timeout))
+	callFailed := make(chan bool, 1)
+	go func() { _, isErr := client.execToolAllowError("svc", "get_item", nil); callFailed <- isErr }()
+	upstreamID := receiveWithin(t, up.heldCallIDs, "the held tool call")
 	if timeout == "0" {
 		client.sendNotification(transport.NotificationCancelled, map[string]any{"requestId": client.nextID.Load()})
 	}
-	if noticeID := awaitCancellationID(t, notices); string(noticeID) != string(upstreamID) {
+	if noticeID := receiveWithin(t, up.noticeIDs, "a cancellation"); string(noticeID) != string(upstreamID) {
 		t.Fatalf("cancellation targets %s, want upstream request %s", noticeID, upstreamID)
 	}
-	select {
-	case isErr := <-result:
-		if !isErr {
-			t.Fatal("abandoned tool call succeeded")
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("cancelled call did not finish")
+	if !receiveWithin(t, callFailed, "the cancelled call's result") {
+		t.Fatal("abandoned tool call succeeded")
 	}
 	if _, isErr := client.execToolAllowError("svc", "get_item", nil); isErr {
 		t.Fatal("subsequent tool call failed after cancellation")
 	}
 }
 
-func cancellationUpstream(t *testing.T, calls, notices chan<- json.RawMessage) *httptest.Server {
-	t.Helper()
-	var callCount atomic.Int64
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			ID     json.RawMessage `json:"id"`
-			Method string          `json:"method"`
-			Params json.RawMessage `json:"params"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Error(err)
-			return
-		}
-		if req.Method == "server/discover" {
-			_ = json.NewEncoder(w).
-				Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32601, "message": "legacy"}})
-			return
-		}
-		if req.Method == transport.NotificationCancelled {
-			var params transport.CancelledParams
-			if err := json.Unmarshal(req.Params, &params); err != nil {
-				t.Error(err)
-				return
-			}
-			notices <- params.RequestID
-			w.WriteHeader(http.StatusAccepted)
-			return
-		}
-		if req.Method == "tools/call" && callCount.Add(1) == 1 {
-			calls <- req.ID
-			<-r.Context().Done()
-			return
-		}
-		_ = json.NewEncoder(w).
-			Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": fakeMCPResult(req.Method)})
-	}))
-	t.Cleanup(srv.Close)
-	return srv
+func legacyHTTPServerConfig(t *testing.T, url, toolTimeout string) string {
+	cfg := t.TempDir()
+	server := config.ServerConfig{Name: "svc", Transport: "sse", URL: url, ToolTimeout: toolTimeout}
+	configtest.WriteServer(t, cfg, server)
+	return cfg
 }
 
-func awaitCancellationID(t *testing.T, ids <-chan json.RawMessage) json.RawMessage {
+type cancellationUpstream struct {
+	URL         string
+	heldCallIDs chan json.RawMessage
+	noticeIDs   chan json.RawMessage
+	toolCalls   atomic.Int64
+}
+
+func newCancellationUpstream(t *testing.T) *cancellationUpstream {
+	up := &cancellationUpstream{heldCallIDs: make(chan json.RawMessage, 1), noticeIDs: make(chan json.RawMessage, 1)}
+	srv := httptest.NewServer(http.HandlerFunc(up.serveHTTP))
+	t.Cleanup(srv.Close)
+	up.URL = srv.URL
+	return up
+}
+
+func (up *cancellationUpstream) serveHTTP(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ID     json.RawMessage `json:"id"`
+		Method string          `json:"method"`
+		Params json.RawMessage `json:"params"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	switch {
+	case req.Method == "server/discover":
+		writeRPC(w, map[string]any{"id": req.ID, "error": map[string]any{"code": -32601, "message": "legacy"}})
+	case req.Method == transport.NotificationCancelled:
+		up.recordNotice(w, req.Params)
+	case req.Method == "tools/call" && up.toolCalls.Add(1) == 1:
+		up.heldCallIDs <- req.ID
+		<-r.Context().Done()
+	default:
+		writeRPC(w, map[string]any{"id": req.ID, "result": fakeMCPResult(req.Method)})
+	}
+}
+
+func (up *cancellationUpstream) recordNotice(w http.ResponseWriter, raw json.RawMessage) {
+	var params transport.CancelledParams
+	_ = json.Unmarshal(raw, &params) // Malformed params leave RequestID empty, which fails the ID comparison.
+	up.noticeIDs <- params.RequestID
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func writeRPC(w http.ResponseWriter, message map[string]any) {
+	message["jsonrpc"] = transport.JsonRPCVersion
+	_ = json.NewEncoder(w).Encode(message) // A failed write surfaces as the client's request error.
+}
+
+func receiveWithin[T any](t *testing.T, ch <-chan T, what string) T {
 	t.Helper()
 	select {
-	case id := <-ids:
-		return id
+	case v := <-ch:
+		return v
 	case <-time.After(3 * time.Second):
-		t.Fatal("upstream did not receive the expected call or cancellation")
-		return nil
+		t.Fatalf("timed out waiting for %s", what)
+		var zero T
+		return zero
 	}
 }
