@@ -193,13 +193,13 @@ func TestProxySchema_OutputSchema(t *testing.T) {
 			`{"type":"object","properties":{"a":{"not":{"required":["x"]}},"b":{"if":{"required":["y"]},"then":{}},"__mini":MINI}}`,
 		},
 		{
-			"$ref root falls back to a plain object",
-			json.RawMessage(`{"$ref":"#/$defs/Out","$defs":{"Out":{"type":"object","additionalProperties":false}}}`),
-			`{"type":"object"}`,
+			"untyped $ref root falls back to any value since it may point at an array",
+			json.RawMessage(`{"$ref":"#/$defs/Out","$defs":{"Out":{"type":"array"}}}`),
+			`{}`,
 		},
 		{
-			"union branch through $ref falls back to a plain object",
-			json.RawMessage(`{"anyOf":[{"$ref":"#/$defs/Out"}],"$defs":{"Out":{"type":"object"}}}`),
+			"object root with a union branch through $ref falls back to a plain object",
+			json.RawMessage(`{"type":"object","anyOf":[{"$ref":"#/$defs/Out"}],"$defs":{"Out":{"type":"object"}}}`),
 			`{"type":"object"}`,
 		},
 		{"string root falls back to any value", json.RawMessage(`{"type":"string","minLength":3}`), `{}`},

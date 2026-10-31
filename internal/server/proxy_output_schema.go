@@ -135,10 +135,10 @@ func allowMiniItem(schema map[string]any) bool {
 }
 
 func looseOutputSchema(schema map[string]any) map[string]any {
-	if _, typed := schema["type"]; typed && !typeIncludes(schema, "object") {
-		return map[string]any{}
+	if typeIncludes(schema, "object") {
+		return map[string]any{"type": "object"}
 	}
-	return map[string]any{"type": "object"}
+	return map[string]any{}
 }
 
 func isObjectish(schema map[string]any) bool {
