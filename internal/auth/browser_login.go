@@ -31,6 +31,10 @@ type BrowserLogin struct {
 	verifier  string
 	login     Login
 	flow      *oauthHTTPFlow
+	// The exchange runs in the callback handler, so it must outlive the browser's request but not
+	// the login.
+	exchangeCtx    context.Context
+	cancelExchange context.CancelFunc
 }
 
 type BeginLoginParams struct {
@@ -122,18 +126,8 @@ func (l *BrowserLogin) AuthURL() string { return l.authURL }
 // Wait releases the callback port before it returns, so the next flow can bind it.
 func (l *BrowserLogin) Wait(ctx context.Context) (*Login, error) {
 	defer l.flow.closeIdleConnections()
-	code, err := l.awaitCode(ctx)
+	token, err := l.awaitToken(ctx)
 	l.stopServing()
-	if err != nil {
-		return nil, err
-	}
-	token, err := l.oauth2Cfg.Exchange(
-		oauthHTTPContextForClient(ctx, l.flow.client, l.login.Resource), code, oauth2.VerifierOption(l.verifier),
-	)
-	// Close can land while the exchange is in flight; a closed login must not hand out a token.
-	if l.isClosed() {
-		return nil, ErrLoginClosed
-	}
 	if err != nil {
 		return nil, err
 	}
@@ -142,18 +136,29 @@ func (l *BrowserLogin) Wait(ctx context.Context) (*Login, error) {
 	return &login, nil
 }
 
-func (l *BrowserLogin) awaitCode(ctx context.Context) (string, error) {
+func (l *BrowserLogin) awaitToken(ctx context.Context) (*oauth2.Token, error) {
 	select {
 	case result := <-l.results:
+		// Close can land while the callback's exchange is in flight; a closed login must not hand
+		// out a token.
 		if l.isClosed() {
-			return "", ErrLoginClosed
+			return nil, ErrLoginClosed
 		}
-		return result.code, result.err
+		return result.token, result.err
 	case <-l.closed:
-		return "", ErrLoginClosed
+		return nil, ErrLoginClosed
 	case <-ctx.Done():
-		return "", ctx.Err()
+		return nil, ctx.Err()
 	}
+}
+
+func (l *BrowserLogin) exchange(code string) (*oauth2.Token, error) {
+	ctx := oauthHTTPContextForClient(l.exchangeCtx, l.flow.client, l.login.Resource)
+	token, err := l.oauth2Cfg.Exchange(ctx, code, oauth2.VerifierOption(l.verifier))
+	if err != nil {
+		return nil, fmt.Errorf("exchange authorization code: %w", err)
+	}
+	return token, nil
 }
 
 func (l *BrowserLogin) isClosed() bool {
@@ -175,9 +180,13 @@ func (l *BrowserLogin) Close() error {
 }
 
 func (l *BrowserLogin) serveCallback(listener net.Listener, state string, resolved resolvedLogin) {
-	want := callbackExpectation{state: state, issuer: resolved.Issuer}
-	target := newLoginTarget(resolved.ServerName, resolved.ServerURL)
-	l.serve(listener, callbackHandler(want, target, l.results))
+	l.exchangeCtx, l.cancelExchange = context.WithCancel(context.Background())
+	l.serve(listener, &loginCallback{
+		want:     callbackExpectation{state: state, issuer: resolved.Issuer},
+		target:   newLoginTarget(resolved.ServerName, resolved.ServerURL),
+		exchange: l.exchange,
+		results:  l.results,
+	})
 }
 
 func (l *BrowserLogin) serve(listener net.Listener, handler http.Handler) {
@@ -185,7 +194,7 @@ func (l *BrowserLogin) serve(listener net.Listener, handler http.Handler) {
 		Handler:           handler,
 		ErrorLog:          log.New(io.Discard, "", 0), // net/http logs retried accept errors; a login must not print
 		ReadHeaderTimeout: 30 * time.Second,
-		WriteTimeout:      30 * time.Second,
+		WriteTimeout:      authRequestTimeout + 10*time.Second,
 	}
 	l.serving.Go(func() {
 		err := l.server.Serve(listener)
@@ -204,6 +213,7 @@ func (l *BrowserLogin) reportServeFailure(err error) {
 }
 
 func (l *BrowserLogin) stopServing() {
+	l.cancelExchange()
 	l.server.Close() //nolint:errcheck // Close can precede Serve starting; joining Serve ensures the listener is closed
 	l.serving.Wait()
 }

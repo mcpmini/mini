@@ -6,13 +6,16 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"unicode"
 	"unicode/utf8"
+
+	"golang.org/x/oauth2"
 )
 
 type loginCallbackResult struct {
-	code string
-	err  error
+	token *oauth2.Token
+	err   error
 }
 
 // authorizationResponse is the authorization server's redirect to mini's callback: RFC 6749
@@ -85,52 +88,61 @@ type callbackExpectation struct {
 	issuer ExpectedIssuer
 }
 
-func callbackHandler(
-	want callbackExpectation,
-	target loginTarget,
-	results chan<- loginCallbackResult,
-) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := parseAuthorizationResponse(r.URL.Query())
-		if resp.state != want.state {
-			writeLoginPage(w, http.StatusBadRequest, failedLoginPage(loginTarget{}, "state mismatch"))
-			return
-		}
-		completeLoginCallback(loginCallbackParams{
-			writer: w, response: resp, issuer: want.issuer, target: target, results: results,
-		})
-	})
-}
-
-type loginCallbackParams struct {
-	writer   http.ResponseWriter
-	response authorizationResponse
-	issuer   ExpectedIssuer
+// loginCallback answers the authorization server's redirect only after exchanging its code, so the
+// page reports whether mini actually holds a token.
+type loginCallback struct {
+	want     callbackExpectation
 	target   loginTarget
+	exchange func(code string) (*oauth2.Token, error)
+	claimed  atomic.Bool
 	results  chan<- loginCallbackResult
 }
 
-func completeLoginCallback(p loginCallbackParams) {
-	result, complete := callbackResult(p.response, p.issuer)
-	if !complete {
-		writeLoginPage(p.writer, http.StatusBadRequest, failedLoginPage(p.target, "missing code"))
+func (c *loginCallback) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	resp := parseAuthorizationResponse(r.URL.Query())
+	if resp.state != c.want.state {
+		writeLoginPage(w, http.StatusBadRequest, failedLoginPage(loginTarget{}, "state mismatch"))
 		return
 	}
-	writeLoginPage(p.writer, http.StatusOK, loginResultPage(p.target, result.err))
+	outcome, complete := callbackOutcomeOf(resp, c.want.issuer)
+	if !complete {
+		writeLoginPage(w, http.StatusBadRequest, failedLoginPage(c.target, "missing code"))
+		return
+	}
+	// A code exchanges only once, so a repeated redirect would report failure even after a success.
+	if !c.claimed.CompareAndSwap(false, true) {
+		writeLoginPage(w, http.StatusConflict, failedLoginPage(c.target, "this sign-in was already received"))
+		return
+	}
+	result := c.finish(outcome)
+	writeLoginPage(w, http.StatusOK, loginResultPage(c.target, result.err))
 	select {
-	case p.results <- result:
+	case c.results <- result:
 	default:
 	}
 }
 
-func callbackResult(resp authorizationResponse, issuer ExpectedIssuer) (result loginCallbackResult, complete bool) {
+func (c *loginCallback) finish(outcome callbackOutcome) loginCallbackResult {
+	if outcome.err != nil {
+		return loginCallbackResult{err: outcome.err}
+	}
+	token, err := c.exchange(outcome.code)
+	return loginCallbackResult{token: token, err: err}
+}
+
+type callbackOutcome struct {
+	code string
+	err  error
+}
+
+func callbackOutcomeOf(resp authorizationResponse, issuer ExpectedIssuer) (outcome callbackOutcome, complete bool) {
 	if err := issuer.check(resp); err != nil {
-		return loginCallbackResult{err: err}, true
+		return callbackOutcome{err: err}, true
 	}
 	if resp.providerErr != nil {
-		return loginCallbackResult{err: resp.providerErr}, true
+		return callbackOutcome{err: resp.providerErr}, true
 	}
-	return loginCallbackResult{code: resp.code}, resp.code != ""
+	return callbackOutcome{code: resp.code}, resp.code != ""
 }
 
 func printableLoginText(value string) string {
