@@ -2,7 +2,7 @@ package server
 
 // Clients validate structuredContent against outputSchema, and trimmed results can break these.
 var trimSensitiveKeywords = []string{
-	"required", "dependentRequired", "minProperties",
+	"required", "dependentRequired", "minProperties", "maxProperties",
 	"minLength", "pattern", "format",
 	"minItems", "maxItems", "contains", "minContains",
 	"unevaluatedItems", // items "contains" marked as evaluated would otherwise be rejected

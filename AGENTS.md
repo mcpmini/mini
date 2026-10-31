@@ -122,7 +122,7 @@ The direct CLI uses `internal/invoke` and `response.Builder.Build()` for its `{d
 
 ### Response shapes
 
-**Proxy mode** returns the upstream's own `CallToolResult`. `structuredContent`, JSON and prose text blocks, and embedded text resources are projected in place; images, other blocks and `_meta` pass through. Tools take the upstream's arguments flat; `__mini` is the only reserved argument (`{"projection": "raw"}`). When projection cuts something, the result carries a notice, as a `__mini` key on the result object or as a final text block:
+**Proxy mode** returns the upstream's own `CallToolResult`. `structuredContent`, JSON and prose text blocks, and embedded text resources are projected in place; images, other blocks and `_meta` pass through. Tools take the upstream's arguments flat; `__mini` is the only reserved argument (`{"projection": "raw"}`). When projection cuts something, the result carries a notice, as a `__mini` key on the result object, as the last element of a result list, or as a final text block:
 ```json
 "__mini": {
   "msg": "Response filtered, some fields were excluded or truncated, use read(<file>, <jq filter>) to fetch full values.",
