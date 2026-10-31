@@ -83,7 +83,7 @@ func TestPrintStatusTableDoesNotSerializeConnections(t *testing.T) {
 	}
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
 	if !failed || len(lines) != 3 || !strings.HasPrefix(lines[1], "slow ") ||
-		!strings.Contains(lines[2], "healthy  http       ok") {
+		!strings.HasPrefix(strings.Join(strings.Fields(lines[2]), " "), "healthy http ok ") {
 		t.Fatalf("failed = %v, status table:\n%s\nwant slow failed then healthy ok", failed, out.String())
 	}
 }
