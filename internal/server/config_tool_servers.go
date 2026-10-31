@@ -8,6 +8,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/ops"
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 func (s *Server) addServerFromAgent(ctx context.Context, raw *config.ServerConfig) (any, error) {
@@ -126,44 +127,41 @@ func (s *Server) removeServerFromAgent(name string) (any, error) {
 	return map[string]any{"ok": true, "server": name}, nil
 }
 
-func (s *Server) detachAndCloseServer(serverName string) {
-	s.cancelExistingAuthFlow(serverName)
-	s.serverOpMu.Lock()
-	defer s.serverOpMu.Unlock()
-	s.detachAndCloseLocked(serverName)
-}
-
-func (s *Server) detachAndCloseLocked(serverName string) {
-	s.removeGen[serverName]++
-	s.closeDetached(serverName, s.detachUpstream(serverName))
-}
-
-func (s *Server) closeDetached(serverName string, u *upstreamServer) {
-	if u != nil {
-		u.shutdownAndClose()
+// add_server saves what it accepts, so it runs on every start. Only the connection
+// comes from the agent: everything else keeps mini's defaults, so an agent can't loosen
+// credentials, permissions, projections or timeouts, including fields added later.
+func (s *Server) agentServerConfig(raw *config.ServerConfig) (config.ServerConfig, error) {
+	if raw == nil {
+		return config.ServerConfig{}, errors.New("config is required")
 	}
-	s.sessions.closeServerConnections(serverName)
-	s.providerRegistry.Forget(serverName)
-	s.reg.RemoveServer(serverName)
+	if err := validateServerName(raw.Name); err != nil {
+		return config.ServerConfig{}, err
+	}
+	sc := config.ServerConfig{
+		Name:       raw.Name,
+		Transport:  raw.Transport,
+		URL:        raw.URL,
+		Command:    raw.Command,
+		Args:       raw.Args,
+		AgentAdded: true,
+	}
+	if err := s.checkAgentTransport(sc); err != nil {
+		return config.ServerConfig{}, err
+	}
+	return sc, nil
 }
 
-func (s *Server) detachUpstream(serverName string) *upstreamServer {
-	s.stateMu.Lock()
-	defer s.stateMu.Unlock()
-	delete(s.projections, serverName)
-	return s.detachUpstreamLocked(serverName)
-}
-
-func (s *Server) detachUpstreamKeepingProjections(serverName string) *upstreamServer {
-	s.stateMu.Lock()
-	defer s.stateMu.Unlock()
-	return s.detachUpstreamLocked(serverName)
-}
-
-func (s *Server) detachUpstreamLocked(serverName string) *upstreamServer {
-	u := s.upstreams[serverName]
-	delete(s.upstreams, serverName)
-	delete(s.configServers, serverName)
-	s.startup.forget(serverName)
-	return u
+func (s *Server) checkAgentTransport(sc config.ServerConfig) error {
+	if !sc.IsHTTPTransport() {
+		if !s.cfg.DangerousAllowRuntimeStdio {
+			return errors.New(
+				"only http/sse/streamable transports are allowed; set dangerous_allow_runtime_stdio: true to enable stdio",
+			)
+		}
+		return nil
+	}
+	if s.cfg.DangerousAllowPrivateURLs {
+		return nil
+	}
+	return transport.ValidateURL(sc.URL)
 }
