@@ -88,8 +88,6 @@ type callbackExpectation struct {
 	issuer ExpectedIssuer
 }
 
-// loginCallback answers the authorization server's redirect only after exchanging its code, so the
-// page reports whether mini actually holds a token.
 type loginCallback struct {
 	want     callbackExpectation
 	target   loginTarget
@@ -109,7 +107,6 @@ func (c *loginCallback) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeLoginPage(w, http.StatusBadRequest, failedLoginPage(c.target, "missing code"))
 		return
 	}
-	// A code exchanges only once, so a repeated redirect would report failure even after a success.
 	if !c.claimed.CompareAndSwap(false, true) {
 		writeLoginPage(w, http.StatusConflict, failedLoginPage(c.target, "this sign-in was already received"))
 		return

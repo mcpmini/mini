@@ -21,18 +21,16 @@ var ErrLoginClosed = errors.New("oauth browser login closed")
 
 // BrowserLogin owns a callback listener and drives an OAuth2 PKCE exchange.
 type BrowserLogin struct {
-	server    *http.Server
-	serving   sync.WaitGroup
-	results   chan loginCallbackResult
-	closed    chan struct{}
-	closeOnce sync.Once
-	authURL   string
-	oauth2Cfg *oauth2.Config
-	verifier  string
-	login     Login
-	flow      *oauthHTTPFlow
-	// The exchange runs in the callback handler, so it must outlive the browser's request but not
-	// the login.
+	server         *http.Server
+	serving        sync.WaitGroup
+	results        chan loginCallbackResult
+	closed         chan struct{}
+	closeOnce      sync.Once
+	authURL        string
+	oauth2Cfg      *oauth2.Config
+	verifier       string
+	login          Login
+	flow           *oauthHTTPFlow
 	exchangeCtx    context.Context
 	cancelExchange context.CancelFunc
 }
@@ -180,6 +178,7 @@ func (l *BrowserLogin) Close() error {
 }
 
 func (l *BrowserLogin) serveCallback(listener net.Listener, state string, resolved resolvedLogin) {
+	// A browser disconnect must not abort the login's token exchange.
 	l.exchangeCtx, l.cancelExchange = context.WithCancel(context.Background())
 	l.serve(listener, &loginCallback{
 		want:     callbackExpectation{state: state, issuer: resolved.Issuer},
