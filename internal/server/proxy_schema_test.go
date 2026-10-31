@@ -202,11 +202,28 @@ func TestProxySchema_OutputSchema(t *testing.T) {
 			json.RawMessage(`{"type":"object","anyOf":[{"$ref":"#/$defs/Out"}],"$defs":{"Out":{"type":"object"}}}`),
 			`{"type":"object"}`,
 		},
-		{"string root falls back to any value", json.RawMessage(`{"type":"string","minLength":3}`), `{}`},
+		{"string root keeps only its type", json.RawMessage(`{"type":"string","minLength":3}`), `{"type":"string"}`},
 		{
-			"closed tuple array falls back to any value",
+			"nullable $ref root keeps null in the fallback",
+			json.RawMessage(
+				`{"type":["object","null"],"$ref":"#/$defs/Out","$defs":{"Out":{"type":["object","null"]}}}`,
+			),
+			`{"type":["object","null"]}`,
+		},
+		{
+			"closed tuple array keeps only its type",
 			json.RawMessage(`{"type":"array","prefixItems":[{"type":"string"}],"items":false}`),
-			`{}`,
+			`{"type":"array"}`,
+		},
+		{
+			"positional prefixItems would reject a notice in their place",
+			json.RawMessage(`{"type":"array","prefixItems":[{"type":"integer"},{"type":"integer"}]}`),
+			`{"type":"array"}`,
+		},
+		{
+			"array items composed through allOf would reject the notice",
+			json.RawMessage(`{"type":"array","allOf":[{"items":{"type":"integer"}}]}`),
+			`{"type":"array"}`,
 		},
 	}
 	for _, tc := range cases {

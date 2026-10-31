@@ -57,13 +57,12 @@ func loosenSchemaObject(schema map[string]any) {
 	}
 }
 
-// Without required fields, a result can match more than one branch, which oneOf rejects.
 func oneOfToAnyOf(schema map[string]any) {
 	branches, ok := schema["oneOf"]
 	if !ok {
 		return
 	}
-	delete(schema, "oneOf")
+	delete(schema, "oneOf") // Without required fields, a result can match more than one branch, which oneOf rejects.
 	if _, taken := schema["anyOf"]; !taken {
 		schema["anyOf"] = branches
 		return
@@ -120,7 +119,7 @@ func allowMiniInBranch(branch any) bool {
 }
 
 func allowMiniItem(schema map[string]any) bool {
-	if _, closed := schema["unevaluatedItems"]; closed {
+	if hasAnyKey(schema, []string{"unevaluatedItems", "prefixItems", "allOf", "anyOf"}) {
 		return false
 	}
 	items, hasItems := schema["items"]
@@ -135,8 +134,8 @@ func allowMiniItem(schema map[string]any) bool {
 }
 
 func looseOutputSchema(schema map[string]any) map[string]any {
-	if typeIncludes(schema, "object") {
-		return map[string]any{"type": "object"}
+	if rootType, typed := schema["type"]; typed {
+		return map[string]any{"type": rootType}
 	}
 	return map[string]any{}
 }
