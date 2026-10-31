@@ -74,6 +74,9 @@ func nextRetryDelay(delay time.Duration, backoff *time.Duration) time.Duration {
 }
 
 func (c *HTTPConnection) doPost(ctx context.Context, call httpCall) (postResult, error) {
+	if err := ctx.Err(); err != nil {
+		return postResult{}, err
+	}
 	httpReq, sentAuth, err := c.buildHTTPRequest(ctx, call)
 	if err != nil {
 		return postResult{}, err
@@ -81,6 +84,7 @@ func (c *HTTPConnection) doPost(ctx context.Context, call httpCall) (postResult,
 	sentSessionID := httpReq.Header.Get("Mcp-Session-Id")
 	resp, err := c.client.Do(httpReq)
 	if err != nil {
+		c.cancelAbandonedRequest(httpReq, call, err)
 		return postResult{sentAuth: sentAuth}, &ConnectionError{Err: fmt.Errorf("http %s: %w", call.Method, err)}
 	}
 	c.observeAuthorizationChallenge(resp)
@@ -88,6 +92,7 @@ func (c *HTTPConnection) doPost(ctx context.Context, call httpCall) (postResult,
 	defer resp.Body.Close()
 	result, err := c.processResponse(resp, call.Request, sentSessionID)
 	result.sentAuth = sentAuth
+	c.cancelAbandonedRequest(httpReq, call, err)
 	return result, err
 }
 
