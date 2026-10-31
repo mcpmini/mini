@@ -47,7 +47,7 @@ func ResetEndpointValidation() {
 	endpointValidator = transport.ValidateURL
 }
 
-func BufferCallbackCode(l *BrowserLogin, code string) {
+func ExchangeCallbackCode(l *BrowserLogin, code string) {
 	token, err := l.exchange(code)
 	l.results <- loginCallbackResult{token: token, err: err}
 }

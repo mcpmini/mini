@@ -43,7 +43,7 @@ type loginPage struct {
 
 func loginResultPage(target loginTarget, err error) loginPage {
 	if err != nil {
-		return failedLoginPage(target, err.Error())
+		return failedLoginPage(target, printableLoginText(err.Error(), loginPageDetailBytes))
 	}
 	return loginPage{Target: target, OK: true}
 }
