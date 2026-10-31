@@ -113,7 +113,27 @@ func printStatusTable(p statusTableParams) (bool, error) {
 	if _, err := fmt.Fprintln(w, "NAME\tTRANSPORT\tSTATUS\tTOOLS"); err != nil {
 		return false, fmt.Errorf("write status table header: %w", err)
 	}
-	for _, se := range p.Servers.Broken {
+	if err := printBrokenServerRows(w, p.Servers.Broken); err != nil {
+		return false, err
+	}
+	anyFailed := len(p.Servers.Broken) > 0
+	rows := probeConcurrently(p.Servers.Loaded, func(sc config.ServerConfig) statusRow {
+		return probeStatus(p.Context, p.Server, sc)
+	})
+	for _, row := range rows {
+		if err := printStatusRow(w, row); err != nil {
+			return anyFailed, err
+		}
+		anyFailed = row.failed || anyFailed
+	}
+	if err := w.Flush(); err != nil {
+		return anyFailed, fmt.Errorf("flush status table: %w", err)
+	}
+	return anyFailed, nil
+}
+
+func printBrokenServerRows(w io.Writer, broken []config.SourceError) error {
+	for _, se := range broken {
 		if _, err := fmt.Fprintf(
 			w,
 			"%s\t%s\terror: %s\t-\n",
@@ -121,21 +141,10 @@ func printStatusTable(p statusTableParams) (bool, error) {
 			unknownTransport,
 			singleLine(se.Err),
 		); err != nil {
-			return false, fmt.Errorf("write broken server row: %w", err)
+			return fmt.Errorf("write broken server row: %w", err)
 		}
 	}
-	anyFailed := len(p.Servers.Broken) > 0
-	for _, sc := range p.Servers.Loaded {
-		failed, err := printStatusRow(statusRowParams{Context: p.Context, Writer: w, Server: p.Server, Config: sc})
-		if err != nil {
-			return anyFailed, err
-		}
-		anyFailed = failed || anyFailed
-	}
-	if err := w.Flush(); err != nil {
-		return anyFailed, fmt.Errorf("flush status table: %w", err)
-	}
-	return anyFailed, nil
+	return nil
 }
 
 func projectionsNote(sc config.ServerConfig) string {
@@ -145,27 +154,31 @@ func projectionsNote(sc config.ServerConfig) string {
 	return ", " + singleLine(projectionsError(sc))
 }
 
-type statusRowParams struct {
-	Context context.Context
-	Writer  io.Writer
-	Server  *server.Server
-	Config  config.ServerConfig
+type statusRow struct {
+	config config.ServerConfig
+	status string
+	tools  string
+	failed bool
 }
 
-func printStatusRow(p statusRowParams) (bool, error) {
-	status, tools := "disabled"+projectionsNote(p.Config), "-"
-	failed := p.Config.ProjectionsErr != nil
-	if p.Config.IsEnabled() {
-		if err := p.Server.AddUpstream(p.Context, p.Config); err != nil {
-			status, failed = "error: "+singleLine(err), true
-		} else {
-			status = "ok" + projectionsNote(p.Config)
-			tools = strconv.Itoa(p.Server.ToolCount(p.Config.Name))
-		}
+func probeStatus(ctx context.Context, srv *server.Server, sc config.ServerConfig) statusRow {
+	row := statusRow{config: sc, status: "disabled" + projectionsNote(sc), tools: "-", failed: sc.ProjectionsErr != nil}
+	if !sc.IsEnabled() {
+		return row
 	}
-	_, err := fmt.Fprintf(p.Writer, "%s\t%s\t%s\t%s\n", p.Config.Name, serverTransport(p.Config), status, tools)
+	if err := srv.AddUpstream(ctx, sc); err != nil {
+		row.status, row.failed = "error: "+singleLine(err), true
+		return row
+	}
+	row.status = "ok" + projectionsNote(sc)
+	row.tools = strconv.Itoa(srv.ToolCount(sc.Name))
+	return row
+}
+
+func printStatusRow(w io.Writer, row statusRow) error {
+	_, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", row.config.Name, serverTransport(row.config), row.status, row.tools)
 	if err != nil {
-		return failed, fmt.Errorf("write status row: %w", err)
+		return fmt.Errorf("write status row: %w", err)
 	}
-	return failed, nil
+	return nil
 }

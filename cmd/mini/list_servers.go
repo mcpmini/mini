@@ -49,14 +49,21 @@ func probeServerList(ctx context.Context, srv *server.Server, servers config.Ser
 	for i, broken := range servers.Broken {
 		rows[i] = serverListRow{Config: config.ServerConfig{Name: broken.ServerName}, State: "invalid"}
 	}
+	probed := probeConcurrently(servers.Loaded, func(sc config.ServerConfig) serverListRow {
+		return probeListedServer(ctx, srv, sc)
+	})
+	copy(rows[len(servers.Broken):], probed)
+	return rows
+}
+
+func probeConcurrently[T any](servers []config.ServerConfig, probe func(config.ServerConfig) T) []T {
+	results := make([]T, len(servers))
 	var probes sync.WaitGroup
-	for i, sc := range servers.Loaded {
-		probes.Go(func() {
-			rows[len(servers.Broken)+i] = probeListedServer(ctx, srv, sc)
-		})
+	for i, sc := range servers {
+		probes.Go(func() { results[i] = probe(sc) })
 	}
 	probes.Wait()
-	return rows
+	return results
 }
 
 func probeListedServer(ctx context.Context, srv *server.Server, sc config.ServerConfig) serverListRow {
