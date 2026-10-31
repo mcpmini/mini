@@ -7,6 +7,7 @@ var trimSensitiveKeywords = []string{
 	"minItems", "maxItems", "contains", "minContains",
 }
 
+// The walk never enters "not" or "if": loosening what they test would tighten the schema.
 var subschemaKeys = []string{
 	"anyOf", "allOf", "prefixItems", "items", "additionalProperties",
 	"then", "else", "propertyNames", "unevaluatedProperties", "unevaluatedItems",
@@ -14,7 +15,7 @@ var subschemaKeys = []string{
 
 var subschemaMapKeys = []string{"properties", "patternProperties", "$defs", "definitions", "dependentSchemas"}
 
-var opaqueSchemaKeys = []string{"$ref", "not", "if"}
+var arrayItemKeys = []string{"items", "prefixItems", "unevaluatedItems"}
 
 func setProxyOutputSchema(tool map[string]any) {
 	schema, ok := tool["outputSchema"].(map[string]any)
@@ -24,10 +25,53 @@ func setProxyOutputSchema(tool map[string]any) {
 		}
 		return
 	}
+	if negationRefersOut(schema) {
+		tool["outputSchema"] = looseOutputSchema(schema)
+		return
+	}
 	loosenSchema(schema)
 	if !allowMiniNotice(schema) {
 		tool["outputSchema"] = looseOutputSchema(schema)
 	}
+}
+
+func negationRefersOut(node any) bool {
+	switch v := node.(type) {
+	case []any:
+		for _, item := range v {
+			if negationRefersOut(item) {
+				return true
+			}
+		}
+	case map[string]any:
+		for key, sub := range v {
+			if (key == "not" || key == "if") && containsRef(sub) || negationRefersOut(sub) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func containsRef(node any) bool {
+	switch v := node.(type) {
+	case []any:
+		for _, item := range v {
+			if containsRef(item) {
+				return true
+			}
+		}
+	case map[string]any:
+		if _, refers := v["$ref"]; refers {
+			return true
+		}
+		for _, sub := range v {
+			if containsRef(sub) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func loosenSchema(node any) {
@@ -72,30 +116,30 @@ func oneOfToAnyOf(schema map[string]any) {
 }
 
 func allowMiniNotice(schema map[string]any) bool {
-	if hasAnyKey(schema, opaqueSchemaKeys) {
+	if _, refers := schema["$ref"]; refers {
 		return false
 	}
-	allowed := false
-	if isObjectish(schema) {
-		if !allowMiniProperty(schema) {
-			return false
-		}
-		allowed = true
+	objectish, arrayish := isObjectish(schema), isArrayish(schema)
+	if !objectish && !arrayish {
+		return false
 	}
-	if typeIncludes(schema, "array") {
-		if !allowMiniItem(schema) {
-			return false
-		}
-		allowed = true
+	if objectish {
+		allowMiniProperty(schema)
 	}
-	return allowed
+	if arrayish && !allowMiniItem(schema) {
+		return false
+	}
+	return allowMiniInBranches(schema)
 }
 
-func allowMiniProperty(schema map[string]any) bool {
+func allowMiniProperty(schema map[string]any) {
 	properties := schemaProperties(schema)
 	if _, upstreamOwnsKey := properties["__mini"]; !upstreamOwnsKey {
 		properties["__mini"] = miniOutputMetaSchema()
 	}
+}
+
+func allowMiniInBranches(schema map[string]any) bool {
 	for _, key := range []string{"anyOf", "allOf"} {
 		branches, _ := schema[key].([]any)
 		for _, branch := range branches {
@@ -109,17 +153,15 @@ func allowMiniProperty(schema map[string]any) bool {
 
 func allowMiniInBranch(branch any) bool {
 	schema, ok := branch.(map[string]any)
-	if !ok {
+	if !ok || !isObjectish(schema) && !isArrayish(schema) {
 		return true
 	}
-	if hasAnyKey(schema, opaqueSchemaKeys) {
-		return false
-	}
-	return !isObjectish(schema) || allowMiniProperty(schema)
+	return allowMiniNotice(schema)
 }
 
+// A cut list can end inside prefixItems, which would put the notice in a positional slot.
 func allowMiniItem(schema map[string]any) bool {
-	if hasAnyKey(schema, []string{"unevaluatedItems", "prefixItems", "allOf", "anyOf"}) {
+	if hasAnyKey(schema, []string{"unevaluatedItems", "prefixItems"}) {
 		return false
 	}
 	items, hasItems := schema["items"]
@@ -143,6 +185,11 @@ func looseOutputSchema(schema map[string]any) map[string]any {
 func isObjectish(schema map[string]any) bool {
 	_, typed := schema["type"]
 	return !typed || typeIncludes(schema, "object")
+}
+
+func isArrayish(schema map[string]any) bool {
+	_, typed := schema["type"]
+	return typeIncludes(schema, "array") || !typed && hasAnyKey(schema, arrayItemKeys)
 }
 
 func typeIncludes(schema map[string]any, name string) bool {

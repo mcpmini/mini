@@ -187,10 +187,35 @@ func TestProxySchema_OutputSchema(t *testing.T) {
 			`{"type":"object","properties":{"required":{"type":"boolean"},"format":{"type":"string"},"__mini":MINI}}`,
 		},
 		{
-			"not and if are untouched because loosening them would tighten the schema",
+			"not and if are untouched because loosening what they test would tighten the schema",
 			json.RawMessage(`{"type":"object","properties":{"a":{"not":{"required":["x"]}},` +
 				`"b":{"if":{"required":["y"]},"then":{"required":["z"]}}}}`),
 			`{"type":"object","properties":{"a":{"not":{"required":["x"]}},"b":{"if":{"required":["y"]},"then":{}},"__mini":MINI}}`,
+		},
+		{
+			"branches told apart by a forbidden property keep their schema",
+			json.RawMessage(`{"oneOf":[{"type":"object","properties":{"labels":{"not":{"description":"Any value."}}},` +
+				`"additionalProperties":false}]}`),
+			`{"properties":{"__mini":MINI},"anyOf":[{"type":"object","properties":{"labels":{"not":{"description":"Any value."}},` +
+				`"__mini":MINI},"additionalProperties":false}]}`,
+		},
+		{
+			"a not reaching $defs through $ref keeps only the root type",
+			json.RawMessage(`{"type":"object","properties":{"value":{"not":{"$ref":"#/$defs/NonEmpty"}}},` +
+				`"$defs":{"NonEmpty":{"type":"string","minLength":1}}}`),
+			`{"type":"object"}`,
+		},
+		{
+			"untyped schema with items also allows a trailing notice",
+			json.RawMessage(`{"items":{"type":"integer"}}`),
+			`{"properties":{"__mini":MINI},"items":{"anyOf":[{"type":"integer"},NOTICE_ITEM]}}`,
+		},
+		{
+			"array branch of a root union allows a trailing notice",
+			json.RawMessage(`{"oneOf":[{"type":"object","properties":{"id":{"type":"string"}}},` +
+				`{"type":["null","array"],"items":{"type":"string"}}]}`),
+			`{"properties":{"__mini":MINI},"anyOf":[{"type":"object","properties":{"id":{"type":"string"},"__mini":MINI}},` +
+				`{"type":["null","array"],"items":{"anyOf":[{"type":"string"},NOTICE_ITEM]}}]}`,
 		},
 		{
 			"untyped $ref root falls back to any value since it may point at an array",
@@ -221,9 +246,17 @@ func TestProxySchema_OutputSchema(t *testing.T) {
 			`{"type":"array"}`,
 		},
 		{
-			"array items composed through allOf would reject the notice",
+			"array items composed through allOf also allow the notice",
 			json.RawMessage(`{"type":"array","allOf":[{"items":{"type":"integer"}}]}`),
-			`{"type":"array"}`,
+			`{"type":"array","allOf":[{"properties":{"__mini":MINI},"items":{"anyOf":[{"type":"integer"},NOTICE_ITEM]}}]}`,
+		},
+		{
+			"array branch built from typed anyOf alternatives allows the notice in each",
+			json.RawMessage(`{"oneOf":[{"type":"null"},{"type":"array","anyOf":[` +
+				`{"type":["null","array"],"items":{"type":"string"}},{"type":["null","array"],"items":{"type":"integer"}}]}]}`),
+			`{"properties":{"__mini":MINI},"anyOf":[{"type":"null"},{"type":"array","anyOf":[` +
+				`{"type":["null","array"],"items":{"anyOf":[{"type":"string"},NOTICE_ITEM]}},` +
+				`{"type":["null","array"],"items":{"anyOf":[{"type":"integer"},NOTICE_ITEM]}}]}]}`,
 		},
 	}
 	for _, tc := range cases {
