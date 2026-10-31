@@ -3,7 +3,6 @@ package auth
 import (
 	"errors"
 	"fmt"
-	"html"
 	"net/http"
 	"net/url"
 	"strings"
@@ -86,15 +85,19 @@ type callbackExpectation struct {
 	issuer ExpectedIssuer
 }
 
-func callbackHandler(want callbackExpectation, results chan<- loginCallbackResult) http.Handler {
+func callbackHandler(
+	want callbackExpectation,
+	target loginTarget,
+	results chan<- loginCallbackResult,
+) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := parseAuthorizationResponse(r.URL.Query())
 		if resp.state != want.state {
-			http.Error(w, "state mismatch", http.StatusBadRequest)
+			writeLoginPage(w, http.StatusBadRequest, failedLoginPage(loginTarget{}, "state mismatch"))
 			return
 		}
 		completeLoginCallback(loginCallbackParams{
-			writer: w, response: resp, issuer: want.issuer, results: results,
+			writer: w, response: resp, issuer: want.issuer, target: target, results: results,
 		})
 	})
 }
@@ -103,16 +106,17 @@ type loginCallbackParams struct {
 	writer   http.ResponseWriter
 	response authorizationResponse
 	issuer   ExpectedIssuer
+	target   loginTarget
 	results  chan<- loginCallbackResult
 }
 
 func completeLoginCallback(p loginCallbackParams) {
 	result, complete := callbackResult(p.response, p.issuer)
 	if !complete {
-		http.Error(p.writer, "missing code", http.StatusBadRequest)
+		writeLoginPage(p.writer, http.StatusBadRequest, failedLoginPage(p.target, "missing code"))
 		return
 	}
-	writeLoginResponse(p.writer, loginResponseMessage(result.err))
+	writeLoginPage(p.writer, http.StatusOK, loginResultPage(p.target, result.err))
 	select {
 	case p.results <- result:
 	default:
@@ -129,13 +133,6 @@ func callbackResult(resp authorizationResponse, issuer ExpectedIssuer) (result l
 	return loginCallbackResult{code: resp.code}, resp.code != ""
 }
 
-func loginResponseMessage(err error) string {
-	if err != nil {
-		return err.Error() + ". You can close this tab."
-	}
-	return "Authorized. You can close this tab."
-}
-
 func printableLoginText(value string) string {
 	var out strings.Builder
 	for _, r := range value {
@@ -148,13 +145,4 @@ func printableLoginText(value string) string {
 		out.WriteRune(r)
 	}
 	return out.String()
-}
-
-func writeLoginResponse(w http.ResponseWriter, message string) {
-	w.Header().Set("Content-Type", "text/html")
-	//nolint:errcheck // callback handling owns the OAuth result; this page only informs the browser.
-	fmt.Fprintf(w, "<html><body><p>%s</p></body></html>\n", html.EscapeString(message))
-	if f, ok := w.(http.Flusher); ok {
-		f.Flush()
-	}
 }

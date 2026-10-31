@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>{{with .Target.Name}}{{.}} {{end}}{{if .OK}}connected{{else}}sign-in failed{{end}} · mini</title>
+<link rel="icon" type="image/png" href="{{miniIcon}}">
+<style>
+:root {
+  --bg: #fbfaf7;
+  --text: #17181b;
+  --muted: #6b6f78;
+  --line: #e6e3dc;
+  --accent: #15803d;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+.fail { --accent: #c2281d; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #101113; --text: #f1f0ec; --muted: #8e929b; --line: #26282c; --accent: #4ade80; }
+  .fail { --accent: #ff6b5e; }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  display: flex;
+  flex-direction: column;
+  padding: 32px 16px;
+  background: var(--bg);
+  color: var(--text);
+  font: 17px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+main { width: 100%; max-width: 480px; margin: auto; }
+.status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 18px;
+  color: var(--accent);
+  font: 600 12px/1 var(--mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+.status svg { width: 20px; height: 20px; flex: none; }
+.status path { stroke-dasharray: 24; stroke-dashoffset: 24; animation: draw .45s .1s ease-out forwards; }
+h1 {
+  margin: 0;
+  font-size: clamp(40px, 11vw, 64px);
+  font-weight: 750;
+  line-height: 1.02;
+  letter-spacing: -.035em;
+  overflow-wrap: anywhere;
+}
+.host { margin: 10px 0 0; color: var(--muted); font: 14px/1.4 var(--mono); }
+.message { margin: 28px 0 0; }
+.hint { margin: 28px 0 0; color: var(--muted); }
+.message + .hint { margin-top: 2px; }
+.detail {
+  margin: 20px 0 0;
+  padding: 12px 14px;
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  font: 13px/1.55 var(--mono);
+  overflow-wrap: anywhere;
+}
+footer {
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font: 13px/1 var(--mono);
+}
+footer img { width: 16px; height: 16px; margin-right: 8px; border-radius: 4px; vertical-align: -3px; }
+.rise { animation: rise .55s cubic-bezier(.2, .7, .2, 1) both; }
+h1.rise { animation-delay: .15s; }
+.host.rise { animation-delay: .25s; }
+.message.rise, .hint.rise, .detail.rise { animation-delay: .55s; }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } }
+@media (prefers-reduced-motion: reduce) {
+  *, .status path { animation: none !important; stroke-dashoffset: 0; }
+}
+</style>
+</head>
+<body{{if not .OK}} class="fail"{{end}}>
+<main>
+  <p class="status rise">
+    {{- if .OK}}
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 12.5l5 5L19.5 7"/></svg>
+    Connected
+    {{- else}}
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    Sign-in failed
+    {{- end}}
+  </p>
+  {{- with .Target.Name}}
+  <h1 class="rise">{{.}}</h1>
+  {{- end}}
+  {{- with .Target.Host}}
+  <p class="host rise">{{.}}</p>
+  {{- end}}
+  {{- if .OK}}
+  <p class="message rise">{{with .Target.Name}}{{.}} is now{{else}}Now{{end}} connected to mini.</p>
+  <p class="hint rise">You can close this tab.</p>
+  {{- else}}
+  <p class="hint rise">Close this tab and sign in again.</p>
+  <p class="detail rise">{{.Detail}}</p>
+  {{- end}}
+</main>
+<footer><img src="{{miniIcon}}" alt="">mini</footer>
+</body>
+</html>

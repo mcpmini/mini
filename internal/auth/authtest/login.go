@@ -23,9 +23,10 @@ func StartLogin(t *testing.T, ac *config.AuthConfig) *auth.BrowserLogin {
 		ac,
 		listener,
 		auth.ResolvedLogin{
-			Client:    client,
-			Issuer:    auth.ExpectedIssuer{Issuer: ac.Issuer},
-			ServerURL: cmp.Or(ac.ResourceURL, "https://mcp.example.test/mcp"),
+			Client:     client,
+			Issuer:     auth.ExpectedIssuer{Issuer: ac.Issuer},
+			ServerName: "example",
+			ServerURL:  cmp.Or(ac.ResourceURL, "https://mcp.example.test/mcp"),
 		},
 	)
 	if err != nil {

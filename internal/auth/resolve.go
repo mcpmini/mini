@@ -26,11 +26,12 @@ func ApplyBearerToken(sc *config.ServerConfig, accessToken string) {
 }
 
 type resolvedLogin struct {
-	Client    LoginClient
-	Issuer    ExpectedIssuer
-	flow      *oauthHTTPFlow
-	ServerURL string
-	challenge *Challenge
+	Client     LoginClient
+	Issuer     ExpectedIssuer
+	flow       *oauthHTTPFlow
+	ServerName string
+	ServerURL  string
+	challenge  *Challenge
 }
 
 func resolveEndpoints(ctx context.Context, sc *config.ServerConfig, p BeginLoginParams) (resolvedLogin, error) {
@@ -56,7 +57,7 @@ func (f *oauthHTTPFlow) resolveLogin(
 		return resolvedLogin{}, err
 	}
 	a := sc.Auth
-	resolved := resolvedLogin{ServerURL: serverURL, flow: f}
+	resolved := resolvedLogin{ServerName: p.ServerName, ServerURL: serverURL, flow: f}
 	clearSecretWithoutClientID(a)
 	challenge := savedChallenge(p.ConfigDir, p.ServerName, sc.URL)
 	meta, issuer, err := f.discoverForLogin(ctx, sc, challenge)
