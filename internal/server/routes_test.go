@@ -13,84 +13,6 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-func rawServe(t *testing.T, srv *server.Server, input []byte) [][]byte {
-	t.Helper()
-	ctx := context.Background()
-	var out bytes.Buffer
-	done := make(chan error, 1)
-	go func() { done <- srv.Serve(ctx, bytes.NewReader(input), &out) }()
-	<-done
-	var lines [][]byte
-	for _, line := range bytes.Split(bytes.TrimSpace(out.Bytes()), []byte("\n")) {
-		if len(bytes.TrimSpace(line)) > 0 {
-			lines = append(lines, line)
-		}
-	}
-	return lines
-}
-
-func parseRPCResponse(t *testing.T, data []byte) map[string]any {
-	t.Helper()
-	var resp map[string]any
-	if err := json.Unmarshal(data, &resp); err != nil {
-		t.Fatalf("parse RPC response: %v\nraw: %s", err, data)
-	}
-	return resp
-}
-
-type addConnectionParams struct {
-	T          *testing.T
-	Server     *server.Server
-	Config     config.ServerConfig
-	Connection *transport.FakeConnection
-}
-
-func addEdgeConn(params addConnectionParams) {
-	params.T.Helper()
-	writeTestServerConfig(params.T, params.Server, params.Config)
-	if err := params.Server.AddConnection(context.Background(), params.Config, params.Connection); err != nil {
-		params.T.Fatalf("AddConnection %s: %v", params.Config.Name, err)
-	}
-}
-
-func assertIsErrorResult(t *testing.T, resp map[string]any) {
-	t.Helper()
-	result := resp["result"].(map[string]any)
-	if result["isError"] != true {
-		t.Errorf("expected isError=true, got: %v", result)
-	}
-}
-
-func TestMalformedJSONLine(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	lines := rawServe(t, srv, []byte("not json at all\n"))
-	if len(lines) == 0 {
-		t.Fatal("expected at least one response line")
-	}
-	resp := parseRPCResponse(t, lines[0])
-	if resp["error"] == nil {
-		t.Errorf("expected error for malformed JSON, got: %v", resp)
-	}
-	rpcErr := resp["error"].(map[string]any)
-	if rpcErr["code"] == nil {
-		t.Errorf("expected error code, got: %v", rpcErr)
-	}
-}
-
-func TestEmptyLines_skipped(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	// Empty lines should be silently skipped, not produce error responses
-	input := "\n\n" + string(rpc("initialize", map[string]any{
-		"protocolVersion": "2024-11-05",
-		"capabilities":    map[string]any{},
-		"clientInfo":      map[string]any{"name": "test", "version": "0"},
-	}))
-	lines := rawServe(t, srv, []byte(input))
-	if len(lines) != 1 {
-		t.Errorf("expected exactly 1 response (for initialize), got %d: %s", len(lines), bytes.Join(lines, []byte("|")))
-	}
-}
-
 func TestUnknownMethod(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	resp := serve(t, srv, rpc("no_such_method", nil))
@@ -126,25 +48,6 @@ func TestInitializedNotification_noResponse(t *testing.T) {
 	if resp["result"] == nil {
 		t.Errorf("initialize response must have result, got: %v", resp)
 	}
-}
-
-func fakeConnWithError(name string) *transport.FakeConnection {
-	return &transport.FakeConnection{
-		Tools: []transport.ToolDefinition{
-			{Name: name, Description: name, InputSchema: json.RawMessage(`{}`)},
-		},
-		Responses: map[string]json.RawMessage{
-			"tools/call": json.RawMessage(`{"content":[{"type":"text","text":"ok"}],"isError":true}`),
-		},
-	}
-}
-
-func TestExecWithFakeConnectionError(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fakeConnWithError("ping"))
-
-	resp := serve(t, srv, callTool("svc__ping", map[string]any{}))
-	requireToolError(t, resp, "ok")
 }
 
 // TestRequestBeforeInitialize_rejected verifies that requests (other than initialize and ping)
@@ -207,27 +110,6 @@ func TestPingBeforeInitialize_allowed(t *testing.T) {
 	result, ok := resp["result"].(map[string]any)
 	if !ok || len(result) != 0 {
 		t.Errorf("ping result must be {}, got: %v", resp["result"])
-	}
-}
-
-// TestBatchRequest_returnsParseError verifies that a JSON array (batch) on a single line
-// returns a -32700 Parse Error. mini does not implement batch support; the spec says
-// initialize MUST NOT be in a batch, and other batches are valid but optional to support.
-// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/transports.mdx#L25
-func TestBatchRequest_returnsParseError(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	batch := []byte(`[{"jsonrpc":"2.0","id":1,"method":"ping"}]` + "\n")
-	lines := rawServe(t, srv, batch)
-	if len(lines) == 0 {
-		t.Fatal("expected a response")
-	}
-	resp := parseRPCResponse(t, lines[0])
-	errObj, ok := resp["error"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected error for batch request, got: %v", resp)
-	}
-	if code := int(errObj["code"].(float64)); code != transport.CodeParseError {
-		t.Errorf("batch should return -32700 ParseError, got code %d", code)
 	}
 }
 
@@ -340,5 +222,79 @@ func TestResponseID_echoesRequest(t *testing.T) {
 			}
 			t.Errorf("no response found with id=%v", id)
 		})
+	}
+}
+
+func TestUnknownTool_Returns32602(t *testing.T) {
+	srv := newTestServer(t, server.Params{})
+	resp := serve(t, srv, callTool("nonexistent", map[string]any{}))
+	if resp["error"] == nil {
+		t.Fatalf("expected JSON-RPC error, got: %v", resp)
+	}
+	errObj, _ := resp["error"].(map[string]any)
+	if code, _ := errObj["code"].(float64); code != -32602 {
+		t.Errorf("expected code -32602, got %v", errObj["code"])
+	}
+}
+
+func TestKnownToolBadArgs_ReturnsIsError(t *testing.T) {
+	srv := newTestServer(t, server.Params{})
+	fake := fakeConn("ping")
+	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"pong"}]}`)
+	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fake)
+
+	resp := serve(t, srv, callTool("svc__ping", nil))
+	if resp["error"] != nil {
+		t.Fatalf("expected tool result, not RPC error: %v", resp["error"])
+	}
+	result, _ := resp["result"].(map[string]any)
+	content, _ := result["content"].([]any)
+	if len(content) == 0 {
+		t.Error("expected content in result")
+	}
+}
+
+// TestToolsCall_executionErrorIsIsError verifies that upstream execution errors are returned
+// as isError:true in the tool result, NOT as a JSON-RPC error object.
+// "Tool errors SHOULD be reported in tool results with isError:true"
+// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/server/tools.mdx#L244
+func TestToolsCall_executionErrorIsIsError(t *testing.T) {
+	srv := newTestServer(t, server.Params{})
+	fake := fakeConnWithError("errTool")
+	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fake)
+
+	resp := serve(t, srv, callTool("svc__errTool", map[string]any{}))
+	if resp["error"] != nil {
+		t.Errorf("tool execution error must NOT be a JSON-RPC error, got: %v", resp["error"])
+	}
+	result, _ := resp["result"].(map[string]any)
+	if result["isError"] != true {
+		t.Errorf("tool execution error must have isError:true, got: %v", result)
+	}
+	if content, _ := result["content"].([]any); len(content) == 0 {
+		t.Errorf("error result must have content array, got: %v", result)
+	}
+}
+
+func TestCallOnUnknownServerIsInvalidParams(t *testing.T) {
+	srv := newTestServer(t, server.Params{})
+	resp := serve(t, srv, callTool("nobody__doThing", map[string]any{}))
+	requireRPCError(
+		requireRPCErrorParams{T: t, Resp: resp, WantCode: transport.CodeInvalidParams, WantSubstr: "not found"},
+	)
+}
+
+// TestPing_ReturnsEmptyResult verifies the ping response is exactly {}.
+// "The receiver MUST respond promptly with an empty response."
+// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/utilities/ping.mdx#L24
+func TestPing_ReturnsEmptyResult(t *testing.T) {
+	srv := newTestServer(t, server.Params{})
+	resp := serve(t, srv, rpc("ping", nil))
+	if resp["error"] != nil {
+		t.Fatalf("ping returned error: %v", resp["error"])
+	}
+	result, ok := resp["result"].(map[string]any)
+	if !ok || len(result) != 0 {
+		t.Errorf("ping result must be {}, got: %v", resp["result"])
 	}
 }

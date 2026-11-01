@@ -183,16 +183,6 @@ func parseMessages(data []byte) []map[string]any {
 	return msgs
 }
 
-// hasNotification returns true if any message has the given method and no id.
-func hasNotification(msgs []map[string]any, method string) bool {
-	for _, m := range msgs {
-		if m["method"] == method && m["id"] == nil {
-			return true
-		}
-	}
-	return false
-}
-
 func fakeConn(tools ...string) *transport.FakeConnection {
 	defs := make([]transport.ToolDefinition, len(tools))
 	for i, name := range tools {
@@ -410,59 +400,6 @@ func requireToolError(t *testing.T, resp map[string]any, wantSubstr string) {
 		if !strings.Contains(text, wantSubstr) {
 			t.Errorf("tool error text %q does not contain %q", text, wantSubstr)
 		}
-	}
-}
-
-func TestExecuteRoutesToUpstream(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	fake := fakeConn("getBuild")
-	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"build ok"}]}`)
-	addTestConnection(addConnectionParams{T: t, Server: srv, Config: config.ServerConfig{Name: "ci"}, Connection: fake})
-
-	resp := serve(t, srv, callTool("ci__getBuild", map[string]any{"id": "123"}))
-
-	if resp["error"] != nil {
-		t.Fatalf("unexpected error: %v", resp["error"])
-	}
-}
-
-func TestCallOnUnknownServerIsInvalidParams(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	resp := serve(t, srv, callTool("nobody__doThing", map[string]any{}))
-	requireRPCError(
-		requireRPCErrorParams{T: t, Resp: resp, WantCode: transport.CodeInvalidParams, WantSubstr: "not found"},
-	)
-}
-
-func TestConfigureStatus(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	ctx := context.Background()
-	srv.AddConnection(ctx, config.ServerConfig{Name: "ci"}, fakeConn("getBuild", "listBuilds"))
-
-	resp := serve(t, srv, callTool("config", map[string]any{"action": "status"}))
-	text := toolResultText(t, resp)
-
-	var status map[string]any
-	if err := json.Unmarshal([]byte(text), &status); err != nil {
-		t.Fatalf("status not JSON: %v\n%s", err, text)
-	}
-	if status["servers"] == nil {
-		t.Error("expected servers in status")
-	}
-}
-
-// TestPing_ReturnsEmptyResult verifies the ping response is exactly {}.
-// "The receiver MUST respond promptly with an empty response."
-// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/utilities/ping.mdx#L24
-func TestPing_ReturnsEmptyResult(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	resp := serve(t, srv, rpc("ping", nil))
-	if resp["error"] != nil {
-		t.Fatalf("ping returned error: %v", resp["error"])
-	}
-	result, ok := resp["result"].(map[string]any)
-	if !ok || len(result) != 0 {
-		t.Errorf("ping result must be {}, got: %v", resp["result"])
 	}
 }
 

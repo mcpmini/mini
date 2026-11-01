@@ -18,7 +18,7 @@ Out of scope: a fully compromised host OS, or an attacker who can write to `~/.m
 
 ### Prompt injection — `add_server`
 
-The highest-risk MCP tool mini exposes to agents is `add_server` (via `config`), because it can register a new upstream server at a URL controlled by the caller. Like `mini add`, it saves the server to `servers/<name>.yaml`, so whatever it accepts also runs on every later start. What it accepts is decided in `internal/server/agent_server.go`; how it saves, connects and rolls back is in `internal/server/configure_servers.go`.
+The highest-risk MCP tool mini exposes to agents is `add_server` (via `config`), because it can register a new upstream server at a URL controlled by the caller. Like `mini add`, it saves the server to `servers/<name>.yaml`, so whatever it accepts also runs on every later start. What it accepts, and how it saves, connects and rolls back, is in `internal/server/config_tool_servers.go`.
 
 **`agent_added: true`**: the saved file records that an agent supplied the server, and mini keeps treating it as untrusted until the user deletes that line:
 - every connection re-checks resolved addresses at dial time (see SSRF blocking below);
@@ -82,7 +82,7 @@ HTTP session IDs are generated with `crypto/rand` (not PID- or time-based) and v
 
 ### Request body size
 
-Incoming requests from agents are capped at 1MB (`internal/server/http.go`). Tool arguments should be kilobytes; a 1MB limit is a 1000× safety margin that still prevents heap exhaustion from malformed/injected inputs.
+Incoming requests from agents are capped at 1MB (`internal/server/http_validate.go`). Tool arguments should be kilobytes; a 1MB limit is a 1000× safety margin that still prevents heap exhaustion from malformed/injected inputs.
 
 ### Response body size
 

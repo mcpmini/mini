@@ -4,12 +4,15 @@ package server_test
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestProxy_MiniRead_ReadsFile(t *testing.T) {
@@ -269,4 +272,107 @@ func TestProxy_MiniRead_RecoversExcludedFieldFromToonNotice(t *testing.T) {
 	if recovered := toolResultText(t, serve(t, srv, read)); recovered != `"x"` {
 		t.Errorf("read(%q) = %q, want the excluded value", path, recovered)
 	}
+}
+
+// TestRead_RejectsSymlinkEscape creates a symlink inside the response store
+// that points to a sensitive file outside it, then attempts to read via the
+// MCP "read" tool. The fix must block it.
+func TestRead_RejectsSymlinkEscape(t *testing.T) {
+	// Create a file "outside" the store that we want to protect.
+	outsideDir := t.TempDir()
+	secretFile := filepath.Join(outsideDir, "secret.txt")
+	testutil.WriteFile(t, secretFile, "sensitive-data")
+
+	// Build a proxy server whose response store is a separate temp dir.
+	storeDir := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = storeDir
+	srv := newTestServer(t, server.Params{Config: cfg})
+	defer srv.Close()
+
+	// Create a symlink INSIDE the store dir that points OUTSIDE it.
+	symlinkPath := filepath.Join(storeDir, "escape.json")
+	if err := os.Symlink(secretFile, symlinkPath); err != nil {
+		t.Fatalf("create symlink: %v", err)
+	}
+
+	// Attempt to read via the MCP tool. This must be rejected.
+	resp := serve(t, srv, callTool("read", map[string]any{"file": filepath.Base(symlinkPath)}))
+
+	// Should be an RPC-level error (errInvalidParams) or a tool-level isError.
+	if rpcErr := resp["error"]; rpcErr != nil {
+		errMap, ok := rpcErr.(map[string]any)
+		if !ok {
+			t.Fatalf("unexpected error shape: %v", rpcErr)
+		}
+		msg := errMap["message"].(string)
+		if !strings.Contains(msg, "mini response directory") {
+			t.Errorf("expected path confinement error, got: %s", msg)
+		}
+		return // correct — RPC-level rejection
+	}
+
+	result, ok := resp["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("no result or error in response: %v", resp)
+	}
+	if result["isError"] == true {
+		// Tool-level error is also acceptable.
+		return
+	}
+
+	// If we get here the read succeeded — the fix is broken.
+	content := result["content"].([]any)[0].(map[string]any)["text"].(string)
+	if strings.Contains(content, "sensitive-data") {
+		t.Errorf("SECURITY: symlink escape succeeded — read returned secret file contents")
+	} else {
+		t.Errorf("symlink read returned unexpected content (no secret but also no error): %s", content)
+	}
+}
+
+// TestRead_SymlinkWithinStore_Allowed verifies that a symlink pointing to
+// another file INSIDE the store dir is still readable (not over-blocked).
+func TestRead_SymlinkWithinStore_Allowed(t *testing.T) {
+	storeDir := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = storeDir
+	srv := newTestServer(t, server.Params{Config: cfg})
+	defer srv.Close()
+
+	// Create a real file inside the store and a symlink to it, also inside.
+	realFile := filepath.Join(storeDir, "real.json")
+	testutil.WriteFile(t, realFile, `{"ok":true}`)
+	symlinkPath := filepath.Join(storeDir, "link.json")
+	if err := os.Symlink(realFile, symlinkPath); err != nil {
+		t.Fatalf("create symlink: %v", err)
+	}
+
+	resp := serve(t, srv, callTool("read", map[string]any{"file": filepath.Base(symlinkPath)}))
+	// Should succeed (symlink within store is allowed).
+	if rpcErr := resp["error"]; rpcErr != nil {
+		t.Fatalf("unexpected RPC error for in-store symlink: %v", rpcErr)
+	}
+	result, ok := resp["result"].(map[string]any)
+	if !ok || result["isError"] == true {
+		t.Errorf("expected successful read for in-store symlink, got: %v", resp)
+	}
+}
+
+func TestRead_DotDotTraversalStillBlocked(t *testing.T) {
+	storeDir := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = storeDir
+	srv := newTestServer(t, server.Params{Config: cfg})
+	defer srv.Close()
+
+	// Craft a relative path that tries to escape via ".." without using a symlink.
+	resp := serve(t, srv, callTool("read", map[string]any{"file": "../escape.json"}))
+	if rpcErr := resp["error"]; rpcErr != nil {
+		return // RPC rejection is correct
+	}
+	result, ok := resp["result"].(map[string]any)
+	if !ok || result["isError"] == true {
+		return // tool-level rejection is also correct
+	}
+	t.Errorf("path traversal via '..' was not blocked: %v", resp)
 }

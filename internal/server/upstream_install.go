@@ -285,3 +285,45 @@ func (s *Server) currentAliasesFor(serverName string) map[string]string {
 		s.projections[serverName],
 	) // walked under the lock: set_projection writes into this map
 }
+
+func (s *Server) detachAndCloseServer(serverName string) {
+	s.cancelExistingAuthFlow(serverName)
+	s.serverOpMu.Lock()
+	defer s.serverOpMu.Unlock()
+	s.detachAndCloseLocked(serverName)
+}
+
+func (s *Server) detachAndCloseLocked(serverName string) {
+	s.removeGen[serverName]++
+	s.closeDetached(serverName, s.detachUpstream(serverName))
+}
+
+func (s *Server) closeDetached(serverName string, u *upstreamServer) {
+	if u != nil {
+		u.shutdownAndClose()
+	}
+	s.sessions.closeServerConnections(serverName)
+	s.providerRegistry.Forget(serverName)
+	s.reg.RemoveServer(serverName)
+}
+
+func (s *Server) detachUpstream(serverName string) *upstreamServer {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	delete(s.projections, serverName)
+	return s.detachUpstreamLocked(serverName)
+}
+
+func (s *Server) detachUpstreamKeepingProjections(serverName string) *upstreamServer {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	return s.detachUpstreamLocked(serverName)
+}
+
+func (s *Server) detachUpstreamLocked(serverName string) *upstreamServer {
+	u := s.upstreams[serverName]
+	delete(s.upstreams, serverName)
+	delete(s.configServers, serverName)
+	s.startup.forget(serverName)
+	return u
+}
