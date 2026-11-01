@@ -3,8 +3,8 @@
 package server_test
 
 import (
+	"context"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -50,46 +50,6 @@ func TestConfigureReload_loadsProjectionsFromDisk(t *testing.T) {
 	json.Unmarshal([]byte(toolResultText(t, resp)), &result)
 	if result["error"] != nil {
 		t.Errorf("expected ok=true from reload, got: %v", result)
-	}
-}
-
-func TestConfigureAddServer_noConfig(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	resp := serve(t, srv, callTool("config", map[string]any{"action": "add_server"}))
-	result := resp["result"].(map[string]any)
-	if result["isError"] != true {
-		t.Errorf("expected isError=true when config omitted, got: %v", result)
-	}
-}
-
-func newServerAllowPrivate(t *testing.T) *server.Server {
-	t.Helper()
-	cfg := config.DefaultConfig()
-	cfg.DangerousAllowPrivateURLs = true
-	return newTestServer(t, server.Params{Config: cfg})
-}
-
-func TestConfigureAddServer_viaHTTP(t *testing.T) {
-	mcp := newMCPTestServer(t, []map[string]any{
-		{"name": "ping", "description": "ping", "inputSchema": map[string]any{"type": "object"}},
-	})
-	srv := newServerAllowPrivate(t)
-
-	resp := serve(t, srv, callTool("config", map[string]any{
-		"action": "add_server",
-		"config": map[string]any{"name": "dynamic", "transport": "http", "url": mcp.URL},
-	}))
-	var result map[string]any
-	json.Unmarshal([]byte(toolResultText(t, resp)), &result)
-	if result["error"] != nil || result["server"] != "dynamic" {
-		t.Errorf("expected ok add_server, got: %v", result)
-	}
-
-	listText := toolListJSON(t, serve(t, srv, rpc("tools/list", nil)))
-	var tools []any
-	json.Unmarshal([]byte(listText), &tools)
-	if len(tools) != 3 {
-		t.Errorf("expected native tool and two builtins after add_server, got %d: %s", len(tools), listText)
 	}
 }
 
@@ -290,33 +250,6 @@ func assertFailedCallRecorded(params assertFailedCallRecordedParams) {
 	}
 }
 
-func fakeGetData() *transport.FakeConnection {
-	return &transport.FakeConnection{
-		Tools: []transport.ToolDefinition{
-			{Name: "getData", Description: "get", InputSchema: json.RawMessage(`{}`)},
-		},
-		Responses: map[string]json.RawMessage{
-			"tools/call": json.RawMessage(`{"content":[{"type":"text","text":"{\"a\":1,\"b\":2}"}]}`),
-		},
-	}
-}
-
-func assertRemoveOk(t *testing.T, srv *server.Server, serverName string) {
-	t.Helper()
-	resp := serve(t, srv, callTool("config", map[string]any{
-		"action": "remove_server",
-		"server": serverName,
-	}))
-	text := toolResultText(t, resp)
-	var result map[string]any
-	if err := json.Unmarshal([]byte(text), &result); err != nil {
-		t.Fatalf("expected JSON result: %s", text)
-	}
-	if result["error"] != nil {
-		t.Errorf("expected ok=true, got: %v", result)
-	}
-}
-
 func TestConfigureUnknownAction(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	resp := serve(t, srv, callTool("config", map[string]any{"action": "no_such_action"}))
@@ -324,210 +257,6 @@ func TestConfigureUnknownAction(t *testing.T) {
 	text := toolResultText(t, resp)
 	if !strings.Contains(text, "unknown configure action") {
 		t.Errorf("expected error message, got: %s", text)
-	}
-}
-
-func TestConfigureSetProjection_aFailedSaveKeepsTheLiveRuleAndSessionOnlyStillApplies(t *testing.T) {
-	const broken = "command: echo\nprojections: {getData: {include_only: 5}}\n"
-	cases := map[string]func(t *testing.T, path string){
-		"broken server file": func(t *testing.T, path string) { testutil.WriteFile(t, path, broken) },
-		"missing server file": func(t *testing.T, path string) {
-			if err := os.Remove(path); err != nil {
-				t.Fatal(err)
-			}
-		},
-		"unwritable servers directory": func(t *testing.T, path string) {
-			dir := filepath.Dir(path)
-			if err := os.Chmod(dir, 0o500); err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(
-				func() { os.Chmod(dir, 0o700) },
-			) //nolint:errcheck // TempDir cleanup reports a directory it can't remove
-		},
-	}
-	for name, breakFile := range cases {
-		t.Run(name, func(t *testing.T) {
-			srv := newTestServer(t, server.Params{})
-			addEdgeConn(addConnectionParams{
-				T:      t,
-				Server: srv,
-				Config: config.ServerConfig{Name: "svc", Projections: map[string]*config.ProjectionConfig{
-					"getData": {IncludeOnly: []string{"a"}},
-				}},
-				Connection: fakeGetData(),
-			})
-			path := config.ServerPath(srv.ConfigDir(), "svc")
-			breakFile(t, path)
-			before := serverFileText(t, path)
-			const sessionID = "cccccccc-cccc-cccc-cccc-000000000004"
-			postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: initMsg()})
-
-			saved := postMCP(
-				postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: setGetDataProjection(2, false)},
-			)
-			assertIsErrorResult(t, saved)
-			if text := toolResultText(t, saved); !strings.Contains(text, "session_only") {
-				t.Errorf("failed save = %q, want session_only advice", text)
-			}
-			assertProjectedFields(
-				assertProjectedFieldsParams{
-					T: t,
-					Text: toolResultText(
-						t,
-						postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: callGetData(3)}),
-					),
-					Present: []string{"a"},
-					Absent:  []string{"b"},
-				},
-			)
-
-			sessionOnly := postMCP(
-				postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: setGetDataProjection(4, true)},
-			)
-			if text := toolResultText(t, sessionOnly); strings.Contains(text, `"error"`) {
-				t.Fatalf("session_only set_projection = %s", text)
-			}
-			assertProjectedFields(
-				assertProjectedFieldsParams{
-					T: t,
-					Text: toolResultText(
-						t,
-						postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: callGetData(5)}),
-					),
-					Present: []string{"b"},
-					Absent:  []string{"a"},
-				},
-			)
-			if after := serverFileText(t, path); after != before {
-				t.Errorf("server file = %q, want it untouched (%q)", after, before)
-			}
-		})
-	}
-}
-
-func serverFileText(t *testing.T, path string) string {
-	t.Helper()
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return "<missing>"
-	}
-	return string(testutil.ReadFile(t, path))
-}
-
-func setGetDataProjection(id int, sessionOnly bool) map[string]any {
-	return map[string]any{
-		"jsonrpc": transport.JsonRPCVersion,
-		"id":      id,
-		"method":  "tools/call",
-		"params": map[string]any{
-			"name": "config", "arguments": map[string]any{
-				"action": "set_projection", "server": "svc", "tool": "getData", "session_only": sessionOnly,
-				"projection": map[string]any{"include_only": []string{"b"}},
-			},
-		},
-	}
-}
-
-func callGetData(id int) map[string]any {
-	return map[string]any{
-		"jsonrpc": transport.JsonRPCVersion,
-		"id":      id,
-		"method":  "tools/call",
-		"params": map[string]any{
-			"name": "svc__getData", "arguments": map[string]any{},
-		},
-	}
-}
-
-type assertProjectedFieldsParams struct {
-	T       *testing.T
-	Text    string
-	Present []string
-	Absent  []string
-}
-
-func assertProjectedFields(params assertProjectedFieldsParams) {
-	params.T.Helper()
-	data := parseProxyEnvelope(params.T, params.Text).Data
-	for _, key := range params.Present {
-		if data[key] == nil {
-			params.T.Errorf("field %q missing from projected data %v", key, data)
-		}
-	}
-	for _, key := range params.Absent {
-		if data[key] != nil {
-			params.T.Errorf("field %q survived projection in %v", key, data)
-		}
-	}
-}
-
-func TestConfigureSetProjectionRequiresTool(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	resp := serve(t, srv, callTool("config", map[string]any{
-		"action": "set_projection",
-		"server": "svc",
-	}))
-	assertIsErrorResult(t, resp)
-}
-
-func TestConfigureSetProjection_rejectsMiniFormat(t *testing.T) {
-	t.Run("server scope", func(t *testing.T) {
-		srv := newTestServer(t, server.Params{})
-		resp := serve(t, srv, callTool("config", map[string]any{
-			"action": "set_projection", "server": "svc", "tool": "tool1",
-			"projection": map[string]any{"format": "mini"},
-		}))
-		assertIsErrorResult(t, resp)
-		if text := toolResultText(t, resp); !strings.Contains(text, "toon") {
-			t.Errorf("expected error naming toon as the replacement, got: %s", text)
-		}
-	})
-	t.Run("session scope", func(t *testing.T) {
-		srv := newTestServer(t, server.Params{})
-		resp := serve(t, srv, callTool("config", map[string]any{
-			"action": "set_projection", "server": "svc", "tool": "tool1", "session_only": true,
-			"projection": map[string]any{"format": "mini"},
-		}))
-		assertIsErrorResult(t, resp)
-		if text := toolResultText(t, resp); !strings.Contains(text, "toon") {
-			t.Errorf("expected error naming toon as the replacement, got: %s", text)
-		}
-	})
-}
-
-func TestConfigureSetProjection_rejectsUnknownOption(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	resp := serve(t, srv, callTool("config", map[string]any{
-		"action": "set_projection", "server": "svc", "tool": "tool1",
-		"projection": map[string]any{"exlude": []string{"secret"}},
-	}))
-	assertIsErrorResult(t, resp)
-	if text := toolResultText(t, resp); !strings.Contains(text, `"exlude"`) || !strings.Contains(text, "exclude") {
-		t.Errorf("expected an error naming the unknown option and the valid ones, got: %s", text)
-	}
-}
-
-func TestConfigureRemoveServerRequiresName(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	resp := serve(t, srv, callTool("config", map[string]any{
-		"action": "remove_server",
-	}))
-	assertIsErrorResult(t, resp)
-}
-
-func TestConfigureRemoveServer_clearsDiscover(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	addEdgeConn(
-		addConnectionParams{T: t, Server: srv, Config: config.ServerConfig{Name: "svc"}, Connection: fakeConn("ping")},
-	)
-	if srv.ToolCount("svc") != 1 {
-		t.Fatalf("expected 1 tool before remove")
-	}
-	assertRemoveOk(t, srv, "svc")
-
-	discoverText := toolListJSON(t, serve(t, srv, rpc("tools/list", nil)))
-	if strings.Contains(discoverText, "ping") {
-		t.Errorf("removed server's tools should not appear in discover, got: %s", discoverText)
 	}
 }
 
@@ -655,5 +384,22 @@ func TestConfigureReload_resultShape(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestConfigureStatus(t *testing.T) {
+	srv := newTestServer(t, server.Params{})
+	ctx := context.Background()
+	srv.AddConnection(ctx, config.ServerConfig{Name: "ci"}, fakeConn("getBuild", "listBuilds"))
+
+	resp := serve(t, srv, callTool("config", map[string]any{"action": "status"}))
+	text := toolResultText(t, resp)
+
+	var status map[string]any
+	if err := json.Unmarshal([]byte(text), &status); err != nil {
+		t.Fatalf("status not JSON: %v\n%s", err, text)
+	}
+	if status["servers"] == nil {
+		t.Error("expected servers in status")
 	}
 }

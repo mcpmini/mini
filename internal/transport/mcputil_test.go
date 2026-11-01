@@ -3,6 +3,7 @@ package transport
 import (
 	"encoding/json"
 	"testing"
+	"uuid"
 )
 
 func TestNormalizeID_float64_toInt64(t *testing.T) {
@@ -92,5 +93,21 @@ func TestToMap_rejectsInvalidJSON(t *testing.T) {
 	m, err := d.ToMap()
 	if err == nil || m != nil {
 		t.Fatalf("expected an error without a partial definition, got %v, %v", m, err)
+	}
+}
+
+func TestNewSessionID_unique(t *testing.T) {
+	a, b := NewSessionID(), NewSessionID()
+	if a == "" || b == "" {
+		t.Error("expected non-empty session IDs")
+	}
+	if a == b {
+		t.Errorf("expected unique session IDs, got %q twice", a)
+	}
+	for _, id := range []string{a, b} {
+		parsed, err := uuid.Parse(id)
+		if err != nil || parsed.String() != id || parsed[6]>>4 != 4 {
+			t.Errorf("session ID = %q, want canonical UUID v4", id)
+		}
 	}
 }

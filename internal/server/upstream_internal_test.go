@@ -32,3 +32,14 @@ func TestIsConnError_nil(t *testing.T) {
 		t.Error("expected isConnError=false for nil")
 	}
 }
+
+func TestConnError_unwrap(t *testing.T) {
+	inner := errors.New("inner error")
+	ce := connError{err: inner}
+	if ce.Error() != "inner error" {
+		t.Errorf("Error() = %q, want %q", ce.Error(), "inner error")
+	}
+	if !errors.Is(ce, inner) {
+		t.Error("expected errors.Is to find inner error via Unwrap")
+	}
+}

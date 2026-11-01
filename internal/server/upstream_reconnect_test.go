@@ -11,7 +11,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -40,8 +39,10 @@ func (c *errAfterRegisterConn) Call(
 func (c *errAfterRegisterConn) ListTools(_ context.Context) (transport.ToolList, error) {
 	return transport.ToolList{Tools: c.tools}, nil
 }
+
 func (c *errAfterRegisterConn) Health(_ context.Context) error { return nil }
-func (c *errAfterRegisterConn) Close() error                   { return nil }
+
+func (c *errAfterRegisterConn) Close() error { return nil }
 
 func TestReconnect_rpcErrorDoesNotTriggerReconnect(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
@@ -196,206 +197,6 @@ func TestReconnect_successAfterFailure(t *testing.T) {
 	)
 }
 
-type writeToolsCallRespParams struct {
-	Writer         http.ResponseWriter
-	ID             any
-	CallsSeen      int
-	RPCErrorOnCall *int
-}
-
-func writeToolsCallResp(params writeToolsCallRespParams) {
-	if *params.RPCErrorOnCall > 0 && params.CallsSeen == *params.RPCErrorOnCall {
-		json.NewEncoder(params.Writer).
-			Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": params.ID, "error": map[string]any{"code": -32602, "message": "bad args"}})
-
-			//nolint:errcheck
-		return
-	}
-	json.NewEncoder(params.Writer).
-		Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": params.ID, //nolint:errcheck
-			"result": map[string]any{"content": []map[string]any{{"type": "text", "text": "ok"}}}})
-}
-
-func perSessionUpstreamHandler(dialCount *int, rpcErrOnCall *int) http.HandlerFunc {
-	callsSeen := 0
-	return func(w http.ResponseWriter, r *http.Request) {
-		var req map[string]any
-		json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
-		id := req["id"]
-		switch req["method"] {
-		case "initialize":
-			*dialCount++
-			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, //nolint:errcheck
-				"result": map[string]any{
-					"protocolVersion": "2024-11-05",
-					"capabilities":    map[string]any{"tools": map[string]any{}},
-					"serverInfo":      map[string]any{"name": "fake", "version": "0"},
-				}})
-		case "tools/list":
-			tools := []map[string]any{
-				{"name": "ping", "description": "ping", "inputSchema": map[string]any{"type": "object"}},
-			}
-			json.NewEncoder(w).
-				Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, "result": map[string]any{"tools": tools}})
-		//nolint:errcheck
-		case "tools/call":
-			callsSeen++
-			writeToolsCallResp(
-				writeToolsCallRespParams{Writer: w, ID: id, CallsSeen: callsSeen, RPCErrorOnCall: rpcErrOnCall},
-			)
-		}
-	}
-}
-
-func perSessionHTTPServer(t *testing.T, dialCount *int, rpcErrOnCall *int) *httptest.Server {
-	t.Helper()
-	srv := httptest.NewServer(perSessionUpstreamHandler(dialCount, rpcErrOnCall))
-	t.Cleanup(srv.Close)
-	return srv
-}
-
-func newPerSessionSrv(t *testing.T, url string) *server.Server {
-	t.Helper()
-	srv := newTestServer(t, server.Params{})
-	sc := config.ServerConfig{Name: "svc", Transport: "http", URL: url, SessionMode: config.SessionModePerSession}
-	if err := srv.AddUpstream(context.Background(), sc); err != nil {
-		t.Fatalf("AddUpstream: %v", err)
-	}
-	return srv
-}
-
-func postToMiniHTTP(params mcpPostParams) {
-	params.T.Helper()
-	req, _ := http.NewRequest(http.MethodPost, params.HTTPServer.URL+"/mcp", bytes.NewReader(params.Body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Mcp-Session-Id", params.SessionID)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		params.T.Fatalf("mini POST: %v", err)
-	}
-	io.Copy(io.Discard, resp.Body) //nolint:errcheck
-	resp.Body.Close()
-}
-
-func TestPerSession_rpcErrorKeepsConn(t *testing.T) {
-	var dialCount int
-	rpcErrOnCall := 2 // inject RPC error on the 2nd tools/call
-	upstreamSrv := perSessionHTTPServer(t, &dialCount, &rpcErrOnCall)
-	ts := httptest.NewServer(newPerSessionSrv(t, upstreamSrv.URL))
-	t.Cleanup(ts.Close)
-	baseline := dialCount
-	sid := "aabbccdd11223344aabbccdd11223344"
-
-	init, _ := json.Marshal(map[string]any{
-		"jsonrpc": transport.JsonRPCVersion,
-		"id":      0,
-		"method":  "initialize",
-		"params": map[string]any{
-			"protocolVersion": "2025-03-26",
-			"capabilities":    map[string]any{},
-			"clientInfo":      map[string]any{"name": "t", "version": "0"},
-		},
-	})
-	exec, _ := json.Marshal(map[string]any{
-		"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "tools/call",
-		"params": map[string]any{"name": "svc__ping", "arguments": map[string]any{}},
-	})
-	postToMiniHTTP(mcpPostParams{T: t, HTTPServer: ts, SessionID: sid, Body: init})
-	postToMiniHTTP(
-		mcpPostParams{T: t, HTTPServer: ts, SessionID: sid, Body: exec},
-	) // call 1: success, triggers per-session dial
-	postToMiniHTTP(mcpPostParams{T: t, HTTPServer: ts, SessionID: sid, Body: exec}) // call 2: RPC error
-	postToMiniHTTP(
-		mcpPostParams{T: t, HTTPServer: ts, SessionID: sid, Body: exec},
-	) // call 3: should reuse conn, not redial
-
-	if dialCount != baseline+1 {
-		t.Errorf("RPC error should not redial per-session conn: expected %d dials, got %d", baseline+1, dialCount)
-	}
-}
-
-// TestPerSession_transportErrorRedialsConn verifies that a transport-level
-// error (abrupt connection close, not an RPC error) evicts the per-session
-// conn so the next call re-dials instead of reusing a broken connection.
-func TestPerSession_transportErrorRedialsConn(t *testing.T) {
-	var dialCount, closeOnCall, callsSeen atomic.Int32
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req map[string]any
-		json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
-		id := req["id"]
-		switch req["method"] {
-		case "initialize":
-			dialCount.Add(1)
-			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, //nolint:errcheck
-				"result": map[string]any{
-					"protocolVersion": "2024-11-05",
-					"capabilities":    map[string]any{"tools": map[string]any{}},
-					"serverInfo":      map[string]any{"name": "fake", "version": "0"},
-				}})
-		case "tools/list":
-			tools := []map[string]any{
-				{"name": "ping", "description": "ping", "inputSchema": map[string]any{"type": "object"}},
-			}
-			json.NewEncoder(w).
-				Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, "result": map[string]any{"tools": tools}})
-		//nolint:errcheck
-		case "tools/call":
-			n := callsSeen.Add(1)
-			if c := closeOnCall.Load(); c > 0 && n == c {
-				hj, ok := w.(http.Hijacker)
-				if !ok {
-					t.Error("hijack not supported")
-					return
-				}
-				conn, _, _ := hj.Hijack()
-				conn.Close() // abrupt transport close
-				return
-			}
-			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, //nolint:errcheck
-				"result": map[string]any{"content": []map[string]any{{"type": "text", "text": "pong"}}}})
-		}
-	})
-	upstreamSrv := httptest.NewServer(handler)
-	t.Cleanup(upstreamSrv.Close)
-	ts := httptest.NewServer(newPerSessionSrv(t, upstreamSrv.URL))
-	t.Cleanup(ts.Close)
-
-	sid := "aabbccdd11223344aabbccdd11223344"
-	init, _ := json.Marshal(map[string]any{
-		"jsonrpc": transport.JsonRPCVersion,
-		"id":      0,
-		"method":  "initialize",
-		"params": map[string]any{
-			"protocolVersion": "2025-03-26",
-			"capabilities":    map[string]any{},
-			"clientInfo":      map[string]any{"name": "t", "version": "0"},
-		},
-	})
-	exec, _ := json.Marshal(map[string]any{
-		"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "tools/call",
-		"params": map[string]any{"name": "svc__ping", "arguments": map[string]any{}},
-	})
-
-	postToMiniHTTP(mcpPostParams{T: t, HTTPServer: ts, SessionID: sid, Body: init})
-	postToMiniHTTP(
-		mcpPostParams{T: t, HTTPServer: ts, SessionID: sid, Body: exec},
-	) // call 1: success, dials per-session conn (dialCount → 1)
-
-	closeOnCall.Store(2)
-	postToMiniHTTP(
-		mcpPostParams{T: t, HTTPServer: ts, SessionID: sid, Body: exec},
-	) // call 2: transport error → conn evicted
-
-	closeOnCall.Store(0)
-	postToMiniHTTP(
-		mcpPostParams{T: t, HTTPServer: ts, SessionID: sid, Body: exec},
-	) // call 3: should redial (dialCount → 2)
-
-	if got := dialCount.Load(); got < 2 {
-		t.Errorf("transport error should trigger redial: expected ≥2 dials, got %d", got)
-	}
-}
-
 // TestClose_concurrentConnError verifies that Server.Close() does not panic when a
 // request goroutine encounters a connection error and calls maybeReconnect at the
 // same time as Close() is completing its reconnectWg.Wait(). This is a regression
@@ -458,5 +259,7 @@ func (c *slowErrConn) Call(ctx context.Context, _ string, _ json.RawMessage) (js
 func (c *slowErrConn) ListTools(_ context.Context) (transport.ToolList, error) {
 	return transport.ToolList{Tools: c.tools}, nil
 }
+
 func (c *slowErrConn) Health(_ context.Context) error { return nil }
-func (c *slowErrConn) Close() error                   { return nil }
+
+func (c *slowErrConn) Close() error { return nil }

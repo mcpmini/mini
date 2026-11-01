@@ -8,6 +8,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 func TestNotification_toolsChangedAfterAddServer(t *testing.T) {
@@ -69,4 +70,54 @@ func findMethod(messages []map[string]any, method string) map[string]any {
 		}
 	}
 	return nil
+}
+
+// TestToolsListChanged_notificationShape verifies the tools/list_changed notification shape:
+// jsonrpc:2.0, no id field, correct method name.
+// "Servers that declared listChanged SHOULD send a notification when tool set changes."
+// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/server/tools.mdx#L139
+func TestToolsListChanged_notificationShape(t *testing.T) {
+	srv := newTestServer(t, server.Params{})
+	srv.AddConnection(context.Background(), config.ServerConfig{Name: "pre"}, fakeConn("existing"))
+	msgs := serveAll(t, srv,
+		notification(transport.NotificationInitialized, nil),
+		callTool("config", map[string]any{"action": "remove_server", "server": "pre"}),
+	)
+	var found map[string]any
+	for _, m := range msgs {
+		if m["method"] == transport.NotificationToolsChanged {
+			found = m
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("tools/list_changed notification not sent after remove_server")
+	}
+	t.Run("jsonrpc 2.0", func(t *testing.T) {
+		if v, _ := found["jsonrpc"].(string); v != transport.JsonRPCVersion {
+			t.Errorf("notification jsonrpc = %q, want \"2.0\"", v)
+		}
+	})
+	t.Run("no id", func(t *testing.T) {
+		// Notifications MUST NOT have an id field per JSON-RPC spec.
+		// https://www.jsonrpc.org/specification#notification
+		if _, hasID := found["id"]; hasID {
+			t.Errorf("notification must not have id, got: %v", found["id"])
+		}
+	})
+	t.Run("method name", func(t *testing.T) {
+		if m, _ := found["method"].(string); m != "notifications/tools/list_changed" {
+			t.Errorf("method = %q, want notifications/tools/list_changed", m)
+		}
+	})
+}
+
+// hasNotification returns true if any message has the given method and no id.
+func hasNotification(msgs []map[string]any, method string) bool {
+	for _, m := range msgs {
+		if m["method"] == method && m["id"] == nil {
+			return true
+		}
+	}
+	return false
 }

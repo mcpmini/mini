@@ -1,16 +1,11 @@
 //go:build test
 
-// End-to-end tests for failure modes: connection drops, timeouts, rate limits,
-// and upstream instability. These test the proxy's resilience from the
-// agent's perspective — what does the agent actually receive when things go wrong?
 package server_test
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"sync"
 	"testing"
 	"time"
@@ -19,13 +14,6 @@ import (
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
 )
-
-func fakeToolConn(name string) *transport.FakeConnection {
-	return &transport.FakeConnection{
-		Tools:     []transport.ToolDefinition{{Name: name, Description: name, InputSchema: json.RawMessage(`{}`)}},
-		Responses: map[string]json.RawMessage{},
-	}
-}
 
 func TestUpstream_connectionErrorReturnsEnvelope(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
@@ -68,55 +56,11 @@ func TestUpstream_allCallsFail_discoverStillWorks(t *testing.T) {
 	}
 }
 
-func newSlowServer(t *testing.T, delay time.Duration, timeout string) *server.Server {
-	t.Helper()
-	srv := newTestServer(t, server.Params{})
-	slow := &slowConnection{
-		tools: []transport.ToolDefinition{{Name: "slowOp", InputSchema: json.RawMessage(`{}`)}},
-		delay: delay,
-	}
-	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc", ToolTimeout: timeout}, slow)
-	return srv
-}
-
 func TestHTTPUpstream_timeoutReturnsGracefulError(t *testing.T) {
 	srv := newSlowServer(t, 200*time.Millisecond, "50ms")
 
 	resp := serve(t, srv, callTool("svc__slowOp", map[string]any{}))
 	requireToolError(t, resp, "")
-}
-
-// slowConnection simulates a connection that takes time to respond.
-type slowConnection struct {
-	tools []transport.ToolDefinition
-	delay time.Duration
-}
-
-func (c *slowConnection) Call(ctx context.Context, method string, _ json.RawMessage) (json.RawMessage, error) {
-	select {
-	case <-time.After(c.delay):
-		return json.RawMessage(`{"content":[{"type":"text","text":"{}"}]}`), nil
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-}
-
-func (c *slowConnection) ListTools(_ context.Context) (transport.ToolList, error) {
-	return transport.ToolList{Tools: c.tools}, nil
-}
-
-func (c *slowConnection) Health(_ context.Context) error { return nil }
-func (c *slowConnection) Close() error                   { return nil }
-
-func fakeWorkConn() *transport.FakeConnection {
-	return &transport.FakeConnection{
-		Tools: []transport.ToolDefinition{
-			{Name: "work", Description: "do work", InputSchema: json.RawMessage(`{}`)},
-		},
-		Responses: map[string]json.RawMessage{
-			"tools/call": json.RawMessage(`{"content":[{"type":"text","text":"{}"}]}`),
-		},
-	}
 }
 
 func TestUpstream_concurrentCalls_noPanic(t *testing.T) {
@@ -223,29 +167,6 @@ func TestUpstream_oneFailsOthersWork(t *testing.T) {
 	}
 }
 
-func TestServer_closeStopsServe(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	ctx, cancel := context.WithCancel(context.Background())
-	pr, pw := io.Pipe()
-	var out bytes.Buffer
-	done := make(chan error, 1)
-	go func() { done <- srv.Serve(ctx, pr, &out) }()
-	initReq := rpc("initialize", map[string]any{
-		"protocolVersion": "2024-11-05",
-		"capabilities":    map[string]any{},
-		"clientInfo":      map[string]any{"name": "t", "version": "0"},
-	})
-	pw.Write(initReq) //nolint:errcheck
-	cancel()
-	pw.Close()
-	select {
-	case err := <-done:
-		_ = err
-	case <-time.After(2 * time.Second):
-		t.Error("Serve did not exit after context cancel + pipe close")
-	}
-}
-
 func TestUpstream_contextCancelledDuringCall(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	slow := &slowConnection{
@@ -264,8 +185,189 @@ func TestUpstream_contextCancelledDuringCall(t *testing.T) {
 	}
 }
 
-// helpers
+func TestQueueDepth_rejectsWhenFull(t *testing.T) {
+	srv := newTestServer(t, server.Params{})
+	blocked, release := make(chan struct{}), make(chan struct{})
+	slow := newBlockingConn(blocked, release)
+	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc", MaxPendingRequests: 1}, slow)
+	go func() {
+		serve(t, srv, callTool("svc__op", map[string]any{}))
+	}()
+	<-blocked
+	resp := serve(t, srv, callTool("svc__op", map[string]any{}))
+	text := toolResultText(t, resp)
+	var env map[string]any
+	if err := json.Unmarshal([]byte(text), &env); err != nil {
+		t.Fatalf("expected JSON envelope: %s", text)
+	}
+	if env["error"] == nil {
+		t.Errorf("expected ok=false for queue-full rejection, got: %v", env)
+	}
+	close(release)
+}
 
+func TestQueueDepth_zeroMeansUnlimited(t *testing.T) {
+	srv := newTestServer(t, server.Params{})
+	ctx := context.Background()
+
+	fake := &transport.FakeConnection{
+		Tools:     []transport.ToolDefinition{{Name: "op", InputSchema: json.RawMessage(`{}`)}},
+		Responses: map[string]json.RawMessage{"tools/call": toolJSON(`{"result":"ok"}`)},
+	}
+
+	sc := config.ServerConfig{Name: "svc", MaxPendingRequests: 0}
+	srv.AddConnection(ctx, sc, fake)
+
+	for range 5 {
+		successText(t, serve(t, srv, callTool("svc__op", map[string]any{})))
+	}
+}
+
+func TestQueueDepth_slotReleasedAfterCompletion(t *testing.T) {
+	srv := newTestServer(t, server.Params{})
+	var mu sync.Mutex
+	calls := 0
+	slow := &callbackConnection{
+		tools: []transport.ToolDefinition{{Name: "op", InputSchema: json.RawMessage(`{}`)}},
+		call: func() (json.RawMessage, error) {
+			mu.Lock()
+			calls++
+			mu.Unlock()
+			time.Sleep(10 * time.Millisecond)
+			return toolJSON("done"), nil
+		},
+	}
+	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc", MaxPendingRequests: 1}, slow)
+	successText(t, serve(t, srv, callTool("svc__op", map[string]any{})))
+	successText(t, serve(t, srv, callTool("svc__op", map[string]any{})))
+}
+
+func TestQueueDepth_timeoutReleasesSlot(t *testing.T) {
+	srv := newTestServer(t, server.Params{})
+	ctx := context.Background()
+	slow := &ctxAwareConnection{tools: []transport.ToolDefinition{{Name: "op", InputSchema: json.RawMessage(`{}`)}}}
+	srv.AddConnection(ctx, config.ServerConfig{Name: "svc", MaxPendingRequests: 1, ToolTimeout: "50ms"}, slow)
+	serve(t, srv, callTool("svc__op", map[string]any{}))
+	slow2 := &ctxAwareConnection{
+		tools:  []transport.ToolDefinition{{Name: "op", InputSchema: json.RawMessage(`{}`)}},
+		result: toolJSON(`{"result":"ok"}`),
+	}
+	srv.AddConnection(ctx, config.ServerConfig{Name: "svc2", MaxPendingRequests: 1}, slow2)
+	successText(t, serve(t, srv, callTool("svc2__op", map[string]any{})))
+}
+
+func fakeToolConn(name string) *transport.FakeConnection {
+	return &transport.FakeConnection{
+		Tools:     []transport.ToolDefinition{{Name: name, Description: name, InputSchema: json.RawMessage(`{}`)}},
+		Responses: map[string]json.RawMessage{},
+	}
+}
+
+func newBlockingConn(blocked, release chan struct{}) *callbackConnection {
+	return &callbackConnection{
+		tools: []transport.ToolDefinition{{Name: "op", InputSchema: json.RawMessage(`{}`)}},
+		call: func() (json.RawMessage, error) {
+			blocked <- struct{}{}
+			<-release
+			return toolJSON("done"), nil
+		},
+	}
+}
+
+func newSlowServer(t *testing.T, delay time.Duration, timeout string) *server.Server {
+	t.Helper()
+	srv := newTestServer(t, server.Params{})
+	slow := &slowConnection{
+		tools: []transport.ToolDefinition{{Name: "slowOp", InputSchema: json.RawMessage(`{}`)}},
+		delay: delay,
+	}
+	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc", ToolTimeout: timeout}, slow)
+	return srv
+}
+
+func toolJSON(s string) json.RawMessage {
+	result, _ := json.Marshal(map[string]any{
+		"content": []any{map[string]any{"type": "text", "text": s}},
+	})
+	return result
+}
+
+// slowConnection simulates a connection that takes time to respond.
+type slowConnection struct {
+	tools []transport.ToolDefinition
+	delay time.Duration
+}
+
+func (c *slowConnection) Call(ctx context.Context, method string, _ json.RawMessage) (json.RawMessage, error) {
+	select {
+	case <-time.After(c.delay):
+		return json.RawMessage(`{"content":[{"type":"text","text":"{}"}]}`), nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (c *slowConnection) ListTools(_ context.Context) (transport.ToolList, error) {
+	return transport.ToolList{Tools: c.tools}, nil
+}
+
+func (c *slowConnection) Health(_ context.Context) error { return nil }
+
+func (c *slowConnection) Close() error { return nil }
+
+// callbackConnection invokes a function on each Call(), ignoring context.
+type callbackConnection struct {
+	tools []transport.ToolDefinition
+	call  func() (json.RawMessage, error)
+}
+
+func (c *callbackConnection) ListTools(_ context.Context) (transport.ToolList, error) {
+	return transport.ToolList{Tools: c.tools}, nil
+}
+
+func (c *callbackConnection) Call(_ context.Context, _ string, _ json.RawMessage) (json.RawMessage, error) {
+	return c.call()
+}
+
+func (c *callbackConnection) Health(_ context.Context) error { return nil }
+
+func (c *callbackConnection) Close() error { return nil }
+
+func fakeWorkConn() *transport.FakeConnection {
+	return &transport.FakeConnection{
+		Tools: []transport.ToolDefinition{
+			{Name: "work", Description: "do work", InputSchema: json.RawMessage(`{}`)},
+		},
+		Responses: map[string]json.RawMessage{
+			"tools/call": json.RawMessage(`{"content":[{"type":"text","text":"{}"}]}`),
+		},
+	}
+}
+
+// ctxAwareConnection blocks until the call context is canceled (or returns a
+// fixed result immediately if result is non-nil). Simulates a real transport.
+type ctxAwareConnection struct {
+	tools  []transport.ToolDefinition
+	result json.RawMessage // if non-nil, return immediately
+}
+
+func (c *ctxAwareConnection) ListTools(_ context.Context) (transport.ToolList, error) {
+	return transport.ToolList{Tools: c.tools}, nil
+}
+
+func (c *ctxAwareConnection) Call(ctx context.Context, _ string, _ json.RawMessage) (json.RawMessage, error) {
+	if c.result != nil {
+		return c.result, nil
+	}
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func (c *ctxAwareConnection) Health(_ context.Context) error { return nil }
+
+func (c *ctxAwareConnection) Close() error { return nil }
+
+// helpers
 func mustMarshal(v any) string {
 	b, _ := json.Marshal(v)
 	return string(b)

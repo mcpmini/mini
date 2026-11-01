@@ -254,3 +254,37 @@ func TestAddConnection_removeThenReAdd_usesNewProjections(t *testing.T) {
 		t.Errorf("old projection still active after remove+add, got %v", data)
 	}
 }
+
+// TestInlineProjections_AppliedOnAddConnection verifies that projections
+// embedded directly in a ServerConfig (sc.Projections) are installed into
+// s.projections when the server is registered. This is the installUpstreamLocked
+// branch that handles projections embedded in server YAML under projections:.
+func TestInlineProjections_AppliedOnAddConnection(t *testing.T) {
+	srv := newTestServer(t, server.Params{})
+	defer srv.Close()
+
+	conn := fakeConn("get_item")
+	conn.Responses["tools/call"] = json.RawMessage(
+		`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"hidden\",\"name\":\"foo\"}"}]}`,
+	)
+
+	projCfg := &config.ProjectionConfig{Exclude: []string{"secret"}}
+	sc := config.ServerConfig{
+		Name:        "svc",
+		Projections: map[string]*config.ProjectionConfig{"get_item": projCfg},
+	}
+	if err := srv.AddConnection(context.Background(), sc, conn); err != nil {
+		t.Fatal(err)
+	}
+
+	resp := serve(t, srv, callTool("svc__get_item", map[string]any{}))
+	text := toolResultText(t, resp)
+	t.Logf("inline projection response: %s", text)
+
+	if strings.Contains(text, "hidden") {
+		t.Errorf("inline projection should have excluded 'secret' field, got: %s", text)
+	}
+	if !strings.Contains(text, "foo") {
+		t.Errorf("expected 'name' field to be present, got: %s", text)
+	}
+}

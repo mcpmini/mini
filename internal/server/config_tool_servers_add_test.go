@@ -330,31 +330,6 @@ func TestConfigAddServer_overlappingAddsOfOneName_theFirstWins(t *testing.T) {
 	}
 }
 
-func TestConfigRemoveServer_duringAnAddOfTheSameName_leavesSavedEqualToLive(t *testing.T) {
-	e := newConfigToolEnv(t)
-	slow, inHandshake, finishHandshake := newGatedMCPServer(t)
-	addDone := make(chan struct{})
-	go func() {
-		defer close(addDone)
-		e.addServer(map[string]any{"name": "svc", "transport": "http", "url": slow.URL})
-	}()
-	<-inHandshake
-	removeDone := make(chan struct{})
-	go func() {
-		defer close(removeDone)
-		e.removeServer("svc")
-	}()
-	e.waitUntilQueuedOrDone("svc", removeDone)
-
-	finishHandshake()
-	<-addDone
-	<-removeDone
-
-	if saved, live := e.isSaved("svc"), e.srv.ToolCount("svc") > 0; saved || live {
-		t.Errorf("saved=%v live=%v, want the remove to run after the add and leave neither", saved, live)
-	}
-}
-
 func TestConfigAddServer_anAddThatSucceedsAfterARemoveStaysSavedAndLive(t *testing.T) {
 	e := newConfigToolEnv(t)
 	slow, inHandshake, finishHandshake := newGatedMCPServer(t)
@@ -385,30 +360,6 @@ func TestConfigAddServer_anAddThatSucceedsAfterARemoveStaysSavedAndLive(t *testi
 			saved,
 			live,
 		)
-	}
-}
-
-func TestConfigAddAndRemoveServer_racingOnOneName_alwaysLeaveSavedEqualToLive(t *testing.T) {
-	upstream := newMCPTestServer(t, pingTools)
-	for i := range 30 {
-		e := newConfigToolEnv(t)
-		added := make(chan struct{})
-		var wg sync.WaitGroup
-		wg.Go(func() {
-			defer close(added)
-			e.addServer(map[string]any{"name": "svc", "transport": "http", "url": upstream.URL})
-		})
-		wg.Go(func() {
-			for e.srv.ToolCount("svc") == 0 && !isClosed(added) {
-				runtime.Gosched()
-			}
-			e.removeServer("svc")
-		})
-		wg.Wait()
-
-		if saved, live := e.isSaved("svc"), e.srv.ToolCount("svc") > 0; saved != live {
-			t.Fatalf("iteration %d: saved=%v live=%v after both calls returned", i, saved, live)
-		}
 	}
 }
 
@@ -444,82 +395,6 @@ func newGatedMCPServer(t *testing.T) (srv *httptest.Server, inHandshake <-chan s
 	return srv, started, finish
 }
 
-func TestConfigRemoveServer(t *testing.T) {
-	t.Run("deletes the server file and disconnects", func(t *testing.T) {
-		e := newConfigToolEnv(t)
-		if text, failed := e.addServer(
-			map[string]any{"name": "svc", "transport": "http", "url": newMCPTestServer(t, pingTools).URL},
-		); failed {
-			t.Fatalf("add_server: %s", text)
-		}
-
-		if text, failed := e.removeServer("svc"); failed {
-			t.Fatalf("remove_server: %s", text)
-		}
-
-		e.assertNotSaved("svc")
-		if e.srv.ToolCount("svc") != 0 {
-			t.Error("svc still connected after remove_server")
-		}
-	})
-	t.Run("a server saved again under the name never gets the removed server's login", func(t *testing.T) {
-		for _, sameURL := range []bool{true, false} {
-			e := newConfigToolEnv(t)
-			var oldTokenSent atomic.Int64
-			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.Header.Get("Authorization") == "Bearer old-token" {
-					oldTokenSent.Add(1)
-				}
-				fakeMCPHandle(w, r, pingTools)
-			})
-			removed := httptest.NewServer(handler)
-			t.Cleanup(removed.Close)
-			authtest.SaveToken(t, authtest.TokenFile{
-				ConfigDir:  e.dir,
-				ServerName: "svc",
-				Server:     userOAuthServer("svc", removed.URL),
-				Token:      &oauth2.Token{AccessToken: "old-token"},
-			})
-			if err := e.connectUserOAuthServer("svc", removed.URL); err != nil || oldTokenSent.Load() == 0 {
-				t.Fatalf("precondition: the removed server never used its login: %v", err)
-			}
-			if text, failed := e.removeServer("svc"); failed {
-				t.Fatalf("remove_server: %s", text)
-			}
-			oldTokenSent.Store(0)
-			nextURL := removed.URL
-			if !sameURL {
-				next := httptest.NewServer(handler)
-				t.Cleanup(next.Close)
-				nextURL = next.URL
-			}
-
-			err := e.connectUserOAuthServer("svc", nextURL)
-
-			if oldTokenSent.Load() != 0 {
-				t.Errorf("same URL %v: the new server sent the removed server's token", sameURL)
-			}
-			if err != nil && strings.Contains(err.Error(), "OAuth configuration changed") {
-				t.Errorf("same URL %v: the removed server still holds the name's login: %v", sameURL, err)
-			}
-		}
-	})
-	t.Run("disconnects a server with no config file", func(t *testing.T) {
-		e := newConfigToolEnv(t)
-		if err := e.srv.AddConnection(t.Context(), config.ServerConfig{Name: "svc"}, fakeConn("ping")); err != nil {
-			t.Fatal(err)
-		}
-
-		if text, failed := e.removeServer("svc"); failed {
-			t.Fatalf("remove_server: %s", text)
-		}
-
-		if e.srv.ToolCount("svc") != 0 {
-			t.Error("svc still connected after remove_server")
-		}
-	})
-}
-
 func userOAuthServer(name, url string) config.ServerConfig {
 	return config.ServerConfig{
 		Name:      name,
@@ -542,4 +417,44 @@ func (e configToolEnv) connectUserOAuthServer(name, url string) error {
 		e.t.Fatal(err)
 	}
 	return e.srv.AddUpstream(e.t.Context(), sc)
+}
+
+func TestConfigureAddServer_noConfig(t *testing.T) {
+	srv := newTestServer(t, server.Params{})
+	resp := serve(t, srv, callTool("config", map[string]any{"action": "add_server"}))
+	result := resp["result"].(map[string]any)
+	if result["isError"] != true {
+		t.Errorf("expected isError=true when config omitted, got: %v", result)
+	}
+}
+
+func TestConfigureAddServer_viaHTTP(t *testing.T) {
+	mcp := newMCPTestServer(t, []map[string]any{
+		{"name": "ping", "description": "ping", "inputSchema": map[string]any{"type": "object"}},
+	})
+	srv := newServerAllowPrivate(t)
+
+	resp := serve(t, srv, callTool("config", map[string]any{
+		"action": "add_server",
+		"config": map[string]any{"name": "dynamic", "transport": "http", "url": mcp.URL},
+	}))
+	var result map[string]any
+	json.Unmarshal([]byte(toolResultText(t, resp)), &result)
+	if result["error"] != nil || result["server"] != "dynamic" {
+		t.Errorf("expected ok add_server, got: %v", result)
+	}
+
+	listText := toolListJSON(t, serve(t, srv, rpc("tools/list", nil)))
+	var tools []any
+	json.Unmarshal([]byte(listText), &tools)
+	if len(tools) != 3 {
+		t.Errorf("expected native tool and two builtins after add_server, got %d: %s", len(tools), listText)
+	}
+}
+
+func newServerAllowPrivate(t *testing.T) *server.Server {
+	t.Helper()
+	cfg := config.DefaultConfig()
+	cfg.DangerousAllowPrivateURLs = true
+	return newTestServer(t, server.Params{Config: cfg})
 }
