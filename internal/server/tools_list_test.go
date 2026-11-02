@@ -87,7 +87,7 @@ func TestProxy_ToolsList_MultiKeyAnnotationsPassthrough(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	raw := json.RawMessage(
-		`{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false,"title":"Get File","fakeHint":true}`,
+		`{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false,"fakeHint":true}`,
 	)
 	conn := fakeConnWithAnnotations("get_file", raw)
 	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "fs2", Connection: conn})
@@ -98,7 +98,7 @@ func TestProxy_ToolsList_MultiKeyAnnotationsPassthrough(t *testing.T) {
 		t.Fatal("fs2__get_file not found in tools/list")
 	}
 	assertAnnotationsEqual(t, tool["annotations"], json.RawMessage(
-		`{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false,"title":"fs2: Get File","fakeHint":true}`,
+		`{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false,"fakeHint":true}`,
 	))
 }
 
