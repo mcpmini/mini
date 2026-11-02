@@ -32,10 +32,8 @@ func proxyUpstreamToolSchema(e *registry.ToolEntry) (map[string]any, error) {
 	return m, nil
 }
 
-// Clients list every upstream's tools under the one mini server, so a bare
-// upstream title doesn't say which server the tool belongs to. Both titles are
-// prefixed because clients prefer title, then annotations.title, over name.
 func prefixDisplayTitles(tool map[string]any, server string) {
+	// Clients prefer title, then annotations.title, over the namespaced name.
 	prefixTitle(tool, server)
 	if annotations, ok := tool["annotations"].(map[string]any); ok {
 		prefixTitle(annotations, server)
