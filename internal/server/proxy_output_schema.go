@@ -1,7 +1,12 @@
 package server
 
-// Clients validate structuredContent against outputSchema, and these are the draft-07, 2019-09
-// and 2020-12 assertions a trimmed result can fail. Numbers are never changed. A string limit
+import (
+	"slices"
+	"strings"
+)
+
+// Clients validate structuredContent against outputSchema, and these are the draft-04 to 2020-12
+// assertions a trimmed result can fail. Numbers are never changed. A string limit
 // below an enum or const value is a known gap.
 var trimSensitiveKeywords = []string{
 	// excluded fields
@@ -30,6 +35,13 @@ var subschemaMapKeys = []string{"properties", "patternProperties", "$defs", "def
 
 var arrayItemKeys = []string{"items", "prefixItems"}
 
+// The spec lets a schema declare any dialect, and one we don't know may assert keywords we can't
+// loosen.
+var knownDialects = []string{
+	"json-schema.org/draft-04/schema", "json-schema.org/draft-06/schema", "json-schema.org/draft-07/schema",
+	"json-schema.org/draft/2019-09/schema", "json-schema.org/draft/2020-12/schema",
+}
+
 func setProxyOutputSchema(tool map[string]any) {
 	schema, ok := tool["outputSchema"].(map[string]any)
 	if !ok {
@@ -38,7 +50,7 @@ func setProxyOutputSchema(tool map[string]any) {
 		}
 		return
 	}
-	if negationRefersOut(schema) {
+	if !hasKnownDialect(schema) || negationRefersOut(schema) {
 		tool["outputSchema"] = looseOutputSchema(schema)
 		return
 	}
@@ -46,6 +58,16 @@ func setProxyOutputSchema(tool map[string]any) {
 	if !allowMiniNotice(schema) {
 		tool["outputSchema"] = looseOutputSchema(schema)
 	}
+}
+
+func hasKnownDialect(schema map[string]any) bool {
+	dialect, declared := schema["$schema"].(string)
+	if !declared {
+		return true
+	}
+	dialect = strings.TrimSuffix(dialect, "#")
+	dialect = strings.TrimPrefix(strings.TrimPrefix(dialect, "https://"), "http://")
+	return slices.Contains(knownDialects, dialect)
 }
 
 func negationRefersOut(node any) bool {

@@ -232,6 +232,16 @@ func TestProxySchema_OutputSchema(t *testing.T) {
 				`{"type":["null","array"],"items":{"anyOf":[{"type":"string"},NOTICE_ITEM]}}]}`,
 		},
 		{
+			"declared draft-07 dialect is loosened like 2020-12",
+			json.RawMessage(`{"$schema":"http://json-schema.org/draft-07/schema#","type":"object","required":["a"]}`),
+			`{"$schema":"http://json-schema.org/draft-07/schema#","type":"object","properties":{"__mini":MINI}}`,
+		},
+		{
+			"unknown dialect keeps only its type since its keywords may assert",
+			json.RawMessage(`{"$schema":"https://example.com/custom/schema","type":"object","x-min":1}`),
+			`{"type":"object"}`,
+		},
+		{
 			"untyped $ref root falls back to any value since it may point at an array",
 			json.RawMessage(`{"$ref":"#/$defs/Out","$defs":{"Out":{"type":"array"}}}`),
 			`{}`,
