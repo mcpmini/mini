@@ -220,7 +220,7 @@ func TestIntegrationProxy_toolsListAnnotationsPassthrough(t *testing.T) {
 		if err := json.Unmarshal(tool.Annotations, &ann); err != nil {
 			t.Fatalf("unmarshal annotations %s: %v", tool.Annotations, err)
 		}
-		if !ann.ReadOnlyHint || ann.Title != "Do Thing" {
+		if !ann.ReadOnlyHint || ann.Title != "svc: Do Thing" {
 			t.Errorf("unexpected annotations: %s", tool.Annotations)
 		}
 		return

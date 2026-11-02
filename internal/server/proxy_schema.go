@@ -28,7 +28,22 @@ func proxyUpstreamToolSchema(e *registry.ToolEntry) (map[string]any, error) {
 	m["name"] = e.Server + "__" + e.ToolName.Name()
 	m["inputSchema"] = proxyInputSchema(e)
 	setProxyOutputSchema(m)
+	prefixDisplayTitles(m, e.Server)
 	return m, nil
+}
+
+func prefixDisplayTitles(tool map[string]any, server string) {
+	// Clients prefer title, then annotations.title, over the namespaced name.
+	prefixTitle(tool, server)
+	if annotations, ok := tool["annotations"].(map[string]any); ok {
+		prefixTitle(annotations, server)
+	}
+}
+
+func prefixTitle(holder map[string]any, server string) {
+	if title, ok := holder["title"].(string); ok && title != "" {
+		holder["title"] = server + ": " + title
+	}
 }
 
 func proxyInputSchema(e *registry.ToolEntry) map[string]any {
