@@ -97,7 +97,73 @@ func TestProxy_ToolsList_MultiKeyAnnotationsPassthrough(t *testing.T) {
 	if tool == nil {
 		t.Fatal("fs2__get_file not found in tools/list")
 	}
-	assertAnnotationsEqual(t, tool["annotations"], raw)
+	assertAnnotationsEqual(t, tool["annotations"], json.RawMessage(
+		`{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false,"title":"fs2: Get File","fakeHint":true}`,
+	))
+}
+
+func TestProxy_ToolsList_TitlesNameTheServer(t *testing.T) {
+	cases := []struct {
+		name            string
+		title           json.RawMessage
+		annotations     json.RawMessage
+		wantTitle       any
+		wantAnnotations string
+	}{
+		{
+			name:            "both titles",
+			title:           json.RawMessage(`"Get File"`),
+			annotations:     json.RawMessage(`{"title":"Fetch"}`),
+			wantTitle:       "fs: Get File",
+			wantAnnotations: `{"title":"fs: Fetch"}`,
+		},
+		{
+			name:            "annotation title only",
+			title:           nil,
+			annotations:     json.RawMessage(`{"title":"Fetch","readOnlyHint":true}`),
+			wantTitle:       nil,
+			wantAnnotations: `{"title":"fs: Fetch","readOnlyHint":true}`,
+		},
+		{
+			name:            "empty title kept",
+			title:           json.RawMessage(`""`),
+			annotations:     json.RawMessage(`{"title":""}`),
+			wantTitle:       "",
+			wantAnnotations: `{"title":""}`,
+		},
+		{
+			name:            "non-string title kept",
+			title:           json.RawMessage(`7`),
+			annotations:     json.RawMessage(`{"title":7}`),
+			wantTitle:       float64(7),
+			wantAnnotations: `{"title":7}`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := newTestServer(t, server.Params{})
+			defer srv.Close()
+			conn := &transport.FakeConnection{
+				Tools: []transport.ToolDefinition{{
+					Name:        "get_file",
+					InputSchema: json.RawMessage(`{"type":"object"}`),
+					Title:       tc.title,
+					Annotations: tc.annotations,
+				}},
+				Responses: make(map[string]json.RawMessage),
+			}
+			addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "fs", Connection: conn})
+
+			tool := findTool(toolsList(t, srv), "fs__get_file")
+			if tool == nil {
+				t.Fatal("fs__get_file not found in tools/list")
+			}
+			if got := tool["title"]; !reflect.DeepEqual(got, tc.wantTitle) {
+				t.Errorf("title = %#v, want %#v", got, tc.wantTitle)
+			}
+			assertAnnotationsEqual(t, tool["annotations"], json.RawMessage(tc.wantAnnotations))
+		})
+	}
 }
 
 func TestProxy_ToolsList_AbsentAnnotationsOmitted(t *testing.T) {
