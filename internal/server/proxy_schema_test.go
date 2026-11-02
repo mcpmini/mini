@@ -172,8 +172,8 @@ func TestProxySchema_OutputSchema(t *testing.T) {
 			"trim-sensitive keywords are dropped at every depth, types and enums kept",
 			json.RawMessage(
 				`{"type":"object","required":["id"],"minProperties":1,"maxProperties":9,"dependentRequired":{"a":["b"]},` +
-					`"properties":{"id":{"type":"string","pattern":"\\S","minLength":1,"format":"uuid","enum":["x"]},` +
-					`"tags":{"type":"array","minItems":1,"maxItems":3,"contains":{"const":"a"},"minContains":1,` +
+					`"dependencies":{"a":["b"]},"properties":{"id":{"type":"string","pattern":"\\S","minLength":1,"format":"uuid","enum":["x"]},` +
+					`"tags":{"type":"array","minItems":1,"maxItems":3,"contains":{"const":"a"},"minContains":1,"uniqueItems":true,` +
 					`"items":{"type":"object","required":["k"],"properties":{"k":{"type":"string"}}}}},` +
 					`"$defs":{"Ref":{"type":"object","required":["r"]}}}`,
 			),

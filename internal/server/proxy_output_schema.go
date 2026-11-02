@@ -1,11 +1,23 @@
 package server
 
-// Clients validate structuredContent against outputSchema, and trimmed results can break these.
+// Clients validate structuredContent against outputSchema, and these are the draft-07, 2019-09
+// and 2020-12 assertions a trimmed result can fail. Numbers are never changed. A string limit
+// below an enum or const value is a known gap.
 var trimSensitiveKeywords = []string{
-	"required", "dependentRequired", "minProperties", "maxProperties",
+	// excluded fields
+	"required", "dependentRequired", "dependencies", "minProperties",
+	// the added __mini key
+	"maxProperties",
+	// string limits and markup stripping
 	"minLength", "pattern", "format",
-	"minItems", "maxItems", "contains", "minContains",
-	"unevaluatedItems", // items "contains" marked as evaluated would otherwise be rejected
+	// array limits
+	"minItems", "contains", "minContains",
+	// items that differ only in a cut field or string become equal
+	"uniqueItems",
+	// the trailing notice element
+	"maxItems",
+	// items "contains" marked as evaluated would otherwise be rejected
+	"unevaluatedItems",
 }
 
 // The walk never enters "not" or "if": loosening what they test would tighten the schema.
