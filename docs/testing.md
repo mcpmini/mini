@@ -51,7 +51,7 @@ Direct `os.ReadFile` and `os.WriteFile` calls in test files require a trailing `
 
 ## Control failures and time
 
-Exercise network errors, delays, cancellation, malformed responses, partial failure, retry, and process exit where the changed contract depends on them. Simulate each failure at the boundary it belongs to: `FakeConnection` for server routing, `httptest.Server` for HTTP behavior, and the fake MCP process for real stdio or subprocess behavior. Add a fake capability when a named product test needs it; prefer scripted responses and observable call events over probability.
+Exercise network errors, delays, cancellation, malformed responses, partial failure, retry, and process exit where the changed contract depends on them. Simulate each failure at the boundary it belongs to: `FakeConnection` for server routing, `httptest.Server` for HTTP behavior, and the fake MCP process for real stdio or subprocess behavior. Extend the fake at the boundary the failure belongs to rather than adding a seam per layer; a fake there exercises all the code above it. Add a fake capability when a named product test needs it; prefer scripted responses and observable call events over probability.
 
 Synchronize on events, channels, completion, or fake-clock registration. A bounded real timeout can guard against a hung test; measure wall time only when response latency itself is the contract. Where code already injects a clock, advance the fake clock after the relevant timer or waiter has registered.
 
