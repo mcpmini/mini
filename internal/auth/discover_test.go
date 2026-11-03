@@ -110,8 +110,7 @@ func TestDiscover_cimdSupported(t *testing.T) {
 }
 
 func TestDiscover_404_fallsBack(t *testing.T) {
-	srv := httptest.NewServer(http.NotFoundHandler())
-	defer srv.Close()
+	srv := testutil.Serve(t, http.NotFound)
 
 	meta, err := auth.Discover(context.Background(), srv.URL+"/mcp")
 	if err != nil {
@@ -402,8 +401,7 @@ func TestRequiresOAuth_bearerChallengeShortCircuitsWithoutNetworkCall(t *testing
 }
 
 func TestRequiresOAuth_nonBearerSchemeIsNotOAuth(t *testing.T) {
-	srv := httptest.NewServer(http.NotFoundHandler())
-	defer srv.Close()
+	srv := testutil.Serve(t, http.NotFound)
 
 	if auth.RequiresOAuth(context.Background(), config.ServerConfig{URL: srv.URL}, `Basic realm="internal"`) {
 		t.Fatal("expected false for a Basic challenge — it's a legitimate non-OAuth auth mechanism")
@@ -433,8 +431,7 @@ func TestRequiresOAuth_prmDocumentConfirmsOAuth(t *testing.T) {
 }
 
 func TestRequiresOAuth_noHeaderNoPRM_returnsFalse(t *testing.T) {
-	srv := httptest.NewServer(http.NotFoundHandler())
-	defer srv.Close()
+	srv := testutil.Serve(t, http.NotFound)
 
 	if auth.RequiresOAuth(context.Background(), config.ServerConfig{URL: srv.URL}, "") {
 		t.Fatal("expected false when neither header nor PRM document confirms OAuth")

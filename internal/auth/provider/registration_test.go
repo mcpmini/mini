@@ -7,7 +7,6 @@ import (
 	"maps"
 	"reflect"
 	"slices"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -19,6 +18,7 @@ import (
 	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestAuthorization_loginForOtherSettings_isNeverSent(t *testing.T) {
@@ -52,10 +52,8 @@ func TestAuthorization_loginForOtherSettings_isNeverSent(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got, err := p.Authorization(context.Background())
-			if err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("Authorization = %q, %v; want an error saying the %s", got, err, tc.want)
-			}
+			_, err = p.Authorization(context.Background())
+			testutil.ErrorContains(t, err, tc.want)
 		})
 	}
 }

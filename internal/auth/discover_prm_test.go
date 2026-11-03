@@ -161,8 +161,7 @@ func TestDiscover_asMetaNetworkError(t *testing.T) {
 }
 
 func TestDiscover_asMetaNotFound(t *testing.T) {
-	asSrv := httptest.NewServer(http.NotFoundHandler())
-	defer asSrv.Close()
+	asSrv := testutil.Serve(t, http.NotFound)
 
 	prm := &authtest.ProtectedResource{AuthorizationServers: []string{asSrv.URL}}
 	prmSrv := authtest.ServeProtectedResource(t, "/.well-known/oauth-protected-resource", prm)

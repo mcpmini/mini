@@ -36,8 +36,7 @@ type capturingTokenServer struct {
 func newCapturingTokenServer(t *testing.T) *capturingTokenServer {
 	t.Helper()
 	c := &capturingTokenServer{}
-	c.srv = httptest.NewServer(http.HandlerFunc(c.handle))
-	t.Cleanup(c.srv.Close)
+	c.srv = testutil.Serve(t, c.handle)
 	return c
 }
 
@@ -101,7 +100,6 @@ func resolveWithSavedRegistration(t *testing.T, p savedRegistrationParams) (*con
 		"token_endpoint":                   "https://as.example.com/token",
 		"code_challenge_methods_supported": []string{"S256"},
 	})
-	t.Cleanup(asSrv.Close)
 	p.Registration.Issuer = asSrv.URL
 	authtest.SaveRegistration(t, authtest.RegistrationFile{
 		ConfigDir:    dir,
@@ -422,10 +420,9 @@ func freshDCRToExchange(t *testing.T, dcrResponse map[string]any) (*config.AuthC
 	tokenSrv := newCapturingTokenServer(t)
 	dir := t.TempDir()
 
-	regSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	regSrv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(dcrResponse) //nolint:errcheck
-	}))
-	t.Cleanup(regSrv.Close)
+	})
 
 	asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":           "https://as.example.com/authorize",
@@ -433,7 +430,6 @@ func freshDCRToExchange(t *testing.T, dcrResponse map[string]any) (*config.AuthC
 		"registration_endpoint":            regSrv.URL + "/register",
 		"code_challenge_methods_supported": []string{"S256"},
 	})
-	t.Cleanup(asSrv.Close)
 
 	sc := &config.ServerConfig{
 		URL: asSrv.URL + "/mcp",
@@ -549,7 +545,6 @@ func TestConfiguredSecretWithoutClientID_isNeverSentWithTheCIMDClient(t *testing
 		"client_id_metadata_document_supported": true,
 		"code_challenge_methods_supported":      []string{"S256"},
 	})
-	t.Cleanup(asSrv.Close)
 	const secret = "sk-test-configured-without-id"
 	sc := &config.ServerConfig{URL: asSrv.URL + "/mcp", Auth: &config.AuthConfig{
 		Type: "oauth2", AuthURL: "https://as.example.com/authorize", TokenURL: tokenSrv.srv.URL,

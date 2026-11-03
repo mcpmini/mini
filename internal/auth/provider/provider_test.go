@@ -373,9 +373,7 @@ func TestRefreshAuthorization_unboundLoginNeverReachesEndpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = p.RefreshAuthorization(context.Background(), "Bearer stored-access")
-	if err == nil || !strings.Contains(err.Error(), "log in again") {
-		t.Fatalf("unbound refresh error = %v", err)
-	}
+	testutil.ErrorContains(t, err, "log in again")
 	if hits := endpoint.Hits.Load(); hits != 0 {
 		t.Fatalf("unbound login reached token endpoint %d times", hits)
 	}

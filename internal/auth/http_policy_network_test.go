@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"sync/atomic"
 	"testing"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 type pinnedOAuthFixture struct {
@@ -29,8 +29,7 @@ type pinnedOAuthFixture struct {
 func newPinnedOAuthFixture(t *testing.T) *pinnedOAuthFixture {
 	t.Helper()
 	fixture := &pinnedOAuthFixture{}
-	server := httptest.NewServer(http.HandlerFunc(fixture.serve))
-	t.Cleanup(server.Close)
+	server := testutil.Serve(t, fixture.serve)
 	u, _ := url.Parse(server.URL)
 	fixture.origin = "http://configured.corp:" + u.Port()
 	return fixture
@@ -82,11 +81,10 @@ func installRebindingNetwork(t *testing.T, f *pinnedOAuthFixture) *atomic.Int32 
 	t.Helper()
 	var lookups atomic.Int32
 	originalLookup, originalTransport, originalClient := lookupAuthHost, http.DefaultTransport, noRedirectClient
-	public := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	public := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		f.public.Add(1)
 		w.WriteHeader(http.StatusForbidden)
-	}))
-	t.Cleanup(public.Close)
+	})
 	lookupAuthHost = func(context.Context, string) ([]net.IPAddr, error) {
 		if lookups.Add(1) > 1 {
 			return []net.IPAddr{{IP: net.ParseIP("8.8.8.8")}}, nil

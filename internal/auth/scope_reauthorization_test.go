@@ -86,9 +86,8 @@ func scopeTestServer(t *testing.T) *config.ServerConfig {
 			"code_challenge_methods_supported": []string{"S256"},
 		},
 	)
-	t.Cleanup(as.Close)
 	var mcp *httptest.Server
-	mcp = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mcp = testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/.well-known/oauth-protected-resource/mcp" {
 			w.Header().Set("Content-Type", "application/json")
 			if err := json.NewEncoder(w).
@@ -99,8 +98,7 @@ func scopeTestServer(t *testing.T) *config.ServerConfig {
 		}
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	t.Cleanup(mcp.Close)
+	})
 	return &config.ServerConfig{
 		Name: "srv",
 		URL:  mcp.URL + "/mcp",
@@ -165,8 +163,7 @@ func TestResolveEndpoints_doesNotReuseChallengeOrScopesAfterURLAndIssuerChange(t
 		"token_endpoint":                   "https://new-as.example.test/token",
 		"code_challenge_methods_supported": []string{"S256"},
 	})
-	oldMCP := httptest.NewServer(http.NotFoundHandler())
-	defer oldMCP.Close()
+	oldMCP := testutil.Serve(t, http.NotFound)
 	var newMCP *httptest.Server
 	newMCP = testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/new-prm" {

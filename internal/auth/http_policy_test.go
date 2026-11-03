@@ -6,13 +6,13 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestPrivateServerURL(t *testing.T) {
@@ -112,12 +112,10 @@ func (p publicMetadataTransport) RoundTrip(req *http.Request) (*http.Response, e
 
 func TestPublicMCPPrivateOAuthDenied(t *testing.T) {
 	var requests atomic.Int32
-	target := httptest.NewServer(
-		http.HandlerFunc(
-			func(w http.ResponseWriter, _ *http.Request) { requests.Add(1); w.WriteHeader(http.StatusOK) },
-		),
-	)
-	defer target.Close()
+	target := testutil.Serve(t, func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusOK)
+	})
 	original := noRedirectClient
 	t.Cleanup(func() { noRedirectClient = original })
 	strict := newAuthHTTPClient()

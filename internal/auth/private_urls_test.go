@@ -28,7 +28,7 @@ func privateOAuthServer(t *testing.T, opts privateOAuthOptions) (*httptest.Serve
 	t.Helper()
 	counts := &privateOAuthRequests{}
 	var server *httptest.Server
-	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server = testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		base := server.URL
 		counts.requests.Add(1)
 		w.Header().Set("Content-Type", "application/json")
@@ -63,8 +63,7 @@ func privateOAuthServer(t *testing.T, opts privateOAuthOptions) (*httptest.Serve
 		default:
 			http.NotFound(w, r)
 		}
-	}))
-	t.Cleanup(server.Close)
+	})
 	return server, counts
 }
 

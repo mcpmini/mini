@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -83,7 +82,7 @@ func TestDiscover_metadataNamingAnotherIssuer_isRefused(t *testing.T) {
 		{name: "missing", issuer: func(string) string { return "" }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			as := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			as := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != "/.well-known/oauth-authorization-server" {
 					http.NotFound(w, r)
 					return
@@ -94,8 +93,7 @@ func TestDiscover_metadataNamingAnotherIssuer_isRefused(t *testing.T) {
 					"token_endpoint":                   "https://as.example.com/token",
 					"code_challenge_methods_supported": []string{"S256"},
 				})
-			}))
-			t.Cleanup(as.Close)
+			})
 
 			_, err := auth.Discover(context.Background(), as.URL)
 
@@ -111,7 +109,6 @@ func TestResolveEndpoints_expectsTheIssuerForDiscoveredAndConfiguredEndpoints(t 
 		"code_challenge_methods_supported":               []string{"S256"},
 		"authorization_response_iss_parameter_supported": true,
 	})
-	t.Cleanup(as.Close)
 	for _, tc := range []struct {
 		name    string
 		authURL string
@@ -147,7 +144,6 @@ func TestBeginLogin_callbackFromAnotherIssuer_neverReachesTheTokenEndpoint(t *te
 		"code_challenge_methods_supported":               []string{"S256"},
 		"authorization_response_iss_parameter_supported": true,
 	})
-	t.Cleanup(as.Close)
 	sc := config.ServerConfig{Name: "synthetic", URL: as.URL + "/mcp", Auth: &config.AuthConfig{
 		Type: "oauth2", Issuer: as.URL, ClientID: "configured-client",
 	}}

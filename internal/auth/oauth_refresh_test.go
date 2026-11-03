@@ -5,7 +5,6 @@ package auth_test
 import (
 	"context"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -101,7 +100,7 @@ func TestRefresh_redirectResponse_failsWithoutFollowing(t *testing.T) {
 
 func TestRefresh_authStyleFallback_sendsResourceOnBothAttempts(t *testing.T) {
 	var resources []string
-	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	tokenServer := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -118,8 +117,7 @@ func TestRefresh_authStyleFallback_sendsResourceOnBothAttempts(t *testing.T) {
 		testutil.WriteJSON(w, http.StatusOK, map[string]any{
 			"access_token": "new-access", "refresh_token": "rotated-refresh", "token_type": "Bearer",
 		})
-	}))
-	t.Cleanup(tokenServer.Close)
+	})
 	const resource = "https://resource.example.com/mcp"
 	ac := &config.AuthConfig{
 		ClientID: "client", ClientSecret: "secret", TokenURL: tokenServer.URL, ResourceURL: resource,
@@ -139,7 +137,7 @@ func TestRefresh_authStyleFallback_sendsResourceOnBothAttempts(t *testing.T) {
 
 func TestExchangeCode_withResourceURL_sendsResourceToTokenEndpoint(t *testing.T) {
 	var capturedResourceValues []string
-	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	tokenSrv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -150,8 +148,7 @@ func TestExchangeCode_withResourceURL_sendsResourceToTokenEndpoint(t *testing.T)
 		testutil.WriteJSON(w, http.StatusOK, map[string]any{
 			"access_token": "tok", "refresh_token": "ref", "token_type": "Bearer", "expires_in": 3600,
 		})
-	}))
-	t.Cleanup(tokenSrv.Close)
+	})
 
 	const resourceURL = "https://resource.example.com/mcp"
 	ac := &config.AuthConfig{

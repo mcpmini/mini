@@ -24,7 +24,7 @@ type registrationIssuer struct {
 func newRegistrationIssuer(t *testing.T, clientID string) *registrationIssuer {
 	t.Helper()
 	fixture := &registrationIssuer{}
-	fixture.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	fixture.server = testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/register" {
 			fixture.registrations.Add(1)
 			testutil.WriteJSON(w, http.StatusOK, map[string]any{"client_id": clientID})
@@ -39,8 +39,7 @@ func newRegistrationIssuer(t *testing.T, clientID string) *registrationIssuer {
 			"token_endpoint": "https://shared.example/token", "registration_endpoint": fixture.server.URL + "/register",
 			"code_challenge_methods_supported": []string{"S256"}, "client_id_metadata_document_supported": true,
 		})
-	}))
-	t.Cleanup(fixture.server.Close)
+	})
 	return fixture
 }
 
@@ -49,12 +48,11 @@ func TestRegistrationIsBoundToIssuerEvenWhenTokenEndpointMatches(t *testing.T) {
 	second := newRegistrationIssuer(t, "second-client")
 	var current atomic.Pointer[string]
 	current.Store(&first.server.URL)
-	resource := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	resource := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.WriteJSON(w, http.StatusOK, map[string]any{
 			"resource": "http://" + r.Host + "/mcp", "authorization_servers": []string{*current.Load()},
 		})
-	}))
-	t.Cleanup(resource.Close)
+	})
 	dir := t.TempDir()
 	resolve := func() auth.ResolvedLogin {
 		sc := config.ServerConfig{
