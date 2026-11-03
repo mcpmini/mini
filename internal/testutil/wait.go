@@ -9,7 +9,7 @@ import (
 // lost signal fails the test well before its overall timeout.
 const receiveTimeout = 5 * time.Second
 
-// WaitForReceive fails the test if nothing arrives on ch within 5s; what names the
+// WaitForReceive fails the test if nothing arrives on ch within receiveTimeout; what names the
 // awaited event in the failure. A closed channel counts as a receive.
 func WaitForReceive[T any](t testing.TB, ch <-chan T, what string) T {
 	t.Helper()

@@ -37,7 +37,6 @@ func fakeOAuthMCPServer(t *testing.T, validToken string, tools []mcptest.Tool) *
 	})
 }
 
-// fakeTokenServer returns an OAuth2 token server that issues the given access token.
 func fakeTokenServer(t *testing.T, accessToken string) *httptest.Server {
 	t.Helper()
 	tokens := authtest.NewTokenServer(t)
