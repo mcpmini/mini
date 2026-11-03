@@ -15,6 +15,7 @@ import (
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 const honestIssuer = "https://as.example.com"
@@ -48,9 +49,7 @@ func TestBrowserLogin_issInTheResponse_isCheckedBeforeTheCodeIsExchanged(t *test
 				}
 				return
 			}
-			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
-				t.Fatalf("Wait = %v, want an error containing %s", err, tc.wantErr)
-			}
+			testutil.ErrorContains(t, err, tc.wantErr)
 			if hits := tokens.Hits.Load(); hits != 0 {
 				t.Errorf("token endpoint hits = %d, want 0: the code must not leave mini", hits)
 			}
@@ -100,9 +99,7 @@ func TestDiscover_metadataNamingAnotherIssuer_isRefused(t *testing.T) {
 
 			_, err := auth.Discover(context.Background(), as.URL)
 
-			if err == nil || !strings.Contains(err.Error(), "names issuer") {
-				t.Fatalf("Discover = %v, want the metadata refused for its issuer", err)
-			}
+			testutil.ErrorContains(t, err, "names issuer")
 		})
 	}
 }

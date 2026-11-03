@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -16,6 +15,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 type privateOAuthOptions struct {
@@ -196,9 +196,7 @@ func TestPrivateOAuthRejectsNonHTTPEndpoints(t *testing.T) {
 				sc.Auth.AuthURL, sc.Auth.TokenURL = tc.authURL, tc.tokenURL
 			}
 			_, err := auth.ResolveEndpoints(context.Background(), &sc, resolveParams(t.TempDir(), "local"))
-			if err == nil || !strings.Contains(err.Error(), "unsupported protocol scheme") {
-				t.Fatalf("error = %v", err)
-			}
+			testutil.ErrorContains(t, err, "unsupported protocol scheme")
 		})
 	}
 }

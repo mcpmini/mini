@@ -4,7 +4,6 @@ package auth_test
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -13,23 +12,22 @@ import (
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestBrowserExchangeUsesPublishedParentResource(t *testing.T) {
 	auth.UseEphemeralCallbackPort()
 	tokens := authtest.NewTokenServer(t)
 	var mcp *httptest.Server
-	mcp = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mcp = testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/prm" {
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).
-				Encode(map[string]any{"resource": mcp.URL + "/", "authorization_servers": []string{tokens.Srv.URL}})
+			testutil.WriteJSON(w, http.StatusOK, map[string]any{
+				"resource": mcp.URL + "/", "authorization_servers": []string{tokens.Srv.URL},
+			})
 			return
 		}
-		w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="`+mcp.URL+`/prm"`)
-		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer mcp.Close()
+		authtest.Challenge{ResourceMetadata: mcp.URL + "/prm"}.Write(w)
+	})
 	sc := config.ServerConfig{Name: "synthetic", URL: mcp.URL + "/mcp", Auth: tokens.AuthConfig()}
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()

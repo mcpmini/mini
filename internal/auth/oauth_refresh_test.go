@@ -4,7 +4,6 @@ package auth_test
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -15,6 +14,7 @@ import (
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestRefresh_expiredToken_returnsNewTokenAndSendsResource(t *testing.T) {
@@ -79,14 +79,12 @@ func TestRefresh_sendsTheClientSecretVerbatim(t *testing.T) {
 
 func TestRefresh_redirectResponse_failsWithoutFollowing(t *testing.T) {
 	targetCalled := false
-	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+	target := testutil.Serve(t, func(http.ResponseWriter, *http.Request) {
 		targetCalled = true
-	}))
-	defer target.Close()
-	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	})
+	redirect := testutil.Serve(t, func(w http.ResponseWriter, _ *http.Request) {
 		http.Redirect(w, &http.Request{}, target.URL, http.StatusTemporaryRedirect)
-	}))
-	defer redirect.Close()
+	})
 
 	ac := &config.AuthConfig{ClientID: "client", TokenURL: redirect.URL}
 	token := &oauth2.Token{AccessToken: "expired", RefreshToken: "refresh", Expiry: time.Now().Add(-time.Hour)}
@@ -117,8 +115,7 @@ func TestRefresh_authStyleFallback_sendsResourceOnBothAttempts(t *testing.T) {
 			http.Error(w, "missing client credentials", http.StatusUnauthorized)
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+		testutil.WriteJSON(w, http.StatusOK, map[string]any{
 			"access_token": "new-access", "refresh_token": "rotated-refresh", "token_type": "Bearer",
 		})
 	}))
@@ -150,8 +147,7 @@ func TestExchangeCode_withResourceURL_sendsResourceToTokenEndpoint(t *testing.T)
 		if r.FormValue("grant_type") == "authorization_code" {
 			capturedResourceValues = r.Form["resource"]
 		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+		testutil.WriteJSON(w, http.StatusOK, map[string]any{
 			"access_token": "tok", "refresh_token": "ref", "token_type": "Bearer", "expires_in": 3600,
 		})
 	}))

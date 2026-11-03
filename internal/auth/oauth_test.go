@@ -251,9 +251,7 @@ func TestLoadLogin_withoutIssuerRequiresLogin(t *testing.T) {
 		`{"resource":"https://resource.example/mcp","token_url":"https://shared.example/token","client":{"id":"old-client"},"token":{"access_token":"old-token","refresh_token":"old-refresh"}}`,
 	)
 	_, err := auth.LoadLogin(dir, "srv")
-	if err == nil || !strings.Contains(err.Error(), "log in again") {
-		t.Fatalf("unbound login load error = %v", err)
-	}
+	testutil.ErrorContains(t, err, "log in again")
 }
 
 func TestSavedLoginRetainsIssuerAndRejectsConfiguredIssuerChange(t *testing.T) {
@@ -314,16 +312,14 @@ func TestSavedLoginSeparatesResourceFromTransportBinding(t *testing.T) {
 func TestSavedRootAudienceIsUsedForRefresh(t *testing.T) {
 	mock := authtest.NewTokenServer(t)
 	var mcp *httptest.Server
-	mcp = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mcp = testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/prm" {
 			json.NewEncoder(w).
 				Encode(map[string]any{"resource": mcp.URL, "authorization_servers": []string{mock.Srv.URL}})
 			return
 		}
-		w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="`+mcp.URL+`/prm"`)
-		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer mcp.Close()
+		authtest.Challenge{ResourceMetadata: mcp.URL + "/prm"}.Write(w)
+	})
 	sc := config.ServerConfig{Name: "srv", URL: mcp.URL + "/mcp", Auth: mock.AuthConfig()}
 	sc.Auth.ResourceURL = sc.URL
 	login := authtest.LoginFor(t, sc, &oauth2.Token{RefreshToken: "refresh"})

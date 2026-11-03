@@ -15,6 +15,7 @@ import (
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestReauthorizationScopeSelection(t *testing.T) {
@@ -119,24 +120,21 @@ func TestResolveEndpoints_scopeChallengeReacquiresCustomPRM(t *testing.T) {
 		"authorization_endpoint": "/authorize", "token_endpoint": "/token",
 		"code_challenge_methods_supported": []string{"S256"},
 	})
-	defer asSrv.Close()
 	var mcpSrv *httptest.Server
-	mcpSrv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mcpSrv = testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/mcp" {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
 		if r.URL.Path == "/custom-prm" {
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+			testutil.WriteJSON(w, http.StatusOK, map[string]any{
 				"resource": mcpSrv.URL + "/mcp", "authorization_servers": []string{asSrv.URL},
 			})
 			return
 		}
 		w.Header().Set("WWW-Authenticate", `Bearer realm="mcp", resource_metadata="`+mcpSrv.URL+`/custom-prm"`)
 		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer mcpSrv.Close()
+	})
 	dir := t.TempDir()
 	if err := auth.SaveChallenge(dir, "srv", auth.Challenge{
 		ServerURL: mcpSrv.URL + "/mcp", StatusCode: http.StatusForbidden,
@@ -162,28 +160,23 @@ func TestResolveEndpoints_doesNotReuseChallengeOrScopesAfterURLAndIssuerChange(t
 		"token_endpoint":                   "https://old-as.example.test/token",
 		"code_challenge_methods_supported": []string{"S256"},
 	})
-	defer oldAS.Close()
 	newAS := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":           "https://new-as.example.test/authorize",
 		"token_endpoint":                   "https://new-as.example.test/token",
 		"code_challenge_methods_supported": []string{"S256"},
 	})
-	defer newAS.Close()
 	oldMCP := httptest.NewServer(http.NotFoundHandler())
 	defer oldMCP.Close()
 	var newMCP *httptest.Server
-	newMCP = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	newMCP = testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/new-prm" {
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+			testutil.WriteJSON(w, http.StatusOK, map[string]any{
 				"resource": newMCP.URL + "/mcp", "authorization_servers": []string{newAS.URL},
 			})
 			return
 		}
-		w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="`+newMCP.URL+`/new-prm", scope="mcp:write"`)
-		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer newMCP.Close()
+		authtest.Challenge{ResourceMetadata: newMCP.URL + "/new-prm", Scope: "mcp:write"}.Write(w)
+	})
 	dir := t.TempDir()
 	oldURL := oldMCP.URL + "/mcp"
 	if err := auth.SaveLogin(dir, "srv", &auth.Login{
