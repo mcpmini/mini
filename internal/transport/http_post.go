@@ -79,8 +79,10 @@ func (c *HTTPConnection) doPost(ctx context.Context, call httpCall) (postResult,
 		return postResult{}, err
 	}
 	sentSessionID := httpReq.Header.Get("Mcp-Session-Id")
-	resp, err := c.client.Do(httpReq)
+	attempt := newPostAttempt(httpReq, call)
+	resp, err := c.client.Do(attempt.req)
 	if err != nil {
+		c.cancelIfAbandoned(ctx, attempt, err)
 		return postResult{sentAuth: sentAuth}, &ConnectionError{Err: fmt.Errorf("http %s: %w", call.Method, err)}
 	}
 	c.observeAuthorizationChallenge(resp)
@@ -88,6 +90,7 @@ func (c *HTTPConnection) doPost(ctx context.Context, call httpCall) (postResult,
 	defer resp.Body.Close()
 	result, err := c.processResponse(resp, call.Request, sentSessionID)
 	result.sentAuth = sentAuth
+	c.cancelIfAbandoned(ctx, attempt, err)
 	return result, err
 }
 

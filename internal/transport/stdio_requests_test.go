@@ -22,7 +22,7 @@ func TestAwaitResponse_ctxCancel(t *testing.T) {
 	ch := conn.pending.register(int64(10))
 	cancel()
 
-	_, err := conn.awaitResponse(ctx, 10, ch)
+	_, err := conn.awaitResponse(ctx, awaitResponseParams{ID: 10, Method: "initialize", Response: ch})
 	if err == nil {
 		t.Error("expected error on ctx cancel")
 	}
@@ -33,7 +33,7 @@ func TestAwaitResponse_connClose(t *testing.T) {
 	ch := conn.pending.register(int64(11))
 	conn.closeDone()
 
-	_, err := conn.awaitResponse(context.Background(), 11, ch)
+	_, err := conn.awaitResponse(context.Background(), awaitResponseParams{ID: 11, Method: "ping", Response: ch})
 	if err == nil {
 		t.Error("expected error when connection closed")
 	}
@@ -80,6 +80,19 @@ func TestCall_ctxCancelBeforeResponse(t *testing.T) {
 	_, err := conn.Call(ctx, "tools/call", nil)
 	if err == nil {
 		t.Error("expected error for canceled context")
+	}
+}
+
+func TestStdioPreCancelledCallDoesNotWrite(t *testing.T) {
+	var written strings.Builder
+	conn := newWriteOnlyConn(discardWriteCloser{Writer: &written})
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := conn.Call(ctx, "tools/call", nil); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Call error = %v", err)
+	}
+	if written.Len() != 0 {
+		t.Fatalf("pre-cancelled call wrote %q", written.String())
 	}
 }
 
@@ -196,9 +209,15 @@ func TestStdioModernCallKeepsContinuationFieldsAndMetadata(t *testing.T) {
 	}
 }
 
-func TestStdioModernCancellationTargetsSentRequest(t *testing.T) {
+func TestStdioCancellationTargetsSentRequest(t *testing.T) {
+	for _, version := range []string{"", ModernVersions[0]} {
+		t.Run("version="+version, func(t *testing.T) { checkStdioCancellation(t, version) })
+	}
+}
+
+func checkStdioCancellation(t *testing.T, version string) {
 	conn, _, serverR := makePipeConn(t)
-	conn.setModern(ModernVersions[0])
+	conn.setModern(version)
 	scanner := bufio.NewScanner(serverR)
 	ctx, cancel := context.WithCancel(context.Background())
 	result := make(chan error, 1)
@@ -242,7 +261,7 @@ func TestStdioCancellationGivesUpOnItsTurnToWrite(t *testing.T) {
 	if err := fakeClock.BlockUntilContext(ctx, 1); err != nil {
 		t.Fatal(err)
 	}
-	fakeClock.Advance(stdioCancelWriteTimeout)
+	fakeClock.Advance(upstreamCancelTimeout)
 	select {
 	case <-sent:
 	case <-time.After(time.Second):
@@ -251,6 +270,38 @@ func TestStdioCancellationGivesUpOnItsTurnToWrite(t *testing.T) {
 	if conn.Health(context.Background()) != nil {
 		t.Fatal("a cancellation that never started writing ended the connection")
 	}
+}
+
+func TestStdioCancellationSkipsHandshakeRequests(t *testing.T) {
+	for _, method := range []string{"initialize", "server/discover"} {
+		t.Run(method, func(t *testing.T) {
+			var written strings.Builder
+			conn := newWriteOnlyConn(discardWriteCloser{Writer: &written})
+			response := conn.pending.register(1)
+			awaitCancelledResponse(conn, awaitResponseParams{ID: 1, Method: method, Response: response})
+			if written.Len() != 0 {
+				t.Fatalf("unexpected cancellation: %s", written.String())
+			}
+		})
+	}
+}
+
+func TestStdioCancellationSkipsResponseTheReaderAlreadyClaimed(t *testing.T) {
+	var written strings.Builder
+	conn := newWriteOnlyConn(discardWriteCloser{Writer: &written})
+	conn.pending.register(1)
+	conn.pending.deliver(int64(1), &Response{Result: json.RawMessage(`{}`)})
+	notYetHandedToCaller := make(chan *Response)
+	awaitCancelledResponse(conn, awaitResponseParams{ID: 1, Method: "tools/call", Response: notYetHandedToCaller})
+	if written.Len() != 0 {
+		t.Fatalf("unexpected cancellation: %s", written.String())
+	}
+}
+
+func awaitCancelledResponse(conn *StdioConnection, p awaitResponseParams) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, _ = conn.awaitResponse(ctx, p)
 }
 
 func TestStdioModernCallWithNonObjectParamsSendsNothing(t *testing.T) {
