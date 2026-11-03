@@ -10,6 +10,8 @@ import (
 	"slices"
 	"sync/atomic"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestModernRequestRefreshesAuthorizationAndReplays(t *testing.T) {
@@ -194,15 +196,15 @@ func TestModernCallKeepsItsEraThroughAConcurrentReset(t *testing.T) {
 		Method:     "tools/call",
 		Params:     `{"name":"x","arguments":{"owner":"octo"}}`,
 	})
-	<-upstream.listing
+	testutil.WaitForReceive(t, upstream.listing, "the call to reach tools/list")
 	if _, err := conn.Call(t.Context(), "ping", nil); err == nil {
 		t.Fatal("ping succeeded, want the unsupported-version error that resets the era")
 	}
 	close(upstream.releaseList)
-	if err := <-called; err != nil {
+	if err := testutil.WaitForReceive(t, called, "the background tools/call"); err != nil {
 		t.Fatal(err)
 	}
-	headers := <-upstream.callHeaders
+	headers := testutil.WaitForReceive(t, upstream.callHeaders, "the tools/call headers")
 	if headers.Get("MCP-Protocol-Version") != ModernVersions[0] || headers.Get("Mcp-Method") != "tools/call" ||
 		headers.Get("Mcp-Param-Owner") != "octo" {
 		t.Fatalf("tools/call sent with protocol %q, method %q, owner %q after a concurrent reset, want modern headers",
@@ -266,12 +268,10 @@ type backgroundCallParams struct {
 
 func callInBackground(t *testing.T, p backgroundCallParams) <-chan error {
 	t.Helper()
-	called := make(chan error, 1)
-	go func() {
+	return testutil.Go(func() error {
 		_, err := p.Connection.Call(t.Context(), p.Method, json.RawMessage(p.Params))
-		called <- err
-	}()
-	return called
+		return err
+	})
 }
 
 func writeHeaderMismatch(t *testing.T, w http.ResponseWriter, id any) {

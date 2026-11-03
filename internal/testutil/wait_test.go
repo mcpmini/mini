@@ -1,9 +1,25 @@
 package testutil
 
 import (
+	"errors"
 	"testing"
 	"testing/synctest"
 )
+
+func TestGo_deliversTheFunctionsError(t *testing.T) {
+	want := errors.New("boom")
+
+	if err := WaitForReceive(t, Go(func() error { return want }), "the error"); !errors.Is(err, want) {
+		t.Errorf("Go delivered %v, want %v", err, want)
+	}
+}
+
+func TestGo_finishesWhenNobodyReads(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		Go(func() error { return nil })
+		synctest.Wait()
+	})
+}
 
 func TestWaitForReceive_returnsTheValueSent(t *testing.T) {
 	ch := make(chan int, 1)

@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/mcpmini/mini/internal/clock"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestModernRequestCarriesMetadataAndParameterHeaders(t *testing.T) {
@@ -26,7 +27,7 @@ func TestModernRequestCarriesMetadataAndParameterHeaders(t *testing.T) {
 		"enabled":{"type":"boolean","x-mcp-header":"Enabled"},
 		"a":{"type":"object","properties":{"b":{"type":"integer","x-mcp-header":"Nested"}}}}}`
 	tool := modernTool("tool name", schema)
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		req := decodeRequest(t, r)
 		methods = append(methods, req.Method)
 		assertModernHeader(t, modernHeaderParams{
@@ -181,7 +182,7 @@ type upstreamHandler = func(http.ResponseWriter, *http.Request, Request)
 
 func newModernServer(t *testing.T, u modernUpstream) *httptest.Server {
 	t.Helper()
-	return newJsonRPCServer(t, modernHandler(t, u))
+	return testutil.Serve(t, modernHandler(t, u))
 }
 
 func modernHandler(t *testing.T, u modernUpstream) http.HandlerFunc {
@@ -305,7 +306,7 @@ func TestModernToolHeaderValidationDropsOnlyInvalidDefinitions(t *testing.T) {
 
 func TestModernLegacyAnnotatedToolsKeepLegacyWireShape(t *testing.T) {
 	var sawAnnotated bool
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		req := decodeRequest(t, r)
 		switch req.Method {
 		case "server/discover":

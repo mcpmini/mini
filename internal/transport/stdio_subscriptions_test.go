@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mcpmini/mini/internal/clock"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestStdioSubscriptionIgnoresChangesBeforeItsAck(t *testing.T) {
@@ -74,18 +75,8 @@ func TestStdioSubscriptionWhoseListenWriteFailsStopsWithoutBlockingClose(t *test
 	}
 	conn.setModern(ModernVersions[0])
 	conn.startSubscriptionListener(context.Background())
-	select {
-	case <-conn.listenDone:
-	case <-time.After(time.Second):
-		t.Fatal("the listener did not stop after its listen write failed")
-	}
-	closed := make(chan error, 1)
-	go func() { closed <- conn.Close() }()
-	select {
-	case <-closed:
-	case <-time.After(time.Second):
-		t.Fatal("Close blocked after the listener ended the connection")
-	}
+	testutil.WaitForReceive(t, conn.listenDone, "the listener to stop after its listen write failed")
+	testutil.WaitForReceive(t, testutil.Go(conn.Close), "Close to return after the listener ended the connection")
 }
 
 func TestStdioSubscriptionIgnoresAnUnrelatedCancellation(t *testing.T) {
@@ -184,7 +175,7 @@ func (h *listenHarness) serverCancels(requestID json.RawMessage) {
 
 func (h *listenHarness) expectChange() {
 	h.t.Helper()
-	if got := receiveChangedNotification(h.t, h.changes); got.Method != NotificationToolsChanged {
+	if got := testutil.WaitForReceive(h.t, h.changes, "a tool change"); got.Method != NotificationToolsChanged {
 		h.t.Fatalf("change event = %q, want %s", got.Method, NotificationToolsChanged)
 	}
 }
@@ -205,11 +196,7 @@ func (h *listenHarness) expectNoChange() {
 
 func (h *listenHarness) expectStopped() {
 	h.t.Helper()
-	select {
-	case <-h.conn.listenDone:
-	case <-time.After(time.Second):
-		h.t.Fatal("the listener is still running")
-	}
+	testutil.WaitForReceive(h.t, h.conn.listenDone, "the listener to stop")
 }
 
 func (h *listenHarness) expectRunning() {
@@ -246,14 +233,13 @@ type readerCatchUpParams struct {
 
 func waitForReaderToCatchUp(t *testing.T, p readerCatchUpParams) {
 	t.Helper()
-	done := make(chan error, 1)
-	go func() {
+	done := testutil.Go(func() error {
 		_, err := p.Connection.Call(context.Background(), "ping", nil)
-		done <- err
-	}()
+		return err
+	})
 	ping := readScannerRequest(t, p.Scanner)
 	sendResponse(p.Writer, ping.ID, json.RawMessage(`{}`))
-	if err := <-done; err != nil {
+	if err := testutil.WaitForReceive(t, done, "the ping behind earlier messages"); err != nil {
 		t.Fatalf("ping behind earlier messages: %v", err)
 	}
 }
@@ -323,16 +309,5 @@ func writeNotification(t *testing.T, p notificationParams) {
 	}
 	if _, err := fmt.Fprintf(p.Writer, "%s\n", line); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func receiveChangedNotification(t *testing.T, changes <-chan Notification) Notification {
-	t.Helper()
-	select {
-	case notification := <-changes:
-		return notification
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for tool-change notification")
-		return Notification{}
 	}
 }

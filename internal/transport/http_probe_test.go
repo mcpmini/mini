@@ -13,11 +13,12 @@ import (
 	"testing"
 
 	"github.com/mcpmini/mini/internal/clock"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestHTTPConnection_ProbeRunsBeforeInitialize(t *testing.T) {
 	var methods []string
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		req := decodeRequest(t, r)
 		methods = append(methods, req.Method)
 		if req.Method == "server/discover" {
@@ -55,7 +56,7 @@ func TestHTTPConnection_ProbeWithoutAnAnswerFallsBackToLegacy(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var methods []string
-			srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+			srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 				req := decodeRequest(t, r)
 				methods = append(methods, req.Method)
 				if req.Method == "server/discover" {
@@ -81,7 +82,7 @@ func TestHTTPConnection_ProbeWithoutAnAnswerFallsBackToLegacy(t *testing.T) {
 
 func TestHTTPConnection_ProbeModernUsesModernRequests(t *testing.T) {
 	var methods []string
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		req := decodeRequest(t, r)
 		methods = append(methods, req.Method)
 		if req.Method == "server/discover" {
@@ -114,7 +115,7 @@ func TestHTTPConnection_ProbeModernUsesModernRequests(t *testing.T) {
 
 func TestHTTPConnection_failedProbeRetriesNextCall(t *testing.T) {
 	var probes atomic.Int32
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		req := decodeRequest(t, r)
 		if req.Method == "server/discover" && probes.Add(1) <= maxRetries {
 			w.WriteHeader(http.StatusServiceUnavailable)
@@ -135,14 +136,13 @@ func TestHTTPConnection_failedProbeRetriesNextCall(t *testing.T) {
 	})
 	clk := clock.NewFake()
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Clock: clk})
-	first := make(chan error, 1)
-	go func() {
+	first := testutil.Go(func() error {
 		_, err := conn.Call(t.Context(), "ping", nil)
-		first <- err
-	}()
+		return err
+	})
 	advanceRetryTimer(t, clk)
 	advanceRetryTimer(t, clk)
-	if err := <-first; err == nil {
+	if err := testutil.WaitForReceive(t, first, "the first call to give up"); err == nil {
 		t.Fatal("first call succeeded after exhausted probe retries")
 	}
 	if conn.eraKnown {
@@ -186,7 +186,7 @@ func TestHTTPConnection_ProbeRefreshesAuthorization(t *testing.T) {
 
 func TestHTTPConnection_ProbeSessionRenewalDoesNotReprobe(t *testing.T) {
 	var probes, calls atomic.Int32
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		req := decodeRequest(t, r)
 		switch req.Method {
 		case "server/discover":
@@ -225,7 +225,7 @@ func TestHTTPConnection_ProbeSessionRenewalDoesNotReprobe(t *testing.T) {
 func TestHTTPConnection_concurrentFirstCallsProbeOnce(t *testing.T) {
 	var probes atomic.Int32
 	entered, release := make(chan struct{}), make(chan struct{})
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		req := decodeRequest(t, r)
 		if req.Method == "server/discover" {
 			probes.Add(1)

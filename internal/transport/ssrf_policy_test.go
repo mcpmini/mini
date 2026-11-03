@@ -5,10 +5,11 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestPrivateNetworkPolicyDestinations(t *testing.T) {
@@ -41,10 +42,7 @@ func TestPrivateNetworkPolicyDestinations(t *testing.T) {
 }
 
 func TestPrivateNetworkDialPinsValidatedDNS(t *testing.T) {
-	server := httptest.NewServer(
-		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("validated")) }),
-	)
-	defer server.Close()
+	server := testutil.Serve(t, func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("validated")) })
 	u, _ := url.Parse(server.URL)
 	original := lookupSSRFHost
 	t.Cleanup(func() { lookupSSRFHost = original })

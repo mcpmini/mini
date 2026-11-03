@@ -6,17 +6,17 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/mcpmini/mini/internal/clock"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func newRateLimitedServer(t *testing.T, failUntilCall int32, calls *atomic.Int32) *httptest.Server {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		n := calls.Add(1)
 		if n < failUntilCall {
 			w.Header().Set("Retry-After", "0")
@@ -25,8 +25,7 @@ func newRateLimitedServer(t *testing.T, failUntilCall int32, calls *atomic.Int32
 			return
 		}
 		w.Write(okRPCResponse(1))
-	}))
-	t.Cleanup(srv.Close)
+	})
 	return srv
 }
 
@@ -48,22 +47,16 @@ func TestRetry_429WithRetryAfter_retriesAndSucceeds(t *testing.T) {
 
 func TestRetry_429_exhaustsMaxRetries(t *testing.T) {
 	var calls atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		w.Header().Set("Retry-After", "0")
 		w.WriteHeader(http.StatusTooManyRequests)
 		w.Write([]byte("always rate limited"))
-	}))
-	defer srv.Close()
+	})
 
 	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL, Clock: clock.NewFake()})
 	_, err := conn.rpc(t.Context(), "ping", nil)
-	if err == nil {
-		t.Fatal("expected error after exhausting retries")
-	}
-	if !strings.Contains(err.Error(), "429") {
-		t.Errorf("error should mention 429, got: %v", err)
-	}
+	testutil.ErrorContains(t, err, "429")
 	if calls.Load() != maxRetries {
 		t.Errorf("expected exactly %d calls, got %d", maxRetries, calls.Load())
 	}
@@ -71,7 +64,7 @@ func TestRetry_429_exhaustsMaxRetries(t *testing.T) {
 
 func TestRetry_503WithRetryAfter_retries(t *testing.T) {
 	var calls atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		n := calls.Add(1)
 		if n == 1 {
 			w.Header().Set("Retry-After", "0")
@@ -80,8 +73,7 @@ func TestRetry_503WithRetryAfter_retries(t *testing.T) {
 			return
 		}
 		w.Write(okRPCResponse(1))
-	}))
-	defer srv.Close()
+	})
 
 	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL, Clock: clock.NewFake()})
 	_, err := conn.rpc(t.Context(), "ping", nil)
@@ -95,7 +87,7 @@ func TestRetry_503WithRetryAfter_retries(t *testing.T) {
 
 func TestRetry_429WithoutRetryAfter_usesExponentialBackoff(t *testing.T) {
 	var calls atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		n := calls.Add(1)
 		if n < 3 {
 			w.WriteHeader(http.StatusTooManyRequests)
@@ -103,19 +95,17 @@ func TestRetry_429WithoutRetryAfter_usesExponentialBackoff(t *testing.T) {
 			return
 		}
 		w.Write(okRPCResponse(1))
-	}))
-	defer srv.Close()
+	})
 
 	clk := clock.NewFake()
 	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL, Clock: clk})
-	done := make(chan error, 1)
-	go func() {
+	done := testutil.Go(func() error {
 		_, err := conn.rpc(t.Context(), "ping", nil)
-		done <- err
-	}()
+		return err
+	})
 	advanceRetryTimer(t, clk)
 	advanceRetryTimer(t, clk)
-	if err := <-done; err != nil {
+	if err := testutil.WaitForReceive(t, done, "the retried rpc"); err != nil {
 		t.Fatalf("expected success after exponential backoff retries, got: %v", err)
 	}
 }
@@ -131,12 +121,11 @@ func advanceRetryTimer(t *testing.T, clk *clock.Fake) {
 }
 
 func TestRetry_contextCancelledDuringBackoff(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Retry-After", "60")
 		w.WriteHeader(http.StatusTooManyRequests)
 		w.Write([]byte("wait 60s"))
-	}))
-	defer srv.Close()
+	})
 
 	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL, Clock: clock.NewFake()})
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
@@ -150,12 +139,11 @@ func TestRetry_contextCancelledDuringBackoff(t *testing.T) {
 
 func TestRetry_nonRetryable4xx_noRetry(t *testing.T) {
 	var calls atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		w.WriteHeader(http.StatusUnauthorized)
 		w.Write([]byte("unauthorized"))
-	}))
-	defer srv.Close()
+	})
 
 	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL, Clock: clock.NewFake()})
 	_, err := conn.rpc(t.Context(), "ping", nil)
@@ -169,13 +157,12 @@ func TestRetry_nonRetryable4xx_noRetry(t *testing.T) {
 
 func TestRetry_passThroughRateLimits_returnsImmediately(t *testing.T) {
 	var calls atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		w.Header().Set("Retry-After", "0")
 		w.WriteHeader(http.StatusTooManyRequests)
 		w.Write([]byte("rate limited"))
-	}))
-	defer srv.Close()
+	})
 
 	conn, _ := NewHTTPConnection(HTTPConnectionConfig{
 		URL:                     srv.URL,

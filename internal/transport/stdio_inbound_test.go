@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/mcpmini/mini/internal/clock"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestHandleMessage_deliversToWaiter(t *testing.T) {
@@ -20,13 +21,8 @@ func TestHandleMessage_deliversToWaiter(t *testing.T) {
 	ch := conn.pending.register(int64(1))
 	sendResponse(serverW, 1, map[string]any{"ok": true})
 
-	select {
-	case resp := <-ch:
-		if resp.Error != nil {
-			t.Errorf("unexpected error: %v", resp.Error)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for dispatch")
+	if resp := testutil.WaitForReceive(t, ch, "the response"); resp.Error != nil {
+		t.Errorf("unexpected error: %v", resp.Error)
 	}
 }
 
@@ -42,13 +38,8 @@ func TestHandleMessage_ignoresNotification(t *testing.T) {
 	ch := conn.pending.register(int64(99))
 	sendResponse(serverW, 99, "pong")
 
-	select {
-	case resp := <-ch:
-		if resp.Error != nil {
-			t.Errorf("unexpected error: %v", resp.Error)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out — notification may have corrupted dispatch")
+	if resp := testutil.WaitForReceive(t, ch, "the response after a notification"); resp.Error != nil {
+		t.Errorf("unexpected error: %v", resp.Error)
 	}
 }
 
@@ -60,21 +51,13 @@ func TestHandleMessage_buffersNotificationUntilHandlerInstalled(t *testing.T) {
 	}
 	drain := conn.pending.register(int64(99))
 	sendResponse(serverW, 99, map[string]any{"ok": true})
-	select {
-	case <-drain:
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for pre-handler notifications to drain")
-	}
+	testutil.WaitForReceive(t, drain, "the pre-handler notifications to drain")
 
 	received := make(chan Notification, 8)
 	conn.SetNotificationHandler(func(notification Notification) { received <- notification })
-	select {
-	case notification := <-received:
-		if notification.Method != NotificationToolsChanged {
-			t.Fatalf("method = %q", notification.Method)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("notification emitted before handler installation was lost")
+	notification := testutil.WaitForReceive(t, received, "the notification sent before the handler was installed")
+	if notification.Method != NotificationToolsChanged {
+		t.Fatalf("method = %q", notification.Method)
 	}
 	select {
 	case notification := <-received:
@@ -85,22 +68,11 @@ func TestHandleMessage_buffersNotificationUntilHandlerInstalled(t *testing.T) {
 	fmt.Fprintln(serverW, `{"jsonrpc":"2.0","method":"notifications/initialized"}`)
 	fmt.Fprintln(serverW, `{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}`)
 	got := []string{
-		mustReceiveNotification(t, received).Method,
-		mustReceiveNotification(t, received).Method,
+		testutil.WaitForReceive(t, received, "the first notification").Method,
+		testutil.WaitForReceive(t, received, "the second notification").Method,
 	}
 	if !slices.Equal(got, []string{NotificationInitialized, NotificationToolsChanged}) {
 		t.Fatalf("post-install notifications = %v", got)
-	}
-}
-
-func mustReceiveNotification(t *testing.T, ch <-chan Notification) Notification {
-	t.Helper()
-	select {
-	case notification := <-ch:
-		return notification
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for notification")
-		return Notification{}
 	}
 }
 
@@ -114,13 +86,8 @@ func TestHandleMessage_rpcError_deliveredToWaiter(t *testing.T) {
 	})
 	fmt.Fprintf(serverW, "%s\n", line)
 
-	select {
-	case resp := <-ch:
-		if resp.Error == nil || resp.Error.Code != -32601 {
-			t.Errorf("expected -32601 error, got: %v", resp.Error)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out")
+	if resp := testutil.WaitForReceive(t, ch, "the error response"); resp.Error == nil || resp.Error.Code != -32601 {
+		t.Errorf("expected -32601 error, got: %v", resp.Error)
 	}
 }
 
@@ -149,7 +116,7 @@ func TestStdioAnswersServerRequestsDuringACall(t *testing.T) {
 			want := wantReply{id: `"server-health-probe"`, errorCode: tt.wantCode}
 			assertServerRequestReply(t, nextServerReply(t, lines), want)
 			sendResponse(serverW, request.ID, map[string]any{"tools": []any{}})
-			if err := awaitStdioCall(t, call); err != nil {
+			if err := testutil.WaitForReceive(t, call, "the call to finish"); err != nil {
 				t.Fatalf("the call around the server request failed: %v", err)
 			}
 		})
@@ -171,7 +138,7 @@ func TestStdioServerRequestSharingACallsIDIsNotItsResponse(t *testing.T) {
 	default:
 	}
 	sendResponse(serverW, request.ID, map[string]any{"tools": []any{}})
-	if err := awaitStdioCall(t, call); err != nil {
+	if err := testutil.WaitForReceive(t, call, "the call to finish"); err != nil {
 		t.Fatalf("the call's own response failed: %v", err)
 	}
 }
@@ -183,11 +150,7 @@ func TestStdioServerThatStopsReadingStillHasItsResponsesRead(t *testing.T) {
 		writeServerRequest(serverW, `"server-health-probe"`, MethodPing)
 		sendResponse(serverW, 7, map[string]any{})
 	}()
-	select {
-	case <-delivered:
-	case <-time.After(time.Second):
-		t.Fatal("an unread ping reply stopped mini reading the server's output")
-	}
+	testutil.WaitForReceive(t, delivered, "the response behind an unread ping reply")
 }
 
 func TestStdioReplyGivesUpOnItsTurnToWrite(t *testing.T) {
@@ -210,38 +173,21 @@ func TestStdioReplyGivesUpOnItsTurnToWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	fakeClock.Advance(stdioReplyWriteTimeout)
-	select {
-	case <-sent:
-	case <-time.After(time.Second):
-		t.Fatal("the reply kept waiting behind another write")
-	}
+	testutil.WaitForReceive(t, sent, "the reply to give up waiting behind another write")
 	if conn.Health(context.Background()) != nil {
 		t.Fatal("a reply that never started writing ended the connection")
 	}
 }
 
 func startStdioCall(conn *StdioConnection) <-chan error {
-	done := make(chan error, 1)
-	go func() {
+	return testutil.Go(func() error {
 		_, err := conn.Call(context.Background(), "tools/list", nil)
-		done <- err
-	}()
-	return done
+		return err
+	})
 }
 
 func writeServerRequest(w io.Writer, id, method string) {
 	fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"method":%q}`+"\n", id, method)
-}
-
-func awaitStdioCall(t *testing.T, call <-chan error) error {
-	t.Helper()
-	select {
-	case err := <-call:
-		return err
-	case <-time.After(time.Second):
-		t.Fatal("the call never finished")
-		return nil
-	}
 }
 
 func readServerLines(r io.Reader) <-chan []byte {
@@ -258,16 +204,11 @@ func readServerLines(r io.Reader) <-chan []byte {
 
 func nextServerLine(t *testing.T, lines <-chan []byte, what string) []byte {
 	t.Helper()
-	select {
-	case line, ok := <-lines:
-		if !ok {
-			t.Fatalf("stdin closed before mini sent %s", what)
-		}
-		return line
-	case <-time.After(time.Second):
-		t.Fatalf("mini never sent %s", what)
-		return nil
+	line := testutil.WaitForReceive(t, lines, "mini to send "+what)
+	if line == nil {
+		t.Fatalf("stdin closed before mini sent %s", what)
 	}
+	return line
 }
 
 func nextServerRequest(t *testing.T, lines <-chan []byte) Request {

@@ -24,3 +24,11 @@ func WaitForReceive[T any](t testing.TB, ch <-chan T, what string) T {
 		return zero
 	}
 }
+
+// Go runs fn in a goroutine and returns a channel that receives its error. The channel is
+// buffered, so the goroutine finishes even when the test stops before reading it.
+func Go(fn func() error) <-chan error {
+	done := make(chan error, 1)
+	go func() { done <- fn() }()
+	return done
+}

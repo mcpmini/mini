@@ -9,23 +9,20 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestStdioWriteCancellationInterruptsABlockedPipeWrite(t *testing.T) {
 	writer := &blockedDeadlineWriter{started: make(chan struct{}), interrupted: make(chan struct{})}
 	conn := newWriteOnlyConn(writer)
 	ctx, cancel := context.WithCancel(context.Background())
-	result := make(chan error, 1)
-	go func() { result <- conn.writeJSONContext(ctx, Notification{Method: "test"}) }()
-	<-writer.started
+	result := testutil.Go(func() error { return conn.writeJSONContext(ctx, Notification{Method: "test"}) })
+	testutil.WaitForReceive(t, writer.started, "the write to start")
 	cancel()
-	select {
-	case err := <-result:
-		if !errors.Is(err, errWriteInterrupted) {
-			t.Fatalf("write error = %v, want interrupted write", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("cancellation did not interrupt a blocked write")
+	err := testutil.WaitForReceive(t, result, "cancellation to interrupt the blocked write")
+	if !errors.Is(err, errWriteInterrupted) {
+		t.Fatalf("write error = %v, want interrupted write", err)
 	}
 }
 
@@ -36,16 +33,11 @@ func TestStdioQueuedCallThatGivesUpKeepsTheConnection(t *testing.T) {
 	}
 	defer conn.unlockWrite()
 	ctx, cancel := context.WithCancel(context.Background())
-	result := make(chan error, 1)
-	go func() { _, err := conn.Call(ctx, "ping", nil); result <- err }()
+	result := testutil.Go(func() error { _, err := conn.Call(ctx, "ping", nil); return err })
 	cancel()
-	select {
-	case err := <-result:
-		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("queued Call error = %v, want context.Canceled", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("a cancelled Call stayed queued behind another write")
+	err := testutil.WaitForReceive(t, result, "the cancelled Call to leave the write queue")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("queued Call error = %v, want context.Canceled", err)
 	}
 	if conn.Health(context.Background()) != nil {
 		t.Fatal("giving up while queued ended the connection")
@@ -79,17 +71,11 @@ func TestStdioBlockedWriteOnAPipeWithoutDeadlinesEndsTheConnection(t *testing.T)
 	pipe := &noDeadlinePipe{started: make(chan struct{}), closed: make(chan struct{})}
 	conn := newWriteOnlyConn(pipe)
 	ctx, cancel := context.WithCancel(context.Background())
-	result := make(chan error, 1)
-	go func() { _, err := conn.Call(ctx, "ping", nil); result <- err }()
-	<-pipe.started
+	result := testutil.Go(func() error { _, err := conn.Call(ctx, "ping", nil); return err })
+	testutil.WaitForReceive(t, pipe.started, "the write to start")
 	cancel()
-	select {
-	case err := <-result:
-		if err == nil {
-			t.Fatal("Call succeeded through a write that never finished")
-		}
-	case <-time.After(time.Second):
-		t.Fatal("the write stayed blocked after its caller gave up")
+	if testutil.WaitForReceive(t, result, "the blocked write to give up with its caller") == nil {
+		t.Fatal("Call succeeded through a write that never finished")
 	}
 	if conn.Health(context.Background()) == nil {
 		t.Fatal("connection stayed usable after an unfinished write")
