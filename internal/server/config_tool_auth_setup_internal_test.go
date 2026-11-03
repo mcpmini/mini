@@ -79,7 +79,7 @@ func TestConfigureStartAuth_handoffSurvivesRequestCancellationAndCloseJoins(t *t
 	if flow == nil {
 		t.Fatal("start_auth did not register the OAuth flow")
 	}
-	auth.BufferCallbackCode(flow.login, "test-auth-code")
+	auth.ExchangeCallbackCode(flow.login, "test-auth-code")
 	select {
 	case <-initializing:
 	case <-time.After(time.Second):

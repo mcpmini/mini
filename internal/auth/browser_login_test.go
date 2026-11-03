@@ -174,7 +174,7 @@ func TestPKCECallback_pageShowsOutcomeOffline(t *testing.T) {
 		{name: "stateMismatchHidesServer", query: url.Values{"state": {"wrong-state"}}, status: http.StatusBadRequest, outcome: "Sign-in failed"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			login := authtest.StartLogin(t, &config.AuthConfig{})
+			login := authtest.StartLogin(t, authtest.NewTokenServer(t).AuthConfig())
 			response := requestLoginCallback(t, login, tc.query)
 			if response.status != tc.status || !strings.Contains(response.body, tc.outcome) {
 				t.Fatalf(
@@ -188,6 +188,96 @@ func TestPKCECallback_pageShowsOutcomeOffline(t *testing.T) {
 			requireLoginPageNamesServer(t, response.body, tc.namesServer)
 			requireOfflineLoginPage(t, response)
 		})
+	}
+}
+
+func TestPKCECallback_rejectedExchangeIsReportedOnThePage(t *testing.T) {
+	mock := authtest.NewTokenServer(t)
+	mock.RespondWith(http.StatusBadRequest, `{"error":"invalid_grant","error_description":"code expired"}`)
+	login := authtest.StartLogin(t, mock.AuthConfig())
+
+	response := requestLoginCallback(t, login, url.Values{"code": {"synthetic-code"}})
+	if strings.Contains(response.body, "Connected") || !strings.Contains(response.body, "invalid_grant") {
+		t.Fatalf("callback page = %q, want the rejected exchange instead of Connected", response.body)
+	}
+	if err := waitForLogin(t, login); err == nil || !strings.Contains(err.Error(), "invalid_grant") {
+		t.Fatalf("Wait error = %v, want the rejected exchange", err)
+	}
+}
+
+func TestPKCECallback_largeExchangeErrorIsTrimmedOnThePage(t *testing.T) {
+	mock := authtest.NewTokenServer(t)
+	mock.RespondWith(http.StatusBadGateway, strings.Repeat("<p>bad gateway</p>", 50_000))
+	login := authtest.StartLogin(t, mock.AuthConfig())
+
+	response := requestLoginCallback(t, login, url.Values{"code": {"synthetic-code"}})
+	if !strings.Contains(response.body, "Sign-in failed") || len(response.body) > 16_000 {
+		t.Fatalf("callback page = %d bytes, want a trimmed Sign-in failed page", len(response.body))
+	}
+}
+
+func TestPKCECallback_closingTheTabMidExchangeStillCompletesLogin(t *testing.T) {
+	mock := authtest.NewTokenServer(t)
+	exchangeStarted, releaseExchange := make(chan struct{}), make(chan struct{})
+	mock.HoldReady, mock.HoldGate = exchangeStarted, releaseExchange
+	login := authtest.StartLogin(t, mock.AuthConfig())
+	tab, closeTab := context.WithCancel(context.Background())
+	tabClosed := sendCallbackFromTab(t, tab, login)
+
+	waitForSignal(t, "the token exchange to start", exchangeStarted)
+	closeTab()
+	waitForSignal(t, "the tab's request to end", tabClosed)
+	close(releaseExchange)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	saved, err := login.Wait(ctx)
+	if err != nil || saved.Token.AccessToken != "test-access-token" {
+		t.Fatalf("Wait = %v, %v; want the token despite the closed tab", saved, err)
+	}
+}
+
+func sendCallbackFromTab(t *testing.T, tab context.Context, login *auth.BrowserLogin) <-chan struct{} {
+	t.Helper()
+	parsed, err := url.Parse(login.AuthURL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	callback := authtest.LoopbackRedirectURI(t, login.AuthURL())
+	callback.RawQuery = url.Values{"code": {"synthetic-code"}, "state": {parsed.Query().Get("state")}}.Encode()
+	req, err := http.NewRequestWithContext(tab, http.MethodGet, callback.String(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		// unchecked: the tab closes mid-request, so the request is expected to fail
+		if resp, err := http.DefaultClient.Do(req); err == nil {
+			resp.Body.Close()
+		}
+	}()
+	return done
+}
+
+func TestPKCECallback_repeatedRedirectExchangesOnce(t *testing.T) {
+	mock := authtest.NewTokenServer(t)
+	login := authtest.StartLogin(t, mock.AuthConfig())
+	query := url.Values{"code": {"synthetic-code"}}
+
+	first := requestLoginCallback(t, login, query)
+	repeat := requestLoginCallback(t, login, query)
+	if first.status != http.StatusOK || !strings.Contains(first.body, "example is now connected to mini.") {
+		t.Fatalf("first callback = %d %q, want the connected page", first.status, first.body)
+	}
+	if repeat.status != http.StatusConflict || strings.Contains(repeat.body, "Connected") {
+		t.Fatalf("repeated callback = %d %q, want 409 without claiming success", repeat.status, repeat.body)
+	}
+	if hits := mock.Hits.Load(); hits != 1 {
+		t.Fatalf("token endpoint hits = %d, want 1", hits)
+	}
+	if err := waitForLogin(t, login); err != nil {
+		t.Fatalf("Wait error = %v, want the first callback's token", err)
 	}
 }
 
@@ -319,7 +409,7 @@ func TestBrowserLogin_closeWinsOverBufferedCode(t *testing.T) {
 	mock := authtest.NewTokenServer(t)
 	login := authtest.StartLogin(t, mock.AuthConfig())
 
-	auth.BufferCallbackCode(login, "test-auth-code")
+	auth.ExchangeCallbackCode(login, "test-auth-code")
 	login.Close() //nolint:errcheck
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -338,19 +428,31 @@ func waitInBackground(login *auth.BrowserLogin) <-chan error {
 	return done
 }
 
-func TestBrowserLogin_closeDuringExchangeDiscardsToken(t *testing.T) {
+func TestBrowserLogin_closeCancelsExchangeAndDiscardsToken(t *testing.T) {
 	mock := authtest.NewTokenServer(t)
 	exchangeStarted, releaseExchange := make(chan struct{}), make(chan struct{})
-	mock.HoldReady, mock.HoldGate = exchangeStarted, releaseExchange
+	exchangeCanceled := make(chan struct{})
+	mock.HoldReady, mock.HoldGate, mock.HoldCanceled = exchangeStarted, releaseExchange, exchangeCanceled
+	defer close(releaseExchange)
 	login := authtest.StartLogin(t, mock.AuthConfig())
-	authtest.CompleteAuthorization(t, login.AuthURL(), "test-auth-code")
+	callbackDone := sendCallbackFromTab(t, context.Background(), login)
 	waitDone := waitInBackground(login)
-	<-exchangeStarted
+	waitForSignal(t, "the token exchange to start", exchangeStarted)
 
 	login.Close() //nolint:errcheck
-	close(releaseExchange)
 
+	waitForSignal(t, "Close to cancel the token exchange", exchangeCanceled)
 	if err := <-waitDone; !errors.Is(err, auth.ErrLoginClosed) {
 		t.Errorf("Wait returned %v after Close, want ErrLoginClosed", err)
+	}
+	waitForSignal(t, "the callback request to end", callbackDone)
+}
+
+func waitForSignal(t *testing.T, what string, ch <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-ch:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timed out waiting for %s", what)
 	}
 }

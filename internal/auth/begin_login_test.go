@@ -115,7 +115,7 @@ func TestBrowserLogin_callbackThatArrivedBeforeServerFailureStillCompletes(t *te
 	}
 	defer login.Close() //nolint:errcheck // Close always returns nil
 
-	auth.BufferCallbackCode(login, "test-auth-code")
+	auth.ExchangeCallbackCode(login, "test-auth-code")
 	close(listener.fail)
 
 	if err := waitForLogin(t, login); err != nil {

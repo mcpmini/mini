@@ -128,7 +128,7 @@ func TestRunAuthFlow_loginCompletingAfterRemoveServerDoesNotReinstall(t *testing
 					t.Fatal(err)
 				}
 			}
-			auth.BufferCallbackCode(login, "test-auth-code")
+			auth.ExchangeCallbackCode(login, "test-auth-code")
 			srv.authWg.Add(1)
 			srv.runAuthFlow(t.Context(), installAtStartAuth, &authFlowState{cancel: func() {}, login: login})
 
@@ -198,7 +198,7 @@ func startCompletedAuthFlow(t *testing.T, srv *Server, sc config.ServerConfig) c
 	}
 	sc.Auth.ResourceURL = resource
 	login := authtest.StartLogin(t, sc.Auth)
-	auth.BufferCallbackCode(login, "test-auth-code")
+	auth.ExchangeCallbackCode(login, "test-auth-code")
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 	flow := &authFlowState{cancel: cancel, login: login}
