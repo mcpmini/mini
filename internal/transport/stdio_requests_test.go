@@ -68,7 +68,7 @@ func TestCall_roundTrip(t *testing.T) {
 	if got["value"] != "ok" {
 		t.Errorf("unexpected result: %v", got)
 	}
-	<-done
+	testutil.WaitForReceive(t, done, "the fake server to finish")
 }
 
 func TestCall_ctxCancelBeforeResponse(t *testing.T) {
@@ -101,7 +101,7 @@ func TestCall_sendsCorrectJSONRPC(t *testing.T) {
 	}()
 
 	conn.Call(context.Background(), "ping", nil)
-	<-done
+	testutil.WaitForReceive(t, done, "the fake server to finish")
 }
 
 func TestListTools_viaPipe(t *testing.T) {

@@ -294,7 +294,7 @@ func TestHTTPModernListener_reprobeReplacesAStoppedListener(t *testing.T) {
 	if _, err := conn.Call(t.Context(), "ping", nil); err == nil {
 		t.Fatal("first ping succeeded, want the -32022 that resets the era")
 	}
-	<-conn.listener.done
+	testutil.WaitForReceive(t, conn.listener.done, "the reset to stop the listener")
 	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
 		t.Fatalf("ping after re-probe: %v", err)
 	}
@@ -376,12 +376,12 @@ func TestHTTPModernListener_probeFinishingAfterCloseStartsNoListener(t *testing.
 		defer close(called)
 		conn.Call(t.Context(), "ping", nil) //nolint:errcheck // Only the listener state after Close matters here.
 	}()
-	<-probing
+	testutil.WaitForReceive(t, probing, "the probe to start")
 	if err := conn.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
 	close(releaseProbe)
-	<-called
+	testutil.WaitForReceive(t, called, "the call to return after Close")
 	if conn.listener != nil {
 		t.Fatal("a probe that finished after Close started a notification listener")
 	}

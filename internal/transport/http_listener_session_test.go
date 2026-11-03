@@ -175,7 +175,7 @@ func TestHTTPSession_listenerThatGaveUpRestartsForTheNewSession(t *testing.T) {
 	})
 	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 	mustPing(t, conn)
-	<-rejected
+	testutil.WaitForReceive(t, rejected, "the listener's stream request to be rejected")
 
 	streamSupported.Store(true)
 	m.expireSession(m.sessionID())

@@ -255,7 +255,7 @@ func TestHTTPConnection_concurrentFirstCallsProbeOnce(t *testing.T) {
 		}()
 	}
 	close(start)
-	<-entered
+	testutil.WaitForReceive(t, entered, "a probe to reach the upstream")
 	close(release)
 	wg.Wait()
 	close(errs)
