@@ -28,10 +28,10 @@ func (s *sourceFile) leafScopes(body *ast.BlockStmt, name string, line int) []sc
 	children := directChildren(body)
 	excluded := map[int]bool{}
 	for _, table := range children.tables {
-		s.markLines(excluded, s.line(table.Pos()), s.line(table.End()))
+		markLines(excluded, s.line(table.Pos()), s.line(table.End()))
 	}
 	for _, child := range children.subtests {
-		s.markLines(excluded, s.line(child.fn.Body.Lbrace)+1, s.line(child.fn.Body.Rbrace)-1)
+		markLines(excluded, s.line(child.fn.Body.Lbrace)+1, s.line(child.fn.Body.Rbrace)-1)
 	}
 	own := s.codeLines(s.line(body.Lbrace)+1, s.line(body.Rbrace)-1, excluded)
 	scopes := []scope{{name: name, line: line, lines: own}}
@@ -46,7 +46,7 @@ func (s *sourceFile) leafScopes(body *ast.BlockStmt, name string, line int) []sc
 	return scopes
 }
 
-func (s *sourceFile) markLines(lines map[int]bool, from, to int) {
+func markLines(lines map[int]bool, from, to int) {
 	for l := from; l <= to; l++ {
 		lines[l] = true
 	}

@@ -30,9 +30,9 @@ func subtestSrc(name string, parentLines, childLines int) string {
 }
 
 func TestScopes_aSubtestIsMeasuredOnItsOwn(t *testing.T) {
-	scopes := testSource(t, subtestSrc(`"child"`, 3, 30)).testFuncs()[0]
+	f := testSource(t, subtestSrc(`"child"`, 3, 30)).testFuncs()[0]
 
-	if got := scopes.longest; got.name != "child" || got.lines != 30 || got.line != 7 {
+	if got := f.longest; got.name != "child" || got.lines != 30 || got.line != 7 {
 		t.Errorf("longest = %+v, want child at line 7 with 30 lines", got)
 	}
 }

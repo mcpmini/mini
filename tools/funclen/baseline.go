@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -13,8 +12,7 @@ import (
 const pruneRemedy = "run go run ./tools/funclen -prune-baseline"
 
 // baseline lists the tests that were over the limit when the check started, as
-// "pkgdir:FuncName N" with N the code lines allowed across the function's over-limit scopes. It
-// only shrinks: growth fails, and so does an improvement until the entry is pruned.
+// "pkgdir:FuncName N" with N the code lines allowed across the function's over-limit scopes.
 type baseline struct {
 	path    string
 	entries map[string]int
@@ -23,9 +21,6 @@ type baseline struct {
 func loadBaseline(path string) (baseline, error) {
 	b := baseline{path: path, entries: map[string]int{}}
 	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return b, nil
-	}
 	if err != nil {
 		return baseline{}, err
 	}

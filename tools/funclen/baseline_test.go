@@ -2,6 +2,7 @@ package main
 
 import (
 	"go/token"
+	"maps"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -66,6 +67,7 @@ func assertProblems(t *testing.T, problems []string, wantPart string) {
 }
 
 func TestBaseline_aStaleEntryFailsOnlyWhenItsPackageWasWalked(t *testing.T) {
+	t.Chdir(t.TempDir())
 	b := baselineOf(map[string]int{"gone/pkg:TestOld": 30})
 
 	assertProblems(t, b.check(nil, inWalkedDirs([]string{"."})), "gone/pkg:TestOld matches no function")
@@ -73,6 +75,7 @@ func TestBaseline_aStaleEntryFailsOnlyWhenItsPackageWasWalked(t *testing.T) {
 }
 
 func TestBaseline_pruneLowersAndRemovesButNeverAddsOrRaises(t *testing.T) {
+	t.Chdir(t.TempDir())
 	b := baselineOf(map[string]int{
 		"pkg:TestShrank": 40, "pkg:TestFixed": 40, "pkg:TestGone": 40, "pkg:TestGrew": 40, "out:TestKept": 40,
 	})
@@ -84,21 +87,9 @@ func TestBaseline_pruneLowersAndRemovesButNeverAddsOrRaises(t *testing.T) {
 	b.prune(funcs, inWalkedDirs([]string{"pkg"}))
 
 	want := map[string]int{"pkg:TestShrank": 30, "pkg:TestGrew": 40, "out:TestKept": 40}
-	if !mapsEqual(b.entries, want) {
+	if !maps.Equal(b.entries, want) {
 		t.Errorf("entries after prune = %v, want %v", b.entries, want)
 	}
-}
-
-func mapsEqual(a, b map[string]int) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for k, v := range a {
-		if w, ok := b[k]; !ok || w != v {
-			return false
-		}
-	}
-	return true
 }
 
 func TestBaseline_roundTripsThroughItsFile(t *testing.T) {
@@ -112,7 +103,7 @@ func TestBaseline_roundTripsThroughItsFile(t *testing.T) {
 		t.Errorf("file = %q, want sorted entries %q", data, want)
 	}
 	loaded, err := loadBaseline(path)
-	if err != nil || !mapsEqual(loaded.entries, b.entries) {
+	if err != nil || !maps.Equal(loaded.entries, b.entries) {
 		t.Errorf("loadBaseline = %v, %v; want %v", loaded.entries, err, b.entries)
 	}
 }

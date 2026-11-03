@@ -49,6 +49,7 @@ func TestWalk_aDotDirectoryGivenAsTheRootIsWalked(t *testing.T) {
 func TestRun_failsANewLongTestAndPassesOneInTheBaseline(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.WriteFile(t, "pkg/a_test.go", "package p\nfunc TestLong() {\n"+codeLines(30)+"}\n")
+	testutil.WriteFile(t, "test_baseline.txt", "")
 
 	failed, out := runIn(t, options{dirs: []string{"."}, baselinePath: "test_baseline.txt"})
 	if !failed || !strings.Contains(out, "ERROR pkg/a_test.go:2: TestLong/body is 30 code lines (>= 25)") {
@@ -120,6 +121,32 @@ func TestRun_anUnparseableTestFileFailsThePruneAndLeavesTheBaseline(t *testing.T
 	}
 	if data := testutil.ReadFile(t, "test_baseline.txt"); string(data) != "pkg:TestLong 40\n" {
 		t.Errorf("baseline = %q, want it untouched", data)
+	}
+}
+
+func TestRun_aPruneFromASubdirectoryKeepsTheOtherPackagesEntries(t *testing.T) {
+	t.Chdir(t.TempDir())
+	testutil.WriteFile(t, "go.mod", "module m\n")
+	testutil.WriteFile(t, "pkg/a_test.go", "package p\nfunc TestLong() {\n"+codeLines(30)+"}\n")
+	testutil.WriteFile(t, "test_baseline.txt", "other:TestOther 30\npkg:TestLong 30\n")
+	t.Chdir("pkg")
+
+	failed, out := runIn(t, options{dirs: []string{"."}, baselinePath: "../test_baseline.txt", pruneBaseline: true})
+
+	if failed {
+		t.Fatalf("prune run failed:\n%s", out)
+	}
+	if data := testutil.ReadFile(t, "../test_baseline.txt"); string(data) != "other:TestOther 30\npkg:TestLong 30\n" {
+		t.Errorf("baseline after prune = %q, want both entries kept", data)
+	}
+}
+
+func TestRun_aMissingBaselineIsAnError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	testutil.WriteFile(t, "pkg/a_test.go", "package p\n")
+
+	if _, err := run(options{dirs: []string{"."}, baselinePath: "missing.txt"}, io.Discard); err == nil {
+		t.Error("run with a missing baseline succeeded, want an error")
 	}
 }
 

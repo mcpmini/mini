@@ -18,6 +18,7 @@ import (
 	"go/token"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -50,12 +51,20 @@ func main() {
 func parseOptions(args []string) (options, error) {
 	fs := flag.NewFlagSet("funclen", flag.ContinueOnError)
 	var opts options
-	fs.StringVar(&opts.baselinePath, "baseline", "tools/funclen/test_baseline.txt", "tests allowed over the limit")
+	fs.StringVar(
+		&opts.baselinePath,
+		"baseline",
+		"",
+		"tests allowed over the limit (default tools/funclen/test_baseline.txt in the module)",
+	)
 	fs.BoolVar(&opts.pruneBaseline, "prune-baseline", false, "lower or remove baseline entries for tests that shrank")
 	if err := fs.Parse(args); err != nil {
 		return options{}, err
 	}
 	opts.dirs = fs.Args()
+	if opts.baselinePath == "" {
+		opts.baselinePath = filepath.Join(moduleRoot(), "tools", "funclen", "test_baseline.txt")
+	}
 	if len(opts.dirs) == 0 {
 		opts.dirs = []string{"."}
 	}

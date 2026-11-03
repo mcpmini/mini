@@ -16,19 +16,17 @@ func (f testFunc) describe() string {
 	return fmt.Sprintf("%s:%d: %s/%s", f.path, f.longest.line, f.name, f.longest.name)
 }
 
-// measureTests keys each function by package directory and name. The internal and external test
-// packages share a directory, so a name can repeat there; its copies are judged together. A file
-// that can't be parsed is an error rather than a skip, so a prune never drops the allowances it
-// holds.
 func measureTests(paths []string, fset *token.FileSet) (map[string]testFunc, error) {
 	funcs := map[string]testFunc{}
 	for _, path := range paths {
 		s, err := readSource(path, fset)
 		if err != nil {
+			// Skipping the file instead would let a prune drop the allowances it holds.
 			return nil, err
 		}
 		for _, f := range s.testFuncs() {
 			key := pkgDir(path) + ":" + f.name
+			// The internal and external test packages share a directory, so a name can repeat.
 			if prev, seen := funcs[key]; seen {
 				f = prev.merge(f)
 			}
