@@ -10,8 +10,6 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-// proxyHarness drives one mini server whose upstreams are fake connections, over stdio
-// (call, setProjection) or as HTTP sessions (session).
 type proxyHarness struct {
 	t   *testing.T
 	srv *server.Server
@@ -21,12 +19,10 @@ func newProxyHarness(t *testing.T, srv *server.Server) *proxyHarness {
 	return &proxyHarness{t: t, srv: srv}
 }
 
-// addUpstream connects a fake upstream named serverName whose tools answer every call
-// with result, a raw CallToolResult.
-func (h *proxyHarness) addUpstream(serverName, result string, tools ...string) *transport.FakeConnection {
+func (h *proxyHarness) addUpstream(serverName, callToolResult string, tools ...string) *transport.FakeConnection {
 	h.t.Helper()
 	conn := fakeConn(tools...)
-	conn.Responses["tools/call"] = json.RawMessage(result)
+	conn.Responses["tools/call"] = json.RawMessage(callToolResult)
 	addProxyConn(addProxyConnParams{T: h.t, Server: h.srv, Name: serverName, Connection: conn})
 	return conn
 }
@@ -39,7 +35,6 @@ func (h *proxyHarness) setProjection(serverName, tool string, projection map[str
 	requireConfigOK(h.t, resp)
 }
 
-// call returns the CallToolResult of one tools/call over stdio.
 func (h *proxyHarness) call(tool string, args map[string]any) map[string]any {
 	h.t.Helper()
 	return proxyResultOf(h.t, serve(h.t, h.srv, callTool(tool, argsOrEmpty(args))))
@@ -50,7 +45,6 @@ func (h *proxyHarness) callText(tool string, args map[string]any) string {
 	return toolResultText(h.t, serve(h.t, h.srv, callTool(tool, argsOrEmpty(args))))
 }
 
-// session initializes an HTTP session; its projections apply to that session only.
 func (h *proxyHarness) session(id string) *httpSession {
 	h.t.Helper()
 	postMCP(postMCPParams{T: h.t, Server: h.srv, SessionID: id, Msg: initMsg()})
@@ -85,7 +79,6 @@ func (s *httpSession) call(tool string, args map[string]any) map[string]any {
 	}})
 }
 
-// textResult is a CallToolResult holding one text block.
 func textResult(text string) string {
 	b, _ := json.Marshal(map[string]any{"content": []map[string]any{{"type": "text", "text": text}}})
 	return string(b)

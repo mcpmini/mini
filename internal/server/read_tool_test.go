@@ -15,9 +15,7 @@ import (
 	"github.com/mcpmini/mini/internal/testutil"
 )
 
-// storedResponse calls svc__get_item, whose payload has "secret" excluded, and returns the
-// file key of the raw response mini stored.
-func storedResponse(t *testing.T, payload string) (*proxyHarness, string) {
+func storedResponseWithoutSecret(t *testing.T, payload string) (*proxyHarness, string) {
 	t.Helper()
 	h := newProxyHarness(t, newTestServer(t, server.Params{}))
 	h.addUpstream("svc", textResult(payload), "get_item")
@@ -36,7 +34,7 @@ func rejected(resp map[string]any) bool {
 }
 
 func TestProxy_MiniRead_ReadsFile(t *testing.T) {
-	h, file := storedResponse(t, `{"id":1,"secret":"hidden"}`)
+	h, file := storedResponseWithoutSecret(t, `{"id":1,"secret":"hidden"}`)
 
 	text := h.callText("read", map[string]any{"file": file})
 
@@ -46,7 +44,7 @@ func TestProxy_MiniRead_ReadsFile(t *testing.T) {
 }
 
 func TestProxy_MiniRead_WithFilter(t *testing.T) {
-	h, file := storedResponse(t, `{"id":99,"name":"widget","secret":"x"}`)
+	h, file := storedResponseWithoutSecret(t, `{"id":99,"name":"widget","secret":"x"}`)
 
 	text := h.callText("read", map[string]any{"file": file, "filter": ".content[0].text | fromjson | .name"})
 
@@ -56,7 +54,7 @@ func TestProxy_MiniRead_WithFilter(t *testing.T) {
 }
 
 func TestProxy_MiniRead_InvalidFilterReturnsError(t *testing.T) {
-	h, file := storedResponse(t, `{"id":1,"secret":"x"}`)
+	h, file := storedResponseWithoutSecret(t, `{"id":1,"secret":"x"}`)
 
 	resp := serve(t, h.srv, callTool("read", map[string]any{"file": file, "filter": "!!!invalid_jq!!!"}))
 
@@ -66,7 +64,7 @@ func TestProxy_MiniRead_InvalidFilterReturnsError(t *testing.T) {
 }
 
 func TestProxy_MiniRead_FilenameOnly(t *testing.T) {
-	h, file := storedResponse(t, `{"id":5,"secret":"x"}`)
+	h, file := storedResponseWithoutSecret(t, `{"id":5,"secret":"x"}`)
 
 	if strings.ContainsAny(file, "/\\") || strings.HasSuffix(file, ".json") {
 		t.Errorf("__mini.file should be a bare key with no path or extension, got: %s", file)
