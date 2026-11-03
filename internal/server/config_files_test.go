@@ -19,18 +19,22 @@ import (
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
+	"github.com/mcpmini/mini/internal/mcptest"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/testutil"
 )
 
 type serverReloadEnv struct {
 	*reloadEnv
-	upstream *httptest.Server
+	upstream *mcptest.Server
 }
 
 func newServerReloadEnv(t *testing.T) *serverReloadEnv {
 	t.Helper()
-	return &serverReloadEnv{reloadEnv: buildReloadEnv(t, evalTempDir(t)), upstream: newMCPTestServer(t, pingTools)}
+	return &serverReloadEnv{
+		reloadEnv: buildReloadEnv(t, evalTempDir(t)),
+		upstream:  mcptest.NewHTTP(t, mcptest.Upstream{Tools: pingTools}),
+	}
 }
 
 func (e *serverReloadEnv) serverPath(name string) string {
@@ -95,7 +99,7 @@ func TestServerReload_deletedFileOfAnAgentAddedServer_removesIt(t *testing.T) {
 	cfg.DangerousAllowPrivateURLs = true
 	e := &serverReloadEnv{
 		reloadEnv: buildReloadEnvWithConfig(t, evalTempDir(t), cfg),
-		upstream:  newMCPTestServer(t, pingTools),
+		upstream:  mcptest.NewHTTP(t, mcptest.Upstream{Tools: pingTools}),
 	}
 	e.startPoller()
 	resp := serve(t, e.srv, callTool("config", map[string]any{
@@ -155,9 +159,7 @@ func TestServerReload_savedServer_connectsAndNotifiesAgents(t *testing.T) {
 
 func TestServerReload_anOAuthServerSavedWhileRunningConnectsOnceItsLoginIsSaved(t *testing.T) {
 	const accessToken = "saved-login"
-	upstream := fakeOAuthMCPServer(t, accessToken, []map[string]any{
-		{"name": "getData", "inputSchema": map[string]any{"type": "object"}},
-	})
+	upstream := fakeOAuthMCPServer(t, accessToken, []mcptest.Tool{{Name: "getData"}})
 	tokens := fakeTokenServer(t, accessToken)
 	e := newServerReloadEnv(t)
 	e.startPoller()
@@ -306,7 +308,7 @@ func TestServerReload_editBeforePollerStarts_isApplied(t *testing.T) {
 }
 
 func TestServerReload_removalDuringStartupRetry_staysRemoved(t *testing.T) {
-	ts, _ := upstreamFailingFirst(t, 1, pingMCPHandler)
+	ts, _ := upstreamFailingFirst(t, 1, pingHandler())
 	e := newServerReloadEnv(t)
 	configtest.WriteServer(t, e.dir, config.ServerConfig{Name: "flaky", Transport: "http", URL: ts.URL})
 	e.srv.ConnectUpstreams(t.Context(), []config.ServerConfig{{Name: "flaky", Transport: "http", URL: ts.URL}})

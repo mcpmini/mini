@@ -14,12 +14,13 @@ import (
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
+	"github.com/mcpmini/mini/internal/mcptest"
 	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestRunListShowsConnectionStates(t *testing.T) {
 	dir := t.TempDir()
-	ready := fakeUnauthenticatedMCPServer(t)
+	ready := mcptest.NewHTTP(t, mcptest.Upstream{})
 	unauthorized := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		w.WriteHeader(http.StatusUnauthorized)
@@ -90,7 +91,7 @@ func TestPrintStatusTableDoesNotSerializeConnections(t *testing.T) {
 
 func slowServerWaitingOnHealthyServer(t *testing.T) []config.ServerConfig {
 	t.Helper()
-	ready := fakeUnauthenticatedMCPServer(t)
+	ready := mcptest.NewHTTP(t, mcptest.Upstream{})
 	readyStarted := make(chan struct{})
 	var start sync.Once
 	healthy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -117,7 +118,7 @@ func slowServerWaitingOnHealthyServer(t *testing.T) []config.ServerConfig {
 
 func TestRunListShowsServerWithBrokenProjectionsAsReady(t *testing.T) {
 	dir := t.TempDir()
-	upstream := fakeUnauthenticatedMCPServer(t)
+	upstream := mcptest.NewHTTP(t, mcptest.Upstream{})
 	configtest.WriteServer(t, dir, config.ServerConfig{Name: "badproj", Transport: "http", URL: upstream.URL})
 	configtest.WriteRawProjections(
 		configtest.WriteRawProjectionsParams{T: t, Dir: dir, ServerName: "badproj", Projections: `"*": [bad]`},

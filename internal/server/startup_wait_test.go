@@ -22,15 +22,15 @@ const (
 
 func gatedUpstream(t *testing.T) (url string, release func()) {
 	t.Helper()
-	return gatedUpstreamServing(t, pingMCPHandler)
+	return gatedUpstreamServing(t, pingHandler())
 }
 
-func gatedUpstreamServing(t *testing.T, handler http.HandlerFunc) (url string, release func()) {
+func gatedUpstreamServing(t *testing.T, handler http.Handler) (url string, release func()) {
 	t.Helper()
 	gate := make(chan struct{})
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		<-gate
-		handler(w, r)
+		handler.ServeHTTP(w, r)
 	}))
 	released := false
 	release = func() {
@@ -102,7 +102,7 @@ func TestProxyToolsList_heldUntilAConnectingServerIsReady(t *testing.T) {
 }
 
 func TestProxyToolsList_heldThroughARetryableFailureInsideTheWindow(t *testing.T) {
-	ts, _ := upstreamFailingFirst(t, 1, pingMCPHandler)
+	ts, _ := upstreamFailingFirst(t, 1, pingHandler())
 	r := connectWithFakeClock(t, httpServer("svc", ts.URL))
 	r.waitForBackoffTimer(t)
 

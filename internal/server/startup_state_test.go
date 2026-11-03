@@ -67,12 +67,12 @@ func httpServer(name, url string) config.ServerConfig {
 
 func alwaysFailingUpstream(t *testing.T) (url string) {
 	t.Helper()
-	ts, _ := upstreamFailingFirst(t, 1<<30, pingMCPHandler)
+	ts, _ := upstreamFailingFirst(t, 1<<30, pingHandler())
 	return ts.URL
 }
 
 func TestConfigStatus_aServerFailingThenConnectingInsideItsWindowIsStartingUntilItsToolsAreReady(t *testing.T) {
-	ts, _ := upstreamFailingFirst(t, 1, pingMCPHandler)
+	ts, _ := upstreamFailingFirst(t, 1, pingHandler())
 	r := connectWithFakeClock(t, httpServer("svc", ts.URL))
 
 	r.waitForBackoffTimer(t)

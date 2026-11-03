@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/mcptest"
 )
 
 type missingToolError struct {
@@ -107,7 +108,10 @@ func TestMissingTool_isInvalidParamsWhenTheServerCanNotExplainIt(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			srv := settledStartup(t, httpServer("ready", newMCPTestServer(t, pingTools).URL)).srv
+			srv := settledStartup(
+				t,
+				httpServer("ready", mcptest.NewHTTP(t, mcptest.Upstream{Tools: pingTools}).URL),
+			).srv
 
 			resp := serve(t, srv, callTool(tc.server+"__missing", map[string]any{}))
 			if code := rpcErrorCode(resp); code != -32602 {

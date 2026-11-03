@@ -17,6 +17,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/mcptest"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
 )
@@ -181,7 +182,7 @@ func TestConfigRemoveServer_duringAnAddOfTheSameName_leavesSavedEqualToLive(t *t
 }
 
 func TestConfigAddAndRemoveServer_racingOnOneName_alwaysLeaveSavedEqualToLive(t *testing.T) {
-	upstream := newMCPTestServer(t, pingTools)
+	upstream := mcptest.NewHTTP(t, mcptest.Upstream{Tools: pingTools})
 	for i := range 30 {
 		e := newConfigToolEnv(t)
 		added := make(chan struct{})
@@ -208,7 +209,11 @@ func TestConfigRemoveServer(t *testing.T) {
 	t.Run("deletes the server file and disconnects", func(t *testing.T) {
 		e := newConfigToolEnv(t)
 		if text, failed := e.addServer(
-			map[string]any{"name": "svc", "transport": "http", "url": newMCPTestServer(t, pingTools).URL},
+			map[string]any{
+				"name":      "svc",
+				"transport": "http",
+				"url":       mcptest.NewHTTP(t, mcptest.Upstream{Tools: pingTools}).URL,
+			},
 		); failed {
 			t.Fatalf("add_server: %s", text)
 		}
@@ -226,11 +231,12 @@ func TestConfigRemoveServer(t *testing.T) {
 		for _, sameURL := range []bool{true, false} {
 			e := newConfigToolEnv(t)
 			var oldTokenSent atomic.Int64
+			ping := pingHandler()
 			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Header.Get("Authorization") == "Bearer old-token" {
 					oldTokenSent.Add(1)
 				}
-				fakeMCPHandle(w, r, pingTools)
+				ping.ServeHTTP(w, r)
 			})
 			removed := httptest.NewServer(handler)
 			t.Cleanup(removed.Close)

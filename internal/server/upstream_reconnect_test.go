@@ -3,19 +3,16 @@
 package server_test
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/mcptest"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
 )
@@ -90,32 +87,14 @@ func TestReconnect_changedToolSet_noStaleEntries(t *testing.T) {
 	})
 }
 
-func reconnectHTTPServer(t *testing.T) *httptest.Server {
+func reconnectHTTPServer(t *testing.T) *mcptest.Server {
 	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		var request struct {
-			ID     any    `json:"id"`
-			Method string `json:"method"`
-		}
-		if err := json.Unmarshal(body, &request); err != nil {
-			t.Error(err)
-			return
-		}
-		if request.Method == "tools/call" {
-			if err := json.NewEncoder(w).
-				Encode(map[string]any{"jsonrpc": "2.0", "id": request.ID, "result": map[string]any{"content": []map[string]any{{"type": "text", "text": "ok"}}}}); err != nil {
-				t.Error(err)
-			}
-			return
-		}
-		r.Body = io.NopCloser(bytes.NewReader(body))
-		fakeMCPHandle(w, r, []map[string]any{{"name": "ping", "inputSchema": map[string]any{"type": "object"}}})
-	}))
+	return mcptest.NewHTTP(t, mcptest.Upstream{
+		Tools: []mcptest.Tool{{Name: "ping"}},
+		Methods: map[string]mcptest.Method{"tools/call": func(mcptest.Request) mcptest.Reply {
+			return mcptest.Reply{Result: map[string]any{"content": []map[string]any{{"type": "text", "text": "ok"}}}}
+		}},
+	})
 }
 
 type waitForReconnectParams struct {
