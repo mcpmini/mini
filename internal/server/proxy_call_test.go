@@ -73,7 +73,11 @@ func TestProxy_ErrorBehavior_ToolErrorNotWrappedInData(t *testing.T) {
 	if result["isError"] != true {
 		t.Fatalf("expected isError:true for tool failure, got: %v", result)
 	}
-	text := contentTexts(result)[0]
+	texts := contentTexts(result)
+	if len(texts) != 1 {
+		t.Fatalf("expected one text block in the tool error, got: %v", result)
+	}
+	text := texts[0]
 	var parsed map[string]any
 	if err := json.Unmarshal([]byte(text), &parsed); err == nil {
 		if _, hasData := parsed["data"]; hasData {

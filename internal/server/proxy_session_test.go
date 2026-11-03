@@ -80,7 +80,7 @@ func TestProxy_Reload_PreservesSessionProjections(t *testing.T) {
 	session := h.session("cccccccc-cccc-cccc-cccc-000000000003")
 	session.setProjection("svc", "get_item", map[string]any{"exclude": []string{"secret"}})
 
-	session.call("config", map[string]any{"action": "reload"})
+	successText(t, session.call("config", map[string]any{"action": "reload"}))
 
 	if text := session.callText("svc__get_item", nil); strings.Contains(text, "topsecret") {
 		t.Errorf("session projection wiped by reload: %s", text)

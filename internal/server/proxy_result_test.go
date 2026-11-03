@@ -32,27 +32,17 @@ func newProxyServer(t *testing.T, upstream string, projection map[string]any) (s
 	t.Helper()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	srv = newTestServer(t, server.Params{Config: cfg})
-	t.Cleanup(srv.Close)
-	conn := fakeConn("tool")
-	conn.Responses["tools/call"] = json.RawMessage(upstream)
-	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
+	h := newProxyHarness(t, newTestServer(t, server.Params{Config: cfg}))
+	h.addUpstream("svc", upstream, "tool")
 	if projection != nil {
-		serve(t, srv, callTool("config", map[string]any{
-			"action": "set_projection", "server": "svc", "tool": "tool", "projection": projection,
-		}))
+		h.setProjection("svc", "tool", projection)
 	}
-	return srv, cfg.ResponseDir
+	return h.srv, cfg.ResponseDir
 }
 
 func callProxyTool(t *testing.T, srv *server.Server, args map[string]any) map[string]any {
 	t.Helper()
-	resp := serve(t, srv, callTool("svc__tool", args))
-	result, ok := resp["result"].(map[string]any)
-	if !ok {
-		t.Fatalf("no result: %v", resp)
-	}
-	return result
+	return proxyResultOf(t, serve(t, srv, callTool("svc__tool", args)))
 }
 
 func decodeJSON(t *testing.T, text string) any {
