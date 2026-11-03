@@ -94,7 +94,7 @@ func checkTestFiles(paths []string, fset *token.FileSet, opts options) ([]string
 	if err != nil {
 		return nil, err
 	}
-	inRun := runScope(opts.dirs)
+	inRun := inWalkedDirs(opts.dirs)
 	if opts.pruneBaseline {
 		b.prune(funcs, inRun)
 		if err := b.write(); err != nil {

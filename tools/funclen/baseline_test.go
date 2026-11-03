@@ -12,7 +12,7 @@ import (
 func measured(lines int) testFunc {
 	f := testFunc{name: "TestX", path: "pkg/x_test.go", longest: scope{name: "body", line: 3, lines: lines}}
 	if lines >= errorAt {
-		f.overLimit = lines
+		f.overLimitTotal = lines
 	}
 	return f
 }
@@ -68,8 +68,8 @@ func assertProblems(t *testing.T, problems []string, wantPart string) {
 func TestBaseline_aStaleEntryFailsOnlyWhenItsPackageWasWalked(t *testing.T) {
 	b := baselineOf(map[string]int{"gone/pkg:TestOld": 30})
 
-	assertProblems(t, b.check(nil, runScope([]string{"."})), "gone/pkg:TestOld matches no function")
-	assertProblems(t, b.check(nil, runScope([]string{"other"})), "")
+	assertProblems(t, b.check(nil, inWalkedDirs([]string{"."})), "gone/pkg:TestOld matches no function")
+	assertProblems(t, b.check(nil, inWalkedDirs([]string{"other"})), "")
 }
 
 func TestBaseline_pruneLowersAndRemovesButNeverAddsOrRaises(t *testing.T) {
@@ -81,7 +81,7 @@ func TestBaseline_pruneLowersAndRemovesButNeverAddsOrRaises(t *testing.T) {
 		"pkg:TestNew": measured(60),
 	}
 
-	b.prune(funcs, runScope([]string{"pkg"}))
+	b.prune(funcs, inWalkedDirs([]string{"pkg"}))
 
 	want := map[string]int{"pkg:TestShrank": 30, "pkg:TestGrew": 40, "out:TestKept": 40}
 	if !mapsEqual(b.entries, want) {
@@ -126,17 +126,17 @@ func TestBaseline_aMalformedLineNamesItsPosition(t *testing.T) {
 	}
 }
 
-func TestMeasureTests_aNameRepeatedInOneDirectoryKeepsTheLonger(t *testing.T) {
+func TestMeasureTests_aNameRepeatedInOneDirectoryIsJudgedAsOne(t *testing.T) {
 	t.Chdir(t.TempDir())
-	testutil.WriteFile(t, "pkg/a_test.go", "package p\nfunc helper() {\n"+codeLines(30)+"}\n")
-	testutil.WriteFile(t, "pkg/b_test.go", "package p_test\nfunc helper() {\n"+codeLines(26)+"}\n")
+	testutil.WriteFile(t, "pkg/a_test.go", "package p\nfunc helper() {\n"+codeLines(26)+"}\n")
+	testutil.WriteFile(t, "pkg/b_test.go", "package p_test\nfunc helper() {\n"+codeLines(30)+"}\n")
 
 	funcs, err := measureTests([]string{"pkg/a_test.go", "pkg/b_test.go"}, token.NewFileSet())
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if got := funcs["pkg:helper"].longest.lines; got != 30 {
-		t.Errorf("helper measures %d, want the longer copy's 30", got)
+	if got := funcs["pkg:helper"]; got.overLimitTotal != 56 || got.path != "pkg/b_test.go" || got.longest.lines != 30 {
+		t.Errorf("helper = %+v, want both copies' 56 lines, reported at the longer copy in b_test.go", got)
 	}
 }

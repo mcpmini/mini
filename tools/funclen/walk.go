@@ -47,14 +47,13 @@ func (f *sourceFiles) add(path string) {
 }
 
 // Dot-directories hold tool state such as agent worktrees, which are whole copies of the tree;
-// the go tool skips them for the same reason. The walk root is exempt so that "." still works.
+// the go tool skips them for the same reason, and testdata, whose fixtures needn't parse. The walk
+// root is exempt so that "." still works.
 func isSkippedDir(name string) bool {
-	return strings.HasPrefix(name, ".") || name == "vendor" || name == "node_modules"
+	return strings.HasPrefix(name, ".") || name == "testdata" || name == "vendor" || name == "node_modules"
 }
 
-// runScope reports whether a package directory lies under one of the walked dirs, so a run on
-// a subdirectory judges only the baseline entries that belong to it.
-func runScope(dirs []string) func(pkgDir string) bool {
+func inWalkedDirs(dirs []string) func(pkgDir string) bool {
 	roots := make([]string, len(dirs))
 	for i, dir := range dirs {
 		roots[i] = workdirRel(dir)
@@ -73,8 +72,6 @@ func pkgDir(path string) string {
 	return workdirRel(filepath.Dir(path))
 }
 
-// workdirRel spells dir relative to the working directory, where the baseline's keys are rooted,
-// so an absolute or ../ spelling of a directory matches the same entries.
 func workdirRel(dir string) string {
 	wd, err := os.Getwd()
 	if err != nil {

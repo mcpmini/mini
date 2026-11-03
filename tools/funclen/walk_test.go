@@ -12,11 +12,12 @@ import (
 	"github.com/mcpmini/mini/internal/testutil"
 )
 
-func TestWalk_skipsDotDirectoriesBelowTheRootButNotTheRoot(t *testing.T) {
+func TestWalk_skipsDotAndTestdataDirectoriesBelowTheRootButNotTheRoot(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	for _, path := range []string{
 		"pkg/a_test.go", ".claude/worktrees/copy/pkg/a_test.go", ".agents/wt/b_test.go", "vendor/v/c_test.go",
+		"pkg/testdata/broken_test.go",
 	} {
 		testutil.WriteFile(t, path, "package p\n")
 	}

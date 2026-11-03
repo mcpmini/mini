@@ -6,12 +6,10 @@ import (
 )
 
 type testFunc struct {
-	name    string
-	path    string
-	longest scope
-	// overLimit totals the scopes at or over the limit, so a baselined test fails when any of
-	// them grows or a new one appears, not only when its longest does.
-	overLimit int
+	name           string
+	path           string
+	longest        scope
+	overLimitTotal int
 }
 
 func (f testFunc) describe() string {
@@ -19,8 +17,9 @@ func (f testFunc) describe() string {
 }
 
 // measureTests keys each function by package directory and name. The internal and external test
-// packages share a directory, so a name can repeat there; the larger measure wins. A file that
-// can't be parsed is an error rather than a skip, so a prune never drops the allowances it holds.
+// packages share a directory, so a name can repeat there; its copies are judged together. A file
+// that can't be parsed is an error rather than a skip, so a prune never drops the allowances it
+// holds.
 func measureTests(paths []string, fset *token.FileSet) (map[string]testFunc, error) {
 	funcs := map[string]testFunc{}
 	for _, path := range paths {
@@ -30,12 +29,21 @@ func measureTests(paths []string, fset *token.FileSet) (map[string]testFunc, err
 		}
 		for _, f := range s.testFuncs() {
 			key := pkgDir(path) + ":" + f.name
-			if prev, seen := funcs[key]; !seen || f.longest.lines > prev.longest.lines {
-				funcs[key] = f
+			if prev, seen := funcs[key]; seen {
+				f = prev.merge(f)
 			}
+			funcs[key] = f
 		}
 	}
 	return funcs, nil
+}
+
+func (f testFunc) merge(other testFunc) testFunc {
+	f.overLimitTotal += other.overLimitTotal
+	if other.longest.lines > f.longest.lines {
+		f.path, f.longest = other.path, other.longest
+	}
+	return f
 }
 
 func (s *sourceFile) testFuncs() []testFunc {
@@ -47,7 +55,7 @@ func (s *sourceFile) testFuncs() []testFunc {
 				f.longest = sc
 			}
 			if sc.lines >= errorAt {
-				f.overLimit += sc.lines
+				f.overLimitTotal += sc.lines
 			}
 		}
 		funcs = append(funcs, f)

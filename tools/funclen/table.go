@@ -34,8 +34,6 @@ func isCompositeRow(elt ast.Expr) bool {
 	return ok
 }
 
-// tableCallbacks returns the outermost function literals in a table. They run as test code, so
-// each is measured as its own scope rather than excused with the table's data.
 func tableCallbacks(table *ast.CompositeLit) []*ast.FuncLit {
 	var found []*ast.FuncLit
 	ast.Inspect(table, func(n ast.Node) bool {

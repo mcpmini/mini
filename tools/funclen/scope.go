@@ -59,8 +59,6 @@ func nestedName(parent, child string) string {
 	return parent + "/" + child
 }
 
-// directChildren stops at each subtest and table, so a subtest inside a table callback is measured
-// once, by the callback's scope.
 func directChildren(body *ast.BlockStmt) scopeChildren {
 	var found scopeChildren
 	ast.Inspect(body, func(n ast.Node) bool {

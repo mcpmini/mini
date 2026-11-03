@@ -68,10 +68,10 @@ func (b baseline) prune(funcs map[string]testFunc, inRun func(string) bool) {
 		}
 		f, ok := funcs[key]
 		switch {
-		case !ok || f.overLimit == 0:
+		case !ok || f.overLimitTotal == 0:
 			delete(b.entries, key)
-		case f.overLimit < n:
-			b.entries[key] = f.overLimit
+		case f.overLimitTotal < n:
+			b.entries[key] = f.overLimitTotal
 		}
 	}
 }
@@ -93,7 +93,7 @@ func (b baseline) check(funcs map[string]testFunc, inRun func(string) bool) []st
 
 func (b baseline) judge(key string, f testFunc) string {
 	n, listed := b.entries[key]
-	m := f.overLimit
+	m := f.overLimitTotal
 	switch {
 	case !listed && m > 0:
 		return fmt.Sprintf("%s is %d code lines (>= %d)", f.describe(), f.longest.lines, errorAt)
