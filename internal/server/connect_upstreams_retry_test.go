@@ -198,13 +198,13 @@ func TestConnectUpstreamAsync_closeDuringRetry_returnsPromptly(t *testing.T) {
 
 	r.waitForBackoffTimer(t)
 
-	mustCloseWithin(t, r.srv, 3*time.Second)
+	mustClose(t, r.srv)
 }
 
 func TestConnectUpstreamAsync_removedDuringRetry_isNotRedialed(t *testing.T) {
 	ts, attempts := upstreamFailingFirst(t, 1, pingHandler())
 	r := startRetrying(t, ts.URL, discardLogs())
-	defer mustCloseWithin(t, r.srv, 3*time.Second)
+	defer mustClose(t, r.srv)
 
 	r.waitForBackoffTimer(t)
 	serve(t, r.srv, callTool("config", map[string]any{"action": "remove_server", "server": "svc"}))
@@ -222,7 +222,7 @@ func TestConnectUpstreamAsync_removedDuringRetry_isNotRedialed(t *testing.T) {
 func TestConnectUpstreamAsync_runtimeAddDuringRetry_isNotOverwritten(t *testing.T) {
 	ts, attempts := upstreamFailingFirst(t, 1, pingHandler())
 	r := startRetrying(t, ts.URL, discardLogs())
-	defer mustCloseWithin(t, r.srv, 3*time.Second)
+	defer mustClose(t, r.srv)
 
 	r.waitForBackoffTimer(t)
 	if err := r.srv.AddConnection(
@@ -284,7 +284,7 @@ func TestConnectUpstreamAsync_runtimeAddWhileDialInFlight_doesNotOverwriteRuntim
 	})
 
 	srv := newConnectTestServer(t)
-	defer mustCloseWithin(t, srv, 3*time.Second)
+	defer mustClose(t, srv)
 
 	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{{Name: "svc", Transport: "http", URL: ts.URL}})
 

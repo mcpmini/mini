@@ -151,7 +151,7 @@ func TestProxyToolsList_closeReleasesAHeldList(t *testing.T) {
 
 	held := inBackground(r.srv, proxySession(t, rpc("tools/list", nil)))
 	r.waitUntilHeld(t, held, 0)
-	mustCloseWithin(t, r.srv, 3*time.Second)
+	mustClose(t, r.srv)
 
 	if got := held.answer(t); !strings.Contains(got, "shutting down") {
 		t.Errorf("tools/list held at Close = %s, want a shutdown error", got)

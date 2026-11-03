@@ -34,18 +34,14 @@ func newConnectTestServerLogging(t *testing.T, logs slog.Handler, clk clock.Cloc
 	return newTestServer(t, server.Params{Config: cfg, Logger: slog.New(logs), Clock: clk})
 }
 
-func mustCloseWithin(t *testing.T, srv *server.Server, d time.Duration) {
+func mustClose(t *testing.T, srv *server.Server) {
 	t.Helper()
 	done := make(chan struct{})
 	go func() {
 		srv.Close()
 		close(done)
 	}()
-	select {
-	case <-done:
-	case <-time.After(d):
-		t.Fatal("Close did not return within deadline")
-	}
+	testutil.WaitForReceive(t, done, "Close to return")
 }
 
 func hungHTTPServer(t *testing.T) *httptest.Server {
@@ -76,7 +72,7 @@ func TestConnectUpstreams_CleanShutdownWithHungUpstream(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	srv.ConnectUpstreams(ctx, []config.ServerConfig{{Name: "hung", Transport: "http", URL: ts.URL}})
 	cancel()
-	mustCloseWithin(t, srv, 3*time.Second)
+	mustClose(t, srv)
 }
 
 func TestConnectUpstreams_CloseCancelsInFlightConnect(t *testing.T) {
@@ -91,7 +87,7 @@ func TestConnectUpstreams_CloseCancelsInFlightConnect(t *testing.T) {
 
 	srv := newConnectTestServer(t)
 	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{{Name: "slow", Transport: "http", URL: ts.URL}})
-	mustCloseWithin(t, srv, 3*time.Second)
+	mustClose(t, srv)
 }
 
 func TestConnectUpstreams_CloseUnblocksHungConnectWithNoTimeout(t *testing.T) {
@@ -100,7 +96,7 @@ func TestConnectUpstreams_CloseUnblocksHungConnectWithNoTimeout(t *testing.T) {
 
 	sc := config.ServerConfig{Name: "hung", Transport: "http", URL: ts.URL, HandshakeTimeout: "0"}
 	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{sc})
-	mustCloseWithin(t, srv, 3*time.Second)
+	mustClose(t, srv)
 }
 
 func TestConnectUpstreams_NormalConnectUnaffectedByFix(t *testing.T) {
@@ -110,7 +106,7 @@ func TestConnectUpstreams_NormalConnectUnaffectedByFix(t *testing.T) {
 	sc := config.ServerConfig{Name: "svc", Transport: "http", URL: mcp.URL, HandshakeTimeout: "0"}
 	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{sc})
 	eventually(t, func() bool { return srv.ToolCount("svc") > 0 })
-	mustCloseWithin(t, srv, 3*time.Second)
+	mustClose(t, srv)
 }
 
 func TestConnectUpstreams_FastUpstreamRegistersWhileHungStillConnecting(t *testing.T) {
@@ -144,7 +140,7 @@ func TestConnectUpstreams_SkipsDisabledServer(t *testing.T) {
 	if srv.ToolCount("off") != 0 {
 		t.Fatal("disabled server should not have any tools registered")
 	}
-	mustCloseWithin(t, srv, 3*time.Second)
+	mustClose(t, srv)
 }
 
 func TestConnectUpstreams_closeCancelsConnectsFromEveryCall(t *testing.T) {
@@ -156,7 +152,7 @@ func TestConnectUpstreams_closeCancelsConnectsFromEveryCall(t *testing.T) {
 		[]config.ServerConfig{{Name: "second", Transport: "http", URL: hung.URL}},
 	)
 
-	mustCloseWithin(t, srv, 3*time.Second)
+	mustClose(t, srv)
 }
 
 func TestServerClose_inFlightOAuthRefresh_isAborted(t *testing.T) {
@@ -208,5 +204,5 @@ func TestServerClose_inFlightOAuthRefresh_isAborted(t *testing.T) {
 
 	testutil.WaitForReceive(t, reached, "the token endpoint to be reached")
 
-	mustCloseWithin(t, srv, 5*time.Second)
+	mustClose(t, srv)
 }

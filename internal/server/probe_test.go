@@ -5,7 +5,6 @@ package server_test
 import (
 	"context"
 	"net/http"
-	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -18,8 +17,7 @@ import (
 
 func TestProbeServer_invalidConfigMakesNoRequest(t *testing.T) {
 	var hit atomic.Bool
-	upstream := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { hit.Store(true) }))
-	defer upstream.Close()
+	upstream := testutil.Serve(t, func(http.ResponseWriter, *http.Request) { hit.Store(true) })
 	dir := t.TempDir()
 	testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), "bad: [yaml\n")
 	err := server.ProbeServer(

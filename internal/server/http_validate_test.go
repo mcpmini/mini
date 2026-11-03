@@ -16,8 +16,7 @@ const testDaemonToken = "0123456789abcdef0123456789abcdef"
 
 func newAuthHTTPTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	ts := httptest.NewServer(newTestServer(t, server.Params{DaemonAuthToken: testDaemonToken}))
-	t.Cleanup(ts.Close)
+	_, ts := newHTTPTestServer(t, server.Params{DaemonAuthToken: testDaemonToken})
 	return ts
 }
 
@@ -101,8 +100,7 @@ func TestHTTPServer_HostLoopbackCheck(t *testing.T) {
 }
 
 func TestHTTPServer_SessionID(t *testing.T) {
-	ts := httptest.NewServer(newTestServer(t, server.Params{}))
-	defer ts.Close()
+	_, ts := newHTTPTestServer(t, server.Params{})
 
 	check := func(t *testing.T, id string, want int) {
 		t.Helper()

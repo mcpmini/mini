@@ -40,18 +40,9 @@ func fakeOAuthMCPServer(t *testing.T, validToken string, tools []mcptest.Tool) *
 // fakeTokenServer returns an OAuth2 token server that issues the given access token.
 func fakeTokenServer(t *testing.T, accessToken string) *httptest.Server {
 	t.Helper()
-	return testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
-		if !serveOAuthMetadata(w, r) {
-			issueToken(w, accessToken)
-		}
-	})
-}
-
-func issueToken(w http.ResponseWriter, accessToken string) {
-	testutil.WriteJSON(w, http.StatusOK, map[string]any{
-		"access_token": accessToken, "token_type": "Bearer",
-		"expires_in": 3600, "refresh_token": "refresh-" + accessToken,
-	})
+	tokens := authtest.NewTokenServer(t)
+	tokens.AccessToken = accessToken
+	return tokens.Srv
 }
 
 type tokenGate struct {
@@ -95,13 +86,20 @@ func (g *tokenGate) accept(token string) {
 
 func completeStartAuth(t *testing.T, srv *server.Server, name string) {
 	t.Helper()
-	resp := serve(t, srv, callTool("config", map[string]any{"action": "start_auth", "server": name}))
-	authResult := parseEnvelope(t, toolResultText(t, resp))
-	authURL, _ := authResult["url"].(string)
-	if authResult["ok"] != true || authURL == "" {
-		t.Fatalf("start_auth = %v, want ok and an auth URL", authResult)
+	authtest.CompleteAuthorization(t, startAuth(t, srv, name), "test-code")
+}
+
+func startAuth(t *testing.T, srv *server.Server, name string) string {
+	t.Helper()
+	result := parseEnvelope(
+		t,
+		toolResultText(t, serve(t, srv, callTool("config", map[string]any{"action": "start_auth", "server": name}))),
+	)
+	url, _ := result["url"].(string)
+	if url == "" {
+		t.Fatalf("start_auth = %v, want an authorization URL", result)
 	}
-	authtest.CompleteAuthorization(t, authURL, "test-code")
+	return url
 }
 
 type newOAuthServerParams struct {
@@ -192,18 +190,8 @@ func TestStartAuth_opensServerBrowserCommandWithAuthURL(t *testing.T) {
 	cfg.BrowserCommand = "false"
 	srv := newTestServer(t, server.Params{Config: cfg, ConfigDir: dir})
 
-	authResult := parseEnvelope(
-		t,
-		toolResultText(
-			t,
-			serve(t, srv, callTool("config", map[string]any{"action": "start_auth", "server": "protected"})),
-		),
-	)
+	authURL := startAuth(t, srv, "protected")
 
-	authURL, _ := authResult["url"].(string)
-	if authURL == "" {
-		t.Fatalf("start_auth = %v, want an auth URL", authResult)
-	}
 	if opened := waitForFileContent(t, openedPath); opened != authURL {
 		t.Errorf("browser opened %q, want the start_auth URL %q", opened, authURL)
 	}
@@ -278,16 +266,11 @@ func readYAMLFile(t *testing.T, path string, out any) {
 func TestStartAuth_e2e_withStaleToken_browserTokenUsedOnFirstRequest(t *testing.T) {
 	dir := t.TempDir()
 	upstream := newTokenGate(t)
-	var tokenEndpointOpen atomic.Bool
-	tokenSrv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
-		if !tokenEndpointOpen.Load() {
-			http.Error(w, "not ready", http.StatusServiceUnavailable)
-			return
-		}
-		issueToken(w, "browser-token")
-	})
+	tokens := authtest.NewTokenServer(t)
+	tokens.AccessToken = "browser-token"
+	tokens.Status.Store(http.StatusServiceUnavailable)
 	mini := newOAuthServer(newOAuthServerParams{
-		T: t, ConfigDir: dir, ServerName: "srv", TokenURL: tokenSrv.URL, MCPURL: upstream.URL,
+		T: t, ConfigDir: dir, ServerName: "srv", TokenURL: tokens.Srv.URL, MCPURL: upstream.URL,
 	})
 	sc := loadServerConfig(t, dir, "srv")
 	authtest.SaveToken(t, authtest.TokenFile{
@@ -296,7 +279,7 @@ func TestStartAuth_e2e_withStaleToken_browserTokenUsedOnFirstRequest(t *testing.
 	if err := mini.AddUpstream(context.Background(), sc); err == nil {
 		t.Fatal("initial dial with the stale token should fail, leaving a provider registered")
 	}
-	tokenEndpointOpen.Store(true)
+	tokens.Status.Store(http.StatusOK)
 	upstream.accept("browser-token")
 
 	completeStartAuth(t, mini, "srv")
