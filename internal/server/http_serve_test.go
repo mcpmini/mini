@@ -11,10 +11,10 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 	"github.com/mcpmini/mini/internal/transport/transporttest"
 )
@@ -201,9 +201,7 @@ func httpExecToolText(params httpExecToolTextParams) string {
 func newHTTPTestServer(t *testing.T, p server.Params) (*server.Server, *httptest.Server) {
 	t.Helper()
 	srv := newTestServer(t, p)
-	ts := httptest.NewServer(srv)
-	t.Cleanup(ts.Close)
-	return srv, ts
+	return srv, testutil.Serve(t, srv.ServeHTTP)
 }
 
 func mustStatus(t *testing.T, resp *http.Response, want int) {
@@ -381,11 +379,7 @@ func TestHTTPServer_staleSessionFails(t *testing.T) {
 		close(done)
 	}()
 
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatal("stale session blocked indefinitely — daemon restart hang not fixed")
-	}
+	testutil.WaitForReceive(t, done, "the stale session's request to fail instead of blocking")
 }
 
 func TestHTTPServer_CrossOriginRejected(t *testing.T) {

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/mcpmini/mini/internal/clock"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -226,11 +227,7 @@ func TestSessionNotifyForwarder(t *testing.T) {
 			stop()
 			close(stopped)
 		}()
-		select {
-		case <-stopped:
-		case <-time.After(5 * time.Second):
-			t.Fatal("stopping the forwarder of a closed session never returned")
-		}
+		testutil.WaitForReceive(t, stopped, "stopping the forwarder of a closed session to return")
 	})
 }
 

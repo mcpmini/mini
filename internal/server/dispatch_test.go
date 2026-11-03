@@ -12,7 +12,6 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/mcptest"
 	"github.com/mcpmini/mini/internal/server"
-	"github.com/mcpmini/mini/internal/testutil"
 )
 
 var (
@@ -69,7 +68,7 @@ func TestPerSession_aConnectionThatFailsToListToolsIsNotKeptForTheSession(t *tes
 	var up *mcptest.Server
 	up = mcptest.NewHTTP(t, mcptest.Upstream{Methods: map[string]mcptest.Method{
 		"tools/list": func(mcptest.Request) mcptest.Reply {
-			if int32(dials(up)) == failListOnDial.Load() {
+			if dials(up) == failListOnDial.Load() {
 				return mcptest.Reply{Error: &mcptest.Error{Code: -32603, Message: "not ready"}}
 			}
 			return mcptest.Reply{Result: map[string]any{"tools": pingTools}}
@@ -77,7 +76,7 @@ func TestPerSession_aConnectionThatFailsToListToolsIsNotKeptForTheSession(t *tes
 		"tools/call": pongMethods["tools/call"],
 	}})
 	call := pingCall(t, servePerSession(t, up.URL))
-	failListOnDial.Store(int32(dials(up)) + 1)
+	failListOnDial.Store(dials(up) + 1)
 
 	first := httpExecToolText(call)
 	second := httpExecToolText(call)
@@ -88,7 +87,7 @@ func TestPerSession_aConnectionThatFailsToListToolsIsNotKeptForTheSession(t *tes
 	if second != "pong" {
 		t.Errorf("second call = %q, want pong", second)
 	}
-	if got, want := int32(dials(up)), failListOnDial.Load()+1; got != want {
+	if got, want := dials(up), failListOnDial.Load()+1; got != want {
 		t.Errorf(
 			"upstream saw %d dials, want %d: the second call must dial again, not reuse the failed connection",
 			got,
@@ -99,12 +98,12 @@ func TestPerSession_aConnectionThatFailsToListToolsIsNotKeptForTheSession(t *tes
 
 func servePerSession(t *testing.T, url string) *httptest.Server {
 	t.Helper()
-	srv := newTestServer(t, server.Params{})
+	srv, mini := newHTTPTestServer(t, server.Params{})
 	sc := config.ServerConfig{Name: "svc", Transport: "http", URL: url, SessionMode: config.SessionModePerSession}
 	if err := srv.AddUpstream(context.Background(), sc); err != nil {
 		t.Fatalf("AddUpstream: %v", err)
 	}
-	return testutil.Serve(t, srv.ServeHTTP)
+	return mini
 }
 
 func pingCall(t *testing.T, mini *httptest.Server) httpExecToolTextParams {
@@ -113,8 +112,8 @@ func pingCall(t *testing.T, mini *httptest.Server) httpExecToolTextParams {
 	return httpExecToolTextParams{T: t, HTTPServer: mini, SessionID: sid, ServerName: "svc", Tool: "ping"}
 }
 
-func dials(up *mcptest.Server) int {
-	n := 0
+func dials(up *mcptest.Server) int32 {
+	var n int32
 	for _, req := range up.Requests() {
 		if req.Method == "initialize" {
 			n++
@@ -124,12 +123,12 @@ func dials(up *mcptest.Server) int {
 }
 
 func dropConn(t *testing.T, w http.ResponseWriter) bool {
-	hj, ok := w.(http.Hijacker)
-	if !ok {
-		t.Error("hijack not supported")
+	t.Helper()
+	conn, _, err := http.NewResponseController(w).Hijack()
+	if err != nil {
+		t.Errorf("hijack: %v", err)
 		return false
 	}
-	conn, _, _ := hj.Hijack()
 	conn.Close() //nolint:errcheck,gosec // the abrupt close is the point
 	return true
 }

@@ -136,13 +136,8 @@ func TestSessionStore_evictIdle_unblocksPendingWaiters(t *testing.T) {
 
 	st.evictIdle(fakeClock.Now().Add(-time.Hour))
 
-	select {
-	case got := <-unblocked:
-		if got {
-			t.Error("waitInitialized should return false for evicted session")
-		}
-	case <-time.After(time.Second):
-		t.Fatal("waitInitialized blocked after session eviction")
+	if testutil.WaitForReceive(t, unblocked, "waitInitialized to return after session eviction") {
+		t.Error("waitInitialized should return false for evicted session")
 	}
 }
 

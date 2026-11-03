@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
@@ -98,11 +97,7 @@ func startStalledAuthSetup(t *testing.T, srv *Server) (context.CancelFunc, <-cha
 	go func() { _, err := configureStartAuth(ctx, srv); result <- err; close(done) }()
 	t.Cleanup(func() {
 		close(release)
-		select {
-		case <-done:
-		case <-time.After(time.Second):
-			t.Error("start_auth did not finish after discovery release")
-		}
+		testutil.WaitForReceive(t, done, "start_auth to finish after discovery is released")
 	})
 	t.Cleanup(cancel)
 	return cancel, started, result

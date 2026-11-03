@@ -160,9 +160,5 @@ func TestReconnect_reauthDialFailureStopsLoop(t *testing.T) {
 	}
 	fakeClock.Advance(time.Second)
 
-	select {
-	case <-stopped:
-	case <-time.After(5 * time.Second):
-		t.Fatal("reconnect loop did not stop after ErrReauthRequired")
-	}
+	testutil.WaitForReceive(t, stopped, "the reconnect loop to stop after ErrReauthRequired")
 }

@@ -289,7 +289,7 @@ func TestAddServerFromAgent_aTokenRefreshForTheNamesEarlierServerLeavesNoToken(t
 	}()
 	waitUntil(t, "the add holds svc", func() bool { return srv.NameLockHeld("svc") })
 	finishRefresh()
-	waitForChannel(t, "the refresh saves its token", refreshed)
+	testutil.WaitForReceive(t, refreshed, "the refresh to save its token")
 	resume()
 
 	if err := <-added; err != nil {
@@ -384,7 +384,7 @@ func TestRemoveServerFromAgent_aTokenRefreshFinishingMidRemoveLeavesNoToken(t *t
 	go func() { defer close(removed); _, _ = srv.removeServerFromAgent("svc") }()
 	waitUntil(t, "the remove holds svc", func() bool { return srv.NameLockHeld("svc") })
 	finishRefresh()
-	waitForChannel(t, "the refresh saves its token", refreshed)
+	testutil.WaitForReceive(t, refreshed, "the refresh to save its token")
 	resume()
 	<-removed
 
@@ -425,7 +425,7 @@ func startTokenRefresh(t *testing.T, srv *Server) (finish func(), refreshed <-ch
 	}
 	done := make(chan struct{})
 	go func() { defer close(done); _, _ = login.Authorization(context.Background()) }() // the refresh's outcome is read from disk
-	waitForChannel(t, "the token refresh reaches the endpoint", refreshReached)
+	testutil.WaitForReceive(t, refreshReached, "the token refresh to reach the endpoint")
 	return finish, done
 }
 
@@ -479,13 +479,4 @@ func gatedTokenEndpoint(t *testing.T) (url string, reached <-chan struct{}, fini
 	finish = sync.OnceFunc(func() { close(gate) })
 	t.Cleanup(finish)
 	return endpoint.Srv.URL, ready, finish
-}
-
-func waitForChannel(t *testing.T, what string, ch <-chan struct{}) {
-	t.Helper()
-	select {
-	case <-ch:
-	case <-time.After(5 * time.Second):
-		t.Fatalf("timed out waiting until %s", what)
-	}
 }
