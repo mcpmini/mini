@@ -7,10 +7,8 @@ import (
 	"strconv"
 )
 
-// scope is a block measured on its own: a test function's body, or the body of a t.Run inside
-// it, with its own subtests' lines removed.
 type scope struct {
-	name  string // "body", or the subtest path such as "valid/empty" or "t.Run@42"
+	name  string
 	line  int
 	lines int
 }
@@ -84,8 +82,6 @@ func takesTestingArg(fn *ast.FuncLit) bool {
 	return ok && pkg.Name == "testing" && (sel.Sel.Name == "T" || sel.Sel.Name == "B")
 }
 
-// subtestName is the literal name, or t.Run@line when the name is computed (tt.name), which
-// stays readable without evaluating it.
 func (s *sourceFile) subtestName(call *ast.CallExpr) string {
 	if lit, ok := call.Args[0].(*ast.BasicLit); ok && lit.Kind == token.STRING {
 		if name, err := strconv.Unquote(lit.Value); err == nil {

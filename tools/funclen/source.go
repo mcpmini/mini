@@ -48,7 +48,6 @@ func (s *sourceFile) line(pos token.Pos) int {
 	return s.fset.Position(pos).Line
 }
 
-// codeLines counts the lines in [from, to] that hold code and aren't excluded.
 func (s *sourceFile) codeLines(from, to int, excluded map[int]bool) int {
 	count := 0
 	for line := from; line <= to && line < len(s.skippable); line++ {

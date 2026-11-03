@@ -123,16 +123,13 @@ func TestBaseline_aMalformedLineNamesItsPosition(t *testing.T) {
 }
 
 func TestMeasureTests_aNameRepeatedInOneDirectoryKeepsTheLonger(t *testing.T) {
-	dir := t.TempDir()
-	testutil.WriteFile(t, filepath.Join(dir, "a_test.go"), "package p\nfunc helper() {\n"+codeLines(30)+"}\n")
-	testutil.WriteFile(t, filepath.Join(dir, "b_test.go"), "package p_test\nfunc helper() {\n"+codeLines(26)+"}\n")
+	t.Chdir(t.TempDir())
+	testutil.WriteFile(t, "pkg/a_test.go", "package p\nfunc helper() {\n"+codeLines(30)+"}\n")
+	testutil.WriteFile(t, "pkg/b_test.go", "package p_test\nfunc helper() {\n"+codeLines(26)+"}\n")
 
-	funcs := measureTests(
-		[]string{filepath.Join(dir, "a_test.go"), filepath.Join(dir, "b_test.go")},
-		token.NewFileSet(),
-	)
+	funcs := measureTests([]string{"pkg/a_test.go", "pkg/b_test.go"}, token.NewFileSet())
 
-	if got := funcs[filepath.ToSlash(dir)+":helper"].longest.lines; got != 30 {
+	if got := funcs["pkg:helper"].longest.lines; got != 30 {
 		t.Errorf("helper measures %d, want the longer copy's 30", got)
 	}
 }

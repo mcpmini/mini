@@ -5,7 +5,6 @@ import (
 	"go/token"
 )
 
-// testFunc is a function in a test file, judged by its longest leaf scope.
 type testFunc struct {
 	name    string
 	path    string

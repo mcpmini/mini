@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -55,6 +56,22 @@ func TestRun_failsANewLongTestAndPassesOneInTheBaseline(t *testing.T) {
 	testutil.WriteFile(t, "test_baseline.txt", "pkg:TestLong 30\n")
 	if failed, out := runIn(t, options{dirs: []string{"."}, baselinePath: "test_baseline.txt"}); failed {
 		t.Fatalf("with a baseline entry: output:\n%s", out)
+	}
+}
+
+func TestRun_anyWayOfSpellingTheDirectoryMatchesTheBaseline(t *testing.T) {
+	t.Chdir(t.TempDir())
+	testutil.WriteFile(t, "pkg/a_test.go", "package p\nfunc TestLong() {\n"+codeLines(30)+"}\n")
+	testutil.WriteFile(t, "test_baseline.txt", "pkg:TestLong 30\n")
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, dir := range []string{"pkg", "./pkg", filepath.Join(wd, "pkg"), filepath.Join("..", filepath.Base(wd), "pkg")} {
+		if failed, out := runIn(t, options{dirs: []string{dir}, baselinePath: "test_baseline.txt"}); failed {
+			t.Errorf("run on %s failed:\n%s", dir, out)
+		}
 	}
 }
 

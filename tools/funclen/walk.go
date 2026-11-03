@@ -57,7 +57,7 @@ func isSkippedDir(name string) bool {
 func runScope(dirs []string) func(pkgDir string) bool {
 	roots := make([]string, len(dirs))
 	for i, dir := range dirs {
-		roots[i] = filepath.ToSlash(filepath.Clean(dir))
+		roots[i] = workdirRel(dir)
 	}
 	return func(pkgDir string) bool {
 		for _, root := range roots {
@@ -70,5 +70,23 @@ func runScope(dirs []string) func(pkgDir string) bool {
 }
 
 func pkgDir(path string) string {
-	return filepath.ToSlash(filepath.Dir(filepath.Clean(path)))
+	return workdirRel(filepath.Dir(path))
+}
+
+// workdirRel spells dir relative to the working directory, where the baseline's keys are rooted,
+// so an absolute or ../ spelling of a directory matches the same entries.
+func workdirRel(dir string) string {
+	wd, err := os.Getwd()
+	if err != nil {
+		return filepath.ToSlash(filepath.Clean(dir))
+	}
+	abs := dir
+	if !filepath.IsAbs(dir) {
+		abs = filepath.Join(wd, dir)
+	}
+	rel, err := filepath.Rel(wd, abs)
+	if err != nil {
+		return filepath.ToSlash(filepath.Clean(dir))
+	}
+	return filepath.ToSlash(rel)
 }
