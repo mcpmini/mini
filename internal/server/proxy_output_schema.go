@@ -55,7 +55,7 @@ func setProxyOutputSchema(tool map[string]any) {
 		return
 	}
 	loosenSchema(schema)
-	if !allowMiniNotice(schema) {
+	if !placeMiniNotice(schema) {
 		tool["outputSchema"] = looseOutputSchema(schema)
 	}
 }
@@ -150,7 +150,7 @@ func oneOfToAnyOf(schema map[string]any) {
 	schema["allOf"] = append(allOf, map[string]any{"anyOf": branches})
 }
 
-func allowMiniNotice(schema map[string]any) bool {
+func placeMiniNotice(schema map[string]any) bool {
 	if _, refers := schema["$ref"]; refers {
 		return false
 	}
@@ -159,26 +159,26 @@ func allowMiniNotice(schema map[string]any) bool {
 		return false
 	}
 	if objectish {
-		allowMiniProperty(schema)
+		placeMiniProperty(schema)
 	}
-	if arrayish && !allowMiniItem(schema) {
+	if arrayish && !placeMiniItem(schema) {
 		return false
 	}
-	return allowMiniInBranches(schema)
+	return placeMiniInBranches(schema)
 }
 
-func allowMiniProperty(schema map[string]any) {
+func placeMiniProperty(schema map[string]any) {
 	properties := schemaProperties(schema)
 	if _, upstreamOwnsKey := properties["__mini"]; !upstreamOwnsKey {
 		properties["__mini"] = miniOutputMetaSchema()
 	}
 }
 
-func allowMiniInBranches(schema map[string]any) bool {
+func placeMiniInBranches(schema map[string]any) bool {
 	for _, key := range []string{"anyOf", "allOf"} {
 		branches, _ := schema[key].([]any)
 		for _, branch := range branches {
-			if !allowMiniInBranch(branch) {
+			if !placeMiniInBranch(branch) {
 				return false
 			}
 		}
@@ -186,15 +186,15 @@ func allowMiniInBranches(schema map[string]any) bool {
 	return true
 }
 
-func allowMiniInBranch(branch any) bool {
+func placeMiniInBranch(branch any) bool {
 	schema, ok := branch.(map[string]any)
 	if !ok || !isObjectish(schema) && !isArrayish(schema) {
 		return true
 	}
-	return allowMiniNotice(schema)
+	return placeMiniNotice(schema)
 }
 
-func allowMiniItem(schema map[string]any) bool {
+func placeMiniItem(schema map[string]any) bool {
 	if _, positional := schema["prefixItems"]; positional {
 		return false
 	}
