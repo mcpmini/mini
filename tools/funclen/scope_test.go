@@ -85,6 +85,28 @@ func TestTables_rowsDoNotCountHoweverTheTableIsUsed(t *testing.T) {
 	}
 }
 
+func callbackTableSrc(callbackBody string) string {
+	return "package p\nimport \"testing\"\nfunc TestX(t *testing.T) {\n\tfor _, tc := range []tc{\n" +
+		"\t\t{name: \"long\", run: func(t *testing.T) {\n" + callbackBody + "\t\t}},\n" +
+		"\t\t{name: \"short\", run: func(t *testing.T) {}},\n\t} {\n\t\tt.Run(tc.name, tc.run)\n\t}\n}\n"
+}
+
+func TestTables_aCallbackInARowIsMeasuredOnItsOwn(t *testing.T) {
+	if got := longestOf(t, callbackTableSrc(codeLines(30))); got.name != "func@5" || got.lines != 30 {
+		t.Errorf("longest = %+v, want the row's callback at line 5 with 30 lines", got)
+	}
+}
+
+func TestTables_aSubtestInARowCallbackIsMeasuredOnce(t *testing.T) {
+	inner := "\t\t\tt.Run(\"inner\", func(t *testing.T) {\n" + codeLines(30) + "\t\t\t})\n"
+
+	funcs := testSource(t, callbackTableSrc(inner)).testFuncs()
+
+	if got := funcs[0].longest; got.name != "func@5/inner" || got.lines != 30 {
+		t.Errorf("longest = %+v, want func@5/inner with 30 lines", got)
+	}
+}
+
 func TestTables_aStructLiteralIsSetupAndCountsEvenWithNestedLiterals(t *testing.T) {
 	fields := "\t\tAuth: &config.AuthConfig{},\n\t\tLimits: Limits{},\n" + strings.Repeat("\t\tName: \"a\",\n", 28)
 	body := "\tcfg := config.ServerConfig{\n" + fields + "\t}\n\t_ = cfg\n"

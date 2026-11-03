@@ -5,25 +5,9 @@ import (
 	"go/token"
 )
 
-// tableLines marks the lines of every table literal in body. A table is a slice or map literal
-// holding two or more composite literals, however the test consumes it; a single struct literal
-// is setup and still counts. Nested map[string]any fixtures match too, which the AST alone
-// can't tell apart from tables.
-func (s *sourceFile) tableLines(body *ast.BlockStmt) map[int]bool {
-	lines := map[int]bool{}
-	ast.Inspect(body, func(n ast.Node) bool {
-		lit, ok := n.(*ast.CompositeLit)
-		if !ok || !isTable(lit) {
-			return true
-		}
-		for l := s.line(lit.Pos()); l <= s.line(lit.End()); l++ {
-			lines[l] = true
-		}
-		return false
-	})
-	return lines
-}
-
+// A table is a slice or map literal holding two or more composite literals, however the test
+// consumes it; a single struct literal is setup and still counts. Nested map[string]any fixtures
+// match too, which the AST alone can't tell apart from tables.
 func isTable(lit *ast.CompositeLit) bool {
 	switch lit.Type.(type) {
 	case *ast.ArrayType, *ast.MapType:
@@ -48,4 +32,18 @@ func isCompositeRow(elt ast.Expr) bool {
 	}
 	_, ok := elt.(*ast.CompositeLit)
 	return ok
+}
+
+// tableCallbacks returns the outermost function literals in a table. They run as test code, so
+// each is measured as its own scope rather than excused with the table's data.
+func tableCallbacks(table *ast.CompositeLit) []*ast.FuncLit {
+	var found []*ast.FuncLit
+	ast.Inspect(table, func(n ast.Node) bool {
+		fn, ok := n.(*ast.FuncLit)
+		if ok {
+			found = append(found, fn)
+		}
+		return !ok
+	})
+	return found
 }

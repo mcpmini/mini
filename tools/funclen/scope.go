@@ -18,38 +18,64 @@ type subtest struct {
 	fn   *ast.FuncLit
 }
 
+type scopeChildren struct {
+	subtests  []subtest
+	tables    []*ast.CompositeLit
+	callbacks []*ast.FuncLit
+}
+
 func (s *sourceFile) leafScopes(body *ast.BlockStmt, name string, line int) []scope {
-	children := subtests(body)
-	excluded := s.tableLines(body)
-	for _, child := range children {
-		for l := s.line(child.fn.Body.Lbrace) + 1; l < s.line(child.fn.Body.Rbrace); l++ {
-			excluded[l] = true
-		}
+	children := directChildren(body)
+	excluded := map[int]bool{}
+	for _, table := range children.tables {
+		s.markLines(excluded, s.line(table.Pos()), s.line(table.End()))
+	}
+	for _, child := range children.subtests {
+		s.markLines(excluded, s.line(child.fn.Body.Lbrace)+1, s.line(child.fn.Body.Rbrace)-1)
 	}
 	own := s.codeLines(s.line(body.Lbrace)+1, s.line(body.Rbrace)-1, excluded)
 	scopes := []scope{{name: name, line: line, lines: own}}
-	for _, child := range children {
-		childName := s.subtestName(child.call)
-		if name != "body" {
-			childName = name + "/" + childName
-		}
+	for _, child := range children.subtests {
+		childName := nestedName(name, s.subtestName(child.call))
 		scopes = append(scopes, s.leafScopes(child.fn.Body, childName, s.line(child.call.Pos()))...)
+	}
+	for _, fn := range children.callbacks {
+		fnLine := s.line(fn.Pos())
+		scopes = append(scopes, s.leafScopes(fn.Body, nestedName(name, fmt.Sprintf("func@%d", fnLine)), fnLine)...)
 	}
 	return scopes
 }
 
-// subtests returns the t.Run calls directly inside body; the ones nested in them belong to
-// their own scope.
-func subtests(body *ast.BlockStmt) []subtest {
-	var found []subtest
+func (s *sourceFile) markLines(lines map[int]bool, from, to int) {
+	for l := from; l <= to; l++ {
+		lines[l] = true
+	}
+}
+
+func nestedName(parent, child string) string {
+	if parent == "body" {
+		return child
+	}
+	return parent + "/" + child
+}
+
+// directChildren finds the subtests and tables directly inside body in one walk, stopping at
+// each, so whatever is nested in them is measured only by their own scope.
+func directChildren(body *ast.BlockStmt) scopeChildren {
+	var found scopeChildren
 	ast.Inspect(body, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		if fn, ok := subtestFunc(call); ok {
-			found = append(found, subtest{call: call, fn: fn})
-			return false
+		switch n := n.(type) {
+		case *ast.CallExpr:
+			if fn, ok := subtestFunc(n); ok {
+				found.subtests = append(found.subtests, subtest{call: n, fn: fn})
+				return false
+			}
+		case *ast.CompositeLit:
+			if isTable(n) {
+				found.tables = append(found.tables, n)
+				found.callbacks = append(found.callbacks, tableCallbacks(n)...)
+				return false
+			}
 		}
 		return true
 	})

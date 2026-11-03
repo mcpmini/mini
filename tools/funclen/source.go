@@ -71,8 +71,7 @@ func skippableLines(src []byte, lines []string) []bool {
 	return skippable
 }
 
-// tokenLines marks the lines holding a token other than a comment. Tokenizing rather than
-// matching text keeps a "/*" inside a raw string from reading as a comment.
+// Tokenizing rather than matching text keeps a "/*" inside a raw string from reading as a comment.
 func tokenLines(src []byte, lineCount int) []bool {
 	code := make([]bool, lineCount+2)
 	fset := token.NewFileSet()

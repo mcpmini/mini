@@ -60,8 +60,7 @@ func (b baseline) write() error {
 	return os.WriteFile(b.path, []byte(sb.String()), 0o644)
 }
 
-// prune lowers entries to what the tests now measure and removes those back under the limit or
-// gone. It never adds or raises an entry: that takes a hand edit, which shows in review.
+// prune never adds or raises an entry: that takes a hand edit, which shows in review.
 func (b baseline) prune(funcs map[string]testFunc, inRun func(string) bool) {
 	for key, n := range b.entries {
 		if !inRun(entryPkg(key)) {
