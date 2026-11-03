@@ -5,7 +5,6 @@ import "github.com/mcpmini/mini/internal/config"
 // Defaults are the global fallback limits when no projection config exists.
 type Defaults struct {
 	StringLimit        int
-	DepthLimit         int
 	ContentFields      []string // field names auto-stripped when >= AutoStripThreshold chars
 	AutoStripThreshold int      // 0 = disabled
 }
@@ -13,7 +12,6 @@ type Defaults struct {
 func DefaultsFrom(cfg *config.Config) *Defaults {
 	return &Defaults{
 		StringLimit:        cfg.DefaultStringLimit,
-		DepthLimit:         cfg.DefaultDepthLimit,
 		ContentFields:      cfg.ContentFields,
 		AutoStripThreshold: cfg.AutoStripThreshold,
 	}
@@ -27,7 +25,6 @@ type effectiveConfig struct {
 	stringLimits       map[string]int
 	defaultArrayLimit  int
 	defaultStringLimit int
-	depthLimit         int
 	stripContent       bool
 	contentFieldSet    map[string]bool // precomputed set for O(1) lookup
 	autoStripThreshold int
@@ -61,7 +58,6 @@ func mergeWithDefaults(cfg *config.ProjectionConfig, d *Defaults) *effectiveConf
 func effectiveFromDefaults(d *Defaults) *effectiveConfig {
 	e := &effectiveConfig{
 		defaultStringLimit: d.StringLimit,
-		depthLimit:         d.DepthLimit,
 		autoStripThreshold: d.AutoStripThreshold,
 	}
 	if len(d.ContentFields) > 0 {
@@ -81,9 +77,6 @@ func applyProjectionConfig(e *effectiveConfig, cfg *config.ProjectionConfig) {
 		e.defaultArrayLimit = v
 	}
 	e.stringLimits = cfg.StringLimits
-	if cfg.DepthLimit > 0 {
-		e.depthLimit = cfg.DepthLimit
-	}
 	if cfg.StripMarkup {
 		e.stripContent = true
 	}

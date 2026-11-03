@@ -11,7 +11,6 @@ import (
 
 var defaultLimits = &projection.Defaults{
 	StringLimit:        1000,
-	DepthLimit:         3,
 	ContentFields:      []string{"body", "description", "text", "readme", "content", "message", "summary", "patch"},
 	AutoStripThreshold: 500,
 }
@@ -33,7 +32,7 @@ func TestArrayLimit(t *testing.T) {
 	t.Run("per-projection limit produces truncation metadata", func(t *testing.T) {
 		value := map[string]any{"steps": []any{"a", "b", "c", "d", "e"}}
 		cfg := &config.ProjectionConfig{ArrayLimits: map[string]int{"steps": 2}}
-		result := projection.Apply(value, cfg, &projection.Defaults{StringLimit: 1000, DepthLimit: 5})
+		result := projection.Apply(value, cfg, &projection.Defaults{StringLimit: 1000})
 		m := result.Summary.(map[string]any)
 		steps := m["steps"].([]any)
 		if len(steps) != 2 {
@@ -46,7 +45,7 @@ func TestArrayLimit(t *testing.T) {
 
 	t.Run("no limit returns all items", func(t *testing.T) {
 		value := map[string]any{"steps": []any{"a", "b", "c", "d", "e"}}
-		result := projection.Apply(value, nil, &projection.Defaults{StringLimit: 1000, DepthLimit: 5})
+		result := projection.Apply(value, nil, &projection.Defaults{StringLimit: 1000})
 		m := result.Summary.(map[string]any)
 		steps := m["steps"].([]any)
 		if len(steps) != 5 {
@@ -60,7 +59,7 @@ func TestStringTruncation(t *testing.T) {
 	long := strings.Repeat("x", 2000)
 	value := map[string]any{"body": long}
 
-	result := projection.Apply(value, nil, &projection.Defaults{StringLimit: 100, DepthLimit: 5})
+	result := projection.Apply(value, nil, &projection.Defaults{StringLimit: 100})
 	m := result.Summary.(map[string]any)
 
 	want := strings.Repeat("x", 100)
@@ -76,7 +75,7 @@ func TestStringTruncation_CJKUsesCharCount(t *testing.T) {
 	// 700 CJK chars = 2100 bytes. A 2000-char limit should keep all 700 chars.
 	cjk := strings.Repeat("中", 700)
 	value := map[string]any{"body": cjk}
-	result := projection.Apply(value, nil, &projection.Defaults{StringLimit: 2000, DepthLimit: 5})
+	result := projection.Apply(value, nil, &projection.Defaults{StringLimit: 2000})
 	m := result.Summary.(map[string]any)
 	if m["body"] != cjk {
 		t.Errorf("expected 700 CJK chars preserved, got %d chars", utf8.RuneCountInString(m["body"].(string)))
@@ -90,7 +89,7 @@ func TestStringTruncation_CJKTruncatesAtRuneCount(t *testing.T) {
 	// 1000 CJK chars = 3000 bytes. A 500-char limit should keep ~500 chars, not ~166.
 	cjk := strings.Repeat("中", 1000)
 	value := map[string]any{"body": cjk}
-	result := projection.Apply(value, nil, &projection.Defaults{StringLimit: 500, DepthLimit: 5})
+	result := projection.Apply(value, nil, &projection.Defaults{StringLimit: 500})
 	m := result.Summary.(map[string]any)
 	got := utf8.RuneCountInString(m["body"].(string))
 	if got > 500 {
@@ -98,26 +97,6 @@ func TestStringTruncation_CJKTruncatesAtRuneCount(t *testing.T) {
 	}
 	if got < 450 {
 		t.Errorf("expected at least 450 CJK chars (near 500-char limit), got %d", got)
-	}
-}
-
-func TestDepthLimitCountsRootAtZero(t *testing.T) {
-	value := map[string]any{
-		"a": map[string]any{
-			"b": map[string]any{
-				"c": map[string]any{
-					"deep": "value",
-				},
-			},
-		},
-	}
-
-	result := projection.Apply(value, nil, &projection.Defaults{DepthLimit: 2, StringLimit: 1000})
-	m := result.Summary.(map[string]any)
-	a := m["a"].(map[string]any)
-
-	if a["b"] != "[depth limit reached]" {
-		t.Errorf("expected a.b=[depth limit reached] at depth 2, got %v", a["b"])
 	}
 }
 
@@ -129,7 +108,7 @@ func namedArrayLimitsApply(t *testing.T) projection.Result {
 		"other_list": []any{"a", "b", "c", "d", "e"},
 	}
 	limits := &projection.Defaults{
-		StringLimit: 1000, DepthLimit: 5,
+		StringLimit:   1000,
 		ContentFields: []string{}, AutoStripThreshold: 0,
 	}
 	return projection.Apply(value, cfg, limits)
@@ -166,7 +145,7 @@ func TestNamedStringLimit(t *testing.T) {
 		"title": long,
 	}
 
-	result := projection.Apply(value, cfg, &projection.Defaults{StringLimit: 1000, DepthLimit: 5})
+	result := projection.Apply(value, cfg, &projection.Defaults{StringLimit: 1000})
 	m := result.Summary.(map[string]any)
 
 	// "word word ... word" with limit 50: truncateAtBoundary finds space at [49] → 49 chars kept.
@@ -215,7 +194,7 @@ func TestArrayElementOmissionPath(t *testing.T) {
 	long := strings.Repeat("x", 500)
 	value := []any{long, long, "short"}
 
-	result := projection.Apply(value, nil, &projection.Defaults{StringLimit: 100, DepthLimit: 5})
+	result := projection.Apply(value, nil, &projection.Defaults{StringLimit: 100})
 
 	if len(result.Truncated) != 2 {
 		t.Fatalf("expected 2 omissions (one per long element), got %v", result.Truncated)
@@ -234,7 +213,7 @@ func TestArrayElementOmissionPathInsideObject(t *testing.T) {
 		"lines": []any{long, long},
 	}
 
-	result := projection.Apply(value, nil, &projection.Defaults{StringLimit: 100, DepthLimit: 5})
+	result := projection.Apply(value, nil, &projection.Defaults{StringLimit: 100})
 
 	if len(result.Truncated) != 2 {
 		t.Fatalf("expected 2 omissions, got %v", result.Truncated)
@@ -252,7 +231,7 @@ func TestElidedPathBracketNotationForNonIdentifierKey(t *testing.T) {
 		"body text": strings.Repeat("x", 500),
 		"normal":    strings.Repeat("x", 500),
 	}
-	result := projection.Apply(value, nil, &projection.Defaults{StringLimit: 100, DepthLimit: 5})
+	result := projection.Apply(value, nil, &projection.Defaults{StringLimit: 100})
 
 	paths := make(map[string]bool)
 	for _, o := range result.Truncated {
@@ -270,7 +249,7 @@ func TestDefaultArrayLimit(t *testing.T) {
 	t.Run("default truncates root-level array", func(t *testing.T) {
 		cfg := &config.ProjectionConfig{ArrayLimits: map[string]int{"default": 2}}
 		value := []any{1, 2, 3, 4, 5}
-		result := projection.Apply(value, cfg, &projection.Defaults{StringLimit: 1000, DepthLimit: 5})
+		result := projection.Apply(value, cfg, &projection.Defaults{StringLimit: 1000})
 		arr := result.Summary.([]any)
 		if len(arr) != 2 {
 			t.Errorf("expected 2 items, got %d", len(arr))
@@ -286,7 +265,7 @@ func TestDefaultArrayLimit(t *testing.T) {
 			"labels": []any{1, 2, 3, 4, 5, 6, 7, 8},
 			"other":  []any{"a", "b", "c", "d", "e"},
 		}
-		result := projection.Apply(value, cfg, &projection.Defaults{StringLimit: 1000, DepthLimit: 5})
+		result := projection.Apply(value, cfg, &projection.Defaults{StringLimit: 1000})
 		m := result.Summary.(map[string]any)
 		if len(m["labels"].([]any)) != 5 {
 			t.Errorf("labels: expected 5 items (named limit), got %d", len(m["labels"].([]any)))

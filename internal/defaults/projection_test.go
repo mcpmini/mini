@@ -92,7 +92,6 @@ func defaultProjectionDefaults() *projection.Defaults {
 	cfg := config.DefaultConfig()
 	return &projection.Defaults{
 		StringLimit:        cfg.DefaultStringLimit,
-		DepthLimit:         cfg.DefaultDepthLimit,
 		ContentFields:      cfg.ContentFields,
 		AutoStripThreshold: cfg.AutoStripThreshold,
 	}
