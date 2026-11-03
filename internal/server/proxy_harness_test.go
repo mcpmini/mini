@@ -88,3 +88,22 @@ func argsOrEmpty(args map[string]any) map[string]any {
 	}
 	return args
 }
+
+func proxyResultOf(t *testing.T, resp map[string]any) map[string]any {
+	t.Helper()
+	result, ok := resp["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing result in response: %v", resp)
+	}
+	return result
+}
+
+func contentTexts(result map[string]any) []string {
+	blocks, _ := result["content"].([]any)
+	texts := make([]string, 0, len(blocks))
+	for _, b := range blocks {
+		text, _ := b.(map[string]any)["text"].(string)
+		texts = append(texts, text)
+	}
+	return texts
+}

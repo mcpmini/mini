@@ -142,25 +142,6 @@ func newProxyToonServer(t *testing.T, logs *syncBuffer) *server.Server {
 	return newTestServer(t, params)
 }
 
-func proxyResultOf(t *testing.T, resp map[string]any) map[string]any {
-	t.Helper()
-	result, ok := resp["result"].(map[string]any)
-	if !ok {
-		t.Fatalf("missing result in response: %v", resp)
-	}
-	return result
-}
-
-func contentTexts(result map[string]any) []string {
-	blocks, _ := result["content"].([]any)
-	texts := make([]string, 0, len(blocks))
-	for _, b := range blocks {
-		text, _ := b.(map[string]any)["text"].(string)
-		texts = append(texts, text)
-	}
-	return texts
-}
-
 func TestProxy_ToonFormat_UntrimmedObjectTextBecomesOneToonBlock(t *testing.T) {
 	h := newProxyHarness(t, newProxyToonServer(t, nil))
 	h.addUpstream("svc", textResult(`{"id":1,"name":"alice"}`), "get_user")

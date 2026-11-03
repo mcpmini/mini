@@ -99,7 +99,6 @@ func TestProxy_ErrorBehavior_UnknownServerReturnsRPCError(t *testing.T) {
 
 func TestProxy_FlatArguments_ReachUpstreamAsSent(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
-	defer srv.Close()
 	conn := fakeConn("list_repos")
 	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "gh", Connection: conn})
 
@@ -114,7 +113,6 @@ func TestProxy_FlatArguments_ReachUpstreamAsSent(t *testing.T) {
 
 func TestProxy_ControlKey_NotForwardedToUpstream(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
-	defer srv.Close()
 	conn := fakeConn("get_item")
 	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
@@ -132,7 +130,6 @@ func TestProxy_ControlKey_NotForwardedToUpstream(t *testing.T) {
 
 func TestProxy_ArgsKey_ForwardedAsUpstreamArgument(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
-	defer srv.Close()
 	conn := fakeConn("get_item")
 	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
 
@@ -144,7 +141,6 @@ func TestProxy_ArgsKey_ForwardedAsUpstreamArgument(t *testing.T) {
 
 func TestProxy_ClosedRefRoot_FlatCallWithControlReachesUpstream(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
-	defer srv.Close()
 	conn := &transport.FakeConnection{
 		Tools: []transport.ToolDefinition{
 			{
@@ -175,7 +171,6 @@ func TestProxy_ClosedRefRoot_FlatCallWithControlReachesUpstream(t *testing.T) {
 
 func TestProxy_Alias_DispatchesToRealUpstreamName(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
-	defer srv.Close()
 	fake := fakeConn("list_pull_requests")
 	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"[]"}]}`)
 	proj := map[string]*config.ProjectionConfig{

@@ -34,7 +34,6 @@ func addProxyConn(params addProxyConnParams) {
 
 func TestProxy_Initialize_Instructions(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
-	defer srv.Close()
 
 	msgs := serveAll(t, srv)
 	var initResult map[string]any
@@ -216,7 +215,7 @@ func TestProxy_Call_SessionFormatToon_RendersToon(t *testing.T) {
 	session := h.session("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee")
 	session.setProjection("svc", "list_items", map[string]any{"format": "toon"})
 
-	if text := session.callText("svc__list_items", nil); strings.HasPrefix(text, "{") {
-		t.Errorf("session format:toon should produce TOON in proxy mode, got JSON: %s", text)
+	if text := session.callText("svc__list_items", nil); !strings.Contains(text, "[2]{id,name}:") {
+		t.Errorf("session format:toon should produce a TOON table in proxy mode, got: %s", text)
 	}
 }
