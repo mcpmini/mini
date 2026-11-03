@@ -27,7 +27,7 @@ func (iss issue) String() string {
 func checkProduction(paths []string, fset *token.FileSet) []issue {
 	var issues []issue
 	for _, path := range paths {
-		if s, ok := readSource(path, fset); ok {
+		if s, err := readSource(path, fset); err == nil {
 			issues = append(issues, s.funcIssues()...)
 		}
 	}

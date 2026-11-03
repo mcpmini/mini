@@ -127,7 +127,10 @@ func TestMeasureTests_aNameRepeatedInOneDirectoryKeepsTheLonger(t *testing.T) {
 	testutil.WriteFile(t, "pkg/a_test.go", "package p\nfunc helper() {\n"+codeLines(30)+"}\n")
 	testutil.WriteFile(t, "pkg/b_test.go", "package p_test\nfunc helper() {\n"+codeLines(26)+"}\n")
 
-	funcs := measureTests([]string{"pkg/a_test.go", "pkg/b_test.go"}, token.NewFileSet())
+	funcs, err := measureTests([]string{"pkg/a_test.go", "pkg/b_test.go"}, token.NewFileSet())
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if got := funcs["pkg:helper"].longest.lines; got != 30 {
 		t.Errorf("helper measures %d, want the longer copy's 30", got)

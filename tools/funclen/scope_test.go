@@ -8,9 +8,9 @@ import (
 
 func testSource(t *testing.T, src string) *sourceFile {
 	t.Helper()
-	s, ok := parseSource("x_test.go", []byte(src), token.NewFileSet())
-	if !ok {
-		t.Fatalf("parse failed:\n%s", src)
+	s, err := parseSource("x_test.go", []byte(src), token.NewFileSet())
+	if err != nil {
+		t.Fatalf("parse failed: %v\n%s", err, src)
 	}
 	return s
 }

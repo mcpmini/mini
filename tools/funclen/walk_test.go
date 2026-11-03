@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -87,6 +88,21 @@ func TestRun_pruneRewritesTheBaselineAndThenPasses(t *testing.T) {
 	}
 	if data := testutil.ReadFile(t, "test_baseline.txt"); string(data) != "pkg:TestLong 28\n" {
 		t.Errorf("baseline after prune = %q, want only TestLong at 28", data)
+	}
+}
+
+func TestRun_anUnparseableTestFileFailsThePruneAndLeavesTheBaseline(t *testing.T) {
+	t.Chdir(t.TempDir())
+	testutil.WriteFile(t, "pkg/a_test.go", "package p\nfunc TestLong() {\n")
+	testutil.WriteFile(t, "test_baseline.txt", "pkg:TestLong 40\n")
+
+	_, err := run(options{dirs: []string{"."}, baselinePath: "test_baseline.txt", pruneBaseline: true}, io.Discard)
+
+	if err == nil || !strings.Contains(err.Error(), "a_test.go") {
+		t.Errorf("run error = %v, want one naming the unparseable file", err)
+	}
+	if data := testutil.ReadFile(t, "test_baseline.txt"); string(data) != "pkg:TestLong 40\n" {
+		t.Errorf("baseline = %q, want it untouched", data)
 	}
 }
 

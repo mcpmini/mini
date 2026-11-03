@@ -3,6 +3,7 @@ package main
 import (
 	"go/ast"
 	"go/parser"
+	"go/scanner"
 	"go/token"
 	"os"
 	"strings"
@@ -16,22 +17,21 @@ type sourceFile struct {
 	skippable []bool
 }
 
-// readSource returns false for a file that can't be read or parsed; the compiler reports those.
-func readSource(path string, fset *token.FileSet) (*sourceFile, bool) {
+func readSource(path string, fset *token.FileSet) (*sourceFile, error) {
 	src, err := os.ReadFile(path)
 	if err != nil {
-		return nil, false
+		return nil, err
 	}
 	return parseSource(path, src, fset)
 }
 
-func parseSource(path string, src []byte, fset *token.FileSet) (*sourceFile, bool) {
+func parseSource(path string, src []byte, fset *token.FileSet) (*sourceFile, error) {
 	f, err := parser.ParseFile(fset, path, src, 0)
 	if err != nil {
-		return nil, false
+		return nil, err
 	}
 	lines := strings.Split(string(src), "\n")
-	return &sourceFile{path: path, file: f, fset: fset, lines: lines, skippable: skippableLines(lines)}, true
+	return &sourceFile{path: path, file: f, fset: fset, lines: lines, skippable: skippableLines(src, lines)}, nil
 }
 
 func (s *sourceFile) funcDecls() []*ast.FuncDecl {
@@ -60,31 +60,36 @@ func (s *sourceFile) codeLines(from, to int, excluded map[int]bool) int {
 
 // skippableLines marks, by 1-based line number, the lines that don't represent real logic:
 // comment-only lines and bare closing braces. A line that mixes code with a trailing comment
-// still counts as code.
-func skippableLines(lines []string) []bool {
+// still counts as code, and so does a blank one.
+func skippableLines(src []byte, lines []string) []bool {
+	code := tokenLines(src, len(lines))
 	skippable := make([]bool, len(lines)+1)
-	inBlock := false
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		var isComment bool
-		isComment, inBlock = classifyCommentLine(trimmed, inBlock)
-		skippable[i+1] = isComment || trimmed == "}"
+		skippable[i+1] = trimmed == "}" || (trimmed != "" && !code[i+1])
 	}
 	return skippable
 }
 
-// classifyCommentLine reports whether line is comment-only, and whether a
-// /* */ block comment remains open for the next line.
-func classifyCommentLine(line string, inBlock bool) (isComment, stillInBlock bool) {
-	switch {
-	case inBlock:
-		return true, !strings.Contains(line, "*/")
-	case strings.HasPrefix(line, "//"):
-		return true, false
-	case strings.HasPrefix(line, "/*"):
-		return true, !strings.Contains(line, "*/")
-	default:
-		return false, false
+// tokenLines marks the lines holding a token other than a comment. Tokenizing rather than
+// matching text keeps a "/*" inside a raw string from reading as a comment.
+func tokenLines(src []byte, lineCount int) []bool {
+	code := make([]bool, lineCount+2)
+	fset := token.NewFileSet()
+	file := fset.AddFile("", fset.Base(), len(src))
+	var s scanner.Scanner
+	s.Init(file, src, nil, scanner.ScanComments)
+	for {
+		pos, tok, lit := s.Scan()
+		if tok == token.EOF {
+			return code
+		}
+		if tok == token.COMMENT || (tok == token.SEMICOLON && lit == "\n") {
+			continue
+		}
+		for l := file.Line(pos); l <= file.Line(pos+token.Pos(max(len(lit), 1)-1)); l++ {
+			code[l] = true
+		}
 	}
 }
 

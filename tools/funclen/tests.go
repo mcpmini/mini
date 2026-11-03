@@ -16,13 +16,14 @@ func (f testFunc) describe() string {
 }
 
 // measureTests keys each function by package directory and name. The internal and external test
-// packages share a directory, so a name can repeat there; the larger measure wins.
-func measureTests(paths []string, fset *token.FileSet) map[string]testFunc {
+// packages share a directory, so a name can repeat there; the larger measure wins. A file that
+// can't be parsed is an error rather than a skip, so a prune never drops the allowances it holds.
+func measureTests(paths []string, fset *token.FileSet) (map[string]testFunc, error) {
 	funcs := map[string]testFunc{}
 	for _, path := range paths {
-		s, ok := readSource(path, fset)
-		if !ok {
-			continue
+		s, err := readSource(path, fset)
+		if err != nil {
+			return nil, err
 		}
 		for _, f := range s.testFuncs() {
 			key := pkgDir(path) + ":" + f.name
@@ -31,7 +32,7 @@ func measureTests(paths []string, fset *token.FileSet) map[string]testFunc {
 			}
 		}
 	}
-	return funcs
+	return funcs, nil
 }
 
 func (s *sourceFile) testFuncs() []testFunc {

@@ -90,7 +90,10 @@ func checkTestFiles(paths []string, fset *token.FileSet, opts options) ([]string
 	if err != nil {
 		return nil, err
 	}
-	funcs := measureTests(paths, fset)
+	funcs, err := measureTests(paths, fset)
+	if err != nil {
+		return nil, err
+	}
 	inRun := runScope(opts.dirs)
 	if opts.pruneBaseline {
 		b.prune(funcs, inRun)
