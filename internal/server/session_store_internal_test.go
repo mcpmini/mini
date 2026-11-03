@@ -11,6 +11,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -170,11 +171,7 @@ func TestRunSessionEviction_evictsIdleSessions(t *testing.T) {
 	}
 	fakeClock.Advance(30 * time.Minute)
 
-	select {
-	case <-evicted:
-	case <-t.Context().Done():
-		t.Fatal("eviction did not complete")
-	}
+	testutil.WaitForReceive(t, evicted, "the eviction to complete")
 	cancel()
 	<-done
 	if got := srv.sessions.count(); got != 0 {

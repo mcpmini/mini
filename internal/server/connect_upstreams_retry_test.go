@@ -18,6 +18,7 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/mcptest"
 	"github.com/mcpmini/mini/internal/server"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 const statusNotRetriedByTransport = http.StatusInternalServerError
@@ -35,14 +36,13 @@ func upstreamFailingFirst(
 ) (*httptest.Server, *atomic.Int32) {
 	t.Helper()
 	var attempts atomic.Int32
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		if attempts.Add(1) <= failures {
 			http.Error(w, "server error", statusNotRetriedByTransport)
 			return
 		}
 		afterFailures.ServeHTTP(w, r)
-	}))
-	t.Cleanup(ts.Close)
+	})
 	return ts, &attempts
 }
 
@@ -268,7 +268,7 @@ func TestConnectUpstreamAsync_runtimeAddWhileDialInFlight_doesNotOverwriteRuntim
 		}
 	})
 
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		var req map[string]any
 		json.Unmarshal(body, &req) //nolint:errcheck
@@ -281,19 +281,14 @@ func TestConnectUpstreamAsync_runtimeAddWhileDialInFlight_doesNotOverwriteRuntim
 		}
 		r.Body = io.NopCloser(bytes.NewReader(body))
 		pingHandler().ServeHTTP(w, r)
-	}))
-	t.Cleanup(ts.Close)
+	})
 
 	srv := newConnectTestServer(t)
 	defer mustCloseWithin(t, srv, 3*time.Second)
 
 	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{{Name: "svc", Transport: "http", URL: ts.URL}})
 
-	select {
-	case <-reached:
-	case <-time.After(5 * time.Second):
-		t.Fatal("handler did not reach tools/list within 5s")
-	}
+	testutil.WaitForReceive(t, reached, "the handler to reach tools/list")
 
 	if err := srv.AddConnection(
 		context.Background(),

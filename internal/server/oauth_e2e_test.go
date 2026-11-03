@@ -40,20 +40,71 @@ func fakeOAuthMCPServer(t *testing.T, validToken string, tools []mcptest.Tool) *
 // fakeTokenServer returns an OAuth2 token server that issues the given access token.
 func fakeTokenServer(t *testing.T, accessToken string) *httptest.Server {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if serveOAuthMetadata(w, r) {
-			return
+	return testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
+		if !serveOAuthMetadata(w, r) {
+			issueToken(w, accessToken)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
-			"access_token":  accessToken,
-			"token_type":    "Bearer",
-			"expires_in":    3600,
-			"refresh_token": "refresh-" + accessToken,
-		})
-	}))
-	t.Cleanup(srv.Close)
-	return srv
+	})
+}
+
+func issueToken(w http.ResponseWriter, accessToken string) {
+	testutil.WriteJSON(w, http.StatusOK, map[string]any{
+		"access_token": accessToken, "token_type": "Bearer",
+		"expires_in": 3600, "refresh_token": "refresh-" + accessToken,
+	})
+}
+
+// tokenGate is an OAuth-protected MCP upstream that accepts one token at a time and counts
+// the requests it rejected although they carried a token.
+type tokenGate struct {
+	*mcptest.Server
+	mu                sync.Mutex
+	accepted          string
+	rejectedWithToken atomic.Int32
+}
+
+func newTokenGate(t *testing.T) *tokenGate {
+	t.Helper()
+	g := &tokenGate{}
+	g.Server = mcptest.NewHTTP(t, mcptest.Upstream{
+		Tools:     []mcptest.Tool{{Name: "getData", Description: "get data"}},
+		Intercept: serveOAuthMetadata,
+		Authorize: g.authorize,
+	})
+	return g
+}
+
+func (g *tokenGate) authorize(r mcptest.Request) bool {
+	g.mu.Lock()
+	accepted := g.accepted
+	g.mu.Unlock()
+	sent := r.Header.Get("Authorization")
+	if accepted != "" && sent == "Bearer "+accepted {
+		return true
+	}
+	if sent != "" {
+		g.rejectedWithToken.Add(1)
+	}
+	return false
+}
+
+func (g *tokenGate) accept(token string) {
+	g.mu.Lock()
+	g.accepted = token
+	g.mu.Unlock()
+	g.rejectedWithToken.Store(0)
+}
+
+// completeStartAuth runs start_auth for name and completes the browser login it opens.
+func completeStartAuth(t *testing.T, srv *server.Server, name string) {
+	t.Helper()
+	resp := serve(t, srv, callTool("config", map[string]any{"action": "start_auth", "server": name}))
+	authResult := parseEnvelope(t, toolResultText(t, resp))
+	authURL, _ := authResult["url"].(string)
+	if authResult["ok"] != true || authURL == "" {
+		t.Fatalf("start_auth = %v, want ok and an auth URL", authResult)
+	}
+	authtest.CompleteAuthorization(t, authURL, "test-code")
 }
 
 type newOAuthServerParams struct {
@@ -115,16 +166,8 @@ func TestStartAuth_e2e_connectsAfterOAuthFlow(t *testing.T) {
 			MCPURL:     mcpSrv.URL,
 		},
 	)
-	resp := serve(t, srv, callTool("config", map[string]any{"action": "start_auth", "server": "protected"}))
-	authResult := parseEnvelope(t, toolResultText(t, resp))
-	if authResult["ok"] != true {
-		t.Fatalf("start_auth failed: %v", authResult)
-	}
-	authURL, _ := authResult["url"].(string)
-	if authURL == "" {
-		t.Fatal("expected non-empty auth URL from start_auth")
-	}
-	authtest.CompleteAuthorization(t, authURL, "test-code")
+	completeStartAuth(t, srv, "protected")
+
 	waitForServerConnected(t, srv, "protected")
 }
 
@@ -199,13 +242,8 @@ func TestStartAuth_e2e_toolsAccessibleAfterAuth(t *testing.T) {
 			MCPURL:     mcpSrv.URL,
 		},
 	)
-	authText := toolResultText(
-		t,
-		serve(t, srv, callTool("config", map[string]any{"action": "start_auth", "server": "mysvc"})),
-	)
-	var authResult map[string]any
-	json.Unmarshal([]byte(authText), &authResult)
-	authtest.CompleteAuthorization(t, authResult["url"].(string), "test-code")
+	completeStartAuth(t, srv, "mysvc")
+
 	for range 100 {
 		listText := toolListJSON(t, serve(t, srv, rpc("tools/list", nil)))
 		if strings.Contains(listText, `"mysvc__search"`) && strings.Contains(listText, `"mysvc__create"`) {
@@ -241,95 +279,34 @@ func readYAMLFile(t *testing.T, path string, out any) {
 }
 
 func TestStartAuth_e2e_withStaleToken_browserTokenUsedOnFirstRequest(t *testing.T) {
-	const staleToken = "stale-token"
-	const browserToken = "browser-token"
-
 	dir := t.TempDir()
-
-	var mu sync.Mutex
-	acceptedToken := ""
-	var unauthorizedAfterAuth atomic.Int32
-
-	mcpSrv := mcptest.NewHTTP(t, mcptest.Upstream{
-		Tools:     []mcptest.Tool{{Name: "getData", Description: "get data"}},
-		Intercept: serveOAuthMetadata,
-		Authorize: func(r mcptest.Request) bool {
-			mu.Lock()
-			vt := acceptedToken
-			mu.Unlock()
-			sent := r.Header.Get("Authorization")
-			if vt != "" && sent == "Bearer "+vt {
-				return true
-			}
-			if sent != "" {
-				unauthorizedAfterAuth.Add(1)
-			}
-			return false
-		},
-	})
-
+	upstream := newTokenGate(t)
 	var tokenEndpointOpen atomic.Bool
-	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	tokenSrv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		if !tokenEndpointOpen.Load() {
 			http.Error(w, "not ready", http.StatusServiceUnavailable)
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-			"access_token": browserToken, "token_type": "Bearer",
-			"expires_in": 3600, "refresh_token": "refresh-" + browserToken,
-		})
-	}))
-	defer tokenSrv.Close()
-
-	sc := config.ServerConfig{
-		Name:      "srv",
-		Transport: "http",
-		URL:       mcpSrv.URL,
-		Auth: &config.AuthConfig{
-			Type:     "oauth2",
-			Issuer:   mcpSrv.URL,
-			ClientID: "test-client",
-			AuthURL:  tokenSrv.URL + "/authorize",
-			TokenURL: tokenSrv.URL + "/token",
-		},
-	}
-	configtest.WriteServer(t, dir, sc)
-	authtest.SaveToken(t, authtest.TokenFile{
-		ConfigDir: dir, ServerName: "srv", Server: sc, Token: &oauth2.Token{AccessToken: staleToken},
+		issueToken(w, "browser-token")
 	})
-
-	cfg := config.DefaultConfig()
-	cfg.DisableAuthBrowserOpen = true
-	mini := newTestServer(t, server.Params{Config: cfg, ConfigDir: dir})
-	defer mini.Close()
-
-	sc = loadServerConfig(t, dir, "srv")
+	mini := newOAuthServer(newOAuthServerParams{
+		T: t, ConfigDir: dir, ServerName: "srv", TokenURL: tokenSrv.URL, MCPURL: upstream.URL,
+	})
+	sc := loadServerConfig(t, dir, "srv")
+	authtest.SaveToken(t, authtest.TokenFile{
+		ConfigDir: dir, ServerName: "srv", Server: sc, Token: &oauth2.Token{AccessToken: "stale-token"},
+	})
 	if err := mini.AddUpstream(context.Background(), sc); err == nil {
 		t.Fatal("initial dial with the stale token should fail, leaving a provider registered")
 	}
-
 	tokenEndpointOpen.Store(true)
-	mu.Lock()
-	acceptedToken = browserToken
-	mu.Unlock()
-	unauthorizedAfterAuth.Store(0)
+	upstream.accept("browser-token")
 
-	authText := toolResultText(
-		t,
-		serve(t, mini, callTool("config", map[string]any{"action": "start_auth", "server": "srv"})),
-	)
-	var authResult map[string]any
-	if err := json.Unmarshal([]byte(authText), &authResult); err != nil {
-		t.Fatalf("parse start_auth response: %v", err)
-	}
-	authtest.CompleteAuthorization(t, authResult["url"].(string), "test-code")
-
+	completeStartAuth(t, mini, "srv")
 	waitForServerConnected(t, mini, "srv")
-
 	serve(t, mini, rpc("tools/list", nil))
 
-	if n := unauthorizedAfterAuth.Load(); n > 0 {
+	if n := upstream.rejectedWithToken.Load(); n > 0 {
 		t.Errorf("browser token caused %d unexpected 401 responses after auth, want 0", n)
 	}
 }

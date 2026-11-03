@@ -8,7 +8,6 @@ import (
 	"errors"
 	"net"
 	"net/http"
-	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -17,12 +16,12 @@ import (
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestConfigureStartAuth_canceledRequestSkipsDiscovery(t *testing.T) {
 	var requests atomic.Int32
-	upstream := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { requests.Add(1) }))
-	t.Cleanup(upstream.Close)
+	upstream := testutil.Serve(t, func(http.ResponseWriter, *http.Request) { requests.Add(1) })
 	srv := newInternalAuthTestServer(t)
 	t.Cleanup(srv.Close)
 	configtest.WriteServer(t, srv.configDir, config.ServerConfig{
@@ -43,19 +42,13 @@ func TestConfigureStartAuth_canceledDiscoveryLeavesNoFlow(t *testing.T) {
 	srv := newInternalAuthTestServer(t)
 	t.Cleanup(srv.Close)
 	cancel, started, result := startStalledAuthSetup(t, srv)
-	select {
-	case <-started:
-	case <-time.After(time.Second):
-		t.Fatal("discovery request did not start")
-	}
+	testutil.WaitForReceive(t, started, "the discovery request")
+
 	cancel()
-	select {
-	case err := <-result:
-		if !errors.Is(err, context.Canceled) || authFlow(srv, "svc") != nil {
-			t.Fatalf("start_auth error=%v flow=%v", err, authFlow(srv, "svc"))
-		}
-	case <-time.After(time.Second):
-		t.Fatal("start_auth waited for the stalled metadata handler after cancellation")
+
+	err := testutil.WaitForReceive(t, result, "start_auth to return without waiting for the stalled handler")
+	if !errors.Is(err, context.Canceled) || authFlow(srv, "svc") != nil {
+		t.Fatalf("start_auth error=%v flow=%v", err, authFlow(srv, "svc"))
 	}
 }
 
@@ -80,18 +73,10 @@ func TestConfigureStartAuth_handoffSurvivesRequestCancellationAndCloseJoins(t *t
 		t.Fatal("start_auth did not register the OAuth flow")
 	}
 	auth.BufferCallbackCode(flow.login, "test-auth-code")
-	select {
-	case <-initializing:
-	case <-time.After(time.Second):
-		t.Fatal("OAuth reconnect did not start after the configure request was canceled")
-	}
+	testutil.WaitForReceive(t, initializing, "the OAuth reconnect to start after the configure request was canceled")
 	closed := make(chan struct{})
 	go func() { srv.Close(); close(closed) }()
-	select {
-	case <-closed:
-	case <-time.After(time.Second):
-		t.Fatal("Close did not cancel and join the handed-off OAuth flow")
-	}
+	testutil.WaitForReceive(t, closed, "Close to cancel and join the handed-off OAuth flow")
 	if authFlow(srv, "svc") != nil {
 		t.Fatal("OAuth flow remained registered after Close")
 	}
@@ -100,11 +85,10 @@ func TestConfigureStartAuth_handoffSurvivesRequestCancellationAndCloseJoins(t *t
 func startStalledAuthSetup(t *testing.T, srv *Server) (context.CancelFunc, <-chan struct{}, <-chan error) {
 	t.Helper()
 	started, release := make(chan struct{}, 1), make(chan struct{})
-	upstream := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+	upstream := testutil.Serve(t, func(http.ResponseWriter, *http.Request) {
 		started <- struct{}{}
 		<-release
-	}))
-	t.Cleanup(upstream.Close)
+	})
 	configtest.WriteServer(t, srv.configDir, config.ServerConfig{
 		Name: "svc", URL: upstream.URL,
 		Auth: authConfigWithFreeCallbackPort(t, &config.AuthConfig{Type: config.AuthTypeOAuth2}),

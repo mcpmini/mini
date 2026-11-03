@@ -33,11 +33,10 @@ func TestProbeServer_invalidConfigMakesNoRequest(t *testing.T) {
 }
 
 func TestProbeServer_recordsDetectedOAuth(t *testing.T) {
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	upstream := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer upstream.Close()
+	})
 	dir := t.TempDir()
 	if err := server.ProbeServer(
 		context.Background(),

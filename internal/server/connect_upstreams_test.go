@@ -19,6 +19,7 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/mcptest"
 	"github.com/mcpmini/mini/internal/server"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func newConnectTestServer(t *testing.T) *server.Server {
@@ -205,11 +206,7 @@ func TestServerClose_inFlightOAuthRefresh_isAborted(t *testing.T) {
 
 	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{sc})
 
-	select {
-	case <-reached:
-	case <-time.After(5 * time.Second):
-		t.Fatal("token endpoint not reached within 5s")
-	}
+	testutil.WaitForReceive(t, reached, "the token endpoint to be reached")
 
 	mustCloseWithin(t, srv, 5*time.Second)
 }
