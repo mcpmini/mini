@@ -6,8 +6,16 @@ Read this when writing or reviewing Go. Follow [AGENTS.md](../AGENTS.md) for pro
 
 - Trace the production entry point, callers, state transitions, external effects, and cleanup, including relevant failure and concurrent paths. Find existing operations and helpers before adding another implementation.
 - For substantial changes, compare approaches by correctness, maintainability, simplicity, then performance. Name the invariant: a denied call never reaches upstream; stale reconnect work cannot resurrect a removed server.
-- Put policy and lifecycle operations with the state they govern. Keep CLI and protocol handlers focused on translation. Judge boundaries by invariants, testing obstacles, and concrete maintenance cost, not file counts or a hypothetical preferred design.
+- Put policy and lifecycle operations with the state they govern. Judge boundaries by invariants, testing obstacles, and concrete maintenance cost, not file counts or a hypothetical preferred design.
 - Prefer concrete types; define small interfaces at consuming boundaries when substitution, testing, or a meaningful contract warrants them. One implementation can suffice. Share code when contracts match; avoid wrappers, generics, and helpers that add complexity without useful behavior.
+
+## Package boundaries
+
+- Only the entry point (`main` or its `run`) reads flags and config and chooses concrete implementations. Everything else receives its dependencies through constructors or parameters.
+- Front ends translate: they turn input into a request for shared code and render the result through writers they pass in. Prefer one shared implementation per action over one per front end; test behavior there and give each front end thin translation tests.
+- Keep the long-lived dependency set to shared dependencies; per-call state belongs in the request.
+- Imports form a DAG: front ends and adapters import shared code, never the reverse.
+- Name a package for what it provides; avoid `util`, `common`, `misc`, `types` and `api`. Split by focus, not size.
 
 ## Preserve Go and protocol semantics
 
@@ -43,6 +51,7 @@ Use the testing guide to cover observable contracts through production paths. Fo
 ## References for specific questions
 
 - Idioms and design: [Effective Go](https://go.dev/doc/effective_go), [Go Code Review Comments](https://go.dev/wiki/CodeReviewComments), [Google Go Style](https://google.github.io/styleguide/go/), [Uber Go Style Guide](https://github.com/uber-go/guide).
+- Package boundaries: [package names](https://go.dev/blog/package-names), [SOLID Go design](https://dave.cheney.net/2016/08/20/solid-go-design), [how one service wires main, dependencies and tests](https://grafana.com/blog/2024/02/09/how-i-write-http-services-in-go-after-13-years/).
 - Concurrency: [memory model](https://go.dev/ref/mem), [pipelines and cancellation](https://go.dev/blog/pipelines), current standard-library documentation.
 - Error contracts: [whether to wrap errors](https://go.dev/blog/go1.13-errors#Whether_to_Wrap).
 - Specialized verification: [fuzzing](https://go.dev/doc/security/fuzz/), [testing/synctest and its limits](https://pkg.go.dev/testing/synctest), [Go security practices](https://go.dev/doc/security/best-practices). Use when the changed risk warrants it; preserve existing test infrastructure when it fits.
