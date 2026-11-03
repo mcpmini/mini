@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -16,6 +15,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 type privateOAuthOptions struct {
@@ -28,7 +28,7 @@ func privateOAuthServer(t *testing.T, opts privateOAuthOptions) (*httptest.Serve
 	t.Helper()
 	counts := &privateOAuthRequests{}
 	var server *httptest.Server
-	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server = testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		base := server.URL
 		counts.requests.Add(1)
 		w.Header().Set("Content-Type", "application/json")
@@ -63,8 +63,7 @@ func privateOAuthServer(t *testing.T, opts privateOAuthOptions) (*httptest.Serve
 		default:
 			http.NotFound(w, r)
 		}
-	}))
-	t.Cleanup(server.Close)
+	})
 	return server, counts
 }
 
@@ -196,9 +195,7 @@ func TestPrivateOAuthRejectsNonHTTPEndpoints(t *testing.T) {
 				sc.Auth.AuthURL, sc.Auth.TokenURL = tc.authURL, tc.tokenURL
 			}
 			_, err := auth.ResolveEndpoints(context.Background(), &sc, resolveParams(t.TempDir(), "local"))
-			if err == nil || !strings.Contains(err.Error(), "unsupported protocol scheme") {
-				t.Fatalf("error = %v", err)
-			}
+			testutil.ErrorContains(t, err, "unsupported protocol scheme")
 		})
 	}
 }

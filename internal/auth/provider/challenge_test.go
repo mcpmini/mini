@@ -5,7 +5,6 @@ package provider_test
 import (
 	"context"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"golang.org/x/oauth2"
@@ -15,11 +14,12 @@ import (
 	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
 func TestHTTP403PersistsScopeChallengeThroughProvider(t *testing.T) {
-	mcp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mcp := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/mcp" {
 			http.NotFound(w, r)
 			return
@@ -27,8 +27,7 @@ func TestHTTP403PersistsScopeChallengeThroughProvider(t *testing.T) {
 		w.Header().Add("WWW-Authenticate", `Basic realm="ignored"`)
 		w.Header().Add("WWW-Authenticate", `Bearer error="insufficient_scope", scope="mcp:write"`)
 		w.WriteHeader(http.StatusForbidden)
-	}))
-	defer mcp.Close()
+	})
 	dir := t.TempDir()
 	clk := clock.NewFake()
 	sc := config.ServerConfig{

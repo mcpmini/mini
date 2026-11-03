@@ -7,16 +7,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestRegister_success(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
@@ -33,8 +33,7 @@ func TestRegister_success(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(map[string]string{"client_id": "test-client-id"}) //nolint:errcheck
-	}))
-	defer srv.Close()
+	})
 
 	result, err := auth.Register(context.Background(), srv.URL, auth.ResolvedCallbackURI(nil))
 	if err != nil {
@@ -57,15 +56,14 @@ func TestRegister_redirectURIMatchesCallbackURI(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			var registeredURIs []string
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 				var body struct {
 					RedirectURIs []string `json:"redirect_uris"`
 				}
 				json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
 				registeredURIs = body.RedirectURIs
 				json.NewEncoder(w).Encode(map[string]string{"client_id": "cid"}) //nolint:errcheck
-			}))
-			defer srv.Close()
+			})
 
 			if _, err := auth.Register(context.Background(), srv.URL, tc.callbackURI); err != nil {
 				t.Fatal(err)
@@ -85,10 +83,9 @@ func TestRegister_redirectURIMatchesCallbackURI(t *testing.T) {
 }
 
 func TestRegister_200OK(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"client_id": "abc"}) //nolint:errcheck
-	}))
-	defer srv.Close()
+	})
 
 	result, err := auth.Register(context.Background(), srv.URL, auth.ResolvedCallbackURI(nil))
 	if err != nil {
@@ -100,15 +97,14 @@ func TestRegister_200OK(t *testing.T) {
 }
 
 func TestRegister_capturesConfidentialClientOverride(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
 			"client_id":                  "confidential-id",
 			"client_secret":              "server-issued-secret",
 			"token_endpoint_auth_method": "client_secret_basic",
 			"client_secret_expires_at":   1234567890,
 		})
-	}))
-	defer srv.Close()
+	})
 
 	result, err := auth.Register(context.Background(), srv.URL, auth.ResolvedCallbackURI(nil))
 	if err != nil {
@@ -126,10 +122,9 @@ func TestRegister_capturesConfidentialClientOverride(t *testing.T) {
 }
 
 func TestRegister_errorStatus(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
-	}))
-	defer srv.Close()
+	})
 
 	_, err := auth.Register(context.Background(), srv.URL, auth.ResolvedCallbackURI(nil))
 	if err == nil {
@@ -138,10 +133,9 @@ func TestRegister_errorStatus(t *testing.T) {
 }
 
 func TestRegister_emptyClientID(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"client_id": ""}) //nolint:errcheck
-	}))
-	defer srv.Close()
+	})
 
 	_, err := auth.Register(context.Background(), srv.URL, auth.ResolvedCallbackURI(nil))
 	if err == nil {

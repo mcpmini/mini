@@ -5,7 +5,6 @@ package provider_test
 import (
 	"errors"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -14,6 +13,7 @@ import (
 	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -21,7 +21,7 @@ func TestPrivateRefreshBindingMismatchRequiresReauthorizationWithoutRetry(t *tes
 	for _, mismatch := range []string{"issuer", "token", "resource"} {
 		t.Run(mismatch, func(t *testing.T) {
 			var hits, tokens atomic.Int32
-			source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			source := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 				hits.Add(1)
 				w.Header().Set("Content-Type", "application/json")
 				switch r.URL.Path {
@@ -40,8 +40,7 @@ func TestPrivateRefreshBindingMismatchRequiresReauthorizationWithoutRetry(t *tes
 				default:
 					http.NotFound(w, r)
 				}
-			}))
-			defer source.Close()
+			})
 			dir := t.TempDir()
 			clk := clock.NewFake()
 			login := &auth.Login{

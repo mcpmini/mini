@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
@@ -50,8 +49,6 @@ func TestResolveEndpoints_cimd(t *testing.T) {
 		"client_id_metadata_document_supported": true,
 		"code_challenge_methods_supported":      []string{"S256"},
 	})
-	defer asSrv.Close()
-
 	sc := &config.ServerConfig{
 		URL:  asSrv.URL + "/mcp",
 		Auth: &config.AuthConfig{Type: "oauth2"},
@@ -177,8 +174,6 @@ func TestResolveEndpoints_cachedRegistrationBeforeCIMD(t *testing.T) {
 		"client_id_metadata_document_supported": true,
 		"code_challenge_methods_supported":      []string{"S256"},
 	})
-	defer asSrv.Close()
-
 	dir := t.TempDir()
 	authtest.SaveRegistration(t, authtest.RegistrationFile{
 		ConfigDir:  dir,
@@ -212,15 +207,14 @@ func TestResolveEndpoints_serverWithCIMDAndDCR(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var registeredRedirects []string
-			regSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			regSrv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 				var req struct {
 					RedirectURIs []string `json:"redirect_uris"`
 				}
 				json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck // an empty request fails the redirect assertion
 				registeredRedirects = req.RedirectURIs
 				json.NewEncoder(w).Encode(map[string]string{"client_id": "dcr-client-id"}) //nolint:errcheck
-			}))
-			defer regSrv.Close()
+			})
 			asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 				"authorization_endpoint":                "https://as.example.com/authorize",
 				"token_endpoint":                        "https://as.example.com/token",
@@ -228,7 +222,6 @@ func TestResolveEndpoints_serverWithCIMDAndDCR(t *testing.T) {
 				"registration_endpoint":                 regSrv.URL + "/register",
 				"code_challenge_methods_supported":      []string{"S256"},
 			})
-			defer asSrv.Close()
 			sc := &config.ServerConfig{
 				URL:  asSrv.URL + "/mcp",
 				Auth: &config.AuthConfig{Type: "oauth2", CallbackPort: tc.callbackPort},
@@ -263,7 +256,6 @@ func TestResolveEndpoints_cimdOnlyServerWithCustomCallbackPortNamesThePort(t *te
 		"client_id_metadata_document_supported": true,
 		"code_challenge_methods_supported":      []string{"S256"},
 	})
-	defer asSrv.Close()
 	sc := &config.ServerConfig{
 		URL:  asSrv.URL + "/mcp",
 		Auth: &config.AuthConfig{Type: "oauth2", CallbackPort: 7777},
@@ -305,8 +297,6 @@ func TestResolveEndpoints_rejectsLoopbackDiscoveredEndpoints(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", tc.meta)
-			defer asSrv.Close()
-
 			sc := &config.ServerConfig{
 				AgentAdded: true,
 				URL:        asSrv.URL + "/mcp",
@@ -329,26 +319,15 @@ func TestResolveEndpoints_scopesAutoPopulatedFromPRM(t *testing.T) {
 		"token_endpoint":                   "https://as.example.com/token",
 		"code_challenge_methods_supported": []string{"S256"},
 	})
-	defer asSrv.Close()
-
-	var expectedResource string
-	prmSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-			"resource":              expectedResource,
-			"authorization_servers": []string{asSrv.URL},
-			"scopes_supported":      []string{"channels:read", "chat:write"},
-		})
-	}))
-	defer prmSrv.Close()
-
-	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().
-			Set("WWW-Authenticate", `Bearer resource_metadata="`+prmSrv.URL+`/.well-known/oauth-protected-resource"`)
-		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer mcpSrv.Close()
-	expectedResource = mcpSrv.URL + "/mcp"
+	prm := &authtest.ProtectedResource{
+		AuthorizationServers: []string{asSrv.URL},
+		ScopesSupported:      []string{"channels:read", "chat:write"},
+	}
+	prmSrv := authtest.ServeProtectedResource(t, "/.well-known/oauth-protected-resource", prm)
+	mcpSrv := authtest.ServeChallenge(t, authtest.Challenge{
+		ResourceMetadata: prmSrv.URL + "/.well-known/oauth-protected-resource",
+	})
+	prm.Resource = mcpSrv.URL + "/mcp"
 
 	sc := &config.ServerConfig{
 		URL:  mcpSrv.URL + "/mcp",
@@ -369,8 +348,6 @@ func TestResolveEndpoints_userScopesNotOverwritten(t *testing.T) {
 		"code_challenge_methods_supported": []string{"S256"},
 		"scopes_supported":                 []string{"channels:read"},
 	})
-	defer asSrv.Close()
-
 	sc := &config.ServerConfig{
 		URL: asSrv.URL + "/mcp",
 		Auth: &config.AuthConfig{
@@ -414,7 +391,6 @@ func TestResolveEndpointsRejectsInvalidConfiguredEndpoints(t *testing.T) {
 		"token_endpoint":                   "https://as.example/token",
 		"code_challenge_methods_supported": []string{"S256"},
 	})
-	defer as.Close()
 	for _, endpoint := range []string{
 		"https://user@as.example/endpoint", "https://as.example/endpoint#fragment", "http:opaque",
 	} {
@@ -428,9 +404,7 @@ func TestResolveEndpointsRejectsInvalidConfiguredEndpoints(t *testing.T) {
 				}
 				sc := &config.ServerConfig{URL: as.URL + "/mcp", Auth: ac}
 				_, err := auth.ResolveEndpoints(t.Context(), sc, resolveParams(t.TempDir(), "server"))
-				if err == nil || !strings.Contains(err.Error(), field+": URL must be an absolute HTTP(S) URL") {
-					t.Fatalf("ResolveEndpoints error = %v, want invalid %s", err, field)
-				}
+				testutil.ErrorContains(t, err, field+": URL must be an absolute HTTP(S) URL")
 			})
 		}
 	}

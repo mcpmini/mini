@@ -3,29 +3,26 @@ package auth
 import (
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestPrivateOAuthRequiresPinnedSourceContact(t *testing.T) {
 	for _, status := range []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusInternalServerError, http.StatusFound} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			var hits atomic.Int32
-			target := httptest.NewServer(
-				http.HandlerFunc(
-					func(w http.ResponseWriter, _ *http.Request) { hits.Add(1); w.WriteHeader(http.StatusOK) },
-				),
-			)
-			defer target.Close()
-			source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			target := testutil.Serve(t, func(w http.ResponseWriter, _ *http.Request) {
+				hits.Add(1)
+				w.WriteHeader(http.StatusOK)
+			})
+			source := testutil.Serve(t, func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Location", target.URL)
 				w.WriteHeader(status)
-			}))
-			defer source.Close()
+			})
 			flow := newOAuthHTTPFlow(t.Context(), config.ServerConfig{URL: source.URL + "/mcp"})
 			defer flow.closeIdleConnections()
 			if _, err := flow.doDiscoveryRequest(t.Context(), target.URL); err == nil {
@@ -58,10 +55,7 @@ func TestPrivateOAuthRequiresPinnedSourceContact(t *testing.T) {
 }
 
 func TestPrivateOAuthForbiddenDestinationsAfterSource(t *testing.T) {
-	source := httptest.NewServer(
-		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusUnauthorized) }),
-	)
-	defer source.Close()
+	source := testutil.Serve(t, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusUnauthorized) })
 	flow := newOAuthHTTPFlow(t.Context(), config.ServerConfig{URL: source.URL})
 	defer flow.closeIdleConnections()
 	resp, err := flow.doDiscoveryRequest(t.Context(), source.URL)
@@ -118,10 +112,7 @@ func (fallbackMetadataTransport) RoundTrip(req *http.Request) (*http.Response, e
 }
 
 func TestPrivateOAuthRedirectSourceCanUsePublicFallback(t *testing.T) {
-	source := httptest.NewServer(
-		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusFound) }),
-	)
-	defer source.Close()
+	source := testutil.Serve(t, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusFound) })
 	flow := newOAuthHTTPFlow(t.Context(), config.ServerConfig{URL: source.URL + "/mcp"})
 	defer flow.closeIdleConnections()
 	tr := flow.client.Transport.(oauthFlowTransport)

@@ -16,6 +16,7 @@ import (
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 type authObservation struct {
@@ -35,8 +36,7 @@ type capturingTokenServer struct {
 func newCapturingTokenServer(t *testing.T) *capturingTokenServer {
 	t.Helper()
 	c := &capturingTokenServer{}
-	c.srv = httptest.NewServer(http.HandlerFunc(c.handle))
-	t.Cleanup(c.srv.Close)
+	c.srv = testutil.Serve(t, c.handle)
 	return c
 }
 
@@ -57,8 +57,7 @@ func (c *capturingTokenServer) handle(w http.ResponseWriter, r *http.Request) {
 		c.exchange = obs
 	}
 	c.mu.Unlock()
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+	testutil.WriteJSON(w, http.StatusOK, map[string]any{
 		"access_token":  "access-" + r.PostFormValue("grant_type"),
 		"refresh_token": "refresh-tok",
 		"token_type":    "Bearer",
@@ -101,7 +100,6 @@ func resolveWithSavedRegistration(t *testing.T, p savedRegistrationParams) (*con
 		"token_endpoint":                   "https://as.example.com/token",
 		"code_challenge_methods_supported": []string{"S256"},
 	})
-	t.Cleanup(asSrv.Close)
 	p.Registration.Issuer = asSrv.URL
 	authtest.SaveRegistration(t, authtest.RegistrationFile{
 		ConfigDir:    dir,
@@ -358,7 +356,6 @@ func TestRegistrationInconsistency_failsResolutionNamingTheField(t *testing.T) {
 				"token_endpoint":                   "https://as.example.com/token",
 				"code_challenge_methods_supported": []string{"S256"},
 			})
-			defer asSrv.Close()
 			tc.reg.Issuer = asSrv.URL
 			authtest.SaveRegistration(
 				t,
@@ -372,12 +369,7 @@ func TestRegistrationInconsistency_failsResolutionNamingTheField(t *testing.T) {
 			sc := &config.ServerConfig{URL: asSrv.URL + "/mcp", Auth: &config.AuthConfig{Type: "oauth2"}}
 			params := auth.ResolveEndpointsParams{ConfigDir: dir, ServerName: "srv", Clock: clock.System()}
 			_, err := auth.ResolveEndpoints(context.Background(), sc, params)
-			if err == nil {
-				t.Fatal("expected resolution error for inconsistent registration metadata")
-			}
-			if !strings.Contains(err.Error(), tc.wantIn) {
-				t.Errorf("error = %q, want it to name %q", err.Error(), tc.wantIn)
-			}
+			testutil.ErrorContains(t, err, tc.wantIn)
 			if tc.reg.ClientSecret != "" && strings.Contains(err.Error(), tc.reg.ClientSecret) {
 				t.Errorf("error leaked the client_secret value: %q", err.Error())
 			}
@@ -387,14 +379,13 @@ func TestRegistrationInconsistency_failsResolutionNamingTheField(t *testing.T) {
 
 func TestResolveEndpoints_freshDCRCapturesAndPersistsConfidentialClient(t *testing.T) {
 	dir := t.TempDir()
-	regSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	regSrv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
 			"client_id":                  "fresh-confidential-id",
 			"client_secret":              "sk-test-usurp-fresh",
 			"token_endpoint_auth_method": "client_secret_post",
 		})
-	}))
-	defer regSrv.Close()
+	})
 
 	asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":           "https://as.example.com/authorize",
@@ -402,8 +393,6 @@ func TestResolveEndpoints_freshDCRCapturesAndPersistsConfidentialClient(t *testi
 		"registration_endpoint":            regSrv.URL + "/register",
 		"code_challenge_methods_supported": []string{"S256"},
 	})
-	defer asSrv.Close()
-
 	sc := &config.ServerConfig{URL: asSrv.URL + "/mcp", Auth: &config.AuthConfig{Type: "oauth2"}}
 	params := auth.ResolveEndpointsParams{ConfigDir: dir, ServerName: "srv", Clock: clock.System()}
 	if _, err := auth.ResolveEndpoints(context.Background(), sc, params); err != nil {
@@ -431,10 +420,9 @@ func freshDCRToExchange(t *testing.T, dcrResponse map[string]any) (*config.AuthC
 	tokenSrv := newCapturingTokenServer(t)
 	dir := t.TempDir()
 
-	regSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	regSrv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(dcrResponse) //nolint:errcheck
-	}))
-	t.Cleanup(regSrv.Close)
+	})
 
 	asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":           "https://as.example.com/authorize",
@@ -442,7 +430,6 @@ func freshDCRToExchange(t *testing.T, dcrResponse map[string]any) (*config.AuthC
 		"registration_endpoint":            regSrv.URL + "/register",
 		"code_challenge_methods_supported": []string{"S256"},
 	})
-	t.Cleanup(asSrv.Close)
 
 	sc := &config.ServerConfig{
 		URL: asSrv.URL + "/mcp",
@@ -527,10 +514,9 @@ func TestClientSecretNeverAppearsInResolutionOrExchangeErrors(t *testing.T) {
 		TokenEndpointAuthMethod: "client_secret_basic",
 	}
 	authtest.SaveRegistration(t, authtest.RegistrationFile{ConfigDir: dir, ServerName: "srv", Registration: reg})
-	rejectingTokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	rejectingTokenSrv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_client", http.StatusUnauthorized)
-	}))
-	defer rejectingTokenSrv.Close()
+	})
 
 	ac := hydrateFromSavedRegistration(t, savedRegistrationParams{
 		Registration: reg,
@@ -559,7 +545,6 @@ func TestConfiguredSecretWithoutClientID_isNeverSentWithTheCIMDClient(t *testing
 		"client_id_metadata_document_supported": true,
 		"code_challenge_methods_supported":      []string{"S256"},
 	})
-	t.Cleanup(asSrv.Close)
 	const secret = "sk-test-configured-without-id"
 	sc := &config.ServerConfig{URL: asSrv.URL + "/mcp", Auth: &config.AuthConfig{
 		Type: "oauth2", AuthURL: "https://as.example.com/authorize", TokenURL: tokenSrv.srv.URL,

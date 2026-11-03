@@ -10,7 +10,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"strings"
 	"sync"
@@ -21,6 +20,7 @@ import (
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestBeginLogin_completesWithoutWritingToTerminal(t *testing.T) {
@@ -60,8 +60,7 @@ func TestBeginLogin_discoveryFailureReleasesCallbackPort(t *testing.T) {
 	addr := freeLoopbackAddr(t)
 	auth.UseCallbackListenAddr(addr)
 	t.Cleanup(auth.UseEphemeralCallbackPort)
-	noDiscovery := httptest.NewServer(http.NotFoundHandler())
-	t.Cleanup(noDiscovery.Close)
+	noDiscovery := testutil.Serve(t, http.NotFound)
 	sc := &config.ServerConfig{
 		Name: "synthetic",
 		URL:  noDiscovery.URL + "/mcp",

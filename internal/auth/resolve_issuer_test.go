@@ -4,7 +4,6 @@ package auth_test
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,6 +13,7 @@ import (
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 type registrationIssuer struct {
@@ -24,24 +24,22 @@ type registrationIssuer struct {
 func newRegistrationIssuer(t *testing.T, clientID string) *registrationIssuer {
 	t.Helper()
 	fixture := &registrationIssuer{}
-	fixture.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
+	fixture.server = testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/register" {
 			fixture.registrations.Add(1)
-			json.NewEncoder(w).Encode(map[string]any{"client_id": clientID}) //nolint:errcheck
+			testutil.WriteJSON(w, http.StatusOK, map[string]any{"client_id": clientID})
 			return
 		}
 		if r.URL.Path != "/.well-known/oauth-authorization-server" {
 			http.NotFound(w, r)
 			return
 		}
-		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+		testutil.WriteJSON(w, http.StatusOK, map[string]any{
 			"issuer": fixture.server.URL, "authorization_endpoint": "https://shared.example/authorize",
 			"token_endpoint": "https://shared.example/token", "registration_endpoint": fixture.server.URL + "/register",
 			"code_challenge_methods_supported": []string{"S256"}, "client_id_metadata_document_supported": true,
 		})
-	}))
-	t.Cleanup(fixture.server.Close)
+	})
 	return fixture
 }
 
@@ -50,12 +48,11 @@ func TestRegistrationIsBoundToIssuerEvenWhenTokenEndpointMatches(t *testing.T) {
 	second := newRegistrationIssuer(t, "second-client")
 	var current atomic.Pointer[string]
 	current.Store(&first.server.URL)
-	resource := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).
-			Encode(map[string]any{"resource": "http://" + r.Host + "/mcp", "authorization_servers": []string{*current.Load()}})
-	}))
-	t.Cleanup(resource.Close)
+	resource := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.WriteJSON(w, http.StatusOK, map[string]any{
+			"resource": "http://" + r.Host + "/mcp", "authorization_servers": []string{*current.Load()},
+		})
+	})
 	dir := t.TempDir()
 	resolve := func() auth.ResolvedLogin {
 		sc := config.ServerConfig{
