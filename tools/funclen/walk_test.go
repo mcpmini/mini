@@ -60,6 +60,22 @@ func TestRun_failsANewLongTestAndPassesOneInTheBaseline(t *testing.T) {
 	}
 }
 
+func TestRun_aNewOverLimitSubtestInABaselinedTestFails(t *testing.T) {
+	t.Chdir(t.TempDir())
+	subtest := func(name string, lines int) string {
+		return "\tt.Run(\"" + name + "\", func(t *testing.T) {\n" + codeLines(lines) + "\t})\n"
+	}
+	testutil.WriteFile(t, "pkg/a_test.go", "package p\nimport \"testing\"\nfunc TestBig(t *testing.T) {\n"+
+		subtest("a", 40)+subtest("b", 39)+"}\n")
+	testutil.WriteFile(t, "test_baseline.txt", "pkg:TestBig 40\n")
+
+	failed, out := runIn(t, options{dirs: []string{"."}, baselinePath: "test_baseline.txt"})
+
+	if !failed || !strings.Contains(out, "scopes over the limit total 79 code lines, baseline allows 40") {
+		t.Fatalf("failed=%v output:\n%s", failed, out)
+	}
+}
+
 func TestRun_anyWayOfSpellingTheDirectoryMatchesTheBaseline(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.WriteFile(t, "pkg/a_test.go", "package p\nfunc TestLong() {\n"+codeLines(30)+"}\n")

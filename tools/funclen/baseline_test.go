@@ -10,7 +10,11 @@ import (
 )
 
 func measured(lines int) testFunc {
-	return testFunc{name: "TestX", path: "pkg/x_test.go", longest: scope{name: "body", line: 3, lines: lines}}
+	f := testFunc{name: "TestX", path: "pkg/x_test.go", longest: scope{name: "body", line: 3, lines: lines}}
+	if lines >= errorAt {
+		f.overLimit = lines
+	}
+	return f
 }
 
 func baselineOf(entries map[string]int) baseline {
@@ -34,11 +38,11 @@ func TestBaseline_judgesEachTestAgainstItsEntry(t *testing.T) {
 		{name: "listed test at its allowance", entries: map[string]int{"pkg:TestX": 40}, lines: 40},
 		{
 			name: "listed test grew", entries: map[string]int{"pkg:TestX": 40}, lines: 41,
-			wantPart: "is 41 code lines, baseline allows 40; shorten it (see docs/testing.md)",
+			wantPart: "scopes over the limit total 41 code lines, baseline allows 40; shorten them (see docs/testing.md)",
 		},
 		{
 			name: "listed test shrank", entries: map[string]int{"pkg:TestX": 40}, lines: 30,
-			wantPart: "is now 30 lines, baseline allows 40; run go run ./tools/funclen -prune-baseline",
+			wantPart: "scopes over the limit now total 30 lines, baseline allows 40; run go run ./tools/funclen -prune-baseline",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

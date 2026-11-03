@@ -9,6 +9,9 @@ type testFunc struct {
 	name    string
 	path    string
 	longest scope
+	// overLimit totals the scopes at or over the limit, so a baselined test fails when any of
+	// them grows or a new one appears, not only when its longest does.
+	overLimit int
 }
 
 func (f testFunc) describe() string {
@@ -42,6 +45,9 @@ func (s *sourceFile) testFuncs() []testFunc {
 		for _, sc := range s.leafScopes(fd.Body, "body", s.line(fd.Pos())) {
 			if sc.lines > f.longest.lines || f.longest.name == "" {
 				f.longest = sc
+			}
+			if sc.lines >= errorAt {
+				f.overLimit += sc.lines
 			}
 		}
 		funcs = append(funcs, f)

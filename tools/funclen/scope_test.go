@@ -76,6 +76,7 @@ func TestTables_rowsDoNotCountHoweverTheTableIsUsed(t *testing.T) {
 		"helper arg":    "\tcheck(t, []tc{\n" + rows + "\t})\n",
 		"ranged":        "\tfor _, tt := range []tc{\n" + rows + "\t} {\n\t\t_ = tt\n\t}\n",
 		"map of struct": "\t_ = map[string]tc{\n" + strings.Repeat("\t\t\"k\": {},\n", 30) + "\t}\n",
+		"pointer rows":  "\t_ = []*tc{\n" + strings.Repeat("\t\t&tc{name: \"a\"},\n", 30) + "\t}\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			if got := longestOf(t, src(body)); got.lines >= errorAt {

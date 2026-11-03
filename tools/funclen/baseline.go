@@ -13,8 +13,8 @@ import (
 const pruneRemedy = "run go run ./tools/funclen -prune-baseline"
 
 // baseline lists the tests that were over the limit when the check started, as
-// "pkgdir:FuncName N" with N the longest scope allowed. It only shrinks: growth fails, and so does
-// an improvement until the entry is pruned.
+// "pkgdir:FuncName N" with N the code lines allowed across the function's over-limit scopes. It
+// only shrinks: growth fails, and so does an improvement until the entry is pruned.
 type baseline struct {
 	path    string
 	entries map[string]int
@@ -68,10 +68,10 @@ func (b baseline) prune(funcs map[string]testFunc, inRun func(string) bool) {
 		}
 		f, ok := funcs[key]
 		switch {
-		case !ok || f.longest.lines < errorAt:
+		case !ok || f.overLimit == 0:
 			delete(b.entries, key)
-		case f.longest.lines < n:
-			b.entries[key] = f.longest.lines
+		case f.overLimit < n:
+			b.entries[key] = f.overLimit
 		}
 	}
 }
@@ -93,15 +93,16 @@ func (b baseline) check(funcs map[string]testFunc, inRun func(string) bool) []st
 
 func (b baseline) judge(key string, f testFunc) string {
 	n, listed := b.entries[key]
-	m := f.longest.lines
+	m := f.overLimit
 	switch {
-	case !listed && m >= errorAt:
-		return fmt.Sprintf("%s is %d code lines (>= %d)", f.describe(), m, errorAt)
+	case !listed && m > 0:
+		return fmt.Sprintf("%s is %d code lines (>= %d)", f.describe(), f.longest.lines, errorAt)
 	case listed && m > n:
-		return fmt.Sprintf("%s is %d code lines, baseline allows %d; "+
-			"shorten it (see docs/testing.md) instead of raising the baseline", f.describe(), m, n)
+		return fmt.Sprintf("%s: scopes over the limit total %d code lines, baseline allows %d; "+
+			"shorten them (see docs/testing.md) instead of raising the baseline", f.describe(), m, n)
 	case listed && m < n:
-		return fmt.Sprintf("%s is now %d lines, baseline allows %d; %s", f.describe(), m, n, pruneRemedy)
+		return fmt.Sprintf("%s: scopes over the limit now total %d lines, baseline allows %d; %s",
+			f.describe(), m, n, pruneRemedy)
 	}
 	return ""
 }

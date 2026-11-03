@@ -83,7 +83,7 @@ func tokenLines(src []byte, lineCount int) []bool {
 		if tok == token.EOF {
 			return code
 		}
-		if tok == token.COMMENT || (tok == token.SEMICOLON && lit == "\n") {
+		if tok == token.COMMENT {
 			continue
 		}
 		for l := file.Line(pos); l <= file.Line(pos+token.Pos(max(len(lit), 1)-1)); l++ {
