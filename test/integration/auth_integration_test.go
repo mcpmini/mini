@@ -82,7 +82,11 @@ func TestIntegrationAuth_noTokenNoAuthHeader(t *testing.T) {
 	client := startServer(t, cfg)
 	client.execTool("svc", "get_item", nil)
 
-	if got := f.srv.Last("tools/call").Header.Get("Authorization"); got != "" {
+	call := f.srv.Last("tools/call")
+	if call.Method == "" {
+		t.Fatal("the upstream never received tools/call")
+	}
+	if got := call.Header.Get("Authorization"); got != "" {
 		t.Errorf("expected no Authorization header without auth config, got %q", got)
 	}
 }

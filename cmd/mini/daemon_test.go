@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/daemon"
@@ -33,9 +32,7 @@ func TestDaemonCommandSocketSetupFailureReturnsError(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(socket, "occupied"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := executeDaemonCommand(dir); err == nil || !strings.Contains(err.Error(), socket) {
-		t.Fatalf("daemon error = %v, want socket setup failure", err)
-	}
+	testutil.ErrorContains(t, executeDaemonCommand(dir), socket)
 }
 
 func TestDaemonCommandAlreadyRunningReturnsError(t *testing.T) {

@@ -60,7 +60,11 @@ func TestAuthHeader_emptyToken_noHeader(t *testing.T) {
 	if err := srv.AddUpstream(context.Background(), sc); err != nil {
 		t.Fatalf("AddUpstream failed: %v", err)
 	}
-	if got := httpSrv.Last("tools/list").Header.Get("Authorization"); got != "" {
+	listing := httpSrv.Last("tools/list")
+	if listing.Method == "" {
+		t.Fatal("the upstream never received tools/list")
+	}
+	if got := listing.Header.Get("Authorization"); got != "" {
 		t.Errorf("expected no Authorization header with empty token, got: %q", got)
 	}
 }
