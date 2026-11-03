@@ -18,5 +18,5 @@ func Serve(t testing.TB, handler http.HandlerFunc) *httptest.Server {
 func WriteJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v) //nolint:errcheck // a failed write shows up as the client's read error
+	json.NewEncoder(w).Encode(v) //nolint:errcheck // a failed write leaves the test a wrong or missing body to fail on
 }

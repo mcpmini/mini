@@ -11,7 +11,11 @@ func TestServe_writeJSONSetsStatusTypeAndBody(t *testing.T) {
 		WriteJSON(w, http.StatusCreated, map[string]string{"id": "1"})
 	})
 
-	resp, err := http.Get(srv.URL) //nolint:noctx // local server that answers at once
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
