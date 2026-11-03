@@ -102,6 +102,21 @@ func TestNewHTTP_rejectedRequestIsChallengedAndStillRecorded(t *testing.T) {
 	}
 }
 
+func TestNewHTTP_countsRequestsByMethod(t *testing.T) {
+	up := mcptest.NewHTTP(t, mcptest.Upstream{})
+
+	post(t, up.URL, call("initialize"))
+	post(t, up.URL, call("tools/list"))
+	post(t, up.URL, call("initialize"))
+
+	if got := up.Count("initialize"); got != 2 {
+		t.Errorf("Count(initialize) = %d, want 2", got)
+	}
+	if got := up.Count("tools/call"); got != 0 {
+		t.Errorf("Count(tools/call) = %d, want 0", got)
+	}
+}
+
 func TestNewHTTP_methodOverrides(t *testing.T) {
 	up := mcptest.NewHTTP(t, mcptest.Upstream{Methods: map[string]mcptest.Method{
 		"tools/call": func(mcptest.Request) mcptest.Reply { return mcptest.Reply{Result: map[string]any{"ok": true}} },

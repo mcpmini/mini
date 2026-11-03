@@ -345,7 +345,8 @@ func TestToolsListHTTPKeepsRequestEraAcrossReset(t *testing.T) {
 	testutil.WaitForReceive(t, entered, "the listing to reach the upstream")
 	conn.resetModernEra()
 	close(release)
-	if got, want := (<-done).Freshness, (Freshness{managed: true, until: fc.Now().Add(time.Second)}); got != want {
+	listing := testutil.WaitForReceive(t, done, "the listing to finish")
+	if got, want := listing.Freshness, (Freshness{managed: true, until: fc.Now().Add(time.Second)}); got != want {
 		t.Fatalf("freshness after an era reset mid-request = %+v, want %+v", got, want)
 	}
 }

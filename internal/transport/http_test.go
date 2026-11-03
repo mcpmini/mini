@@ -454,16 +454,6 @@ func newHandshakeServer(t *testing.T, toolsResult any) *mcptest.Server {
 	}})
 }
 
-func requestCount(up *mcptest.Server, method string) int {
-	n := 0
-	for _, req := range up.Requests() {
-		if req.Method == method {
-			n++
-		}
-	}
-	return n
-}
-
 func TestListTools_successfulHandshakeAndList(t *testing.T) {
 	tools := []any{map[string]any{"name": "do_thing", "description": "does a thing", "inputSchema": map[string]any{}}}
 	srv := newHandshakeServer(t, tools)
@@ -511,10 +501,10 @@ func TestListTools_retriesInitializeAfterFailure(t *testing.T) {
 	if want := []string{"do_thing"}; !slices.Equal(toolNames(got), want) {
 		t.Fatalf("tool names = %v, want %v", toolNames(got), want)
 	}
-	if got := requestCount(srv, "initialize"); got != 2 {
+	if got := srv.Count("initialize"); got != 2 {
 		t.Fatalf("initialize calls = %d, want 2", got)
 	}
-	if got := requestCount(srv, "tools/list"); got != 1 {
+	if got := srv.Count("tools/list"); got != 1 {
 		t.Fatalf("tools/list calls = %d, want 1", got)
 	}
 }
@@ -526,10 +516,10 @@ func TestListTools_reusesSuccessfulInitialize(t *testing.T) {
 	mustListTools(t, conn)
 	mustListTools(t, conn)
 
-	if got := requestCount(srv, "initialize"); got != 1 {
+	if got := srv.Count("initialize"); got != 1 {
 		t.Fatalf("initialize calls = %d, want 1", got)
 	}
-	if got := requestCount(srv, "tools/list"); got != 2 {
+	if got := srv.Count("tools/list"); got != 2 {
 		t.Fatalf("tools/list calls = %d, want 2", got)
 	}
 }
