@@ -54,8 +54,6 @@ func issueToken(w http.ResponseWriter, accessToken string) {
 	})
 }
 
-// tokenGate is an OAuth-protected MCP upstream that accepts one token at a time and counts
-// the requests it rejected although they carried a token.
 type tokenGate struct {
 	*mcptest.Server
 	mu                sync.Mutex
@@ -95,7 +93,6 @@ func (g *tokenGate) accept(token string) {
 	g.rejectedWithToken.Store(0)
 }
 
-// completeStartAuth runs start_auth for name and completes the browser login it opens.
 func completeStartAuth(t *testing.T, srv *server.Server, name string) {
 	t.Helper()
 	resp := serve(t, srv, callTool("config", map[string]any{"action": "start_auth", "server": name}))

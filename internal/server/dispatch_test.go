@@ -97,7 +97,6 @@ func TestPerSession_aConnectionThatFailsToListToolsIsNotKeptForTheSession(t *tes
 	}
 }
 
-// servePerSession serves mini over HTTP with svc, a per-session upstream at url.
 func servePerSession(t *testing.T, url string) *httptest.Server {
 	t.Helper()
 	srv := newTestServer(t, server.Params{})
