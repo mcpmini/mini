@@ -9,16 +9,13 @@ Read this when writing or reviewing Go. Follow [AGENTS.md](../AGENTS.md) for pro
 - Put policy and lifecycle operations with the state they govern. Judge boundaries by invariants, testing obstacles, and concrete maintenance cost, not file counts or a hypothetical preferred design.
 - Prefer concrete types; define small interfaces at consuming boundaries when substitution, testing, or a meaningful contract warrants them. One implementation can suffice. Share code when contracts match; avoid wrappers, generics, and helpers that add complexity without useful behavior.
 
-## One implementation behind every way in
+## Package boundaries
 
-- Each mini operation has one implementation, and every way in calls it. The ways in are the CLI commands in `cmd/mini`, the MCP server agents use (`internal/server`), and any UI. A way in only translates. It turns flags, wire requests or form input into resolved values, calls the operation, and renders the result or error. An operation reimplemented in a way in drifts from the others; fix the shared operation instead.
-- A shared operation lives in the package for its concept (`auth`, `config`, `projection`, `response`), not in a way in and not in a generic operations package. When a second way in needs an operation that lives inside the first, move it out rather than importing that way in.
-- Shared operations don't parse flags or write to the terminal. They take resolved values, plus the writers or callbacks their output goes to.
-- Wire long-lived dependencies once, at the top of the process, and pass them in. Expensive ones are built on first use: a command that only reads config doesn't dial upstreams or start a daemon. Carry per-call options in a params struct. Prefer constructors that take their dependencies, so a test builds the production object with fakes instead of swapping package state.
-- Keep the long-lived set to shared dependencies. It turns into a god object when it collects per-operation state, or when it grows a field or method for every operation.
-- Dependencies point one way: ways in import shared packages, never the reverse, and one way in doesn't import another. The process entry point (`main` in `cmd/mini`) may import every way in to host it. If two packages need each other, move the shared concept into a third package named for it.
-- Name a package for what it provides (`projection`, `transport`). A bare catch-all (`util`, `common`, `misc`, `types`, `api`) or a layer word (`manager`, `service`, `ops`) says where code sits, not what it is, so unrelated code collects there; a focused helper like `testutil` is fine. Don't repeat the package name in its identifiers (`transport.Connection`, not `transport.TransportConnection`).
-- Split a package when it gains an unrelated reason to change, or a dependency its other users don't need. Don't split by file count or to match a diagram.
+- Only the entry point (`main` or its `run`) reads flags and config and chooses concrete implementations. Everything else receives its dependencies through constructors or parameters.
+- Front ends translate: they turn input into a request for shared code and render the result through writers they pass in. Prefer one shared implementation per action over one per front end; test behavior there and give each front end thin translation tests.
+- Keep the long-lived dependency set to shared dependencies; per-call state belongs in the request.
+- Imports form a DAG: front ends and adapters import shared code, never the reverse.
+- Name a package for what it provides; avoid `util`, `common`, `misc`, `types` and `api`. Split by focus, not size.
 
 ## Preserve Go and protocol semantics
 

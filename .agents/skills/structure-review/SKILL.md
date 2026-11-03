@@ -22,7 +22,7 @@ Before doing the full flow analysis, read through the target packages and watch 
 - **High comment density** — check for unclear naming or organization, while preserving useful contracts and non-obvious invariants.
 - **Painful tests** — heavy setup boilerplate, fragile assertions, or tests that break when unrelated code changes. If testing one concept requires building up lots of unrelated state, the boundaries are in the wrong place.
 - **Large files** — a file over 300 lines often means mixed concerns. Two domain concepts sharing a file because they were written at the same time, not because they belong together.
-- **Catch-all or layer-named packages** — the names go-guidelines lists (`util`, `common`, `types`, `manager`, `service`, `ops`, …). The name says where code sits, not what it is, so unrelated code collects there.
+- **Catch-all packages** — `util`, `common`, `misc`, `types`, `api`. The name says nothing about the contents, so unrelated code collects there.
 - **Imports pointing outward** — a shared package importing the CLI, the MCP server, or another way into the program; or two packages that need each other, directly or through a third.
 - **Same action, two implementations** — a CLI command and a protocol handler each doing their own version of one operation, with different timeouts, checks, or output.
 
@@ -151,7 +151,7 @@ Type or file boundaries that don't align with domain concept boundaries.
 **Proof:** name the boundary as drawn vs. as the domain model says it should be. Show a concrete scenario where the wrong boundary causes friction.
 
 ### Leaky dependency direction
-Imports run from a shared package out to a way in, one way in imports another, two packages need each other, or one action has a separate implementation per way in.
+Imports run from a shared package out to a way in, two packages need each other, or one action has a separate implementation per way in.
 
 **Proof:** list the import edges that run the wrong way or form the cycle, or the two mapped flows whose chains duplicate one operation. Name the concrete cost: a way in can't be tested or replaced without another, or two ways in already behave differently.
 
