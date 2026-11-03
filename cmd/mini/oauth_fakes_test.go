@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -21,6 +20,7 @@ import (
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
+	"github.com/mcpmini/mini/internal/mcptest"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
 )
@@ -51,44 +51,32 @@ func newTestTokenEndpoint(t *testing.T) *testTokenEndpoint {
 }
 
 type testMCPUpstream struct {
-	srv             *httptest.Server
-	lastAuth        sync.Map
+	srv             *mcptest.Server
 	rejectWith401   atomic.Value
 	refreshTokenURL atomic.Value
 }
 
 func (u *testMCPUpstream) lastAuthFor(method string) string {
-	v, _ := u.lastAuth.Load(method)
-	s, _ := v.(string)
-	return s
+	reqs := u.srv.Requests()
+	for i := len(reqs) - 1; i >= 0; i-- {
+		if reqs[i].Method == method {
+			return reqs[i].Header.Get("Authorization")
+		}
+	}
+	return ""
 }
 
-func (u *testMCPUpstream) serveHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodGet {
-		u.serveDiscovery(w, r)
-		return
+func (u *testMCPUpstream) authorize(r mcptest.Request) bool {
+	reject, _ := u.rejectWith401.Load().(string)
+	return r.Method != "tools/call" || reject == "" || r.Header.Get("Authorization") != reject
+}
+
+func (u *testMCPUpstream) interceptDiscovery(w http.ResponseWriter, r *http.Request) bool {
+	if r.Method != http.MethodGet {
+		return false
 	}
-	authHdr := r.Header.Get("Authorization")
-	var req map[string]any
-	json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
-	method, _ := req["method"].(string)
-	u.lastAuth.Store(method, authHdr)
-	if reject, _ := u.rejectWith401.Load().(string); method == "tools/call" && reject != "" && authHdr == reject {
-		w.WriteHeader(http.StatusUnauthorized)
-		return
-	}
-	id := req["id"]
-	switch method {
-	case "initialize":
-		json.NewEncoder(w).Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, //nolint:errcheck
-			"result": map[string]any{"protocolVersion": transport.LegacyVersions[0]}})
-	case "tools/list":
-		json.NewEncoder(w).Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, //nolint:errcheck
-			"result": map[string]any{"tools": []any{map[string]any{"name": "t1", "inputSchema": map[string]any{}}}}})
-	case "tools/call":
-		json.NewEncoder(w).Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, //nolint:errcheck
-			"result": map[string]any{"content": []any{map[string]any{"type": "text", "text": "ok"}}}})
-	}
+	u.serveDiscovery(w, r)
+	return true
 }
 
 func (u *testMCPUpstream) serveDiscovery(w http.ResponseWriter, r *http.Request) {
@@ -106,8 +94,14 @@ func (u *testMCPUpstream) serveDiscovery(w http.ResponseWriter, r *http.Request)
 func newTestMCPUpstream(t *testing.T) *testMCPUpstream {
 	t.Helper()
 	u := &testMCPUpstream{}
-	u.srv = httptest.NewServer(http.HandlerFunc(u.serveHTTP))
-	t.Cleanup(u.srv.Close)
+	u.srv = mcptest.NewHTTP(t, mcptest.Upstream{
+		Tools:     []mcptest.Tool{{Name: "t1"}},
+		Authorize: u.authorize,
+		Intercept: u.interceptDiscovery,
+		Methods: map[string]mcptest.Method{"tools/call": func(mcptest.Request) mcptest.Reply {
+			return mcptest.Reply{Result: map[string]any{"content": []any{map[string]any{"type": "text", "text": "ok"}}}}
+		}},
+	})
 	return u
 }
 

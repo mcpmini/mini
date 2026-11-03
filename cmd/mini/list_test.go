@@ -8,6 +8,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
+	"github.com/mcpmini/mini/internal/mcptest"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -54,7 +55,7 @@ func TestRunList(t *testing.T) {
 
 	t.Run("http server shows url and transport", func(t *testing.T) {
 		dir := t.TempDir()
-		srv := fakeUnauthenticatedMCPServer(t)
+		srv := mcptest.NewHTTP(t, mcptest.Upstream{})
 		configtest.WriteServer(t, dir, config.ServerConfig{Name: "remote", Transport: "http", URL: srv.URL})
 
 		var out bytes.Buffer
@@ -84,7 +85,7 @@ func TestRunList(t *testing.T) {
 	})
 
 	t.Run("server with no tools has a clear empty state", func(t *testing.T) {
-		srv := fakeUnauthenticatedMCPServer(t)
+		srv := mcptest.NewHTTP(t, mcptest.Upstream{})
 		dir := t.TempDir()
 		configtest.WriteServer(t, dir, config.ServerConfig{Name: "empty", Transport: "http", URL: srv.URL})
 		var out bytes.Buffer

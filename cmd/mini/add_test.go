@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,41 +10,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mcpmini/mini/internal/transport"
-
 	"gopkg.in/yaml.v3"
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
+	"github.com/mcpmini/mini/internal/mcptest"
 	"github.com/mcpmini/mini/internal/testutil"
 )
-
-func fakeUnauthenticatedMCPServer(t *testing.T) *httptest.Server {
-	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req map[string]any
-		json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
-		id := req["id"]
-		switch req["method"] {
-		case "initialize":
-			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, //nolint:errcheck
-				"result": map[string]any{
-					"protocolVersion": "2024-11-05",
-					"capabilities":    map[string]any{"tools": map[string]any{}},
-					"serverInfo":      map[string]any{"name": "fake", "version": "0"},
-				}})
-		case "tools/list":
-			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, //nolint:errcheck
-				"result": map[string]any{"tools": []map[string]any{}}})
-		default:
-			json.NewEncoder(w).
-				Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, "result": nil})
-			//nolint:errcheck
-		}
-	}))
-	t.Cleanup(srv.Close)
-	return srv
-}
 
 func runAdd(configDir string, args []string, out *bytes.Buffer) error {
 	cmd := newAddCmd(&rootOptions{configDir: configDir})
@@ -119,7 +90,7 @@ func TestRunAdd(t *testing.T) {
 	})
 
 	t.Run("--url flag creates http server", func(t *testing.T) {
-		mcpSrv := fakeUnauthenticatedMCPServer(t)
+		mcpSrv := mcptest.NewHTTP(t, mcptest.Upstream{})
 		dir := t.TempDir()
 		var out bytes.Buffer
 		if err := runAdd(dir, []string{"gh", "--url", mcpSrv.URL}, &out); err != nil {

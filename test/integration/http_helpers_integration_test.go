@@ -3,74 +3,49 @@
 package integration_test
 
 import (
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 
-	"github.com/mcpmini/mini/internal/transport"
-
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
+	"github.com/mcpmini/mini/internal/mcptest"
 )
 
-// fakeHTTPMCP is an in-process HTTP MCP server for tests.
-// onCall is invoked for every tools/call; returning status=0 falls through to default behavior.
 type fakeHTTPMCP struct {
-	srv    *httptest.Server
-	calls  atomic.Int64
-	onCall func(callNum int) (httpStatus int, body []byte)
+	srv   *mcptest.Server
+	calls atomic.Int64
 }
 
 func newFakeHTTPMCP(t *testing.T, onCall func(int) (int, []byte)) *fakeHTTPMCP {
 	t.Helper()
-	f := &fakeHTTPMCP{onCall: onCall}
-	f.srv = httptest.NewServer(http.HandlerFunc(f.serveHTTP))
-	t.Cleanup(f.srv.Close)
+	f := &fakeHTTPMCP{}
+	f.srv = mcptest.NewHTTP(t, mcptest.Upstream{
+		Tools:   []mcptest.Tool{{Name: "get_item", Description: "test tool"}},
+		Methods: map[string]mcptest.Method{"tools/call": f.toolsCall(onCall)},
+	})
 	return f
 }
 
-func fakeMCPResult(method string) any {
-	switch method {
-	case "initialize":
-		return map[string]any{
-			"protocolVersion": "2024-11-05",
-			"capabilities":    map[string]any{"tools": map[string]any{}},
-			"serverInfo":      map[string]any{"name": "fakehttpmcp", "version": "0.1.0"},
+func (f *fakeHTTPMCP) toolsCall(onCall func(int) (int, []byte)) mcptest.Method {
+	return func(mcptest.Request) mcptest.Reply {
+		n := int(f.calls.Add(1))
+		if onCall != nil {
+			if status, body := onCall(n); status != 0 {
+				return mcptest.Reply{Status: status, Body: body}
+			}
 		}
-	case "tools/list":
-		return map[string]any{
-			"tools": []map[string]any{{
-				"name": "get_item", "description": "test tool",
-				"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}},
-			}},
+		return mcptest.Reply{
+			Result: map[string]any{"content": []map[string]any{{"type": "text", "text": `{"ok":true}`}}},
 		}
-	case "tools/call":
-		return map[string]any{"content": []map[string]any{{"type": "text", "text": `{"ok":true}`}}}
-	default:
-		return map[string]any{}
 	}
 }
 
-func (f *fakeHTTPMCP) serveHTTP(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		ID     int64           `json:"id"`
-		Method string          `json:"method"`
-		Params json.RawMessage `json:"params"`
+func (f *fakeHTTPMCP) lastHeader(name string) string {
+	reqs := f.srv.Requests()
+	if len(reqs) == 0 {
+		return ""
 	}
-	json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
-	w.Header().Set("Content-Type", "application/json")
-	if req.Method == "tools/call" && f.onCall != nil {
-		if status, body := f.onCall(int(f.calls.Add(1))); status != 0 {
-			w.WriteHeader(status)
-			w.Write(body) //nolint:errcheck
-			return
-		}
-	}
-	json.NewEncoder(w).
-		Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": req.ID, "result": fakeMCPResult(req.Method)})
-	//nolint:errcheck
+	return reqs[len(reqs)-1].Header.Get(name)
 }
 
 type httpServerParams struct {
@@ -102,17 +77,4 @@ func envelopeOK(t *testing.T, p envelopeCallParams) bool {
 	t.Helper()
 	_, isErr := p.Client.execToolAllowError(p.Server, p.Tool, nil)
 	return !isErr
-}
-
-// authCapturingMCP wraps a fakeHTTPMCP to capture a specific request header on each call.
-func authCapturingMCP(t *testing.T, headerKey string) (*fakeHTTPMCP, *atomic.Value) {
-	t.Helper()
-	var captured atomic.Value
-	f := &fakeHTTPMCP{}
-	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		captured.Store(r.Header.Get(headerKey))
-		f.serveHTTP(w, r)
-	}))
-	t.Cleanup(f.srv.Close)
-	return f, &captured
 }

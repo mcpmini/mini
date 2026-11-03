@@ -10,8 +10,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -112,41 +110,6 @@ func newTestServer(t *testing.T, p server.Params) *server.Server {
 func writeTestServerConfig(t *testing.T, srv *server.Server, sc config.ServerConfig) {
 	t.Helper()
 	configtest.WriteServer(t, srv.ConfigDir(), sc)
-}
-
-// newMCPTestServer starts a minimal HTTP MCP server advertising the given tools.
-func newMCPTestServer(t *testing.T, tools []map[string]any) *httptest.Server {
-	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fakeMCPHandle(w, r, tools)
-	}))
-	t.Cleanup(srv.Close)
-	return srv
-}
-
-func fakeMCPHandle(w http.ResponseWriter, r *http.Request, tools []map[string]any) {
-	var req map[string]any
-	json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
-	id := req["id"]
-	switch req["method"] {
-	case "initialize":
-		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-			"jsonrpc": transport.JsonRPCVersion, "id": id,
-			"result": map[string]any{
-				"protocolVersion": "2024-11-05",
-				"capabilities":    map[string]any{"tools": map[string]any{}},
-				"serverInfo":      map[string]any{"name": "fake", "version": "0"},
-			},
-		})
-	case "tools/list":
-		json.NewEncoder(w).
-			Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, "result": map[string]any{"tools": tools}})
-	//nolint:errcheck
-	default:
-		json.NewEncoder(w).
-			Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, "result": nil})
-		//nolint:errcheck
-	}
 }
 
 func serveAll(t *testing.T, srv *server.Server, lines ...[]byte) []map[string]any {

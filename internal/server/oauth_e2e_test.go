@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mcpmini/mini/internal/transport"
+	"github.com/mcpmini/mini/internal/mcptest"
 
 	"golang.org/x/oauth2"
 	"gopkg.in/yaml.v3"
@@ -28,45 +28,13 @@ import (
 	"github.com/mcpmini/mini/internal/testutil"
 )
 
-func oauthMCPHandler(validToken string, tools []map[string]any) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if serveOAuthMetadata(w, r) {
-			return
-		}
-		if r.Header.Get("Authorization") != "Bearer "+validToken {
-			w.Header().Set("WWW-Authenticate", "Bearer")
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-		var req map[string]any
-		json.NewDecoder(r.Body).Decode(&req)
-		id := req["id"]
-		switch req["method"] {
-		case "initialize":
-			json.NewEncoder(w).Encode(map[string]any{
-				"jsonrpc": transport.JsonRPCVersion, "id": id,
-				"result": map[string]any{
-					"protocolVersion": "2024-11-05",
-					"capabilities":    map[string]any{"tools": map[string]any{}},
-					"serverInfo":      map[string]any{"name": "protected", "version": "0"},
-				},
-			})
-		case "tools/list":
-			json.NewEncoder(w).Encode(map[string]any{
-				"jsonrpc": transport.JsonRPCVersion, "id": id,
-				"result": map[string]any{"tools": tools},
-			})
-		default:
-			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, "result": nil})
-		}
-	}
-}
-
-func fakeOAuthMCPServer(t *testing.T, validToken string, tools []map[string]any) *httptest.Server {
+func fakeOAuthMCPServer(t *testing.T, validToken string, tools []mcptest.Tool) *mcptest.Server {
 	t.Helper()
-	srv := httptest.NewServer(oauthMCPHandler(validToken, tools))
-	t.Cleanup(srv.Close)
-	return srv
+	return mcptest.NewHTTP(t, mcptest.Upstream{
+		Tools:     tools,
+		Intercept: serveOAuthMetadata,
+		Authorize: func(r mcptest.Request) bool { return r.Header.Get("Authorization") == "Bearer "+validToken },
+	})
 }
 
 // fakeTokenServer returns an OAuth2 token server that issues the given access token.
@@ -135,8 +103,8 @@ func waitForServerConnected(t *testing.T, srv *server.Server, svcName string) {
 func TestStartAuth_e2e_connectsAfterOAuthFlow(t *testing.T) {
 	const accessToken = "e2e-valid-token"
 	tokenSrv := fakeTokenServer(t, accessToken)
-	mcpSrv := fakeOAuthMCPServer(t, accessToken, []map[string]any{
-		{"name": "getData", "description": "get data", "inputSchema": map[string]any{"type": "object"}},
+	mcpSrv := fakeOAuthMCPServer(t, accessToken, []mcptest.Tool{
+		{Name: "getData", Description: "get data"},
 	})
 	srv := newOAuthServer(
 		newOAuthServerParams{
@@ -218,9 +186,9 @@ func waitForFileContent(t *testing.T, path string) string {
 func TestStartAuth_e2e_toolsAccessibleAfterAuth(t *testing.T) {
 	const accessToken = "e2e-tools-token"
 	tokenSrv := fakeTokenServer(t, accessToken)
-	mcpSrv := fakeOAuthMCPServer(t, accessToken, []map[string]any{
-		{"name": "search", "description": "search things", "inputSchema": map[string]any{"type": "object"}},
-		{"name": "create", "description": "create thing", "inputSchema": map[string]any{"type": "object"}},
+	mcpSrv := fakeOAuthMCPServer(t, accessToken, []mcptest.Tool{
+		{Name: "search", Description: "search things"},
+		{Name: "create", Description: "create thing"},
 	})
 	srv := newOAuthServer(
 		newOAuthServerParams{
@@ -282,44 +250,23 @@ func TestStartAuth_e2e_withStaleToken_browserTokenUsedOnFirstRequest(t *testing.
 	acceptedToken := ""
 	var unauthorizedAfterAuth atomic.Int32
 
-	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if serveOAuthMetadata(w, r) {
-			return
-		}
-		mu.Lock()
-		vt := acceptedToken
-		mu.Unlock()
-		if vt == "" || r.Header.Get("Authorization") != "Bearer "+vt {
-			if r.Method == http.MethodPost && r.Header.Get("Authorization") != "" {
+	mcpSrv := mcptest.NewHTTP(t, mcptest.Upstream{
+		Tools:     []mcptest.Tool{{Name: "getData", Description: "get data"}},
+		Intercept: serveOAuthMetadata,
+		Authorize: func(r mcptest.Request) bool {
+			mu.Lock()
+			vt := acceptedToken
+			mu.Unlock()
+			sent := r.Header.Get("Authorization")
+			if vt != "" && sent == "Bearer "+vt {
+				return true
+			}
+			if sent != "" {
 				unauthorizedAfterAuth.Add(1)
 			}
-			w.Header().Set("WWW-Authenticate", "Bearer")
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-		var req map[string]any
-		json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
-		id := req["id"]
-		switch req["method"] {
-		case "initialize":
-			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, //nolint:errcheck
-				"result": map[string]any{
-					"protocolVersion": "2024-11-05",
-					"capabilities":    map[string]any{"tools": map[string]any{}},
-					"serverInfo":      map[string]any{"name": "srv", "version": "0"},
-				}})
-		case "tools/list":
-			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, //nolint:errcheck
-				"result": map[string]any{"tools": []map[string]any{
-					{"name": "getData", "description": "get data", "inputSchema": map[string]any{"type": "object"}},
-				}}})
-		default:
-			json.NewEncoder(w).
-				Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, "result": nil})
-			//nolint:errcheck
-		}
-	}))
-	defer mcpSrv.Close()
+			return false
+		},
+	})
 
 	var tokenEndpointOpen atomic.Bool
 	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

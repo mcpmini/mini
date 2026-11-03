@@ -4,50 +4,23 @@ package server_test
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 
-	"github.com/mcpmini/mini/internal/transport"
-
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/mcptest"
 	"github.com/mcpmini/mini/internal/server"
 )
 
-func fakeMCPServer(
-	t *testing.T,
-	onRequest func(w http.ResponseWriter, r *http.Request, req map[string]any),
-) *httptest.Server {
-	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req map[string]any
-		json.NewDecoder(r.Body).Decode(&req)
-		id := req["id"]
-		method, _ := req["method"].(string)
-		onRequest(w, r, req)
-		if method == "initialize" {
-			json.NewEncoder(w).Encode(map[string]any{
-				"jsonrpc": transport.JsonRPCVersion, "id": id,
-				"result": map[string]any{
-					"protocolVersion": "2024-11-05",
-					"capabilities":    map[string]any{"tools": map[string]any{}},
-					"serverInfo":      map[string]any{"name": "s", "version": "0"},
-				},
-			})
-		} else {
-			json.NewEncoder(w).
-				Encode(map[string]any{"jsonrpc": transport.JsonRPCVersion, "id": id, "result": map[string]any{"tools": []any{}}})
-		}
-	}))
+func lastHeaderSent(up *mcptest.Server, name string) string {
+	reqs := up.Requests()
+	if len(reqs) == 0 {
+		return ""
+	}
+	return reqs[len(reqs)-1].Header.Get(name)
 }
 
 func TestAuthHeader_bearer(t *testing.T) {
-	var gotAuth string
-	httpSrv := fakeMCPServer(t, func(w http.ResponseWriter, r *http.Request, req map[string]any) {
-		gotAuth = r.Header.Get("Authorization")
-	})
-	defer httpSrv.Close()
+	httpSrv := mcptest.NewHTTP(t, mcptest.Upstream{})
 
 	srv := newTestServer(t, server.Params{})
 	sc := config.ServerConfig{
@@ -59,17 +32,13 @@ func TestAuthHeader_bearer(t *testing.T) {
 	if err := srv.AddUpstream(context.Background(), sc); err != nil {
 		t.Fatalf("AddUpstream with bearer auth failed: %v", err)
 	}
-	if gotAuth != "Bearer tok-123" {
-		t.Errorf("expected Bearer tok-123, got: %q", gotAuth)
+	if got := lastHeaderSent(httpSrv, "Authorization"); got != "Bearer tok-123" {
+		t.Errorf("expected Bearer tok-123, got: %q", got)
 	}
 }
 
 func TestAuthHeader_apikey(t *testing.T) {
-	var gotHeader string
-	httpSrv := fakeMCPServer(t, func(w http.ResponseWriter, r *http.Request, req map[string]any) {
-		gotHeader = r.Header.Get("X-Api-Key")
-	})
-	defer httpSrv.Close()
+	httpSrv := mcptest.NewHTTP(t, mcptest.Upstream{})
 
 	srv := newTestServer(t, server.Params{})
 	sc := config.ServerConfig{
@@ -81,17 +50,13 @@ func TestAuthHeader_apikey(t *testing.T) {
 	if err := srv.AddUpstream(context.Background(), sc); err != nil {
 		t.Fatalf("AddUpstream with apikey auth failed: %v", err)
 	}
-	if gotHeader != "key-abc" {
-		t.Errorf("expected key-abc in X-Api-Key, got: %q", gotHeader)
+	if got := lastHeaderSent(httpSrv, "X-Api-Key"); got != "key-abc" {
+		t.Errorf("expected key-abc in X-Api-Key, got: %q", got)
 	}
 }
 
 func TestAuthHeader_emptyToken_noHeader(t *testing.T) {
-	var gotAuth string
-	httpSrv := fakeMCPServer(t, func(w http.ResponseWriter, r *http.Request, req map[string]any) {
-		gotAuth = r.Header.Get("Authorization")
-	})
-	defer httpSrv.Close()
+	httpSrv := mcptest.NewHTTP(t, mcptest.Upstream{})
 
 	srv := newTestServer(t, server.Params{})
 	sc := config.ServerConfig{
@@ -103,7 +68,7 @@ func TestAuthHeader_emptyToken_noHeader(t *testing.T) {
 	if err := srv.AddUpstream(context.Background(), sc); err != nil {
 		t.Fatalf("AddUpstream failed: %v", err)
 	}
-	if gotAuth != "" {
-		t.Errorf("expected no Authorization header with empty token, got: %q", gotAuth)
+	if got := lastHeaderSent(httpSrv, "Authorization"); got != "" {
+		t.Errorf("expected no Authorization header with empty token, got: %q", got)
 	}
 }

@@ -16,23 +16,22 @@ import (
 
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/mcptest"
 	"github.com/mcpmini/mini/internal/server"
 )
 
 const statusNotRetriedByTransport = http.StatusInternalServerError
 
-var pingTools = []map[string]any{
-	{"name": "ping", "description": "ping", "inputSchema": map[string]any{"type": "object"}},
-}
+var pingTools = []mcptest.Tool{{Name: "ping", Description: "ping"}}
 
-var pingMCPHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-	fakeMCPHandle(w, r, pingTools)
-})
+func pingHandler() http.Handler {
+	return mcptest.NewHandler(mcptest.Upstream{Tools: pingTools})
+}
 
 func upstreamFailingFirst(
 	t *testing.T,
 	failures int32,
-	afterFailures http.HandlerFunc,
+	afterFailures http.Handler,
 ) (*httptest.Server, *atomic.Int32) {
 	t.Helper()
 	var attempts atomic.Int32
@@ -41,16 +40,16 @@ func upstreamFailingFirst(
 			http.Error(w, "server error", statusNotRetriedByTransport)
 			return
 		}
-		afterFailures(w, r)
+		afterFailures.ServeHTTP(w, r)
 	}))
 	t.Cleanup(ts.Close)
 	return ts, &attempts
 }
 
-func requireBearer(w http.ResponseWriter, _ *http.Request) {
+var requireBearer = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("WWW-Authenticate", "Bearer")
 	w.WriteHeader(http.StatusUnauthorized)
-}
+})
 
 type startupRetry struct {
 	srv   *server.Server
@@ -113,7 +112,7 @@ func recordAttrs(r slog.Record) map[string]slog.Value {
 }
 
 func TestConnectUpstreamAsync_transientFailure_retriesAndRegisters(t *testing.T) {
-	ts, _ := upstreamFailingFirst(t, 1, pingMCPHandler)
+	ts, _ := upstreamFailingFirst(t, 1, pingHandler())
 	r := startRetrying(t, ts.URL, discardLogs())
 	defer r.srv.Close()
 
@@ -124,12 +123,12 @@ func TestConnectUpstreamAsync_transientFailure_retriesAndRegisters(t *testing.T)
 }
 
 func TestConnectUpstreams_laterCall_leavesEarlierRetriesRunning(t *testing.T) {
-	ts, _ := upstreamFailingFirst(t, 1, pingMCPHandler)
+	ts, _ := upstreamFailingFirst(t, 1, pingHandler())
 	r := startRetrying(t, ts.URL, discardLogs())
 	defer r.srv.Close()
 	r.waitForBackoffTimer(t)
 
-	other := newMCPTestServer(t, pingTools)
+	other := mcptest.NewHTTP(t, mcptest.Upstream{Tools: pingTools})
 	r.srv.ConnectUpstreams(
 		context.Background(),
 		[]config.ServerConfig{{Name: "other", Transport: "http", URL: other.URL}},
@@ -143,7 +142,7 @@ func TestConnectUpstreams_laterCall_leavesEarlierRetriesRunning(t *testing.T) {
 }
 
 func TestConnectUpstreamAsync_repeatedFailure_backoffDoubles(t *testing.T) {
-	ts, _ := upstreamFailingFirst(t, 2, pingMCPHandler)
+	ts, _ := upstreamFailingFirst(t, 2, pingHandler())
 	logs := make(logRecorder, 64)
 	r := startRetrying(t, ts.URL, logs)
 	defer r.srv.Close()
@@ -194,7 +193,7 @@ func TestConnectUpstreamAsync_reauthAfterRetry_logsTheAuthError(t *testing.T) {
 }
 
 func TestConnectUpstreamAsync_closeDuringRetry_returnsPromptly(t *testing.T) {
-	ts, _ := upstreamFailingFirst(t, 1, pingMCPHandler)
+	ts, _ := upstreamFailingFirst(t, 1, pingHandler())
 	r := startRetrying(t, ts.URL, discardLogs())
 
 	r.waitForBackoffTimer(t)
@@ -203,7 +202,7 @@ func TestConnectUpstreamAsync_closeDuringRetry_returnsPromptly(t *testing.T) {
 }
 
 func TestConnectUpstreamAsync_removedDuringRetry_isNotRedialed(t *testing.T) {
-	ts, attempts := upstreamFailingFirst(t, 1, pingMCPHandler)
+	ts, attempts := upstreamFailingFirst(t, 1, pingHandler())
 	r := startRetrying(t, ts.URL, discardLogs())
 	defer mustCloseWithin(t, r.srv, 3*time.Second)
 
@@ -221,7 +220,7 @@ func TestConnectUpstreamAsync_removedDuringRetry_isNotRedialed(t *testing.T) {
 }
 
 func TestConnectUpstreamAsync_runtimeAddDuringRetry_isNotOverwritten(t *testing.T) {
-	ts, attempts := upstreamFailingFirst(t, 1, pingMCPHandler)
+	ts, attempts := upstreamFailingFirst(t, 1, pingHandler())
 	r := startRetrying(t, ts.URL, discardLogs())
 	defer mustCloseWithin(t, r.srv, 3*time.Second)
 
@@ -245,7 +244,7 @@ func TestConnectUpstreamAsync_runtimeAddDuringRetry_isNotOverwritten(t *testing.
 }
 
 func TestConnectUpstreams_removedBeforeFirstAttempt_isNotInstalled(t *testing.T) {
-	ts := newMCPTestServer(t, pingTools)
+	ts := mcptest.NewHTTP(t, mcptest.Upstream{Tools: pingTools})
 	srv := newConnectTestServer(t)
 	defer srv.Close()
 
@@ -281,7 +280,7 @@ func TestConnectUpstreamAsync_runtimeAddWhileDialInFlight_doesNotOverwriteRuntim
 			<-release
 		}
 		r.Body = io.NopCloser(bytes.NewReader(body))
-		fakeMCPHandle(w, r, pingTools)
+		pingHandler().ServeHTTP(w, r)
 	}))
 	t.Cleanup(ts.Close)
 
@@ -337,7 +336,7 @@ func TestConnectUpstreamAsync_projectionsReloadedDuringRetry_installUsesLiveProj
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			ts, _ := upstreamFailingFirst(t, 1, pingMCPHandler)
+			ts, _ := upstreamFailingFirst(t, 1, pingHandler())
 			r := startupRetry{clock: clock.NewFake()}
 			r.srv = newConnectTestServerLogging(t, discardLogs(), r.clock)
 			defer r.srv.Close()

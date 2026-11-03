@@ -7,14 +7,13 @@ import (
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/mcptest"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
 func TestNotification_toolsChangedAfterAddServer(t *testing.T) {
-	mcp := newMCPTestServer(t, []map[string]any{
-		{"name": "ping", "description": "ping", "inputSchema": map[string]any{"type": "object"}},
-	})
+	mcp := mcptest.NewHTTP(t, mcptest.Upstream{Tools: pingTools})
 
 	cfg := config.DefaultConfig()
 	cfg.DangerousAllowPrivateURLs = true

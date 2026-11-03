@@ -5,14 +5,13 @@ package server_test
 import (
 	"context"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/mcptest"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/testutil"
 )
@@ -132,18 +131,11 @@ func TestStdioEnvPassthrough(t *testing.T) {
 
 func TestAddUpstream_existingServer_replacesIt(t *testing.T) {
 	serveTools := func(names ...string) string {
-		var tools []map[string]any
+		var tools []mcptest.Tool
 		for _, n := range names {
-			tools = append(
-				tools,
-				map[string]any{"name": n, "description": n, "inputSchema": map[string]any{"type": "object"}},
-			)
+			tools = append(tools, mcptest.Tool{Name: n, Description: n})
 		}
-		ts := httptest.NewServer(
-			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fakeMCPHandle(w, r, tools) }),
-		)
-		t.Cleanup(ts.Close)
-		return ts.URL
+		return mcptest.NewHTTP(t, mcptest.Upstream{Tools: tools}).URL
 	}
 	srv := newConnectTestServer(t)
 	defer srv.Close()

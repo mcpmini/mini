@@ -17,6 +17,7 @@ import (
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/mcptest"
 	"github.com/mcpmini/mini/internal/server"
 )
 
@@ -59,7 +60,7 @@ func hungHTTPServer(t *testing.T) *httptest.Server {
 }
 
 func TestConnectUpstreams_NotifiesLiveSessionOfLateUpstream(t *testing.T) {
-	mcp := newMCPTestServer(t, pingTools)
+	mcp := mcptest.NewHTTP(t, mcptest.Upstream{Tools: pingTools})
 	srv := newConnectTestServer(t)
 	agent := openAgent(t, srv)
 
@@ -79,13 +80,13 @@ func TestConnectUpstreams_CleanShutdownWithHungUpstream(t *testing.T) {
 
 func TestConnectUpstreams_CloseCancelsInFlightConnect(t *testing.T) {
 	const upstreamDelay = 5 * time.Second
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(upstreamDelay)
-		fakeMCPHandle(w, r, []map[string]any{
-			{"name": "slow_tool", "description": "slow", "inputSchema": map[string]any{"type": "object"}},
-		})
-	}))
-	t.Cleanup(ts.Close)
+	ts := mcptest.NewHTTP(t, mcptest.Upstream{
+		Tools: []mcptest.Tool{{Name: "slow_tool", Description: "slow"}},
+		Intercept: func(http.ResponseWriter, *http.Request) bool {
+			time.Sleep(upstreamDelay)
+			return false
+		},
+	})
 
 	srv := newConnectTestServer(t)
 	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{{Name: "slow", Transport: "http", URL: ts.URL}})
@@ -102,7 +103,7 @@ func TestConnectUpstreams_CloseUnblocksHungConnectWithNoTimeout(t *testing.T) {
 }
 
 func TestConnectUpstreams_NormalConnectUnaffectedByFix(t *testing.T) {
-	mcp := newMCPTestServer(t, pingTools)
+	mcp := mcptest.NewHTTP(t, mcptest.Upstream{Tools: pingTools})
 	srv := newConnectTestServer(t)
 
 	sc := config.ServerConfig{Name: "svc", Transport: "http", URL: mcp.URL, HandshakeTimeout: "0"}
@@ -112,7 +113,7 @@ func TestConnectUpstreams_NormalConnectUnaffectedByFix(t *testing.T) {
 }
 
 func TestConnectUpstreams_FastUpstreamRegistersWhileHungStillConnecting(t *testing.T) {
-	fast := newMCPTestServer(t, pingTools)
+	fast := mcptest.NewHTTP(t, mcptest.Upstream{Tools: pingTools})
 	hung := hungHTTPServer(t)
 	srv := newConnectTestServer(t)
 	defer srv.Close()
@@ -129,7 +130,7 @@ func TestConnectUpstreams_FastUpstreamRegistersWhileHungStillConnecting(t *testi
 }
 
 func TestConnectUpstreams_SkipsDisabledServer(t *testing.T) {
-	mcp := newMCPTestServer(t, pingTools)
+	mcp := mcptest.NewHTTP(t, mcptest.Upstream{Tools: pingTools})
 	srv := newConnectTestServer(t)
 	defer srv.Close()
 

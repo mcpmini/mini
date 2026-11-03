@@ -7,7 +7,6 @@ import (
 	"errors"
 	"maps"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -25,6 +24,7 @@ import (
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
+	"github.com/mcpmini/mini/internal/mcptest"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
@@ -92,7 +92,7 @@ func (e configToolEnv) assertNotSaved(name string) {
 
 func TestConfigAddServer_savesAndConnectsTheServer(t *testing.T) {
 	e := newConfigToolEnv(t)
-	upstream := newMCPTestServer(t, pingTools)
+	upstream := mcptest.NewHTTP(t, mcptest.Upstream{Tools: pingTools})
 
 	text, failed := e.addServer(map[string]any{
 		"name": "added", "transport": "http", "url": upstream.URL,
@@ -172,7 +172,11 @@ func TestConfigAddServer_aConfiguredOrRunningName_isRefusedAndLeftAlone(t *testi
 		})
 
 		text, failed := e.addServer(
-			map[string]any{"name": "svc", "transport": "http", "url": newMCPTestServer(t, pingTools).URL},
+			map[string]any{
+				"name":      "svc",
+				"transport": "http",
+				"url":       mcptest.NewHTTP(t, mcptest.Upstream{Tools: pingTools}).URL,
+			},
 		)
 
 		if !failed || !strings.Contains(text, "svc is already configured; remove it with remove_server first") {
@@ -196,7 +200,11 @@ func TestConfigAddServer_aConfiguredOrRunningName_isRefusedAndLeftAlone(t *testi
 		})
 
 		text, failed := e.addServer(
-			map[string]any{"name": "svc", "transport": "http", "url": newMCPTestServer(t, pingTools).URL},
+			map[string]any{
+				"name":      "svc",
+				"transport": "http",
+				"url":       mcptest.NewHTTP(t, mcptest.Upstream{Tools: pingTools}).URL,
+			},
 		)
 
 		if !failed || !strings.Contains(text, "svc is already running; remove it with remove_server first") {
@@ -235,7 +243,11 @@ func TestConfigAddServer_envReferenceInURL_isRefusedSoARestartCantExpandIt(t *te
 	e := newConfigToolEnv(t)
 
 	text, failed := e.addServer(
-		map[string]any{"name": "leak", "transport": "http", "url": newMCPTestServer(t, pingTools).URL + "/?t=${HOME}"},
+		map[string]any{
+			"name":      "leak",
+			"transport": "http",
+			"url":       mcptest.NewHTTP(t, mcptest.Upstream{Tools: pingTools}).URL + "/?t=${HOME}",
+		},
 	)
 
 	if !failed || !strings.Contains(text, "isn't expanded") {
@@ -266,18 +278,13 @@ func TestConfigAddServer_aSavedAgentServerNeverGetsOAuthFromItsOwnChallenge(t *t
 	}
 }
 
-func newMCPServerThatLaterDemandsOAuth(t *testing.T) (*httptest.Server, func()) {
+func newMCPServerThatLaterDemandsOAuth(t *testing.T) (*mcptest.Server, func()) {
 	t.Helper()
 	var demanding atomic.Bool
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if demanding.Load() {
-			w.Header().Set("WWW-Authenticate", "Bearer")
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-		fakeMCPHandle(w, r, pingTools)
-	}))
-	t.Cleanup(srv.Close)
+	srv := mcptest.NewHTTP(t, mcptest.Upstream{
+		Tools:     pingTools,
+		Authorize: func(mcptest.Request) bool { return !demanding.Load() },
+	})
 	return srv, func() { demanding.Store(true) }
 }
 
@@ -308,7 +315,7 @@ func TestConfigAddServer_overlappingAddsOfOneName_theFirstWins(t *testing.T) {
 	<-inHandshake
 	secondResult := make(chan string, 1)
 	secondDone := make(chan struct{})
-	winner := newMCPTestServer(t, pingTools)
+	winner := mcptest.NewHTTP(t, mcptest.Upstream{Tools: pingTools})
 	go func() {
 		var text string
 		defer func() { secondResult <- text; close(secondDone) }()
@@ -339,7 +346,7 @@ func TestConfigAddServer_anAddThatSucceedsAfterARemoveStaysSavedAndLive(t *testi
 		e.addServer(map[string]any{"name": "svc", "transport": "http", "url": slow.URL})
 	}()
 	<-inHandshake
-	later := newMCPTestServer(t, pingTools)
+	later := mcptest.NewHTTP(t, mcptest.Upstream{Tools: pingTools})
 	removeThenAddDone := make(chan struct{})
 	var laterAddFailed bool
 	go func() {
@@ -379,19 +386,21 @@ func isClosed(ch <-chan struct{}) bool {
 	}
 }
 
-func newGatedMCPServer(t *testing.T) (srv *httptest.Server, inHandshake <-chan struct{}, finishHandshake func()) {
+func newGatedMCPServer(t *testing.T) (srv *mcptest.Server, inHandshake <-chan struct{}, finishHandshake func()) {
 	t.Helper()
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var startOnce, releaseOnce sync.Once
-	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		startOnce.Do(func() { close(started) })
-		<-release
-		fakeMCPHandle(w, r, pingTools)
-	}))
 	finish := func() { releaseOnce.Do(func() { close(release) }) }
-	t.Cleanup(srv.Close)
 	t.Cleanup(finish)
+	srv = mcptest.NewHTTP(t, mcptest.Upstream{
+		Tools: pingTools,
+		Intercept: func(http.ResponseWriter, *http.Request) bool {
+			startOnce.Do(func() { close(started) })
+			<-release
+			return false
+		},
+	})
 	return srv, started, finish
 }
 
@@ -429,9 +438,7 @@ func TestConfigureAddServer_noConfig(t *testing.T) {
 }
 
 func TestConfigureAddServer_viaHTTP(t *testing.T) {
-	mcp := newMCPTestServer(t, []map[string]any{
-		{"name": "ping", "description": "ping", "inputSchema": map[string]any{"type": "object"}},
-	})
+	mcp := mcptest.NewHTTP(t, mcptest.Upstream{Tools: pingTools})
 	srv := newServerAllowPrivate(t)
 
 	resp := serve(t, srv, callTool("config", map[string]any{

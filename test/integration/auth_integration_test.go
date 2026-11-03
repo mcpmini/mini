@@ -11,7 +11,7 @@ import (
 
 func TestIntegrationAuth_bearerTokenSentToUpstream(t *testing.T) {
 	t.Parallel()
-	f, gotAuth := authCapturingMCP(t, "Authorization")
+	f := newFakeHTTPMCP(t, nil)
 	cfg := t.TempDir()
 	configtest.WriteServer(t, cfg, config.ServerConfig{
 		Name:      "svc",
@@ -26,14 +26,14 @@ func TestIntegrationAuth_bearerTokenSentToUpstream(t *testing.T) {
 	client := startServer(t, cfg)
 	client.execTool("svc", "get_item", nil)
 
-	if got, _ := gotAuth.Load().(string); got != "Bearer my-secret-token" {
+	if got := f.lastHeader("Authorization"); got != "Bearer my-secret-token" {
 		t.Errorf("expected Bearer my-secret-token, got %q", got)
 	}
 }
 
 func TestIntegrationAuth_apiKeySentToUpstream(t *testing.T) {
 	t.Parallel()
-	f, gotKey := authCapturingMCP(t, "X-Api-Key")
+	f := newFakeHTTPMCP(t, nil)
 	cfg := t.TempDir()
 	configtest.WriteServer(t, cfg, config.ServerConfig{
 		Name:      "svc",
@@ -49,14 +49,14 @@ func TestIntegrationAuth_apiKeySentToUpstream(t *testing.T) {
 	client := startServer(t, cfg)
 	client.execTool("svc", "get_item", nil)
 
-	if got, _ := gotKey.Load().(string); got != "my-api-key" {
+	if got := f.lastHeader("X-Api-Key"); got != "my-api-key" {
 		t.Errorf("expected my-api-key, got %q", got)
 	}
 }
 
 func TestIntegrationAuth_staticHeaderForwarded(t *testing.T) {
 	t.Parallel()
-	f, gotHeader := authCapturingMCP(t, "X-Custom-Key")
+	f := newFakeHTTPMCP(t, nil)
 	cfg := t.TempDir()
 	configtest.WriteServer(t, cfg, config.ServerConfig{
 		Name:      "svc",
@@ -68,21 +68,21 @@ func TestIntegrationAuth_staticHeaderForwarded(t *testing.T) {
 	client := startServer(t, cfg)
 	client.execTool("svc", "get_item", nil)
 
-	if got, _ := gotHeader.Load().(string); got != "custom-value" {
+	if got := f.lastHeader("X-Custom-Key"); got != "custom-value" {
 		t.Errorf("expected custom-value, got %q", got)
 	}
 }
 
 func TestIntegrationAuth_noTokenNoAuthHeader(t *testing.T) {
 	t.Parallel()
-	f, gotAuth := authCapturingMCP(t, "Authorization")
+	f := newFakeHTTPMCP(t, nil)
 	cfg := t.TempDir()
 	configtest.WriteServer(t, cfg, config.ServerConfig{Name: "svc", Transport: "sse", URL: f.srv.URL})
 
 	client := startServer(t, cfg)
 	client.execTool("svc", "get_item", nil)
 
-	if got, _ := gotAuth.Load().(string); got != "" {
+	if got := f.lastHeader("Authorization"); got != "" {
 		t.Errorf("expected no Authorization header without auth config, got %q", got)
 	}
 }

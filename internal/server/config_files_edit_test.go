@@ -9,15 +9,14 @@ import (
 
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/mcptest"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/testutil"
 )
 
 const reconnectedLog = "reconnecting server with its changed settings"
 
-var otherTools = []map[string]any{
-	{"name": "pong", "description": "pong", "inputSchema": map[string]any{"type": "object"}},
-}
+var otherTools = []mcptest.Tool{{Name: "pong", Description: "pong"}}
 
 func TestServerReload_editedHeader_reconnectsOnce(t *testing.T) {
 	e := newServerReloadEnv(t)
@@ -38,7 +37,7 @@ func TestServerReload_editedHeader_reconnectsOnce(t *testing.T) {
 
 func TestServerReload_editedURL_servesTheNewServersTools(t *testing.T) {
 	e := newServerReloadEnv(t)
-	moved := newMCPTestServer(t, otherTools)
+	moved := mcptest.NewHTTP(t, mcptest.Upstream{Tools: otherTools})
 	e.startWithServers("svc")
 
 	e.writeServer(config.ServerConfig{Name: "svc", Transport: "http", URL: moved.URL})
