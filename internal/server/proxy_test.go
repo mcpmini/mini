@@ -60,22 +60,15 @@ func TestProxy_Initialize_Instructions(t *testing.T) {
 }
 
 func TestProxy_Call_NoProjection_PassesRawJSON(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	defer srv.Close()
-	conn := fakeConn("get_user")
-	conn.Responses["tools/call"] = json.RawMessage(
-		`{"content":[{"type":"text","text":"{\"id\":1,\"name\":\"alice\"}"}]}`,
-	)
-	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
+	h := newProxyHarness(t, newTestServer(t, server.Params{}))
+	h.addUpstream("svc", textResult(`{"id":1,"name":"alice"}`), "get_user")
 
-	resp := serve(t, srv, callTool("svc__get_user", map[string]any{}))
-	text := toolResultText(t, resp)
+	text := h.callText("svc__get_user", nil)
 
 	if strings.Contains(text, `"__mini"`) {
 		t.Errorf("expected raw proxy without __mini envelope: %s", text)
 	}
-	var parsed map[string]any
-	if err := json.Unmarshal([]byte(text), &parsed); err != nil {
+	if !json.Valid([]byte(text)) {
 		t.Errorf("expected valid JSON proxy: %s", text)
 	}
 }
@@ -83,85 +76,43 @@ func TestProxy_Call_NoProjection_PassesRawJSON(t *testing.T) {
 func TestProxy_Call_NoProjection_DefaultStringLimitApplies(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.DefaultStringLimit = 10
-	srv := newTestServer(t, server.Params{Config: cfg})
-	defer srv.Close()
-
-	conn := fakeConn("get_item")
+	h := newProxyHarness(t, newTestServer(t, server.Params{Config: cfg}))
 	longVal := strings.Repeat("x", 80)
-	conn.Responses["tools/call"] = json.RawMessage(
-		`{"content":[{"type":"text","text":"{\"id\":1,\"body\":\"` + longVal + `\"}"}]}`,
-	)
-	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
+	h.addUpstream("svc", textResult(`{"id":1,"body":"`+longVal+`"}`), "get_item")
 
-	resp := serve(t, srv, callTool("svc__get_item", map[string]any{}))
-	text := toolResultText(t, resp)
-
-	if strings.Contains(text, longVal) {
+	if text := h.callText("svc__get_item", nil); strings.Contains(text, longVal) {
 		t.Errorf("expected DefaultStringLimit to truncate long string, but got full value in: %s", text)
 	}
 }
 
 func TestProxy_Call_WithProjection_ElisionInlinesPlusFile(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	defer srv.Close()
-	conn := fakeConn("list_repos")
-	conn.Responses["tools/call"] = json.RawMessage(
-		`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"hidden\"}"}]}`,
-	)
-	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "gh", Connection: conn})
+	h := newProxyHarness(t, newTestServer(t, server.Params{}))
+	h.addUpstream("gh", textResult(`{"id":1,"secret":"hidden"}`), "list_repos")
+	h.setProjection("gh", "list_repos", map[string]any{"exclude": []string{"secret"}})
 
-	serve(t, srv, callTool("config", map[string]any{
-		"action":     "set_projection",
-		"server":     "gh",
-		"tool":       "list_repos",
-		"projection": map[string]any{"exclude": []string{"secret"}},
-	}))
+	text := h.callText("gh__list_repos", nil)
 
-	resp := serve(t, srv, callTool("gh__list_repos", map[string]any{}))
-	text := toolResultText(t, resp)
-	t.Logf("proxy exclusion response: %s", text)
-
-	var env map[string]any
-	if err := json.Unmarshal([]byte(text), &env); err != nil {
-		t.Fatalf("expected JSON envelope, got: %s", text)
-	}
-	mini, _ := env["__mini"].(map[string]any)
-	if mini == nil {
+	env := parseProxyEnvelope(t, text)
+	if !env.HasMini {
 		t.Fatalf("expected __mini key in envelope: %s", text)
 	}
-	if excluded, _ := mini["excluded"].([]any); len(excluded) == 0 {
-		t.Errorf("expected __mini.excluded to list excluded paths: %s", text)
+	if len(env.Excluded) == 0 || env.Msg == "" {
+		t.Errorf("expected __mini.excluded and __mini.msg to be set: %s", text)
 	}
-	if msg, _ := mini["msg"].(string); msg == "" {
-		t.Errorf("expected __mini.msg to be set: %s", text)
+	if _, hasID := env.Data["id"]; !hasID {
+		t.Errorf("expected id in the upstream object, got: %v", env.Data)
 	}
-	if _, hasID := env["id"]; !hasID {
-		t.Errorf("expected id in the upstream object, got: %v", env)
-	}
-	if _, hasSecret := env["secret"]; hasSecret {
-		t.Errorf("expected secret to be excluded from the upstream object, got: %v", env)
+	if _, hasSecret := env.Data["secret"]; hasSecret {
+		t.Errorf("expected secret to be excluded from the upstream object, got: %v", env.Data)
 	}
 }
 
 func TestProxy_NestedExclusion_ReportsExactLeafPath(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	defer srv.Close()
-	conn := fakeConn("list_prs")
-	conn.Responses["tools/call"] = json.RawMessage(
-		`{"content":[{"type":"text","text":"{\"item\":{\"id\":1,\"body\":\"long body text here\"}}"}]}`,
-	)
-	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "gh", Connection: conn})
+	h := newProxyHarness(t, newTestServer(t, server.Params{}))
+	h.addUpstream("gh", textResult(`{"item":{"id":1,"body":"long body text here"}}`), "list_prs")
+	h.setProjection("gh", "list_prs", map[string]any{"exclude": []string{"item.body"}})
 
-	serve(t, srv, callTool("config", map[string]any{
-		"action":     "set_projection",
-		"server":     "gh",
-		"tool":       "list_prs",
-		"projection": map[string]any{"exclude": []string{"item.body"}},
-	}))
-
-	resp := serve(t, srv, callTool("gh__list_prs", map[string]any{}))
-	text := toolResultText(t, resp)
-	t.Logf("proxy nested-exclude response: %s", text)
+	text := h.callText("gh__list_prs", nil)
 
 	env := parseProxyEnvelope(t, text)
 	if !env.HasMini {
@@ -179,218 +130,93 @@ func TestProxy_NestedExclusion_ReportsExactLeafPath(t *testing.T) {
 }
 
 func TestProxy_IncludeFilter_PassthroughWhenAllFieldsIncluded(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	defer srv.Close()
-	conn := fakeConn("get_data")
-	conn.Responses["tools/call"] = json.RawMessage(
-		`{"content":[{"type":"text","text":"{\"id\":1,\"value\":\"data\"}"}]}`,
-	)
-	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
+	h := newProxyHarness(t, newTestServer(t, server.Params{}))
+	h.addUpstream("svc", textResult(`{"id":1,"value":"data"}`), "get_data")
+	h.setProjection("svc", "get_data", map[string]any{"include_only": []string{"id", "value"}})
 
-	serve(t, srv, callTool("config", map[string]any{
-		"action":     "set_projection",
-		"server":     "svc",
-		"tool":       "get_data",
-		"projection": map[string]any{"include_only": []string{"id", "value"}},
-	}))
-
-	resp := serve(t, srv, callTool("svc__get_data", map[string]any{}))
-	text := toolResultText(t, resp)
-	t.Logf("include-filter no-exclusion response: %s", text)
+	text := h.callText("svc__get_data", nil)
 
 	if strings.Contains(text, `"__mini"`) {
 		t.Errorf("expected no __mini envelope when nothing excluded: %s", text)
 	}
 	env := parseProxyEnvelope(t, text)
-	if id, _ := env.Data["id"].(float64); id != 1 {
-		t.Errorf("expected id:1, got %v", env.Data["id"])
-	}
-	if val, _ := env.Data["value"].(string); val != "data" {
-		t.Errorf("expected value:data, got %v", env.Data["value"])
+	if env.Data["id"] != float64(1) || env.Data["value"] != "data" {
+		t.Errorf("expected id:1 and value:data, got %v", env.Data)
 	}
 }
 
 func TestProxy_Call_WithTruncation_ProjectionNote(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	defer srv.Close()
-	conn := fakeConn("get_issue")
-	conn.Responses["tools/call"] = json.RawMessage(
-		`{"content":[{"type":"text","text":"{\"id\":1,\"body\":\"this is a very long body that will be truncated\"}"}]}`,
-	)
-	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "gh", Connection: conn})
+	h := newProxyHarness(t, newTestServer(t, server.Params{}))
+	h.addUpstream("gh", textResult(`{"id":1,"body":"this is a very long body that will be truncated"}`), "get_issue")
+	h.setProjection("gh", "get_issue", map[string]any{"string_limits": map[string]any{"body": 5}})
 
-	serve(t, srv, callTool("config", map[string]any{
-		"action": "set_projection",
-		"server": "gh",
-		"tool":   "get_issue",
-		"projection": map[string]any{
-			"string_limits": map[string]any{"body": 5},
-		},
-	}))
+	text := h.callText("gh__get_issue", nil)
 
-	resp := serve(t, srv, callTool("gh__get_issue", map[string]any{}))
-	text := toolResultText(t, resp)
-	t.Logf("truncation note response: %s", text)
-
-	var envelope map[string]any
-	if err := json.Unmarshal([]byte(text), &envelope); err != nil {
-		t.Fatalf("expected JSON envelope: %s", text)
-	}
-	mini, _ := envelope["__mini"].(map[string]any)
-	if mini == nil {
-		t.Fatalf("expected __mini in truncation envelope: %s", text)
-	}
-	truncated, _ := mini["truncated"].([]any)
-	if len(truncated) == 0 {
+	env := parseProxyEnvelope(t, text)
+	if len(env.Truncated) == 0 {
 		t.Fatalf("expected __mini.truncated to be non-empty: %s", text)
 	}
-	entry, _ := truncated[0].(map[string]any)
-	if path, _ := entry["path"].(string); path != ".content[0].text | fromjson | .body" {
+	if path := env.Truncated[0].Path; path != ".content[0].text | fromjson | .body" {
 		t.Errorf("expected truncated[0].path = .content[0].text | fromjson | .body, got %q", path)
 	}
-	if chars, _ := entry["chars"].(float64); chars == 0 {
-		t.Errorf("expected truncated[0].chars > 0: %s", text)
-	}
-	if msg, _ := mini["msg"].(string); msg == "" {
-		t.Errorf("expected __mini.msg to be set: %s", text)
+	if env.Truncated[0].Chars == 0 || env.Msg == "" {
+		t.Errorf("expected truncated[0].chars > 0 and __mini.msg to be set: %s", text)
 	}
 }
 
 func TestProxy_Call_WithExclusionAndTruncation(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	defer srv.Close()
-	conn := fakeConn("get_issue")
-	conn.Responses["tools/call"] = json.RawMessage(
-		`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"hidden\",\"body\":\"this is a very long body that will be truncated by the limit\"}"}]}`,
-	)
-	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "gh", Connection: conn})
+	h := newProxyHarness(t, newTestServer(t, server.Params{}))
+	h.addUpstream("gh", textResult(
+		`{"id":1,"secret":"hidden","body":"this is a very long body that will be truncated by the limit"}`,
+	), "get_issue")
+	h.setProjection("gh", "get_issue", map[string]any{
+		"exclude":       []string{"secret"},
+		"string_limits": map[string]any{"body": 5},
+	})
 
-	serve(t, srv, callTool("config", map[string]any{
-		"action": "set_projection",
-		"server": "gh",
-		"tool":   "get_issue",
-		"projection": map[string]any{
-			"exclude":       []string{"secret"},
-			"string_limits": map[string]any{"body": 5},
-		},
-	}))
+	text := h.callText("gh__get_issue", nil)
 
-	resp := serve(t, srv, callTool("gh__get_issue", map[string]any{}))
-	text := toolResultText(t, resp)
-	t.Logf("exclusion+truncation response: %s", text)
-
-	var envelope map[string]any
-	if err := json.Unmarshal([]byte(text), &envelope); err != nil {
-		t.Fatalf("expected JSON envelope: %s", text)
-	}
-	mini, _ := envelope["__mini"].(map[string]any)
-	if mini == nil {
-		t.Fatalf("expected __mini envelope: %s", text)
-	}
-	if excluded, _ := mini["excluded"].([]any); len(excluded) == 0 {
-		t.Errorf("expected __mini.excluded when field excluded: %s", text)
-	}
-	if truncated, _ := mini["truncated"].([]any); len(truncated) == 0 {
-		t.Errorf("expected __mini.truncated when string truncated: %s", text)
-	}
-	if msg, _ := mini["msg"].(string); msg == "" {
-		t.Errorf("expected __mini.msg to be set: %s", text)
+	env := parseProxyEnvelope(t, text)
+	if len(env.Excluded) == 0 || len(env.Truncated) == 0 || env.Msg == "" {
+		t.Errorf("expected __mini.excluded, __mini.truncated and __mini.msg: %s", text)
 	}
 }
 
 func TestProxy_Call_ToolFormatToon_RendersToon(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	defer srv.Close()
+	h := newProxyHarness(t, newTestServer(t, server.Params{}))
+	h.addUpstream("svc", textResult(`{"id":1,"name":"alice"}`), "get_user")
+	h.setProjection("svc", "get_user", map[string]any{"format": "toon"})
 
-	conn := fakeConn("get_user")
-	conn.Responses["tools/call"] = json.RawMessage(
-		`{"content":[{"type":"text","text":"{\"id\":1,\"name\":\"alice\"}"}]}`,
-	)
-	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
+	text := h.callText("svc__get_user", nil)
 
-	serve(t, srv, callTool("config", map[string]any{
-		"action":     "set_projection",
-		"server":     "svc",
-		"tool":       "get_user",
-		"projection": map[string]any{"format": "toon"},
-	}))
-
-	resp := serve(t, srv, callTool("svc__get_user", map[string]any{}))
-	text := toolResultText(t, resp)
-	if strings.HasPrefix(text, "{") {
-		t.Errorf("per-tool format:toon should produce TOON, got JSON: %s", text)
-	}
-	if !strings.Contains(text, "name: alice") {
-		t.Errorf("expected name field in TOON output, got: %s", text)
+	if strings.HasPrefix(text, "{") || !strings.Contains(text, "name: alice") {
+		t.Errorf("per-tool format:toon should produce TOON with the name field, got: %s", text)
 	}
 }
 
 func TestProxy_Call_GlobalFormatToon_RendersToonUnlessTheToolSaysJSON(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseFormat = "toon"
-	srv := newTestServer(t, server.Params{Config: cfg})
-	defer srv.Close()
+	h := newProxyHarness(t, newTestServer(t, server.Params{Config: cfg}))
+	h.addUpstream("svc", textResult(`{"id":1,"name":"alice"}`), "get_user", "get_raw_user")
+	h.setProjection("svc", "get_raw_user", map[string]any{"format": "json"})
 
-	conn := fakeConn("get_user", "get_raw_user")
-	conn.Responses["tools/call"] = json.RawMessage(
-		`{"content":[{"type":"text","text":"{\"id\":1,\"name\":\"alice\"}"}]}`,
-	)
-	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
-	serve(t, srv, callTool("config", map[string]any{
-		"action": "set_projection", "server": "svc", "tool": "get_raw_user",
-		"projection": map[string]any{"format": "json"},
-	}))
-
-	text := toolResultText(t, serve(t, srv, callTool("svc__get_user", map[string]any{})))
+	text := h.callText("svc__get_user", nil)
 	if strings.HasPrefix(text, "{") || !strings.Contains(text, "name: alice") {
 		t.Errorf("global response_format:toon should produce TOON in proxy mode, got: %s", text)
 	}
-	text = toolResultText(t, serve(t, srv, callTool("svc__get_raw_user", map[string]any{})))
-	if !strings.HasPrefix(text, "{") {
+	if text := h.callText("svc__get_raw_user", nil); !strings.HasPrefix(text, "{") {
 		t.Errorf("per-tool format:json should override global toon, got: %s", text)
 	}
 }
 
 func TestProxy_Call_SessionFormatToon_RendersToon(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	defer srv.Close()
+	h := newProxyHarness(t, newTestServer(t, server.Params{}))
+	h.addUpstream("svc", textResult(`[{"id":1,"name":"foo"},{"id":2,"name":"bar"}]`), "list_items")
+	session := h.session("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee")
+	session.setProjection("svc", "list_items", map[string]any{"format": "toon"})
 
-	conn := fakeConn("list_items")
-	conn.Responses["tools/call"] = json.RawMessage(
-		`{"content":[{"type":"text","text":"[{\"id\":1,\"name\":\"foo\"},{\"id\":2,\"name\":\"bar\"}]"}]}`,
-	)
-	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
-
-	const sessionID = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
-	postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: initMsg()})
-
-	postMCP(postMCPParams{
-		T: t, Server: srv, SessionID: sessionID, Msg: map[string]any{
-			"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "tools/call",
-			"params": map[string]any{
-				"name": "config",
-				"arguments": map[string]any{
-					"action": "set_projection", "server": "svc", "tool": "list_items",
-					"projection": map[string]any{"format": "toon"}, "session_only": true,
-				},
-			},
-		},
-	})
-
-	resp := postMCP(postMCPParams{
-		T: t, Server: srv, SessionID: sessionID, Msg: map[string]any{
-			"jsonrpc": transport.JsonRPCVersion, "id": 2, "method": "tools/call",
-			"params": map[string]any{"name": "svc__list_items", "arguments": map[string]any{}},
-		},
-	})
-
-	result, _ := resp["result"].(map[string]any)
-	content, _ := result["content"].([]any)
-	if len(content) == 0 {
-		t.Fatal("no content in response")
-	}
-	text, _ := content[0].(map[string]any)["text"].(string)
-	if strings.HasPrefix(text, "{") {
+	if text := session.callText("svc__list_items", nil); strings.HasPrefix(text, "{") {
 		t.Errorf("session format:toon should produce TOON in proxy mode, got JSON: %s", text)
 	}
 }

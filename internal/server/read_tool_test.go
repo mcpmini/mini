@@ -15,173 +15,72 @@ import (
 	"github.com/mcpmini/mini/internal/testutil"
 )
 
+// storedResponse calls svc__get_item, whose payload has "secret" excluded, and returns the
+// file key of the raw response mini stored.
+func storedResponse(t *testing.T, payload string) (*proxyHarness, string) {
+	t.Helper()
+	h := newProxyHarness(t, newTestServer(t, server.Params{}))
+	h.addUpstream("svc", textResult(payload), "get_item")
+	h.setProjection("svc", "get_item", excludeSecret)
+	text := h.callText("svc__get_item", nil)
+	file := parseProxyEnvelope(t, text).File
+	if file == "" {
+		t.Fatalf("expected __mini.file after excluding secret, got: %s", text)
+	}
+	return h, file
+}
+
+func rejected(resp map[string]any) bool {
+	result, _ := resp["result"].(map[string]any)
+	return resp["error"] != nil || result["isError"] == true
+}
+
 func TestProxy_MiniRead_ReadsFile(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	defer srv.Close()
+	h, file := storedResponse(t, `{"id":1,"secret":"hidden"}`)
 
-	conn := fakeConn("get_item")
-	conn.Responses["tools/call"] = json.RawMessage(
-		`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"hidden\"}"}]}`,
-	)
-	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
+	text := h.callText("read", map[string]any{"file": file})
 
-	serve(t, srv, callTool("config", map[string]any{
-		"action":     "set_projection",
-		"server":     "svc",
-		"tool":       "get_item",
-		"projection": map[string]any{"exclude": []string{"secret"}},
-	}))
-
-	resp1 := serve(t, srv, callTool("svc__get_item", map[string]any{}))
-	text1 := toolResultText(t, resp1)
-	t.Logf("initial response: %s", text1)
-
-	var env map[string]any
-	if err := json.Unmarshal([]byte(text1), &env); err != nil {
-		t.Fatalf("expected JSON envelope from projected call, got: %s", text1)
-	}
-	mini, _ := env["__mini"].(map[string]any)
-	if mini == nil {
-		t.Fatal("expected __mini key — exclusion of 'secret' should produce projection envelope")
-	}
-	key, _ := mini["file"].(string)
-	if key == "" {
-		t.Fatalf("expected __mini.file to be set, got: %s", text1)
-	}
-
-	resp2 := serve(t, srv, callTool("read", map[string]any{"file": key}))
-	text2 := toolResultText(t, resp2)
-	t.Logf("read response: %s", text2)
-
-	if text2 == "" {
-		t.Error("read returned empty content")
-	}
-	var parsed map[string]any
-	if err := json.Unmarshal([]byte(text2), &parsed); err != nil {
-		t.Errorf("read content should be JSON: %s", text2)
+	if !json.Valid([]byte(text)) || !strings.Contains(text, "hidden") {
+		t.Errorf("read should return the stored upstream response as JSON, excluded value included: %s", text)
 	}
 }
 
 func TestProxy_MiniRead_WithFilter(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	defer srv.Close()
+	h, file := storedResponse(t, `{"id":99,"name":"widget","secret":"x"}`)
 
-	conn := fakeConn("get_data")
-	conn.Responses["tools/call"] = json.RawMessage(
-		`{"content":[{"type":"text","text":"{\"id\":99,\"name\":\"widget\",\"secret\":\"x\"}"}]}`,
-	)
-	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
+	text := h.callText("read", map[string]any{"file": file, "filter": ".content[0].text | fromjson | .name"})
 
-	serve(t, srv, callTool("config", map[string]any{
-		"action":     "set_projection",
-		"server":     "svc",
-		"tool":       "get_data",
-		"projection": map[string]any{"exclude": []string{"secret"}},
-	}))
-
-	resp1 := serve(t, srv, callTool("svc__get_data", map[string]any{}))
-	text1 := toolResultText(t, resp1)
-	var env map[string]any
-	_ = json.Unmarshal([]byte(text1), &env)
-	key, _ := env["__mini"].(map[string]any)["file"].(string)
-	if key == "" {
-		t.Fatalf("expected file key in __mini, got: %s", text1)
-	}
-
-	resp2 := serve(
-		t,
-		srv,
-		callTool("read", map[string]any{"file": key, "filter": ".content[0].text | fromjson | .name"}),
-	)
-	text2 := toolResultText(t, resp2)
-	if text2 != `"widget"` {
-		t.Errorf("filter .content[0].text | fromjson | .name: expected %q, got %q", `"widget"`, text2)
+	if text != `"widget"` {
+		t.Errorf("filter .content[0].text | fromjson | .name: expected %q, got %q", `"widget"`, text)
 	}
 }
 
 func TestProxy_MiniRead_InvalidFilterReturnsError(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	defer srv.Close()
+	h, file := storedResponse(t, `{"id":1,"secret":"x"}`)
 
-	conn := fakeConn("get_data2")
-	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"x\"}"}]}`)
-	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
+	resp := serve(t, h.srv, callTool("read", map[string]any{"file": file, "filter": "!!!invalid_jq!!!"}))
 
-	serve(t, srv, callTool("config", map[string]any{
-		"action":     "set_projection",
-		"server":     "svc",
-		"tool":       "get_data2",
-		"projection": map[string]any{"exclude": []string{"secret"}},
-	}))
-
-	resp1 := serve(t, srv, callTool("svc__get_data2", map[string]any{}))
-	text1 := toolResultText(t, resp1)
-	var env map[string]any
-	_ = json.Unmarshal([]byte(text1), &env)
-	key, _ := env["__mini"].(map[string]any)["file"].(string)
-	if key == "" {
-		t.Fatalf("expected file key in __mini, got: %s", text1)
-	}
-
-	resp2 := serve(t, srv, callTool("read", map[string]any{"file": key, "filter": "!!!invalid_jq!!!"}))
-	if resp2["error"] != nil {
-		return // RPC-level error is correct
-	}
-	result, ok := resp2["result"].(map[string]any)
-	if !ok || result["isError"] != true {
-		t.Errorf("expected error for invalid jq filter, got: %v", resp2)
+	if !rejected(resp) {
+		t.Errorf("expected error for invalid jq filter, got: %v", resp)
 	}
 }
 
 func TestProxy_MiniRead_FilenameOnly(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	defer srv.Close()
+	h, file := storedResponse(t, `{"id":5,"secret":"x"}`)
 
-	conn := fakeConn("get_thing")
-	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":5,\"secret\":\"x\"}"}]}`)
-	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
-
-	serve(t, srv, callTool("config", map[string]any{
-		"action":     "set_projection",
-		"server":     "svc",
-		"tool":       "get_thing",
-		"projection": map[string]any{"exclude": []string{"secret"}},
-	}))
-
-	resp1 := serve(t, srv, callTool("svc__get_thing", map[string]any{}))
-	text1 := toolResultText(t, resp1)
-	var env map[string]any
-	_ = json.Unmarshal([]byte(text1), &env)
-	key, _ := env["__mini"].(map[string]any)["file"].(string)
-	if key == "" {
-		t.Fatalf("expected file key in __mini, got: %s", text1)
+	if strings.ContainsAny(file, "/\\") || strings.HasSuffix(file, ".json") {
+		t.Errorf("__mini.file should be a bare key with no path or extension, got: %s", file)
 	}
-	if strings.ContainsAny(key, "/\\") || strings.HasSuffix(key, ".json") {
-		t.Errorf("__mini.file should be a bare key with no path or extension, got: %s", key)
-	}
-
-	resp2 := serve(t, srv, callTool("read", map[string]any{"file": key}))
-	text2 := toolResultText(t, resp2)
-	if text2 == "" {
-		t.Error("read returned empty content using bare key")
-	}
-	var parsed map[string]any
-	if err := json.Unmarshal([]byte(text2), &parsed); err != nil {
-		t.Errorf("read content via bare key should be JSON: %s", text2)
+	if text := h.callText("read", map[string]any{"file": file}); !json.Valid([]byte(text)) || text == "" {
+		t.Errorf("read content via bare key should be JSON: %s", text)
 	}
 }
 
 func TestProxy_MiniRead_RejectsPathTraversal(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
-	defer srv.Close()
 
 	for _, path := range []string{"../../etc/passwd", "../secrets.json", "../../etc/shadow.json"} {
-		resp := serve(t, srv, callTool("read", map[string]any{"file": path}))
-		if resp["error"] != nil {
-			continue
-		}
-		result, ok := resp["result"].(map[string]any)
-		if !ok || result["isError"] != true {
+		if resp := serve(t, srv, callTool("read", map[string]any{"file": path})); !rejected(resp) {
 			t.Errorf("path %q: expected error for traversal attempt, got: %v", path, resp)
 		}
 	}
@@ -191,85 +90,54 @@ func TestProxy_MiniRead_FileNotFound(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
 	srv := newTestServer(t, server.Params{Config: cfg})
-	defer srv.Close()
 
 	resp := serve(t, srv, callTool("read", map[string]any{"file": "9999999999999"}))
-	if resp["error"] != nil {
-		return // RPC-level error is also acceptable
+
+	if !rejected(resp) {
+		t.Fatalf("expected error for non-existent file, got: %v", resp)
 	}
-	result, ok := resp["result"].(map[string]any)
-	if !ok || result["isError"] != true {
-		t.Errorf("expected error for non-existent file, got: %v", resp)
-	}
-	text := toolResultText(t, resp)
-	if strings.Contains(text, cfg.ResponseDir) {
+	if text, _ := json.Marshal(resp); strings.Contains(string(text), cfg.ResponseDir) {
 		t.Errorf("error message must not expose store path, got: %s", text)
 	}
 }
 
 func TestProxy_MiniRead_RequiresPath(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
-	defer srv.Close()
 
-	resp := serve(t, srv, callTool("read", map[string]any{}))
-	if resp["error"] != nil {
-		return // RPC-level error is correct
-	}
-	result, ok := resp["result"].(map[string]any)
-	if !ok || result["isError"] != true {
-		t.Error("expected error when path is empty")
+	if resp := serve(t, srv, callTool("read", map[string]any{})); !rejected(resp) {
+		t.Errorf("expected error when path is empty, got: %v", resp)
 	}
 }
 
 func TestProxy_UnknownTool_ReturnsError(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
-	defer srv.Close()
 
-	resp := serve(t, srv, callTool("nonexistent__tool", map[string]any{}))
-	if resp["error"] == nil {
-		result, ok := resp["result"].(map[string]any)
-		if !ok || result["isError"] != true {
-			t.Errorf("expected error for unknown proxy tool, got: %v", resp)
-		}
+	if resp := serve(t, srv, callTool("nonexistent__tool", map[string]any{})); !rejected(resp) {
+		t.Errorf("expected error for unknown proxy tool, got: %v", resp)
 	}
 }
 
 func TestProxy_NoDoubleUnderscore_ReturnsError(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
-	defer srv.Close()
 
-	resp := serve(t, srv, callTool("notaproxytool", map[string]any{}))
-	if resp["error"] == nil {
-		result, ok := resp["result"].(map[string]any)
-		if !ok || result["isError"] != true {
-			t.Errorf("expected error for malformed proxy tool name, got: %v", resp)
-		}
+	if resp := serve(t, srv, callTool("notaproxytool", map[string]any{})); !rejected(resp) {
+		t.Errorf("expected error for malformed proxy tool name, got: %v", resp)
 	}
 }
 
 func TestProxy_MiniRead_RecoversExcludedFieldFromToonNotice(t *testing.T) {
-	srv := newProxyToonServer(t, nil)
-	defer srv.Close()
-	conn := fakeConn("get_user")
-	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"x\"}"}]}`)
-	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
-	setProxyExclude(
-		setProxyExcludeParams{
-			T:          t,
-			Server:     srv,
-			Tool:       "get_user",
-			Projection: map[string]any{"exclude": []string{"secret"}},
-		},
-	)
+	h := newProxyHarness(t, newProxyToonServer(t, nil))
+	h.addUpstream("svc", textResult(`{"id":1,"secret":"x"}`), "get_user")
+	h.setProjection("svc", "get_user", excludeSecret)
 
-	texts := contentTexts(proxyResultOf(t, serve(t, srv, callTool("svc__get_user", map[string]any{}))))
+	texts := contentTexts(h.call("svc__get_user", nil))
+
 	match := regexp.MustCompile(`\n  file: "(\d+)"\n`).FindStringSubmatch(strings.Join(texts, "\n"))
 	if match == nil {
 		t.Fatalf("TOON notice has no quoted file key: %q", texts)
 	}
 	const path = ".content[0].text | fromjson | .secret"
-	read := callTool("read", map[string]any{"file": match[1], "filter": path})
-	if recovered := toolResultText(t, serve(t, srv, read)); recovered != `"x"` {
+	if recovered := h.callText("read", map[string]any{"file": match[1], "filter": path}); recovered != `"x"` {
 		t.Errorf("read(%q) = %q, want the excluded value", path, recovered)
 	}
 }
@@ -288,7 +156,6 @@ func TestRead_RejectsSymlinkEscape(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = storeDir
 	srv := newTestServer(t, server.Params{Config: cfg})
-	defer srv.Close()
 
 	// Create a symlink INSIDE the store dir that points OUTSIDE it.
 	symlinkPath := filepath.Join(storeDir, "escape.json")
@@ -337,7 +204,6 @@ func TestRead_SymlinkWithinStore_Allowed(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = storeDir
 	srv := newTestServer(t, server.Params{Config: cfg})
-	defer srv.Close()
 
 	// Create a real file inside the store and a symlink to it, also inside.
 	realFile := filepath.Join(storeDir, "real.json")
@@ -363,7 +229,6 @@ func TestRead_DotDotTraversalStillBlocked(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = storeDir
 	srv := newTestServer(t, server.Params{Config: cfg})
-	defer srv.Close()
 
 	// Craft a relative path that tries to escape via ".." without using a symlink.
 	resp := serve(t, srv, callTool("read", map[string]any{"file": "../escape.json"}))
