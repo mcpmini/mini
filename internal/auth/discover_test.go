@@ -4,15 +4,14 @@ package auth_test
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestDiscover_rootASMeta(t *testing.T) {
@@ -22,7 +21,6 @@ func TestDiscover_rootASMeta(t *testing.T) {
 		"registration_endpoint":            "https://as.example.com/register",
 		"code_challenge_methods_supported": []string{"S256"},
 	})
-	defer srv.Close()
 
 	meta, err := auth.Discover(context.Background(), srv.URL+"/mcp")
 	if err != nil {
@@ -38,18 +36,16 @@ func TestDiscover_rootASMeta(t *testing.T) {
 
 func TestDiscover_pathInsertedASMeta(t *testing.T) {
 	// AS URL has a path component — should probe /.well-known/oauth-authorization-server/tenant
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/.well-known/oauth-protected-resource/mcp":
 			// PRM returns an AS URL that has the same host but a path
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+			testutil.WriteJSON(w, http.StatusOK, map[string]any{
 				"resource":              "http://" + r.Host + "/mcp",
 				"authorization_servers": []string{"http://" + r.Host + "/tenant"},
 			})
 		case "/.well-known/oauth-authorization-server/tenant":
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+			testutil.WriteJSON(w, http.StatusOK, map[string]any{
 				"issuer":                           "http://" + r.Host + "/tenant",
 				"authorization_endpoint":           "https://as.example.com/authorize",
 				"token_endpoint":                   "https://as.example.com/token",
@@ -59,8 +55,7 @@ func TestDiscover_pathInsertedASMeta(t *testing.T) {
 		default:
 			http.NotFound(w, r)
 		}
-	}))
-	defer srv.Close()
+	})
 
 	meta, err := auth.Discover(context.Background(), srv.URL+"/mcp")
 	if err != nil {
@@ -104,7 +99,6 @@ func TestDiscover_cimdSupported(t *testing.T) {
 		"client_id_metadata_document_supported": true,
 		"code_challenge_methods_supported":      []string{"S256"},
 	})
-	defer srv.Close()
 
 	meta, err := auth.Discover(context.Background(), srv.URL)
 	if err != nil {
@@ -140,7 +134,6 @@ func TestDiscover_noPKCE_returnsError(t *testing.T) {
 		"authorization_endpoint": "https://as.example.com/authorize",
 		"token_endpoint":         "https://as.example.com/token",
 	})
-	defer srv.Close()
 
 	_, err := auth.Discover(context.Background(), srv.URL)
 	if err == nil {
@@ -149,10 +142,9 @@ func TestDiscover_noPKCE_returnsError(t *testing.T) {
 }
 
 func TestDiscover_serverError_returnsError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
-	}))
-	defer srv.Close()
+	})
 
 	_, err := auth.Discover(context.Background(), srv.URL)
 	if err == nil {
@@ -166,7 +158,6 @@ func TestDiscover_noPathURL(t *testing.T) {
 		"token_endpoint":                   "https://as.example.com/token",
 		"code_challenge_methods_supported": []string{"S256"},
 	})
-	defer srv.Close()
 
 	meta, err := auth.Discover(context.Background(), srv.URL)
 	if err != nil {
@@ -198,15 +189,14 @@ func TestDiscover_malformedWWWAuthenticate_fallsBackGracefully(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// Root path returns 401 with malformed header; well-known paths return 404
 			// so discovery falls through to fallbackMeta rather than erroring on 401.
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != "/" {
 					http.NotFound(w, r)
 					return
 				}
 				w.Header().Set("WWW-Authenticate", tc.header)
 				w.WriteHeader(http.StatusUnauthorized)
-			}))
-			defer srv.Close()
+			})
 
 			meta, err := auth.Discover(context.Background(), srv.URL)
 			if err != nil {
@@ -223,10 +213,9 @@ func TestDiscover_cancelledContext_returnsError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-	}))
-	defer srv.Close()
+	})
 
 	_, err := auth.Discover(ctx, srv.URL)
 	if err == nil {
@@ -240,26 +229,16 @@ func TestDiscover_scopesFromPRM(t *testing.T) {
 		"token_endpoint":                   "https://as.example.com/token",
 		"code_challenge_methods_supported": []string{"S256"},
 	})
-	defer asSrv.Close()
 
-	var expectedResource string
-	prmSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-			"resource":              expectedResource,
-			"authorization_servers": []string{asSrv.URL},
-			"scopes_supported":      []string{"channels:read", "chat:write"},
-		})
-	}))
-	defer prmSrv.Close()
-
-	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().
-			Set("WWW-Authenticate", `Bearer resource_metadata="`+prmSrv.URL+`/.well-known/oauth-protected-resource"`)
-		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer mcpSrv.Close()
-	expectedResource = mcpSrv.URL
+	prm := &authtest.ProtectedResource{
+		AuthorizationServers: []string{asSrv.URL},
+		ScopesSupported:      []string{"channels:read", "chat:write"},
+	}
+	prmSrv := authtest.ServeProtectedResource(t, "/.well-known/oauth-protected-resource", prm)
+	mcpSrv := authtest.ServeChallenge(t, authtest.Challenge{
+		ResourceMetadata: prmSrv.URL + "/.well-known/oauth-protected-resource",
+	})
+	prm.Resource = mcpSrv.URL
 
 	meta, err := auth.Discover(context.Background(), mcpSrv.URL)
 	if err != nil {
@@ -276,27 +255,25 @@ func TestDiscover_wwwAuthScopePreservedWhenPRMHasNoAS(t *testing.T) {
 		"token_endpoint":                   "https://as.example.com/token",
 		"code_challenge_methods_supported": []string{"S256"},
 	})
-	defer asSrv.Close()
 
-	emptyPRM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{}) //nolint:errcheck
-	}))
-	defer emptyPRM.Close()
+	emptyPRM := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.WriteJSON(w, http.StatusOK, map[string]any{})
+	})
 
 	var mcpSrv *httptest.Server
-	mcpSrv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mcpSrv = testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/.well-known/oauth-protected-resource" {
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).
-				Encode(map[string]any{"resource": mcpSrv.URL, "authorization_servers": []string{asSrv.URL}})
+			testutil.WriteJSON(w, http.StatusOK, map[string]any{
+				"resource":              mcpSrv.URL,
+				"authorization_servers": []string{asSrv.URL},
+			})
 			return
 		}
-		w.Header().Set("WWW-Authenticate",
-			`Bearer resource_metadata="`+emptyPRM.URL+`/.well-known/oauth-protected-resource", scope="files:read"`)
-		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer mcpSrv.Close()
+		authtest.Challenge{
+			ResourceMetadata: emptyPRM.URL + "/.well-known/oauth-protected-resource",
+			Scope:            "files:read",
+		}.Write(w)
+	})
 
 	meta, err := auth.Discover(context.Background(), mcpSrv.URL)
 	if err != nil {
@@ -318,22 +295,13 @@ func TestDiscover_scopesFromPRMProbePath(t *testing.T) {
 		"token_endpoint":                   "https://as.example.com/token",
 		"code_challenge_methods_supported": []string{"S256"},
 	})
-	defer asSrv.Close()
 
-	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/.well-known/oauth-protected-resource":
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-				"resource":              "http://" + r.Host,
-				"authorization_servers": []string{asSrv.URL},
-				"scopes_supported":      []string{"read", "write"},
-			})
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer mcpSrv.Close()
+	prm := &authtest.ProtectedResource{
+		AuthorizationServers: []string{asSrv.URL},
+		ScopesSupported:      []string{"read", "write"},
+	}
+	mcpSrv := authtest.ServeProtectedResource(t, "/.well-known/oauth-protected-resource", prm)
+	prm.Resource = mcpSrv.URL
 
 	meta, err := auth.Discover(context.Background(), mcpSrv.URL)
 	if err != nil {
@@ -351,7 +319,6 @@ func TestDiscover_noScopesWhenASMetaOnly(t *testing.T) {
 		"scopes_supported":                 []string{"openid", "profile", "email"},
 		"code_challenge_methods_supported": []string{"S256"},
 	})
-	defer srv.Close()
 
 	meta, err := auth.Discover(context.Background(), srv.URL)
 	if err != nil {
@@ -371,27 +338,19 @@ func TestDiscover_scopeFromWWWAuthenticateBeforesPRM(t *testing.T) {
 		"token_endpoint":                   "https://as.example.com/token",
 		"code_challenge_methods_supported": []string{"S256"},
 	})
-	defer asSrv.Close()
 
-	var expectedResource string
-	prmSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-			"resource":              expectedResource,
-			"authorization_servers": []string{asSrv.URL},
-			"scopes_supported":      []string{"channels:read", "chat:write"},
-		})
-	}))
-	defer prmSrv.Close()
+	prm := &authtest.ProtectedResource{
+		AuthorizationServers: []string{asSrv.URL},
+		ScopesSupported:      []string{"channels:read", "chat:write"},
+	}
+	prmSrv := authtest.ServeProtectedResource(t, "/.well-known/oauth-protected-resource", prm)
 
-	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// scope in WWW-Authenticate header takes priority over PRM scopes_supported
-		w.Header().Set("WWW-Authenticate",
-			`Bearer resource_metadata="`+prmSrv.URL+`/.well-known/oauth-protected-resource", scope="files:read"`)
-		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer mcpSrv.Close()
-	expectedResource = mcpSrv.URL
+	// scope in WWW-Authenticate header takes priority over PRM scopes_supported
+	mcpSrv := authtest.ServeChallenge(t, authtest.Challenge{
+		ResourceMetadata: prmSrv.URL + "/.well-known/oauth-protected-resource",
+		Scope:            "files:read",
+	})
+	prm.Resource = mcpSrv.URL
 
 	meta, err := auth.Discover(context.Background(), mcpSrv.URL)
 	if err != nil {
@@ -403,11 +362,10 @@ func TestDiscover_scopeFromWWWAuthenticateBeforesPRM(t *testing.T) {
 }
 
 func TestDiscover_scopeFromWWWAuthenticateWithoutResourceMetadata(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/.well-known/oauth-authorization-server":
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+			testutil.WriteJSON(w, http.StatusOK, map[string]any{
 				"issuer":                           "http://" + r.Host,
 				"authorization_endpoint":           "https://as.example.com/authorize",
 				"token_endpoint":                   "https://as.example.com/token",
@@ -417,8 +375,7 @@ func TestDiscover_scopeFromWWWAuthenticateWithoutResourceMetadata(t *testing.T) 
 			w.Header().Set("WWW-Authenticate", `Bearer scope="files:read"`)
 			w.WriteHeader(http.StatusUnauthorized)
 		}
-	}))
-	defer srv.Close()
+	})
 
 	meta, err := auth.Discover(context.Background(), srv.URL)
 	if err != nil {
@@ -431,11 +388,10 @@ func TestDiscover_scopeFromWWWAuthenticateWithoutResourceMetadata(t *testing.T) 
 
 func TestRequiresOAuth_bearerChallengeShortCircuitsWithoutNetworkCall(t *testing.T) {
 	called := false
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		called = true
 		http.NotFound(w, r)
-	}))
-	defer srv.Close()
+	})
 
 	if !auth.RequiresOAuth(context.Background(), config.ServerConfig{URL: srv.URL + "/mcp"}, `Bearer realm="mcp"`) {
 		t.Fatal("expected true for a Bearer challenge")
@@ -455,17 +411,9 @@ func TestRequiresOAuth_nonBearerSchemeIsNotOAuth(t *testing.T) {
 }
 
 func TestRequiresOAuth_nonBearerSchemeSkipsPRMFallback(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/.well-known/oauth-protected-resource" {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(
-			[]byte(`{"resource":"http://` + r.Host + `","authorization_servers":["https://as.example.com"]}`),
-		) //nolint:errcheck
-	}))
-	defer srv.Close()
+	prm := &authtest.ProtectedResource{AuthorizationServers: []string{"https://as.example.com"}}
+	srv := authtest.ServeProtectedResource(t, "/.well-known/oauth-protected-resource", prm)
+	prm.Resource = srv.URL
 
 	if auth.RequiresOAuth(context.Background(), config.ServerConfig{URL: srv.URL}, `Basic realm="internal"`) {
 		t.Fatal(
@@ -475,17 +423,9 @@ func TestRequiresOAuth_nonBearerSchemeSkipsPRMFallback(t *testing.T) {
 }
 
 func TestRequiresOAuth_prmDocumentConfirmsOAuth(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/.well-known/oauth-protected-resource" {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(
-			[]byte(`{"resource":"http://` + r.Host + `","authorization_servers":["https://as.example.com"]}`),
-		) //nolint:errcheck
-	}))
-	defer srv.Close()
+	prm := &authtest.ProtectedResource{AuthorizationServers: []string{"https://as.example.com"}}
+	srv := authtest.ServeProtectedResource(t, "/.well-known/oauth-protected-resource", prm)
+	prm.Resource = srv.URL
 
 	if !auth.RequiresOAuth(context.Background(), config.ServerConfig{URL: srv.URL}, "") {
 		t.Fatal("expected true when a PRM document exists")
@@ -505,18 +445,9 @@ func TestDiscover_nonHTTPSchemes_rejected(t *testing.T) {
 	auth.UseLoopbackHTTPClient()
 	for _, maliciousURL := range []string{"file:///etc/passwd", "ftp://example.com/prm.json"} {
 		t.Run(maliciousURL, func(t *testing.T) {
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="`+maliciousURL+`"`)
-				w.WriteHeader(http.StatusUnauthorized)
-			}))
-			defer srv.Close()
+			srv := authtest.ServeChallenge(t, authtest.Challenge{ResourceMetadata: maliciousURL})
 			_, err := auth.Discover(context.Background(), srv.URL)
-			if err == nil {
-				t.Fatalf("Discover with malicious resource_metadata %q succeeded, want error", maliciousURL)
-			}
-			if !strings.Contains(err.Error(), "unsupported protocol scheme") {
-				t.Errorf("expected \"unsupported protocol scheme\" error, got: %v", err)
-			}
+			testutil.ErrorContains(t, err, "unsupported protocol scheme")
 		})
 	}
 }
