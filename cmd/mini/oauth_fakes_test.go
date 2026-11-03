@@ -37,16 +37,6 @@ type testMCPUpstream struct {
 	refreshTokenURL atomic.Value
 }
 
-func (u *testMCPUpstream) lastAuthFor(method string) string {
-	reqs := u.srv.Requests()
-	for i := len(reqs) - 1; i >= 0; i-- {
-		if reqs[i].Method == method {
-			return reqs[i].Header.Get("Authorization")
-		}
-	}
-	return ""
-}
-
 func (u *testMCPUpstream) authorize(r mcptest.Request) bool {
 	reject, _ := u.rejectWith401.Load().(string)
 	return r.Method != "tools/call" || reject == "" || r.Header.Get("Authorization") != reject

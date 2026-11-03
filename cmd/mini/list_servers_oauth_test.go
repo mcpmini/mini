@@ -30,7 +30,7 @@ func TestRunListUsesStoredOAuthLogin(t *testing.T) {
 	if err := runList(dir, nil, &out); err != nil {
 		t.Fatal(err)
 	}
-	if got := upstream.lastAuthFor("tools/list"); got != "Bearer stored-access" {
+	if got := upstream.srv.Last("tools/list").Header.Get("Authorization"); got != "Bearer stored-access" {
 		t.Errorf("tool discovery authorization = %q, want saved login", got)
 	}
 	if got := strings.Join(strings.Fields(out.String()), " "); !strings.Contains(got, "live http ready") {

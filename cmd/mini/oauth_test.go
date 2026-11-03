@@ -51,7 +51,7 @@ func TestBuildAndStartConnecting_validAndDisabledOAuthServers_makeNoTokenRequest
 	)
 	defer srv.Close()
 	awaitConnected(t, srv, "live")
-	if got := mcp.lastAuthFor("tools/list"); got != "Bearer stored-access" {
+	if got := mcp.srv.Last("tools/list").Header.Get("Authorization"); got != "Bearer stored-access" {
 		t.Errorf("upstream Authorization = %v, want stored token via provider", got)
 	}
 	if tokenEp.Hits.Load() != 0 {
@@ -73,7 +73,7 @@ func TestBuildAndStartConnecting_oauthServerWithHandSetHeaderAndNoToken_usesHand
 	)
 	defer srv.Close()
 	awaitConnected(t, srv, "pat")
-	if got := mcp.lastAuthFor("tools/list"); got != "Bearer pat-123" {
+	if got := mcp.srv.Last("tools/list").Header.Get("Authorization"); got != "Bearer pat-123" {
 		t.Errorf("upstream Authorization = %v, want the hand-set header", got)
 	}
 }
@@ -94,7 +94,7 @@ func TestServe_tokenExpiresMidSession_toolCallRefreshesAndSucceeds(t *testing.T)
 		if got != "r1" {
 			t.Errorf("refresh_token sent = %q, want r1", got)
 		}
-		if got := s.upstream.lastAuthFor("tools/call"); got != "Bearer refreshed" {
+		if got := s.upstream.srv.Last("tools/call").Header.Get("Authorization"); got != "Bearer refreshed" {
 			t.Errorf("tools/call Authorization = %q, want Bearer refreshed", got)
 		}
 		login, err := auth.LoadLogin(s.configDir, "live")
@@ -123,7 +123,7 @@ func TestServe_tokenExpiresMidSession_toolCallRefreshesAndSucceeds(t *testing.T)
 		if got := s.token.Hits.Load(); got != 1 {
 			t.Errorf("token endpoint hits = %d, want 1 (proactive refresh on expired token)", got)
 		}
-		if got := s.upstream.lastAuthFor("tools/call"); got != "Bearer refreshed" {
+		if got := s.upstream.srv.Last("tools/call").Header.Get("Authorization"); got != "Bearer refreshed" {
 			t.Errorf("tools/call Authorization = %q, want Bearer refreshed", got)
 		}
 	})

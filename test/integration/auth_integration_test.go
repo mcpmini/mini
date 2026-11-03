@@ -26,7 +26,7 @@ func TestIntegrationAuth_bearerTokenSentToUpstream(t *testing.T) {
 	client := startServer(t, cfg)
 	client.execTool("svc", "get_item", nil)
 
-	if got := f.lastHeader("Authorization"); got != "Bearer my-secret-token" {
+	if got := f.srv.Last("tools/call").Header.Get("Authorization"); got != "Bearer my-secret-token" {
 		t.Errorf("expected Bearer my-secret-token, got %q", got)
 	}
 }
@@ -49,7 +49,7 @@ func TestIntegrationAuth_apiKeySentToUpstream(t *testing.T) {
 	client := startServer(t, cfg)
 	client.execTool("svc", "get_item", nil)
 
-	if got := f.lastHeader("X-Api-Key"); got != "my-api-key" {
+	if got := f.srv.Last("tools/call").Header.Get("X-Api-Key"); got != "my-api-key" {
 		t.Errorf("expected my-api-key, got %q", got)
 	}
 }
@@ -68,7 +68,7 @@ func TestIntegrationAuth_staticHeaderForwarded(t *testing.T) {
 	client := startServer(t, cfg)
 	client.execTool("svc", "get_item", nil)
 
-	if got := f.lastHeader("X-Custom-Key"); got != "custom-value" {
+	if got := f.srv.Last("tools/call").Header.Get("X-Custom-Key"); got != "custom-value" {
 		t.Errorf("expected custom-value, got %q", got)
 	}
 }
@@ -82,7 +82,7 @@ func TestIntegrationAuth_noTokenNoAuthHeader(t *testing.T) {
 	client := startServer(t, cfg)
 	client.execTool("svc", "get_item", nil)
 
-	if got := f.lastHeader("Authorization"); got != "" {
+	if got := f.srv.Last("tools/call").Header.Get("Authorization"); got != "" {
 		t.Errorf("expected no Authorization header without auth config, got %q", got)
 	}
 }

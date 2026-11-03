@@ -40,14 +40,6 @@ func (f *fakeHTTPMCP) toolsCall(onCall func(int) (int, []byte)) mcptest.Method {
 	}
 }
 
-func (f *fakeHTTPMCP) lastHeader(name string) string {
-	reqs := f.srv.Requests()
-	if len(reqs) == 0 {
-		return ""
-	}
-	return reqs[len(reqs)-1].Header.Get(name)
-}
-
 type httpServerParams struct {
 	ServerName string
 	URL        string
