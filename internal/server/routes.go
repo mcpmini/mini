@@ -135,7 +135,7 @@ func handleCancelled(params json.RawMessage, session *Session) {
 	session.removeListen(p.RequestID)
 }
 
-const proxyInitInstructions = "Results are the upstream server's own, trimmed where large: a trimmed result carries `__mini` (a key in the result object, or a final text block) with a `file` and the paths that were cut. To get cut data, call `read` with that `file` and a listed path as `filter`, or a jq filter built on it. Pass `__mini: {\"projection\": \"raw\"}` only from a script that must process the whole result without a second call. Tool arguments are the upstream server's own; `__mini` is reserved."
+const proxyInitInstructions = "Results are the upstream server's own, trimmed where large: a trimmed result carries `__mini` (a key in the result object, the last element of a result list, or a final text block) with a `file` and the paths that were cut. To get cut data, call `read` with that `file` and a listed path as `filter`, or a jq filter built on it. Pass `__mini: {\"projection\": \"raw\"}` only from a script that must process the whole result without a second call. Tool arguments are the upstream server's own; `__mini` is reserved."
 
 type initializeClientParams struct {
 	ProtocolVersion string `json:"protocolVersion"`

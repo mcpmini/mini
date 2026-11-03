@@ -15,6 +15,7 @@ func TestBuildProxyResult_projectsStructuredContentOnceAndMirrorsIt(t *testing.T
 		miniNotice(truncatedChars(".structuredContent | .body", 5)),
 	)
 	bodyPath := ".structuredContent | .body"
+	trimmedList := []any{1, 2, map[string]any{"__mini": miniNotice(truncatedItems(".structuredContent | .", 2))}}
 	cases := []proxyResultCase{
 		{
 			name:       "identical JSON text and structuredContent carry the same trimmed object",
@@ -56,15 +57,32 @@ func TestBuildProxyResult_projectsStructuredContentOnceAndMirrorsIt(t *testing.T
 			recovered: map[string]any{bodyPath: longBody},
 		},
 		{
-			name:       "array structuredContent has no carrier object so the notice trails",
+			name:       "array structuredContent carries the notice as its last element",
 			upstream:   map[string]any{"structuredContent": []any{1, 2, 3, 4}, "content": []any{textBlock("list")}},
 			projection: arrayLimit,
 			want: map[string]any{
-				"structuredContent": []any{1, 2},
+				"structuredContent": []any{
+					1,
+					2,
+					map[string]any{"__mini": miniNotice(truncatedItems(".structuredContent | .", 2))},
+				},
 				"content": []any{
 					textBlock("list"),
 					trailingNotice(t, miniNotice(truncatedItems(".structuredContent | .", 2))),
 				},
+			},
+			recovered: map[string]any{".structuredContent | .": []any{1, 2, 3, 4}},
+		},
+		{
+			name: "mirrored array structuredContent carries the notice in both copies",
+			upstream: map[string]any{
+				"structuredContent": []any{1, 2, 3, 4},
+				"content":           []any{textBlock(jsonText(t, []any{1, 2, 3, 4}))},
+			},
+			projection: arrayLimit,
+			want: map[string]any{
+				"structuredContent": trimmedList,
+				"content":           []any{textBlock(jsonText(t, trimmedList))},
 			},
 			recovered: map[string]any{".structuredContent | .": []any{1, 2, 3, 4}},
 		},
