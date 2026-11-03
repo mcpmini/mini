@@ -22,13 +22,13 @@ func TestBuildAndStartConnecting_validAndDisabledOAuthServers_makeNoTokenRequest
 	mcp := newTestMCPUpstream(t)
 	servers := []config.ServerConfig{
 		oauthServerConfig(
-			oauthServerConfigParams{Name: "live", MCPURL: mcp.srv.URL, TokenURL: tokenEp.srv.URL, Enabled: true},
+			oauthServerConfigParams{Name: "live", MCPURL: mcp.srv.URL, TokenURL: tokenEp.TokenURL(), Enabled: true},
 		),
 		oauthServerConfig(
 			oauthServerConfigParams{
 				Name:     "idle",
 				MCPURL:   "http://localhost:1",
-				TokenURL: tokenEp.srv.URL,
+				TokenURL: tokenEp.TokenURL(),
 				Enabled:  false,
 			},
 		),
@@ -54,8 +54,8 @@ func TestBuildAndStartConnecting_validAndDisabledOAuthServers_makeNoTokenRequest
 	if got := mcp.lastAuthFor("tools/list"); got != "Bearer stored-access" {
 		t.Errorf("upstream Authorization = %v, want stored token via provider", got)
 	}
-	if tokenEp.hits.Load() != 0 {
-		t.Errorf("token endpoint hits at startup = %d, want 0", tokenEp.hits.Load())
+	if tokenEp.Hits.Load() != 0 {
+		t.Errorf("token endpoint hits at startup = %d, want 0", tokenEp.Hits.Load())
 	}
 }
 
@@ -85,10 +85,13 @@ func TestServe_tokenExpiresMidSession_toolCallRefreshesAndSucceeds(t *testing.T)
 		s.upstream.rejectWith401.Store("Bearer stored-access")
 		resp := serveSingleProxyCall(t, s.srv, "live__t1")
 		assertToolCallOK(t, resp)
-		if got := s.token.hits.Load(); got != 1 {
+		if got := s.token.Hits.Load(); got != 1 {
 			t.Errorf("token endpoint hits = %d, want 1", got)
 		}
-		if got, _ := s.token.refreshToken.Load().(string); got != "r1" {
+		s.token.Mu.Lock()
+		got := s.token.LastRefresh
+		s.token.Mu.Unlock()
+		if got != "r1" {
 			t.Errorf("refresh_token sent = %q, want r1", got)
 		}
 		if got := s.upstream.lastAuthFor("tools/call"); got != "Bearer refreshed" {
@@ -111,13 +114,13 @@ func TestServe_tokenExpiresMidSession_toolCallRefreshesAndSucceeds(t *testing.T)
 		clk := clock.NewFake()
 		tok := &oauth2.Token{AccessToken: "stored-access", RefreshToken: "r1", Expiry: clk.Now().Add(time.Hour)}
 		s := newOAuthTestSetup(t, tok, clk)
-		if s.token.hits.Load() != 0 {
+		if s.token.Hits.Load() != 0 {
 			t.Fatal("token endpoint was hit during connect with a still-valid token")
 		}
 		clk.Advance(2 * time.Hour)
 		resp := serveSingleProxyCall(t, s.srv, "live__t1")
 		assertToolCallOK(t, resp)
-		if got := s.token.hits.Load(); got != 1 {
+		if got := s.token.Hits.Load(); got != 1 {
 			t.Errorf("token endpoint hits = %d, want 1 (proactive refresh on expired token)", got)
 		}
 		if got := s.upstream.lastAuthFor("tools/call"); got != "Bearer refreshed" {

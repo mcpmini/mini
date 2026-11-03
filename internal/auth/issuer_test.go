@@ -140,7 +140,7 @@ func TestBeginLogin_callbackFromAnotherIssuer_neverReachesTheTokenEndpoint(t *te
 	tokens := authtest.NewTokenServer(t)
 	as := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":                         tokens.Srv.URL + "/authorize",
-		"token_endpoint":                                 tokens.Srv.URL + "/token",
+		"token_endpoint":                                 tokens.TokenURL(),
 		"code_challenge_methods_supported":               []string{"S256"},
 		"authorization_response_iss_parameter_supported": true,
 	})

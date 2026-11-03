@@ -14,7 +14,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/daemon"
@@ -367,17 +366,11 @@ func TestRun_noReinitLoopWhenInitializeReturnsNotInitialized(t *testing.T) {
 	})
 
 	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}` + "\n")
-	done := make(chan error, 1)
-	go func() {
-		done <- Run(RunParams{Client: client, SessionID: "sess", In: in, Out: io.Discard, Clock: clock.NewFake()})
-	}()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("Run did not return — reinit loop not prevented for initialize method")
+	done := testutil.Go(func() error {
+		return Run(RunParams{Client: client, SessionID: "sess", In: in, Out: io.Discard, Clock: clock.NewFake()})
+	})
+	if err := testutil.WaitForReceive(t, done, "Run to return without re-initializing an initialize"); err != nil {
+		t.Fatalf("Run: %v", err)
 	}
 	if got := calls.Load(); got != 1 {
 		t.Errorf("expected exactly 1 call (no reinit), got %d", got)
@@ -408,23 +401,19 @@ func newConcurrencyServer(t *testing.T, release chan struct{}) (*http.Client, *a
 func TestRunWithLimit_capsConcurrentForwards(t *testing.T) {
 	release := make(chan struct{})
 	client, maxSeen, started := newConcurrencyServer(t, release)
-	done := make(chan error, 1)
 	input := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"a"}` + "\n" +
 		`{"jsonrpc":"2.0","id":2,"method":"b"}` + "\n" +
 		`{"jsonrpc":"2.0","id":3,"method":"c"}` + "\n")
-	go func() {
-		done <- runWithLimit(RunParams{Client: client, SessionID: "sess", In: input, Out: io.Discard, Clock: clock.NewFake()}, 1)
-	}()
-	select {
-	case <-started:
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for first request to reach daemon")
-	}
+	done := testutil.Go(func() error {
+		params := RunParams{Client: client, SessionID: "sess", In: input, Out: io.Discard, Clock: clock.NewFake()}
+		return runWithLimit(params, 1)
+	})
+	testutil.WaitForReceive(t, started, "the first request to reach the daemon")
 	if got := maxSeen.Load(); got != 1 {
 		t.Fatalf("max concurrent forwards = %d, want 1", got)
 	}
 	close(release)
-	if err := <-done; err != nil {
+	if err := testutil.WaitForReceive(t, done, "runWithLimit to return"); err != nil {
 		t.Fatalf("runWithLimit error: %v", err)
 	}
 	if got := maxSeen.Load(); got != 1 {

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/mcpmini/mini/internal/clock"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -123,11 +124,7 @@ func TestNotificationStream_retriesARejectedStreamWithoutReadingIt(t *testing.T)
 	daemon.status.Store(http.StatusServiceUnavailable)
 	stream.Bind(linkState{token: "tok"})
 	rejected := nextDaemonStream(t, daemon)
-	select {
-	case <-rejected.closed:
-	case <-time.After(5 * time.Second):
-		t.Fatal("rejected stream's body was never closed")
-	}
+	testutil.WaitForReceive(t, rejected.closed, "the rejected stream's body to close")
 	advanceThroughRetryDelay(t, fake, daemon)
 	nextDaemonStream(t, daemon)
 }
@@ -173,11 +170,7 @@ func TestNotificationStream_stopsAfterAClientWriteFailure(t *testing.T) {
 	stream, daemon, _ := startNotificationStream(t, sink)
 	stream.Bind(linkState{token: "tok"})
 	nextDaemonStream(t, daemon).send(t, toolsChangedLine(t))
-	select {
-	case <-stream.done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("stream kept retrying after the agent's output failed")
-	}
+	testutil.WaitForReceive(t, stream.done, "the stream to stop retrying after the agent's output failed")
 }
 
 func startNotificationStream(t *testing.T, sink io.Writer) (*notificationStream, *streamDaemon, *clock.Fake) {
@@ -238,13 +231,7 @@ func (d *streamDaemon) RoundTrip(req *http.Request) (*http.Response, error) {
 
 func nextDaemonStream(t *testing.T, daemon *streamDaemon) openedDaemonStream {
 	t.Helper()
-	select {
-	case opened := <-daemon.opened:
-		return opened
-	case <-time.After(5 * time.Second):
-		t.Fatal("no daemon notification stream was opened")
-		return openedDaemonStream{}
-	}
+	return testutil.WaitForReceive(t, daemon.opened, "a daemon notification stream to open")
 }
 
 func (s openedDaemonStream) send(t *testing.T, message json.RawMessage) {
@@ -273,11 +260,5 @@ func (s *notificationSink) Write(p []byte) (int, error) {
 
 func (s *notificationSink) next(t *testing.T) string {
 	t.Helper()
-	select {
-	case line := <-s.lines:
-		return line
-	case <-time.After(5 * time.Second):
-		t.Fatal("no notification reached the agent")
-		return ""
-	}
+	return testutil.WaitForReceive(t, s.lines, "a notification to reach the agent")
 }

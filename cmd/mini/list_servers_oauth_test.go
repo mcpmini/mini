@@ -19,7 +19,7 @@ func TestRunListUsesStoredOAuthLogin(t *testing.T) {
 	upstream := newTestMCPUpstream(t)
 	tokens := newTestTokenEndpoint(t)
 	sc := oauthServerConfig(
-		oauthServerConfigParams{Name: "live", MCPURL: upstream.srv.URL, TokenURL: tokens.srv.URL, Enabled: true},
+		oauthServerConfigParams{Name: "live", MCPURL: upstream.srv.URL, TokenURL: tokens.TokenURL(), Enabled: true},
 	)
 	configtest.WriteServer(t, dir, sc)
 	authtest.SaveToken(t, authtest.TokenFile{
@@ -36,7 +36,7 @@ func TestRunListUsesStoredOAuthLogin(t *testing.T) {
 	if got := strings.Join(strings.Fields(out.String()), " "); !strings.Contains(got, "live http ready") {
 		t.Errorf("list does not show the authenticated server as ready: %s", out.String())
 	}
-	if tokens.hits.Load() != 0 {
+	if tokens.Hits.Load() != 0 {
 		t.Error("valid stored login unexpectedly triggered a token exchange")
 	}
 }

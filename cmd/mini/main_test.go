@@ -143,9 +143,5 @@ func TestDaemonShutdown_boundedContextUnblocksWithHungHandler(t *testing.T) {
 		srv.Shutdown(shutdownCtx) //nolint:errcheck
 	}()
 
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("Shutdown with bounded context blocked past deadline — hung handler prevented exit")
-	}
+	testutil.WaitForReceive(t, done, "Shutdown to return at its deadline despite a hung handler")
 }

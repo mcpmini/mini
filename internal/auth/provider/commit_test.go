@@ -44,7 +44,7 @@ func (f *commitFixture) params() provider.Params {
 func (f *commitFixture) paramsFor(ac *config.AuthConfig) provider.Params {
 	cfg := *ac
 	if cfg.TokenURL == "" {
-		cfg.TokenURL = f.endpoint.Srv.URL + "/token"
+		cfg.TokenURL = f.endpoint.TokenURL()
 	}
 	return provider.Params{
 		AuthConfig: &cfg,

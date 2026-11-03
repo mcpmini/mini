@@ -11,7 +11,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/clock"
@@ -68,22 +67,12 @@ func newTestSession(t *testing.T, probe *fakeProbe, c clock.Clock) (*session, st
 
 func waitStarted(t *testing.T, probe *fakeProbe) string {
 	t.Helper()
-	select {
-	case name := <-probe.started:
-		return name
-	case <-time.After(5 * time.Second):
-		t.Fatal("no OAuth check started")
-		return ""
-	}
+	return testutil.WaitForReceive(t, probe.started, "an OAuth check to start")
 }
 
 func waitChanged(t *testing.T, s *session) {
 	t.Helper()
-	select {
-	case <-s.Changed():
-	case <-time.After(5 * time.Second):
-		t.Fatal("no OAuth check state change")
-	}
+	testutil.WaitForReceive(t, s.Changed(), "an OAuth check state change")
 }
 
 func TestSessionSync_isADeltaAgainstThisRun(t *testing.T) {

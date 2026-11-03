@@ -9,6 +9,8 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 type daemonHTTPTestService struct {
@@ -87,13 +89,12 @@ func testDaemonHTTPServeFailureReturnsAndJoinsEviction(t *testing.T) {
 		started: make(chan struct{}), canceled: make(chan struct{}),
 		release: release, finished: make(chan struct{}),
 	}
-	result := make(chan error, 1)
-	go func() {
-		result <- startDaemonHTTP(ctx, DaemonHTTPParams{Srv: service, Listener: listener})
-	}()
-	awaitDaemonHTTP(t, service.started)
-	awaitDaemonHTTP(t, listener.closed)
-	awaitDaemonHTTP(t, service.canceled)
+	result := testutil.Go(func() error {
+		return startDaemonHTTP(ctx, DaemonHTTPParams{Srv: service, Listener: listener})
+	})
+	testutil.WaitForReceive(t, service.started, "session eviction to start")
+	testutil.WaitForReceive(t, listener.closed, "the failed listener to close")
+	testutil.WaitForReceive(t, service.canceled, "session eviction to be canceled")
 	synctest.Wait()
 	select {
 	case err := <-result:
@@ -101,10 +102,10 @@ func testDaemonHTTPServeFailureReturnsAndJoinsEviction(t *testing.T) {
 	default:
 	}
 	releaseWorker()
-	if err := awaitDaemonHTTPError(t, result); !errors.Is(err, serveErr) {
+	if err := testutil.WaitForReceive(t, result, "startDaemonHTTP to return"); !errors.Is(err, serveErr) {
 		t.Fatalf("startDaemonHTTP error = %v, want cause %v", err, serveErr)
 	}
-	awaitDaemonHTTP(t, service.finished)
+	testutil.WaitForReceive(t, service.finished, "session eviction to finish")
 }
 
 func TestDaemonHTTPCancelShutsDownAndJoinsWorkers(t *testing.T) {
@@ -114,36 +115,15 @@ func TestDaemonHTTPCancelShutsDownAndJoinsWorkers(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	result := make(chan error, 1)
-	go func() {
-		result <- startDaemonHTTP(ctx, DaemonHTTPParams{Srv: service, Listener: listener})
-	}()
-	awaitDaemonHTTP(t, service.started)
-	awaitDaemonHTTP(t, listener.acceptStarted)
+	result := testutil.Go(func() error {
+		return startDaemonHTTP(ctx, DaemonHTTPParams{Srv: service, Listener: listener})
+	})
+	testutil.WaitForReceive(t, service.started, "session eviction to start")
+	testutil.WaitForReceive(t, listener.acceptStarted, "the listener to accept")
 	cancel()
-	if err := awaitDaemonHTTPError(t, result); err != nil {
+	if err := testutil.WaitForReceive(t, result, "startDaemonHTTP to return"); err != nil {
 		t.Fatalf("startDaemonHTTP after cancellation: %v", err)
 	}
-	awaitDaemonHTTP(t, listener.closed)
-	awaitDaemonHTTP(t, service.finished)
-}
-
-func awaitDaemonHTTP(t *testing.T, event <-chan struct{}) {
-	t.Helper()
-	select {
-	case <-event:
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for daemon HTTP lifecycle event")
-	}
-}
-
-func awaitDaemonHTTPError(t *testing.T, result <-chan error) error {
-	t.Helper()
-	select {
-	case err := <-result:
-		return err
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for daemon HTTP lifecycle result")
-		return nil
-	}
+	testutil.WaitForReceive(t, listener.closed, "the listener to close")
+	testutil.WaitForReceive(t, service.finished, "session eviction to finish")
 }

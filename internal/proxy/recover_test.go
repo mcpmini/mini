@@ -15,16 +15,11 @@ import (
 	"sync/atomic"
 	"syscall"
 	"testing"
-	"time"
 
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/daemon"
 	"github.com/mcpmini/mini/internal/testutil"
 )
-
-func timeoutAfter() <-chan time.Time {
-	return time.After(5 * time.Second)
-}
 
 func TestHandshake_offersNewestLegacyVersion(t *testing.T) {
 	var protocolVersion string
@@ -254,15 +249,9 @@ func TestDeliver_boundedWhenReresolveKeepsFailing(t *testing.T) {
 		Resolver:  NewDaemonResolver(reresolve),
 		Clock:     clock.System(),
 	}
-	done := make(chan error, 1)
-	go func() { done <- Run(p) }()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-	case <-timeoutAfter():
-		t.Fatal("Run did not return — recovery is not bounded")
+	done := testutil.Go(func() error { return Run(p) })
+	if err := testutil.WaitForReceive(t, done, "Run to return once recovery gives up"); err != nil {
+		t.Fatalf("Run: %v", err)
 	}
 	if !strings.Contains(out.String(), `"error"`) {
 		t.Errorf("expected error response on exhaustion, got %q", out.String())
@@ -290,15 +279,9 @@ func TestDeliver_persistent401ReturnsErrorEnvelope(t *testing.T) {
 		Resolver:  NewDaemonResolver(reresolve),
 		Clock:     clock.System(),
 	}
-	done := make(chan error, 1)
-	go func() { done <- Run(p) }()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-	case <-timeoutAfter():
-		t.Fatal("Run did not return — persistent 401 recovery is not bounded")
+	done := testutil.Go(func() error { return Run(p) })
+	if err := testutil.WaitForReceive(t, done, "Run to return once persistent 401 recovery gives up"); err != nil {
+		t.Fatalf("Run: %v", err)
 	}
 	got := out.String()
 	if !strings.Contains(got, `"error"`) {
@@ -326,15 +309,9 @@ func TestDeliver_boundedWhenRespawnedDaemonStaysDead(t *testing.T) {
 		Resolver:  NewDaemonResolver(reresolve),
 		Clock:     clock.System(),
 	}
-	done := make(chan error, 1)
-	go func() { done <- Run(p) }()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-	case <-timeoutAfter():
-		t.Fatal("Run did not return — recovery is not bounded when respawn stays dead")
+	done := testutil.Go(func() error { return Run(p) })
+	if err := testutil.WaitForReceive(t, done, "Run to return once a dead respawn exhausts recovery"); err != nil {
+		t.Fatalf("Run: %v", err)
 	}
 	if !strings.Contains(out.String(), `"error"`) {
 		t.Errorf("expected error response on exhaustion, got %q", out.String())
@@ -383,15 +360,13 @@ func TestDeliver_singleFlightOnResolveFailure(t *testing.T) {
 		Resolver:  NewDaemonResolver(reresolve),
 		Clock:     clock.System(),
 	}
-	done := make(chan error, 1)
-	go func() { done <- Run(p) }()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-	case <-timeoutAfter():
-		t.Fatal("Run did not return — requests may be blocked behind an in-flight Resolve")
+	done := testutil.Go(func() error { return Run(p) })
+	if err := testutil.WaitForReceive(
+		t,
+		done,
+		"Run to return without requests blocking behind an in-flight Resolve",
+	); err != nil {
+		t.Fatalf("Run: %v", err)
 	}
 	if got := resolveCalls.Load(); got != 1 {
 		t.Errorf("Resolve calls = %d with %d goroutines, want 1 (single-flight)", got, n)

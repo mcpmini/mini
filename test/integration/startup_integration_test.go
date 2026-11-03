@@ -248,13 +248,8 @@ func doMiniHandshake(t *testing.T, p *standaloneMini) {
 	fmt.Fprintf(p.Stdin, "%s\n", b) //nolint:errcheck
 	scanned := make(chan bool, 1)
 	go func() { scanned <- p.Out.Scan() }()
-	select {
-	case ok := <-scanned:
-		if !ok {
-			t.Fatal("no initialize response from mini")
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for initialize response from mini")
+	if !testutil.WaitForReceive(t, scanned, "mini's initialize response") {
+		t.Fatal("no initialize response from mini")
 	}
 	notif := map[string]any{
 		"jsonrpc": transport.JsonRPCVersion,

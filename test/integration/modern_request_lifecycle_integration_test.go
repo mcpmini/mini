@@ -5,9 +5,9 @@ package integration_test
 import (
 	"bufio"
 	"encoding/json"
-	"strings"
 	"testing"
 
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -50,7 +50,5 @@ func assertMalformedCapabilitiesRejected(t *testing.T, client *mcpClient) {
 			"io.modelcontextprotocol/clientCapabilities": []any{},
 		},
 	})
-	if err == nil || !strings.Contains(err.Error(), "rpc error -32602:") {
-		t.Fatalf("malformed capabilities error = %v, want -32602", err)
-	}
+	testutil.ErrorContains(t, err, "rpc error -32602:")
 }

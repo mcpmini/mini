@@ -76,7 +76,7 @@ func TestRefreshAuthorization_registeredClient_refreshesAtItsEndpointWithItsSecr
 		Token:    storedToken(time.Time{}),
 		ClientID: "login-client",
 	})
-	login.TokenURL = endpoint.Srv.URL + "/token"
+	login.TokenURL = endpoint.TokenURL()
 	if err := auth.SaveLogin(dir, "srv", login); err != nil {
 		t.Fatal(err)
 	}

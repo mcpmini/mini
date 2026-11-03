@@ -4,7 +4,6 @@ import (
 	"io/fs"
 	"maps"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -255,15 +254,14 @@ func TestIsTerminalRejectsNullDevice(t *testing.T) {
 
 func upstreamAnswering(t *testing.T, status int, challenge string) string {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		if challenge != "" {
 			w.Header().Set("WWW-Authenticate", challenge)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
 		w.Write([]byte(`{}`)) //nolint:errcheck
-	}))
-	t.Cleanup(srv.Close)
+	})
 	return srv.URL
 }
 
