@@ -81,30 +81,12 @@ func TestDiscover_wwwAuthenticateHeader(t *testing.T) {
 		"token_endpoint":                   "https://as.example.com/token",
 		"code_challenge_methods_supported": []string{"S256"},
 	})
-	defer asSrv.Close()
 
-	var expectedResource string
-	prmSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/.well-known/oauth-protected-resource/v1/mcp":
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-				"resource":              expectedResource,
-				"authorization_servers": []string{asSrv.URL},
-			})
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer prmSrv.Close()
-
-	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("WWW-Authenticate",
-			`Bearer resource_metadata="`+prmSrv.URL+`/.well-known/oauth-protected-resource/v1/mcp"`)
-		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer mcpSrv.Close()
-	expectedResource = mcpSrv.URL + "/v1/mcp"
+	prmPath := "/.well-known/oauth-protected-resource/v1/mcp"
+	prm := &authtest.ProtectedResource{AuthorizationServers: []string{asSrv.URL}}
+	prmSrv := authtest.ServeProtectedResource(t, prmPath, prm)
+	mcpSrv := authtest.ServeChallenge(t, authtest.Challenge{ResourceMetadata: prmSrv.URL + prmPath})
+	prm.Resource = mcpSrv.URL + "/v1/mcp"
 
 	meta, err := auth.Discover(context.Background(), mcpSrv.URL+"/v1/mcp")
 	if err != nil {
