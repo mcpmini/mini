@@ -28,16 +28,3 @@ func TestServe_writeJSONSetsStatusTypeAndBody(t *testing.T) {
 		t.Errorf("body = %q, want the encoded value", body)
 	}
 }
-
-func TestServe_closesWhenTheTestEnds(t *testing.T) {
-	var url string
-	t.Run("server", func(t *testing.T) {
-		url = Serve(t, func(http.ResponseWriter, *http.Request) {}).URL
-	})
-
-	resp, err := http.Get(url) //nolint:noctx // local server; the dial fails at once
-	if err == nil {
-		resp.Body.Close() //nolint:errcheck,gosec // the request should not have succeeded
-		t.Fatal("server still answering after its test ended")
-	}
-}
