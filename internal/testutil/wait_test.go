@@ -17,7 +17,6 @@ func TestGo_deliversTheFunctionsError(t *testing.T) {
 func TestGo_finishesWhenNobodyReads(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		Go(func() error { return nil })
-		synctest.Wait()
 	})
 }
 
