@@ -220,6 +220,6 @@ mini supports both eras on each side:
   method gets `initialize`; one that doesn't answer within 5 seconds, or exits during setup, is
   restarted once and gets `initialize`.
 - **Input requests.** A modern upstream can answer `tools/call` with
-  `resultType: "input_required"`. mini passes it unchanged to a modern agent in proxy mode, and
-  forwards the agent's retry with its answers. Legacy agents, compact mode and `mini call` get a
+  `resultType: "input_required"`. mini passes it unchanged to a modern agent, and
+  forwards the agent's retry with its answers. Legacy agents and `mini call` get a
   tool error instead.
