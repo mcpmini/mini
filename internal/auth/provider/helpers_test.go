@@ -39,7 +39,7 @@ func newProviderFixture(t *testing.T, s providerSetup) *providerFixture {
 	if s.Auth == nil {
 		s.Auth = &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid"}
 	}
-	s.Auth.TokenURL = f.endpoint.Srv.URL + "/token"
+	s.Auth.TokenURL = f.endpoint.TokenURL()
 	params := provider.Params{
 		AuthConfig: s.Auth, ConfigDir: f.dir, ServerName: "srv", ServerURL: testServerURL, Clock: f.clock,
 	}

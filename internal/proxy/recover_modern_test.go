@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/mcpmini/mini/internal/clock"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 	"github.com/mcpmini/mini/internal/transport/transporttest"
 )
@@ -54,18 +55,18 @@ func TestRun_modernCallRecoversAfterIdleEviction(t *testing.T) {
 	daemon := &evictedSessionTransport{}
 	fakeClock := clock.NewFake()
 	var out bytes.Buffer
-	done := make(chan error, 1)
-	go func() {
-		done <- Run(RunParams{
-			Client: &http.Client{Transport: daemon}, SessionID: "sess", In: modernInput(transporttest.ModernRequest(1, "tools/call", nil)), Out: &out,
+	done := testutil.RunInBackground(func() error {
+		return Run(RunParams{
+			Client: &http.Client{Transport: daemon}, SessionID: "sess", Out: &out,
+			In:    modernInput(transporttest.ModernRequest(1, "tools/call", nil)),
 			Clock: fakeClock,
 		})
-	}()
+	})
 	if err := fakeClock.BlockUntilContext(t.Context(), 1); err != nil {
 		t.Fatal(err)
 	}
 	fakeClock.Advance(recoveryBackoff)
-	if err := <-done; err != nil {
+	if err := testutil.WaitForReceive(t, done, "Run to recover and return"); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if daemon.initializes != 2 || !strings.Contains(out.String(), `"text":"ok"`) {
@@ -104,22 +105,22 @@ func TestRun_modernAgentRecoversAfterDaemonRestart(t *testing.T) {
 	daemon := &restartingDaemonTransport{resolved: &resolves}
 	fakeClock := clock.NewFake()
 	var out bytes.Buffer
-	done := make(chan error, 1)
-	go func() {
-		done <- Run(RunParams{
-			Client: &http.Client{Transport: daemon}, SessionID: "sess", In: modernInput(transporttest.ModernRequest(1, "tools/list", nil)), Out: &out,
+	done := testutil.RunInBackground(func() error {
+		return Run(RunParams{
+			Client: &http.Client{Transport: daemon}, SessionID: "sess", Out: &out,
+			In:    modernInput(transporttest.ModernRequest(1, "tools/list", nil)),
 			Clock: fakeClock,
 			Resolver: NewDaemonResolver(func() (string, error) {
 				resolves.Add(1)
 				return "restarted", nil
 			}),
 		})
-	}()
+	})
 	if err := fakeClock.BlockUntilContext(t.Context(), 1); err != nil {
 		t.Fatal(err)
 	}
 	fakeClock.Advance(recoveryBackoff)
-	if err := <-done; err != nil {
+	if err := testutil.WaitForReceive(t, done, "Run to recover and return"); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if resolves.Load() != 1 || daemon.initializes != 1 || !strings.Contains(out.String(), `"name":"svc__tool"`) {
@@ -132,9 +133,8 @@ func TestRun_modernListenFirstRecoversDaemonBeforeAcknowledging(t *testing.T) {
 	daemon := &restartingDaemonTransport{resolved: &resolves}
 	fakeClock := clock.NewFake()
 	var out bytes.Buffer
-	done := make(chan error, 1)
-	go func() {
-		done <- Run(RunParams{
+	done := testutil.RunInBackground(func() error {
+		return Run(RunParams{
 			Client: &http.Client{Transport: daemon}, SessionID: "sess", In: modernInput(listenLine(1)),
 			Out: &out, Clock: fakeClock,
 			Resolver: NewDaemonResolver(func() (string, error) {
@@ -142,12 +142,12 @@ func TestRun_modernListenFirstRecoversDaemonBeforeAcknowledging(t *testing.T) {
 				return "restarted", nil
 			}),
 		})
-	}()
+	})
 	if err := fakeClock.BlockUntilContext(t.Context(), 1); err != nil {
 		t.Fatal(err)
 	}
 	fakeClock.Advance(recoveryBackoff)
-	if err := <-done; err != nil {
+	if err := testutil.WaitForReceive(t, done, "Run to recover and return"); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if resolves.Load() != 1 || daemon.initializes != 1 ||

@@ -113,13 +113,15 @@ func (m *TokenServer) captureRequestFields(r *http.Request) {
 	}
 }
 
+func (m *TokenServer) TokenURL() string { return m.Srv.URL + "/token" }
+
 func (m *TokenServer) AuthConfig() *config.AuthConfig {
 	return &config.AuthConfig{
 		Type:     "oauth2",
 		Issuer:   m.Srv.URL,
 		ClientID: "test-client-id",
 		AuthURL:  m.Srv.URL + "/authorize",
-		TokenURL: m.Srv.URL + "/token",
+		TokenURL: m.TokenURL(),
 	}
 }
 
@@ -141,7 +143,7 @@ func (m *TokenServer) handleMetadata(w http.ResponseWriter, _ *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
 		"issuer":                           m.Srv.URL,
 		"authorization_endpoint":           m.Srv.URL + "/authorize",
-		"token_endpoint":                   m.Srv.URL + "/token",
+		"token_endpoint":                   m.TokenURL(),
 		"code_challenge_methods_supported": []string{"S256"},
 	})
 }

@@ -111,7 +111,7 @@ func TestProviderRegistry_close_abortsInFlightRefresh(t *testing.T) {
 		AuthConfig: &config.AuthConfig{
 			Type:     config.AuthTypeOAuth2,
 			ClientID: "c",
-			TokenURL: endpoint.Srv.URL + "/token",
+			TokenURL: endpoint.TokenURL(),
 		},
 		ConfigDir:  dir,
 		ServerName: "srv",
@@ -220,7 +220,7 @@ func TestProviderRegistry_forget(t *testing.T) {
 		received, release := gateNextTokenRequest(endpoint)
 		t.Cleanup(func() { release() })
 		params := oauthParams(dir, testServerURL)
-		params.AuthConfig.TokenURL = endpoint.Srv.URL + "/token"
+		params.AuthConfig.TokenURL = endpoint.TokenURL()
 		params.Clock = clock.NewFakeAt(epoch)
 		saveLoginFor(t, params, &oauth2.Token{AccessToken: "old", RefreshToken: "r", Expiry: epoch.Add(-time.Second)})
 		registry := provider.NewRegistry()

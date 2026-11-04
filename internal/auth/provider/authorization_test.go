@@ -290,7 +290,7 @@ func TestAuthorization_newerStoredTokenInWindow_usedWithoutRefreshing(t *testing
 		AuthConfig: &config.AuthConfig{
 			Type:     config.AuthTypeOAuth2,
 			ClientID: "cid",
-			TokenURL: endpoint.Srv.URL + "/token",
+			TokenURL: endpoint.TokenURL(),
 		},
 		ConfigDir:  dir,
 		ServerName: "srv",
@@ -325,7 +325,7 @@ func TestAuthorization_browserLoginDuringBackoff_refreshesWithoutWaiting(t *test
 	mock := authtest.NewTokenServer(t)
 	dir := t.TempDir()
 	params := provider.Params{
-		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: mock.Srv.URL + "/token"},
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: mock.TokenURL()},
 		ConfigDir:  dir, ServerName: "srv", ServerURL: testServerURL, Clock: clock.NewFakeAt(epoch),
 	}
 	saveLoginFor(t, params, storedToken(epoch.Add(time.Minute)))

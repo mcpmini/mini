@@ -117,6 +117,21 @@ func TestNewHTTP_countsRequestsByMethod(t *testing.T) {
 	}
 }
 
+func TestNewHTTP_lastReturnsTheNewestRequestForAMethod(t *testing.T) {
+	up := mcptest.NewHTTP(t, mcptest.Upstream{})
+
+	post(t, up.URL, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
+	post(t, up.URL, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)
+	post(t, up.URL, `{"jsonrpc":"2.0","id":3,"method":"initialize"}`)
+
+	if got := string(up.Last("tools/list").ID); got != "2" {
+		t.Errorf("Last(tools/list) id = %s, want 2", got)
+	}
+	if got := up.Last("tools/call"); got.Method != "" || got.Header.Get("Authorization") != "" {
+		t.Errorf("Last(tools/call) = %+v, want the zero Request", got)
+	}
+}
+
 func TestNewHTTP_methodOverrides(t *testing.T) {
 	up := mcptest.NewHTTP(t, mcptest.Upstream{Methods: map[string]mcptest.Method{
 		"tools/call": func(mcptest.Request) mcptest.Reply { return mcptest.Reply{Result: map[string]any{"ok": true}} },
