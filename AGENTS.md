@@ -22,6 +22,9 @@ go build -o mini ./cmd/mini
 
 # Run all checks (build + lint + race tests) — same as CI
 ./check.sh
+
+# Refuse pushes that fail CI's lint (once per clone)
+ln -s "$PWD/scripts/pre-push" "$(git rev-parse --git-common-dir)/hooks/pre-push"
 ```
 
 Integration test files are named `*_integration_test.go`, start with `//go:build integration`, and name every test `TestIntegration…`; `tools/testkind` enforces this and `check.sh` runs it.
