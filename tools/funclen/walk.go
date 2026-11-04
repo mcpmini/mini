@@ -71,22 +71,19 @@ func pkgDir(path string) string {
 	return moduleRel(filepath.Dir(path))
 }
 
-// Baseline keys are rooted at the module so that a run from a subdirectory, or on a directory
-// spelled absolute or with ../, matches the same entries.
 func moduleRel(dir string) string {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return filepath.ToSlash(filepath.Clean(dir))
 	}
-	rel, err := filepath.Rel(moduleRoot(), abs)
+	rel, err := filepath.Rel(moduleRootOrWorkdir(), abs)
 	if err != nil {
 		return filepath.ToSlash(filepath.Clean(dir))
 	}
 	return filepath.ToSlash(rel)
 }
 
-// moduleRoot falls back to the working directory outside a module.
-func moduleRoot() string {
+func moduleRootOrWorkdir() string {
 	wd, err := os.Getwd()
 	if err != nil {
 		return "."

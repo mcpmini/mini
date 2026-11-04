@@ -63,7 +63,7 @@ func parseOptions(args []string) (options, error) {
 	}
 	opts.dirs = fs.Args()
 	if opts.baselinePath == "" {
-		opts.baselinePath = filepath.Join(moduleRoot(), "tools", "funclen", "test_baseline.txt")
+		opts.baselinePath = filepath.Join(moduleRootOrWorkdir(), "tools", "funclen", "test_baseline.txt")
 	}
 	if len(opts.dirs) == 0 {
 		opts.dirs = []string{"."}

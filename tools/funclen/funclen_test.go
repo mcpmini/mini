@@ -1,19 +1,13 @@
 package main
 
 import (
-	"go/token"
 	"strings"
 	"testing"
 )
 
-// parseIssues parses src as a Go file and returns any funclen issues found.
 func parseIssues(t *testing.T, src string) []issue {
 	t.Helper()
-	s, err := parseSource("test.go", []byte(src), token.NewFileSet())
-	if err != nil {
-		t.Fatalf("parse failed: %v\n%s", err, src)
-	}
-	return s.funcIssues()
+	return testSource(t, src).funcIssues()
 }
 
 // codeLines returns n lines of valid Go statements for use as a function body.

@@ -67,7 +67,7 @@ func assertProblems(t *testing.T, problems []string, wantPart string) {
 }
 
 func TestBaseline_aStaleEntryFailsOnlyWhenItsPackageWasWalked(t *testing.T) {
-	t.Chdir(t.TempDir())
+	inTempModule(t)
 	b := baselineOf(map[string]int{"gone/pkg:TestOld": 30})
 
 	assertProblems(t, b.check(nil, inWalkedDirs([]string{"."})), "gone/pkg:TestOld matches no function")
@@ -75,7 +75,7 @@ func TestBaseline_aStaleEntryFailsOnlyWhenItsPackageWasWalked(t *testing.T) {
 }
 
 func TestBaseline_pruneLowersAndRemovesButNeverAddsOrRaises(t *testing.T) {
-	t.Chdir(t.TempDir())
+	inTempModule(t)
 	b := baselineOf(map[string]int{
 		"pkg:TestShrank": 40, "pkg:TestFixed": 40, "pkg:TestGone": 40, "pkg:TestGrew": 40, "out:TestKept": 40,
 	})
@@ -110,15 +110,18 @@ func TestBaseline_roundTripsThroughItsFile(t *testing.T) {
 
 func TestBaseline_aMalformedLineNamesItsPosition(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "test_baseline.txt")
-	testutil.WriteFile(t, path, "pkg:TestA 26\nno-count\n")
+	for _, bad := range []string{"no-count", "pkg:TestB many"} {
+		testutil.WriteFile(t, path, "pkg:TestA 26\n"+bad+"\n")
 
-	if _, err := loadBaseline(path); err == nil || !strings.Contains(err.Error(), "test_baseline.txt:2:") {
-		t.Errorf("loadBaseline error = %v, want one naming line 2", err)
+		_, err := loadBaseline(path)
+		if err == nil || !strings.Contains(err.Error(), "test_baseline.txt:2: want \"pkgdir:FuncName N\"") {
+			t.Errorf("loadBaseline(%q) error = %v, want one naming line 2 and the format", bad, err)
+		}
 	}
 }
 
 func TestMeasureTests_aNameRepeatedInOneDirectoryIsJudgedAsOne(t *testing.T) {
-	t.Chdir(t.TempDir())
+	inTempModule(t)
 	testutil.WriteFile(t, "pkg/a_test.go", "package p\nfunc helper() {\n"+codeLines(26)+"}\n")
 	testutil.WriteFile(t, "pkg/b_test.go", "package p_test\nfunc helper() {\n"+codeLines(30)+"}\n")
 

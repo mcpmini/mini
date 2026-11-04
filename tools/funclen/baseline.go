@@ -43,7 +43,10 @@ func parseEntry(line string) (key string, n int, err error) {
 		return "", 0, fmt.Errorf("want \"pkgdir:FuncName N\", got %q", line)
 	}
 	n, err = strconv.Atoi(count)
-	return key, n, err
+	if err != nil {
+		return "", 0, fmt.Errorf("want \"pkgdir:FuncName N\", got %q", line)
+	}
+	return key, n, nil
 }
 
 func (b baseline) write() error {
@@ -55,7 +58,6 @@ func (b baseline) write() error {
 	return os.WriteFile(b.path, []byte(sb.String()), 0o644)
 }
 
-// prune never adds or raises an entry: that takes a hand edit, which shows in review.
 func (b baseline) prune(funcs map[string]testFunc, inRun func(string) bool) {
 	for key, n := range b.entries {
 		if !inRun(entryPkg(key)) {
@@ -80,7 +82,9 @@ func (b baseline) check(funcs map[string]testFunc, inRun func(string) bool) []st
 	}
 	for _, key := range slices.Sorted(maps.Keys(b.entries)) {
 		if _, ok := funcs[key]; !ok && inRun(entryPkg(key)) {
-			problems = append(problems, fmt.Sprintf("%s: %s matches no function; %s", b.path, key, pruneRemedy))
+			problems = append(problems, fmt.Sprintf(
+				"%s: %s matches no function; rename the key if the test was renamed, otherwise %s",
+				b.path, key, pruneRemedy))
 		}
 	}
 	return problems
