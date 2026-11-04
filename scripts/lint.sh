@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The convention checks and vet shared by check.sh, CI's lint job and scripts/pre-push.
+# The convention checks and vet shared by check.sh and CI's lint job.
 set -euo pipefail
 
 go run ./tools/funclen .
