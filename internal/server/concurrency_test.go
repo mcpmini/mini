@@ -87,7 +87,7 @@ func runConfigureWorker(params runConfigureWorkerParams) {
 			params.Server,
 			callTool("config", map[string]any{ //nolint:errcheck
 				"action": "set_projection", "server": "alpha", "tool": "toolA",
-				"projection": map[string]any{"string_limit": 50}, "session_only": true,
+				"projection": map[string]any{"string_limits": map[string]int{"body": 50}}, "session_only": true,
 			}),
 		)
 	}

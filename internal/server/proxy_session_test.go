@@ -45,130 +45,44 @@ func initMsg() map[string]any {
 }
 
 func TestProxy_SessionProjection_FieldExclusionPersistsAcrossCalls(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	defer srv.Close()
+	h := newProxyHarness(t, newTestServer(t, server.Params{}))
+	h.addUpstream("svc", textResult(`{"id":1,"secret":"topsecret","name":"foo"}`), "get_item")
+	session := h.session("ffffffff-ffff-ffff-ffff-ffffffffffff")
 
-	conn := fakeConn("get_item")
-	conn.Responses["tools/call"] = json.RawMessage(
-		`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"topsecret\",\"name\":\"foo\"}"}]}`,
-	)
-	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
-
-	const sessionID = "ffffffff-ffff-ffff-ffff-ffffffffffff"
-	postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: initMsg()})
-
-	postMCP(postMCPParams{
-		T: t, Server: srv, SessionID: sessionID, Msg: map[string]any{
-			"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "tools/call",
-			"params": map[string]any{"name": "config", "arguments": map[string]any{
-				"action": "set_projection", "server": "svc", "tool": "get_item",
-				"projection": map[string]any{"exclude": []string{"secret"}}, "session_only": true,
-			}},
-		},
-	})
+	session.setProjection("svc", "get_item", map[string]any{"exclude": []string{"secret"}})
 
 	for i := range 3 {
-		resp := postMCP(postMCPParams{
-			T: t, Server: srv, SessionID: sessionID, Msg: map[string]any{
-				"jsonrpc": transport.JsonRPCVersion, "id": 2 + i, "method": "tools/call",
-				"params": map[string]any{"name": "svc__get_item", "arguments": map[string]any{}},
-			},
-		})
-		res, _ := resp["result"].(map[string]any)
-		content, _ := res["content"].([]any)
-		text, _ := content[0].(map[string]any)["text"].(string)
-		if strings.Contains(text, "topsecret") {
+		if text := session.callText("svc__get_item", nil); strings.Contains(text, "topsecret") {
 			t.Errorf("call %d: secret field leaked in response: %s", i+1, text)
 		}
 	}
 }
 
 func TestProxy_SessionProjection_IsolatedBetweenSessions(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	defer srv.Close()
+	h := newProxyHarness(t, newTestServer(t, server.Params{}))
+	h.addUpstream("svc", textResult(`{"id":1,"secret":"topsecret","name":"foo"}`), "get_item")
+	sessionA := h.session("aaaaaaaa-aaaa-aaaa-aaaa-000000000001")
+	sessionB := h.session("bbbbbbbb-bbbb-bbbb-bbbb-000000000002")
 
-	conn := fakeConn("get_item")
-	conn.Responses["tools/call"] = json.RawMessage(
-		`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"topsecret\",\"name\":\"foo\"}"}]}`,
-	)
-	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
+	sessionA.setProjection("svc", "get_item", map[string]any{"exclude": []string{"secret"}})
 
-	const sessionA = "aaaaaaaa-aaaa-aaaa-aaaa-000000000001"
-	const sessionB = "bbbbbbbb-bbbb-bbbb-bbbb-000000000002"
-	postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionA, Msg: initMsg()})
-	postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionB, Msg: initMsg()})
-
-	postMCP(postMCPParams{
-		T: t, Server: srv, SessionID: sessionA, Msg: map[string]any{
-			"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "tools/call",
-			"params": map[string]any{"name": "config", "arguments": map[string]any{
-				"action": "set_projection", "server": "svc", "tool": "get_item",
-				"projection": map[string]any{"exclude": []string{"secret"}}, "session_only": true,
-			}},
-		},
-	})
-
-	callItem := func(sid string, id int) string {
-		resp := postMCP(postMCPParams{
-			T: t, Server: srv, SessionID: sid, Msg: map[string]any{
-				"jsonrpc": transport.JsonRPCVersion, "id": id, "method": "tools/call",
-				"params": map[string]any{"name": "svc__get_item", "arguments": map[string]any{}},
-			},
-		})
-		res, _ := resp["result"].(map[string]any)
-		content, _ := res["content"].([]any)
-		text, _ := content[0].(map[string]any)["text"].(string)
-		return text
-	}
-
-	if strings.Contains(callItem(sessionA, 10), "topsecret") {
+	if strings.Contains(sessionA.callText("svc__get_item", nil), "topsecret") {
 		t.Error("session A: projection should exclude secret")
 	}
-	if !strings.Contains(callItem(sessionB, 11), "topsecret") {
+	if !strings.Contains(sessionB.callText("svc__get_item", nil), "topsecret") {
 		t.Error("session B: should see full response (no projection set)")
 	}
 }
 
 func TestProxy_Reload_PreservesSessionProjections(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	defer srv.Close()
+	h := newProxyHarness(t, newTestServer(t, server.Params{}))
+	h.addUpstream("svc", textResult(`{"id":1,"secret":"topsecret"}`), "get_item")
+	session := h.session("cccccccc-cccc-cccc-cccc-000000000003")
+	session.setProjection("svc", "get_item", map[string]any{"exclude": []string{"secret"}})
 
-	conn := fakeConn("get_item")
-	conn.Responses["tools/call"] = json.RawMessage(
-		`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"topsecret\"}"}]}`,
-	)
-	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
+	successText(t, session.call("config", map[string]any{"action": "reload"}))
 
-	const sessionID = "cccccccc-cccc-cccc-cccc-000000000003"
-	postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: initMsg()})
-
-	postMCP(postMCPParams{
-		T: t, Server: srv, SessionID: sessionID, Msg: map[string]any{
-			"jsonrpc": transport.JsonRPCVersion, "id": 1, "method": "tools/call",
-			"params": map[string]any{"name": "config", "arguments": map[string]any{
-				"action": "set_projection", "server": "svc", "tool": "get_item",
-				"projection": map[string]any{"exclude": []string{"secret"}}, "session_only": true,
-			}},
-		},
-	})
-
-	postMCP(postMCPParams{
-		T: t, Server: srv, SessionID: sessionID, Msg: map[string]any{
-			"jsonrpc": transport.JsonRPCVersion, "id": 2, "method": "tools/call",
-			"params": map[string]any{"name": "config", "arguments": map[string]any{"action": "reload"}},
-		},
-	})
-
-	resp := postMCP(postMCPParams{
-		T: t, Server: srv, SessionID: sessionID, Msg: map[string]any{
-			"jsonrpc": transport.JsonRPCVersion, "id": 3, "method": "tools/call",
-			"params": map[string]any{"name": "svc__get_item", "arguments": map[string]any{}},
-		},
-	})
-	res, _ := resp["result"].(map[string]any)
-	content, _ := res["content"].([]any)
-	text, _ := content[0].(map[string]any)["text"].(string)
-	if strings.Contains(text, "topsecret") {
+	if text := session.callText("svc__get_item", nil); strings.Contains(text, "topsecret") {
 		t.Errorf("session projection wiped by reload: %s", text)
 	}
 }
