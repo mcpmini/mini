@@ -76,7 +76,8 @@ func TestStdioSubscriptionWhoseListenWriteFailsStopsWithoutBlockingClose(t *test
 	conn.setModern(ModernVersions[0])
 	conn.startSubscriptionListener(context.Background())
 	testutil.WaitForReceive(t, conn.listenDone, "the listener to stop after its listen write failed")
-	testutil.WaitForReceive(t, testutil.RunInBackground(conn.Close), "Close to return after the listener ended the connection")
+	closed := testutil.RunInBackground(conn.Close)
+	testutil.WaitForReceive(t, closed, "Close to return after the listener ended the connection")
 }
 
 func TestStdioSubscriptionIgnoresAnUnrelatedCancellation(t *testing.T) {

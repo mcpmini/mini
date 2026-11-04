@@ -222,7 +222,8 @@ func TestIntegrationStdioClose_killsTheUpstreamOnceAndRepeatsItsResult(t *testin
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { conn.Close() }) //nolint:errcheck // only reaps the child if the test fails first.
-	first := testutil.WaitForReceive(t, testutil.RunInBackground(conn.Close), "Close to kill an upstream that ignores stdin EOF")
+	closed := testutil.RunInBackground(conn.Close)
+	first := testutil.WaitForReceive(t, closed, "Close to kill an upstream that ignores stdin EOF")
 	if second := conn.Close(); fmt.Sprint(second) != fmt.Sprint(first) {
 		t.Fatalf("second Close = %v, want the first result %v", second, first)
 	}
