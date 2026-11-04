@@ -10,7 +10,7 @@ When `mini init` finishes, it lists each MCP that still needs a step:
 
 Each MCP's file is `~/.mini/servers/<name>.yaml`. If you ran init with `--config DIR`, it's `DIR/servers/<name>.yaml`, and every `mini` command below needs the same `--config DIR`.
 
-A running mini picks up each of these steps within a few seconds; see [Applying changes](#applying-changes).
+A running mini picks up file edits and new logins within a few seconds; a new environment variable needs a restart. See [Applying changes](#applying-changes).
 
 ## requires a login
 
@@ -24,7 +24,7 @@ The login is tied to the MCP's URL, `client_id` and `token_url` as they were whe
 
 OAuth works with MCPs you configure on localhost or private networks, including Tailscale. MCPs added by agents cannot use private OAuth destinations, even with `dangerous_allow_private_urls`.
 
-When an operation fails with an OAuth scope challenge, run `mini auth <name>`. Restart your agents as described in [Applying changes](#applying-changes), then retry the operation. mini does not automatically repeat a failed tool call.
+When an operation fails with an OAuth scope challenge, run `mini auth <name>`, restart mini as described in [Applying changes](#applying-changes), then retry the operation. mini does not automatically repeat a failed tool call.
 
 ## requires a custom OAuth app
 
@@ -118,7 +118,7 @@ env:
 
 The command already inherits mini's environment. Listing the variable under `env:` makes mini report it by name when it isn't set, instead of starting a command that fails.
 
-If the file has no setup comment, run `mini status`. Its error names any variable that isn't set. If none is missing, the MCP turned mini away without asking for OAuth, and its documentation says which header or variable it expects.
+If the file has no setup comment, run `mini status`. Its error names any variable that isn't set. If none is missing, the MCP turned mini away without offering a login mini can use, and its documentation says which header, variable or OAuth app it expects.
 
 If you'd rather not set up an MCP now, remove it with `mini rm <name>`.
 
@@ -139,7 +139,7 @@ A literal value in the file works too. init writes server files readable only by
 
 ## Applying changes
 
-A running mini checks the files in `servers/` every 5 seconds. When you add, edit or remove an MCP's file, or `mini auth` or `mini add` saves a login, it connects, reconnects or drops that MCP and tells your agents their tool list changed. If an agent doesn't show the change, restart that agent.
+A running mini checks the files in `servers/` every 5 seconds. When you add, edit or remove an MCP's file, it connects, reconnects or drops that MCP and tells your agents their tool list changed. A login saved by `mini auth` or `mini add` connects an MCP that was waiting for one; an MCP that's already connected keeps its current login until mini restarts. If an agent doesn't show the change, restart that agent.
 
 mini keeps the environment it started with, and it reads `config.yaml` at startup. After changing an environment variable or `config.yaml`, restart mini:
 
@@ -180,7 +180,7 @@ Common errors:
 - **`<field>: NAME isn't set where mini runs`** (or `aren't set` for several): see [Environment variables](#environment-variables).
 - **`<field>: ${NAME} isn't expanded`**: `${...}` was used in a field that doesn't expand it. See [Environment variables](#environment-variables).
 
-If `mini auth <name>` fails with **no client_id configured and server provides no registration endpoint**, mini cannot register a client automatically. Check the provider's MCP setup instructions: configure a token if supported, or register your own OAuth app. See [requires manual configuration](#requires-manual-configuration). If it fails with **the server only accepts mini's client metadata document, which lists callback port 6464**, remove `auth.callback_port` or set up your own app.
+If `mini auth <name>` fails with **no client_id configured and server provides no registration endpoint**, mini cannot register a client automatically. Check the provider's MCP setup instructions: configure a token if supported (see [requires manual configuration](#requires-manual-configuration)), or register your own OAuth app and add its `auth:` block as in [requires a custom OAuth app](#requires-a-custom-oauth-app). If it fails with **the server only accepts mini's client metadata document, which lists callback port 6464**, remove `auth.callback_port` or set up your own app.
 
 ## How mini decides
 

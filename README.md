@@ -140,8 +140,9 @@ These servers have bundled projections. `mini add` and `mini init` match the ups
 | GitHub | [github.yaml](internal/defaults/projections/github.yaml) | list_pull_requests, issue_read, pull_request_read, list_commits, get_commit, search_issues, search_pull_requests, search_repositories |
 | Linear | [linear.yaml](internal/defaults/projections/linear.yaml) | get_issue, save_issue |
 | Atlassian | [atlassian.yaml](internal/defaults/projections/atlassian.yaml) | getJiraIssue, editJiraIssue, getConfluenceContent, executeRead |
+| Slack | [slack.yaml](internal/defaults/projections/slack.yaml) | slack_read_channel, slack_read_thread, slack_search_public, slack_search_public_and_private, slack_search_channels, slack_search_users, slack_list_user_channels, slack_read_user_profile |
 
-Other servers, including Slack and Sentry, use the global string limit without bundled field rules. Add projections to tune individual tools, or set `default_string_limit: 0` to disable the global string limit.
+Other servers, including Sentry, use the global string limit without bundled field rules. Add projections to tune individual tools, or set `default_string_limit: 0` to disable the global string limit.
 
 ## How it works
 
