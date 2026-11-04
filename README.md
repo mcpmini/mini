@@ -241,7 +241,7 @@ In the default proxy mode, the agent gets the upstream server's own result, trim
 
 Embedded resource text is limited as text; JSON field rules do not parse objects inside that text.
 
-When projection cuts something, the result carries a `__mini` notice, as a key in the result object or as a final text block:
+When projection cuts something, the result carries a `__mini` notice, as a key in the result object, as the last element of a result list, or as a final text block:
 
 ```json
 "__mini": {
@@ -254,6 +254,8 @@ When projection cuts something, the result carries a `__mini` notice, as a key i
 The full upstream result is stored in `~/.mini/internal/responses/`. The agent passes `file` to `read`, with a listed path (or any jq filter built on it) as `filter`, to recover just the value it needs. A call can also pass `__mini: {"projection": "raw"}` to get the whole result at once.
 
 Results that projection doesn't change have no notice and no stored file. Response files are cleaned up automatically by TTL and disk budget.
+
+Clients such as Claude Code check `structuredContent` against the tool's `outputSchema`. mini relaxes each advertised `outputSchema` (dropping `required`, length and item-count limits, and similar checks) so a trimmed result and its notice still validate.
 
 ## Auth
 
@@ -280,7 +282,6 @@ You don't have to connect mini to an agent via MCP. `mini call` works as a stand
 mini call github list_pull_requests '{"owner":"golang","repo":"go","perPage":3}'
 mini call -t github list_issues '{"owner":"golang","repo":"go","state":"open","perPage":10}'
 mini call -r github get_file_contents '{"owner":"golang","repo":"go","path":"README.md"}'
-mini perm-call github create_pull_request '{"owner":"...","repo":"...","title":"..."}'
 ```
 
 This is useful when:
@@ -288,25 +289,22 @@ This is useful when:
 - You're debugging what a tool actually returns before writing a projection config
 - Your agent environment can run subprocesses but has limited MCP support
 
-## Compact tool mode
+## Tool visibility
 
-Compact mode (`mini connect --tool-mode compact`) exposes exactly 4 tools regardless of how many upstream servers you have. It works similarly to `mini call`/`mini perm-call` from the CLI: the agent invokes tools through mini rather than directly:
+Every upstream tool is visible by default. To hide one, list it under `permissions.hidden` in the server's file; hidden tools are left out of discovery, and calls to them fail as not found, over MCP and from `mini call`:
 
-| Tool | What it does |
-|---|---|
-| `list` | Discover tools across connected servers |
-| `call` | Invoke an `open` tool; returns error for `protected` tools |
-| `perm_call` | Invoke a `protected` tool — configure your client to always ask before running this |
-| `config` | Add/remove servers, adjust projections, check status |
+```yaml
+# ~/.mini/servers/github.yaml
+permissions:
+  hidden: [delete_file]
+```
 
-The `open`/`protected` split only matters in compact mode and the `mini call` / `mini perm-call` CLI. In the default proxy mode, upstream tools are exposed directly and approval is handled by your MCP client, not by mini. Use your client's native per-tool approval settings for writes. `hidden` tools are filtered from normal discovery, but that is visibility control, not a security boundary.
-
-Use compact mode when your client loads every MCP tool schema eagerly at session start and a large catalog of servers is costing you context on every turn. Clients that defer schemas, like Claude Code and Codex, get no benefit from compact mode and lose native tool schemas, so stick with the default there. How [Claude Code](docs/claude-code-mcp-loading.md) and [Codex](docs/codex-mcp-loading.md) load MCP schemas.
+mini doesn't approve calls itself. Your MCP client decides which calls need approval, using the `readOnlyHint` and `destructiveHint` annotations mini passes through unchanged.
 
 ## Commands
 
 ```
-mini connect [--standalone] [--tool-mode proxy|compact]   Connect an agent (stdio MCP)
+mini connect [--standalone]               Connect an agent (stdio MCP)
 mini daemon                               Run as a shared background daemon
 mini daemon status                        Check whether the daemon is running
 
@@ -320,5 +318,4 @@ mini init [--import | --from AGENT | --add NAMES]  Setup wizard
 mini cleanup                              Delete expired response files
 
 mini call [-j|-t|-r] SERVER TOOL [JSON]   Invoke a tool directly
-mini perm-call [-j|-t|-r] SERVER TOOL [JSON]  Invoke a protected tool directly
 ```
