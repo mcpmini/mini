@@ -366,7 +366,7 @@ func TestRun_noReinitLoopWhenInitializeReturnsNotInitialized(t *testing.T) {
 	})
 
 	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}` + "\n")
-	done := testutil.Go(func() error {
+	done := testutil.RunInBackground(func() error {
 		return Run(RunParams{Client: client, SessionID: "sess", In: in, Out: io.Discard, Clock: clock.NewFake()})
 	})
 	if err := testutil.WaitForReceive(t, done, "Run to return without re-initializing an initialize"); err != nil {
@@ -404,7 +404,7 @@ func TestRunWithLimit_capsConcurrentForwards(t *testing.T) {
 	input := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"a"}` + "\n" +
 		`{"jsonrpc":"2.0","id":2,"method":"b"}` + "\n" +
 		`{"jsonrpc":"2.0","id":3,"method":"c"}` + "\n")
-	done := testutil.Go(func() error {
+	done := testutil.RunInBackground(func() error {
 		params := RunParams{Client: client, SessionID: "sess", In: input, Out: io.Discard, Clock: clock.NewFake()}
 		return runWithLimit(params, 1)
 	})

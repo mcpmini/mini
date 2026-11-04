@@ -55,7 +55,7 @@ func TestRun_modernCallRecoversAfterIdleEviction(t *testing.T) {
 	daemon := &evictedSessionTransport{}
 	fakeClock := clock.NewFake()
 	var out bytes.Buffer
-	done := testutil.Go(func() error {
+	done := testutil.RunInBackground(func() error {
 		return Run(RunParams{
 			Client: &http.Client{Transport: daemon}, SessionID: "sess", Out: &out,
 			In:    modernInput(transporttest.ModernRequest(1, "tools/call", nil)),
@@ -105,7 +105,7 @@ func TestRun_modernAgentRecoversAfterDaemonRestart(t *testing.T) {
 	daemon := &restartingDaemonTransport{resolved: &resolves}
 	fakeClock := clock.NewFake()
 	var out bytes.Buffer
-	done := testutil.Go(func() error {
+	done := testutil.RunInBackground(func() error {
 		return Run(RunParams{
 			Client: &http.Client{Transport: daemon}, SessionID: "sess", Out: &out,
 			In:    modernInput(transporttest.ModernRequest(1, "tools/list", nil)),
@@ -133,7 +133,7 @@ func TestRun_modernListenFirstRecoversDaemonBeforeAcknowledging(t *testing.T) {
 	daemon := &restartingDaemonTransport{resolved: &resolves}
 	fakeClock := clock.NewFake()
 	var out bytes.Buffer
-	done := testutil.Go(func() error {
+	done := testutil.RunInBackground(func() error {
 		return Run(RunParams{
 			Client: &http.Client{Transport: daemon}, SessionID: "sess", In: modernInput(listenLine(1)),
 			Out: &out, Clock: fakeClock,

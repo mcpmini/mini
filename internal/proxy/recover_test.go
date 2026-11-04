@@ -249,7 +249,7 @@ func TestDeliver_boundedWhenReresolveKeepsFailing(t *testing.T) {
 		Resolver:  NewDaemonResolver(reresolve),
 		Clock:     clock.System(),
 	}
-	done := testutil.Go(func() error { return Run(p) })
+	done := testutil.RunInBackground(func() error { return Run(p) })
 	if err := testutil.WaitForReceive(t, done, "Run to return once recovery gives up"); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -279,7 +279,7 @@ func TestDeliver_persistent401ReturnsErrorEnvelope(t *testing.T) {
 		Resolver:  NewDaemonResolver(reresolve),
 		Clock:     clock.System(),
 	}
-	done := testutil.Go(func() error { return Run(p) })
+	done := testutil.RunInBackground(func() error { return Run(p) })
 	if err := testutil.WaitForReceive(t, done, "Run to return once persistent 401 recovery gives up"); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -309,7 +309,7 @@ func TestDeliver_boundedWhenRespawnedDaemonStaysDead(t *testing.T) {
 		Resolver:  NewDaemonResolver(reresolve),
 		Clock:     clock.System(),
 	}
-	done := testutil.Go(func() error { return Run(p) })
+	done := testutil.RunInBackground(func() error { return Run(p) })
 	if err := testutil.WaitForReceive(t, done, "Run to return once a dead respawn exhausts recovery"); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -360,7 +360,7 @@ func TestDeliver_singleFlightOnResolveFailure(t *testing.T) {
 		Resolver:  NewDaemonResolver(reresolve),
 		Clock:     clock.System(),
 	}
-	done := testutil.Go(func() error { return Run(p) })
+	done := testutil.RunInBackground(func() error { return Run(p) })
 	if err := testutil.WaitForReceive(
 		t,
 		done,

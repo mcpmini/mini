@@ -58,7 +58,7 @@ func TestServeUntilCanceled_drainWaitsForServe(t *testing.T) {
 		<-drainGate
 		return nil
 	}
-	result := testutil.Go(func() error {
+	result := testutil.RunInBackground(func() error {
 		return serveUntilCanceled(serveWatchParams{Ctx: ctx, Serve: fakeServe, In: r, Out: io.Discard})
 	})
 	cancel()
@@ -82,7 +82,7 @@ func TestServeUntilCanceled_closesReaderAndReturns(t *testing.T) {
 		return err
 	}
 	go cancel()
-	result := testutil.Go(func() error {
+	result := testutil.RunInBackground(func() error {
 		return serveUntilCanceled(serveWatchParams{Ctx: ctx, Serve: fakeServe, In: r, Out: io.Discard})
 	})
 	if err := testutil.WaitForReceive(t, result, "serveUntilCanceled to return after cancel"); err != nil {
@@ -104,7 +104,7 @@ func TestServeUntilCanceled_serveCompletesOnEOF(t *testing.T) {
 		return nil
 	}
 	close(r.block)
-	result := testutil.Go(func() error {
+	result := testutil.RunInBackground(func() error {
 		return serveUntilCanceled(serveWatchParams{Ctx: ctx, Serve: fakeServe, In: r, Out: io.Discard})
 	})
 	if err := testutil.WaitForReceive(t, result, "serveUntilCanceled to return on EOF"); err != nil {
@@ -137,7 +137,7 @@ func TestServeUntilCanceled_outputFailureClosesPipeAndJoinsServe(t *testing.T) {
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	defer srv.Close()
-	result := testutil.Go(func() error {
+	result := testutil.RunInBackground(func() error {
 		return serveUntilCanceled(serveWatchParams{Ctx: ctx, Serve: srv.Serve, In: pr, Out: failingServeWriter{want}})
 	})
 	const initialize = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}` + "\n"

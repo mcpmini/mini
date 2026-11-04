@@ -89,7 +89,7 @@ func testDaemonHTTPServeFailureReturnsAndJoinsEviction(t *testing.T) {
 		started: make(chan struct{}), canceled: make(chan struct{}),
 		release: release, finished: make(chan struct{}),
 	}
-	result := testutil.Go(func() error {
+	result := testutil.RunInBackground(func() error {
 		return startDaemonHTTP(ctx, DaemonHTTPParams{Srv: service, Listener: listener})
 	})
 	testutil.WaitForReceive(t, service.started, "session eviction to start")
@@ -115,7 +115,7 @@ func TestDaemonHTTPCancelShutsDownAndJoinsWorkers(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	result := testutil.Go(func() error {
+	result := testutil.RunInBackground(func() error {
 		return startDaemonHTTP(ctx, DaemonHTTPParams{Srv: service, Listener: listener})
 	})
 	testutil.WaitForReceive(t, service.started, "session eviction to start")
