@@ -1,0 +1,111 @@
+package main
+
+import (
+	"fmt"
+	"maps"
+	"os"
+	"slices"
+	"strconv"
+	"strings"
+)
+
+const pruneRemedy = "run go run ./tools/funclen -prune-baseline"
+
+// baseline lists the tests that were over the limit when the check started, as
+// "pkgdir:FuncName N" with N the code lines allowed across the function's over-limit scopes.
+type baseline struct {
+	path    string
+	entries map[string]int
+}
+
+func loadBaseline(path string) (baseline, error) {
+	b := baseline{path: path, entries: map[string]int{}}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return baseline{}, err
+	}
+	for i, line := range strings.Split(string(data), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		key, n, err := parseEntry(line)
+		if err != nil {
+			return baseline{}, fmt.Errorf("%s:%d: %w", path, i+1, err)
+		}
+		b.entries[key] = n
+	}
+	return b, nil
+}
+
+func parseEntry(line string) (key string, n int, err error) {
+	key, count, ok := strings.Cut(strings.TrimSpace(line), " ")
+	if !ok || !strings.Contains(key, ":") {
+		return "", 0, fmt.Errorf("want \"pkgdir:FuncName N\", got %q", line)
+	}
+	n, err = strconv.Atoi(count)
+	if err != nil {
+		return "", 0, fmt.Errorf("want \"pkgdir:FuncName N\", got %q", line)
+	}
+	return key, n, nil
+}
+
+func (b baseline) write() error {
+	keys := slices.Sorted(maps.Keys(b.entries))
+	var sb strings.Builder
+	for _, key := range keys {
+		fmt.Fprintf(&sb, "%s %d\n", key, b.entries[key])
+	}
+	return os.WriteFile(b.path, []byte(sb.String()), 0o644)
+}
+
+func (b baseline) prune(funcs map[string]testFunc, inRun func(string) bool) {
+	for key, n := range b.entries {
+		if !inRun(entryPkg(key)) {
+			continue
+		}
+		f, ok := funcs[key]
+		switch {
+		case !ok || f.overLimitTotal == 0:
+			delete(b.entries, key)
+		case f.overLimitTotal < n:
+			b.entries[key] = f.overLimitTotal
+		}
+	}
+}
+
+func (b baseline) check(funcs map[string]testFunc, inRun func(string) bool) []string {
+	var problems []string
+	for _, key := range slices.Sorted(maps.Keys(funcs)) {
+		if p := b.judge(key, funcs[key]); p != "" {
+			problems = append(problems, p)
+		}
+	}
+	for _, key := range slices.Sorted(maps.Keys(b.entries)) {
+		if _, ok := funcs[key]; !ok && inRun(entryPkg(key)) {
+			problems = append(problems, fmt.Sprintf(
+				"%s: %s matches no function; rename the key if the test was renamed, otherwise %s",
+				b.path, key, pruneRemedy))
+		}
+	}
+	return problems
+}
+
+func (b baseline) judge(key string, f testFunc) string {
+	n, listed := b.entries[key]
+	m := f.overLimitTotal
+	switch {
+	case !listed && m > 0:
+		return fmt.Sprintf("%s is %d code lines (>= %d)", f.describe(), f.longest.lines, errorAt)
+	case listed && m > n:
+		return fmt.Sprintf("%s: scopes over the limit total %d code lines, baseline allows %d; "+
+			"shorten them (see docs/testing.md) instead of raising the baseline", f.describe(), m, n)
+	case listed && m < n:
+		return fmt.Sprintf("%s: scopes over the limit now total %d lines, baseline allows %d; %s",
+			f.describe(), m, n, pruneRemedy)
+	}
+	return ""
+}
+
+func entryPkg(key string) string {
+	return key[:strings.LastIndex(key, ":")]
+}

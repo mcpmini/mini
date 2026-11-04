@@ -9,8 +9,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 )
 
-func TestFixPreservesCommentsAndExpressionOrder(t *testing.T) {
-	source := `package fixture
+const commentedQuadSource = `package fixture
 
 type Quad struct{ A, B, C, D int }
 func call(n int) int { return n }
@@ -19,7 +18,8 @@ var _ = Quad{
 	/* second expression */ call(2),
 	call(3), call(4),
 }`
-	want := `package fixture
+
+const commentedQuadFixed = `package fixture
 
 type Quad struct{ A, B, C, D int }
 func call(n int) int { return n }
@@ -28,10 +28,12 @@ var _ = Quad{
 	/* second expression */ B: call(2),
 	C: call(3), D: call(4),
 }`
-	fset, diagnostics := analyzeSource(t, source)
-	fixed := applyFixes(applyFixesParams{T: t, Source: source, Fset: fset, Diagnostics: diagnostics})
-	if fixed != formatted(t, want) {
-		t.Fatalf("fixed source:\n%s\nwant:\n%s", fixed, formatted(t, want))
+
+func TestFixPreservesCommentsAndExpressionOrder(t *testing.T) {
+	fset, diagnostics := analyzeSource(t, commentedQuadSource)
+	fixed := applyFixes(applyFixesParams{T: t, Source: commentedQuadSource, Fset: fset, Diagnostics: diagnostics})
+	if fixed != formatted(t, commentedQuadFixed) {
+		t.Fatalf("fixed source:\n%s\nwant:\n%s", fixed, formatted(t, commentedQuadFixed))
 	}
 	_, remaining := analyzeSource(t, fixed)
 	if len(remaining) != 0 {

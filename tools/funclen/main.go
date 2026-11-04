@@ -2,16 +2,21 @@
 // Warning >= 18 lines, error >= 25 lines. Comment-only lines inside the function
 // body don't count, so a well-documented invariant doesn't inflate the length.
 // Functions annotated with //nolint:funclen on their declaration line suppress warnings (not errors).
+//
+// Test files are held to the error limit per scope: each t.Run body is measured on its own, and
+// table literals don't count. Tests that were already over the limit are listed in the baseline,
+// which may only shrink.
+//
 // Exit code 1 when any errors are found.
 //
-// Usage: funclen [dir ...]   (default: current directory, recursive)
+// Usage: funclen [-prune-baseline] [-baseline FILE] [dir ...]   (default: current directory, recursive)
 package main
 
 import (
+	"flag"
 	"fmt"
-	"go/ast"
-	"go/parser"
 	"go/token"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,184 +27,88 @@ const (
 	errorAt = 25
 )
 
-type issue struct {
-	path    string
-	line    int
-	name    string
-	lines   int
-	isError bool
+type options struct {
+	dirs          []string
+	baselinePath  string
+	pruneBaseline bool
 }
 
 func main() {
-	dirs := os.Args[1:]
-	if len(dirs) == 0 {
-		dirs = []string{"."}
+	opts, err := parseOptions(os.Args[1:])
+	if err != nil {
+		os.Exit(2)
 	}
-	issues := collect(dirs)
-	hasError := false
-	for _, iss := range issues {
-		if iss.isError {
-			hasError = true
-		}
-		printIssue(iss)
+	failed, err := run(opts, os.Stdout)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
 	}
-	if hasError {
+	if failed {
 		os.Exit(1)
 	}
 }
 
-func printIssue(iss issue) {
-	level, threshold := "WARNING", warnAt
-	if iss.isError {
-		level, threshold = "ERROR", errorAt
+func parseOptions(args []string) (options, error) {
+	fs := flag.NewFlagSet("funclen", flag.ContinueOnError)
+	var opts options
+	fs.StringVar(
+		&opts.baselinePath,
+		"baseline",
+		"",
+		"tests allowed over the limit (default tools/funclen/test_baseline.txt in the module)",
+	)
+	fs.BoolVar(&opts.pruneBaseline, "prune-baseline", false, "lower or remove baseline entries for tests that shrank")
+	if err := fs.Parse(args); err != nil {
+		return options{}, err
 	}
-	fmt.Printf("%s %s:%d: %s is %d code lines (>= %d)\n", level, iss.path, iss.line, iss.name, iss.lines, threshold)
+	opts.dirs = fs.Args()
+	if opts.baselinePath == "" {
+		opts.baselinePath = filepath.Join(moduleRootOrWorkdir(), "tools", "funclen", "test_baseline.txt")
+	}
+	if len(opts.dirs) == 0 {
+		opts.dirs = []string{"."}
+	}
+	return opts, nil
 }
 
-func collect(dirs []string) []issue {
+func run(opts options, out io.Writer) (failed bool, err error) {
+	files, err := collectFiles(opts.dirs)
+	if err != nil {
+		return false, err
+	}
 	fset := token.NewFileSet()
-	var issues []issue
-	for _, dir := range dirs {
-		if err := walkDir(dir, fset, &issues); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(2)
-		}
-	}
-	return issues
-}
-
-func walkDir(dir string, fset *token.FileSet, issues *[]issue) error {
-	return filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() && isSkipped(info.Name()) {
-			return filepath.SkipDir
-		}
-		if !strings.HasSuffix(path, ".go") || isTestFile(path) {
-			return nil
-		}
-		*issues = append(*issues, checkFile(path, fset)...)
-		return nil
-	})
-}
-
-func isSkipped(name string) bool {
-	return name == "vendor" || name == ".git" || name == "node_modules"
-}
-
-func isTestFile(path string) bool {
-	return strings.HasSuffix(path, "_test.go")
-}
-
-func checkFile(path string, fset *token.FileSet) []issue {
-	src, err := os.ReadFile(path)
+	issues := checkProduction(files.production, fset)
+	problems, err := checkTestFiles(files.tests, fset, opts)
 	if err != nil {
-		return nil
+		return false, err
 	}
-	f, err := parser.ParseFile(fset, path, src, 0)
+	var report strings.Builder
+	for _, iss := range issues {
+		report.WriteString(iss.String() + "\n")
+		failed = failed || iss.isError
+	}
+	for _, p := range problems {
+		report.WriteString("ERROR " + p + "\n")
+	}
+	_, err = io.WriteString(out, report.String())
+	return failed || len(problems) > 0, err
+}
+
+func checkTestFiles(paths []string, fset *token.FileSet, opts options) ([]string, error) {
+	b, err := loadBaseline(opts.baselinePath)
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	return collectFuncIssues(f, fset, strings.Split(string(src), "\n"))
-}
-
-func collectFuncIssues(f *ast.File, fset *token.FileSet, srcLines []string) []issue {
-	var issues []issue
-	ast.Inspect(f, func(n ast.Node) bool {
-		fd, ok := n.(*ast.FuncDecl)
-		if !ok || fd.Body == nil {
-			return true
-		}
-		if iss, found := checkFunc(fd, fset, srcLines); found {
-			issues = append(issues, iss)
-		}
-		return true
-	})
-	return issues
-}
-
-func checkFunc(fd *ast.FuncDecl, fset *token.FileSet, srcLines []string) (issue, bool) {
-	start := fset.Position(fd.Pos()).Line
-	end := fset.Position(fd.End()).Line
-	lines := (end - start - 1) - skippableLines(srcLines, start+1, end-1)
-	if lines < warnAt {
-		return issue{}, false
+	funcs, err := measureTests(paths, fset)
+	if err != nil {
+		return nil, err
 	}
-	if lines < errorAt && isNolinted(srcLines, start) {
-		return issue{}, false
-	}
-	return newIssue(fd, fset, lines), true
-}
-
-func isNolinted(srcLines []string, line int) bool {
-	if line < 1 || line > len(srcLines) {
-		return false
-	}
-	return strings.Contains(srcLines[line-1], "//nolint:funclen")
-}
-
-func newIssue(fd *ast.FuncDecl, fset *token.FileSet, lines int) issue {
-	pos := fset.Position(fd.Pos())
-	return issue{
-		path:    pos.Filename,
-		line:    pos.Line,
-		name:    funcName(fd),
-		lines:   lines,
-		isError: lines >= errorAt,
-	}
-}
-
-// skippableLines counts lines in [start, end] (1-indexed, inclusive) that
-// don't represent real logic: comment-only lines and bare closing braces.
-// A line that mixes code with a trailing comment still counts as code.
-func skippableLines(srcLines []string, start, end int) int {
-	count := 0
-	inBlock := false
-	for i := start; i <= end && i <= len(srcLines); i++ {
-		trimmed := strings.TrimSpace(srcLines[i-1])
-		var isComment bool
-		isComment, inBlock = classifyCommentLine(trimmed, inBlock)
-		if isComment || trimmed == "}" {
-			count++
+	inRun := inWalkedDirs(opts.dirs)
+	if opts.pruneBaseline {
+		b.prune(funcs, inRun)
+		if err := b.write(); err != nil {
+			return nil, err
 		}
 	}
-	return count
-}
-
-// classifyCommentLine reports whether line is comment-only, and whether a
-// /* */ block comment remains open for the next line.
-func classifyCommentLine(line string, inBlock bool) (isComment, stillInBlock bool) {
-	switch {
-	case inBlock:
-		return true, !strings.Contains(line, "*/")
-	case strings.HasPrefix(line, "//"):
-		return true, false
-	case strings.HasPrefix(line, "/*"):
-		return true, !strings.Contains(line, "*/")
-	default:
-		return false, false
-	}
-}
-
-func funcName(fd *ast.FuncDecl) string {
-	if fd.Recv == nil || len(fd.Recv.List) == 0 {
-		return fd.Name.Name
-	}
-	if recv := recvTypeName(fd.Recv.List[0]); recv != "" {
-		return recv + "." + fd.Name.Name
-	}
-	return fd.Name.Name
-}
-
-func recvTypeName(f *ast.Field) string {
-	switch t := f.Type.(type) {
-	case *ast.Ident:
-		return t.Name
-	case *ast.StarExpr:
-		if id, ok := t.X.(*ast.Ident); ok {
-			return id.Name
-		}
-	}
-	return ""
+	return b.check(funcs, inRun), nil
 }
