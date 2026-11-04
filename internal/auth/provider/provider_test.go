@@ -349,7 +349,7 @@ func directParams(dir string, endpoint *authtest.TokenServer) provider.Params {
 		AuthConfig: &config.AuthConfig{
 			Type:     config.AuthTypeOAuth2,
 			ClientID: "cid",
-			TokenURL: endpoint.Srv.URL + "/token",
+			TokenURL: endpoint.TokenURL(),
 		},
 		ConfigDir:  dir,
 		ServerName: "srv",

@@ -5,13 +5,13 @@ package main
 import (
 	"context"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -39,12 +39,11 @@ func TestCLIRecordsScopeFailureForExplicitReauthorization(t *testing.T) {
 
 func scopeFailureFromHTTP(t *testing.T) error {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Add("WWW-Authenticate", `Basic realm="private"`)
 		w.Header().Add("WWW-Authenticate", `Bearer error="insufficient_scope", scope="write"`)
 		w.WriteHeader(http.StatusForbidden)
-	}))
-	defer srv.Close()
+	})
 	conn, err := transport.NewHTTPConnection(transport.HTTPConnectionConfig{URL: srv.URL, Clock: clock.System()})
 	if err != nil {
 		t.Fatal(err)

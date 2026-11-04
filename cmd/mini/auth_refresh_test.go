@@ -22,7 +22,7 @@ func TestInjectToken_expiredToken_refreshSendsCanonicalResource(t *testing.T) {
 		Auth: &config.AuthConfig{
 			Type:     config.AuthTypeOAuth2,
 			ClientID: "client",
-			TokenURL: tokenEp.srv.URL,
+			TokenURL: tokenEp.TokenURL(),
 		},
 		URL: "HTTPS://Example.COM:443/mcp",
 	}
@@ -36,7 +36,10 @@ func TestInjectToken_expiredToken_refreshSendsCanonicalResource(t *testing.T) {
 	injectToken(context.Background(), dir, sc)
 
 	const wantResource = "https://example.com/mcp"
-	if got, _ := tokenEp.resourceValue.Load().(string); got != wantResource {
+	tokenEp.Mu.Lock()
+	got := tokenEp.LastResource
+	tokenEp.Mu.Unlock()
+	if got != wantResource {
 		t.Errorf("resource = %q, want %q", got, wantResource)
 	}
 	if sc.Headers["Authorization"] == "" {
@@ -49,7 +52,7 @@ func TestInjectToken_loginForAnotherServerURL_isNotSentOrRefreshed(t *testing.T)
 	dir := t.TempDir()
 	sc := &config.ServerConfig{
 		Name: "srv",
-		Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "client", TokenURL: tokenEp.srv.URL},
+		Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "client", TokenURL: tokenEp.TokenURL()},
 		URL:  "https://moved.example.com/mcp",
 	}
 	madeFor := *sc
@@ -64,7 +67,7 @@ func TestInjectToken_loginForAnotherServerURL_isNotSentOrRefreshed(t *testing.T)
 	if got := sc.Headers["Authorization"]; got != "" {
 		t.Errorf("Authorization = %q, want none for a login made for another URL", got)
 	}
-	if hits := tokenEp.hits.Load(); hits != 0 {
+	if hits := tokenEp.Hits.Load(); hits != 0 {
 		t.Errorf("token endpoint hits = %d, want 0", hits)
 	}
 }

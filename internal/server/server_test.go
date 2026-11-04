@@ -262,10 +262,18 @@ func parseEnvelope(t *testing.T, text string) map[string]any {
 }
 
 type proxyEnvelope struct {
-	HasMini bool
-	Msg     string
-	File    string
-	Data    map[string]any
+	HasMini   bool
+	Msg       string
+	File      string
+	Excluded  []string
+	Truncated []proxyTruncation
+	Data      map[string]any
+}
+
+type proxyTruncation struct {
+	Path  string `json:"path"`
+	Chars int    `json:"chars"`
+	Items int    `json:"items"`
 }
 
 func parseProxyEnvelope(t *testing.T, text string) proxyEnvelope {
@@ -274,16 +282,22 @@ func parseProxyEnvelope(t *testing.T, text string) proxyEnvelope {
 	if err := json.Unmarshal([]byte(text), &raw); err != nil {
 		t.Fatalf("expected JSON from proxy: %s", text)
 	}
-	env := proxyEnvelope{}
-	if mini, ok := raw["__mini"].(map[string]any); ok {
-		env.HasMini = true
-		env.Msg, _ = mini["msg"].(string)
-		env.File, _ = mini["file"].(string)
-	}
+	env := proxyEnvelope{Data: raw}
 	if data, ok := raw["data"].(map[string]any); ok {
 		env.Data = data
-	} else {
-		env.Data = raw
+	}
+	var notice struct {
+		Mini *struct {
+			Msg       string            `json:"msg"`
+			File      string            `json:"file"`
+			Excluded  []string          `json:"excluded"`
+			Truncated []proxyTruncation `json:"truncated"`
+		} `json:"__mini"`
+	}
+	if err := json.Unmarshal([]byte(text), &notice); err == nil && notice.Mini != nil {
+		env.HasMini = true
+		env.Msg, env.File = notice.Mini.Msg, notice.Mini.File
+		env.Excluded, env.Truncated = notice.Mini.Excluded, notice.Mini.Truncated
 	}
 	return env
 }

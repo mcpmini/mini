@@ -14,7 +14,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
+
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestHTTPConnection_callCompletesHandshakeBeforeToolCall(t *testing.T) {
@@ -34,7 +35,7 @@ func TestHTTPConnection_callCompletesHandshakeBeforeToolCall(t *testing.T) {
 
 func TestHTTPConnection_usesNegotiatedLegacyVersion(t *testing.T) {
 	var initializeHeader, toolsHeader, offered string
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		var req Request
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Errorf("decode request: %v", err)
@@ -83,7 +84,7 @@ func TestHTTPConnection_usesNegotiatedLegacyVersion(t *testing.T) {
 func TestHTTPConnection_rejectsUnsupportedNegotiatedVersion(t *testing.T) {
 	for _, version := range []string{"2026-07-28", "1999-01-01"} {
 		t.Run(version, func(t *testing.T) {
-			srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+			srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 				var req Request
 				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 					t.Errorf("decode request: %v", err)
@@ -151,7 +152,7 @@ func TestHTTPConnection_concurrentFirstCallsHandshakeOnce(t *testing.T) {
 
 func TestHTTPConnection_callRetriesHandshakeAfterFailure(t *testing.T) {
 	var initializeCalls int
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]any
 		json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
 		switch req["method"] {
@@ -252,7 +253,7 @@ func TestHealth_doesNotTriggerHandshake(t *testing.T) {
 
 func newHandshakeServerWithNotif(t *testing.T, notifHandler http.HandlerFunc) *httptest.Server {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]any
 		json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
 		switch req["method"] {
@@ -269,8 +270,7 @@ func newHandshakeServerWithNotif(t *testing.T, notifHandler http.HandlerFunc) *h
 				"result": map[string]any{"ok": true},
 			})
 		}
-	}))
-	t.Cleanup(srv.Close)
+	})
 	return srv
 }
 
@@ -286,12 +286,7 @@ func TestHandshake_initializedNotification401_handshakeFails_and_isRetryable(t *
 	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 
 	_, err := conn.Call(t.Context(), "ping", nil)
-	if err == nil {
-		t.Fatal("expected handshake failure when notification returns 401")
-	}
-	if !strings.Contains(err.Error(), "notifications/initialized") {
-		t.Errorf("error should mention notifications/initialized, got: %v", err)
-	}
+	testutil.ErrorContains(t, err, "notifications/initialized")
 
 	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
 		t.Errorf("expected handshake retry to succeed, got: %v", err)
@@ -305,12 +300,7 @@ func TestHandshake_initializedNotification500_handshakeFails(t *testing.T) {
 	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 
 	_, err := conn.Call(t.Context(), "ping", nil)
-	if err == nil {
-		t.Fatal("expected error for notification 500")
-	}
-	if !strings.Contains(err.Error(), "notifications/initialized") {
-		t.Errorf("error should mention notifications/initialized, got: %v", err)
-	}
+	testutil.ErrorContains(t, err, "notifications/initialized")
 }
 
 func TestHandshake_initializedNotification401_withProvider_refreshAndSucceeds(t *testing.T) {
@@ -343,7 +333,7 @@ func TestNotificationStream_401_refreshesAndReconnects(t *testing.T) {
 	streamConnected := make(chan struct{})
 	provider := &fakeAuthProvider{current: "Bearer old", next: "Bearer new"}
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			if r.Header.Get("Authorization") != "Bearer new" {
 				w.WriteHeader(http.StatusUnauthorized)
@@ -382,8 +372,7 @@ func TestNotificationStream_401_refreshesAndReconnects(t *testing.T) {
 				"result": map[string]any{"ok": true},
 			})
 		}
-	}))
-	t.Cleanup(srv.Close)
+	})
 
 	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{
 		URL: srv.URL, AuthProvider: provider, AuthHeaderName: "Authorization",
@@ -393,11 +382,7 @@ func TestNotificationStream_401_refreshesAndReconnects(t *testing.T) {
 		t.Fatalf("Call: %v", err)
 	}
 
-	select {
-	case <-streamConnected:
-	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for stream to connect with refreshed token")
-	}
+	testutil.WaitForReceive(t, streamConnected, "the stream to connect with the refreshed token")
 
 	if provider.refreshCount() != 1 {
 		t.Errorf("refreshes = %d, want 1", provider.refreshCount())
@@ -418,7 +403,7 @@ func (refreshSucceedsProvider) RefreshAuthorization(_ context.Context, _ string)
 }
 
 func TestPostWithAuthRetry_replay401WrapsErrReauthRequired(t *testing.T) {
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]any
 		json.NewDecoder(r.Body).Decode(&req)
 		switch req["method"] {
@@ -452,9 +437,7 @@ type strictInitServer struct {
 func newStrictInitServer(t *testing.T) (*httptest.Server, *strictInitServer) {
 	t.Helper()
 	s := &strictInitServer{}
-	srv := httptest.NewServer(http.HandlerFunc(s.handle))
-	t.Cleanup(srv.Close)
-	return srv, s
+	return testutil.Serve(t, s.handle), s
 }
 
 func (s *strictInitServer) handle(w http.ResponseWriter, r *http.Request) {

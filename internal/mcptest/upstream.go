@@ -82,6 +82,31 @@ func (h *Handler) Requests() []Request {
 	return append([]Request(nil), h.requests...)
 }
 
+// Count returns how many requests for method were received so far, rejected ones included.
+func (h *Handler) Count(method string) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	n := 0
+	for _, req := range h.requests {
+		if req.Method == method {
+			n++
+		}
+	}
+	return n
+}
+
+// Last returns the most recent request for method, or the zero Request when none arrived.
+func (h *Handler) Last(method string) Request {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for i := len(h.requests) - 1; i >= 0; i-- {
+		if h.requests[i].Method == method {
+			return h.requests[i]
+		}
+	}
+	return Request{}
+}
+
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.upstream.Intercept != nil && h.upstream.Intercept(w, r) {
 		return

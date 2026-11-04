@@ -11,10 +11,10 @@ import (
 	"sync"
 	"syscall"
 	"testing"
-	"time"
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 type blockReader struct {
@@ -58,29 +58,19 @@ func TestServeUntilCanceled_drainWaitsForServe(t *testing.T) {
 		<-drainGate
 		return nil
 	}
-	result := make(chan error, 1)
-	go func() {
-		result <- serveUntilCanceled(serveWatchParams{Ctx: ctx, Serve: fakeServe, In: r, Out: io.Discard})
-	}()
+	result := testutil.RunInBackground(func() error {
+		return serveUntilCanceled(serveWatchParams{Ctx: ctx, Serve: fakeServe, In: r, Out: io.Discard})
+	})
 	cancel()
-	select {
-	case <-draining:
-	case <-time.After(2 * time.Second):
-		t.Fatal("serve did not reach drain phase within 2s")
-	}
+	testutil.WaitForReceive(t, draining, "serve to reach the drain phase")
 	select {
 	case <-result:
 		t.Fatal("serveUntilCanceled returned before drain gate was released")
 	default:
 	}
 	close(drainGate)
-	select {
-	case err := <-result:
-		if err != nil {
-			t.Errorf("expected nil, got %v", err)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("serveUntilCanceled did not return within 2s after drain gate released")
+	if err := testutil.WaitForReceive(t, result, "serveUntilCanceled to return after the drain"); err != nil {
+		t.Errorf("expected nil, got %v", err)
 	}
 }
 
@@ -92,17 +82,11 @@ func TestServeUntilCanceled_closesReaderAndReturns(t *testing.T) {
 		return err
 	}
 	go cancel()
-	result := make(chan error, 1)
-	go func() {
-		result <- serveUntilCanceled(serveWatchParams{Ctx: ctx, Serve: fakeServe, In: r, Out: io.Discard})
-	}()
-	select {
-	case err := <-result:
-		if err != nil {
-			t.Errorf("expected nil, got %v", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("serveUntilCanceled did not return within 5s after context cancel")
+	result := testutil.RunInBackground(func() error {
+		return serveUntilCanceled(serveWatchParams{Ctx: ctx, Serve: fakeServe, In: r, Out: io.Discard})
+	})
+	if err := testutil.WaitForReceive(t, result, "serveUntilCanceled to return after cancel"); err != nil {
+		t.Errorf("expected nil, got %v", err)
 	}
 	select {
 	case <-r.closed:
@@ -120,17 +104,11 @@ func TestServeUntilCanceled_serveCompletesOnEOF(t *testing.T) {
 		return nil
 	}
 	close(r.block)
-	result := make(chan error, 1)
-	go func() {
-		result <- serveUntilCanceled(serveWatchParams{Ctx: ctx, Serve: fakeServe, In: r, Out: io.Discard})
-	}()
-	select {
-	case err := <-result:
-		if err != nil {
-			t.Errorf("expected nil on normal EOF, got %v", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("serveUntilCanceled did not return within 5s on EOF")
+	result := testutil.RunInBackground(func() error {
+		return serveUntilCanceled(serveWatchParams{Ctx: ctx, Serve: fakeServe, In: r, Out: io.Discard})
+	})
+	if err := testutil.WaitForReceive(t, result, "serveUntilCanceled to return on EOF"); err != nil {
+		t.Errorf("expected nil on normal EOF, got %v", err)
 	}
 }
 
@@ -159,22 +137,17 @@ func TestServeUntilCanceled_outputFailureClosesPipeAndJoinsServe(t *testing.T) {
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	defer srv.Close()
-	result := make(chan error, 1)
-	go func() {
-		result <- serveUntilCanceled(serveWatchParams{Ctx: ctx, Serve: srv.Serve, In: pr, Out: failingServeWriter{want}})
-	}()
+	result := testutil.RunInBackground(func() error {
+		return serveUntilCanceled(serveWatchParams{Ctx: ctx, Serve: srv.Serve, In: pr, Out: failingServeWriter{want}})
+	})
 	const initialize = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}` + "\n"
 	_, writeErr := io.WriteString(pw, initialize)
 	if writeErr != nil {
 		t.Fatalf("write initialize request: %v", writeErr)
 	}
-	select {
-	case err := <-result:
-		if !errors.Is(err, want) {
-			t.Fatalf("serveUntilCanceled error = %v, want failure cause %v", err, want)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("serveUntilCanceled did not close the input pipe and join Serve")
+	err := testutil.WaitForReceive(t, result, "serveUntilCanceled to close the input pipe and join Serve")
+	if !errors.Is(err, want) {
+		t.Fatalf("serveUntilCanceled error = %v, want failure cause %v", err, want)
 	}
 	if ctx.Err() != nil {
 		t.Fatalf("parent context canceled: %v", ctx.Err())
@@ -238,11 +211,7 @@ func TestShutdownContext_firstSignal_releasesSignalHandling(t *testing.T) {
 		t.Fatal("serve context cancelled before any signal")
 	}
 	deliverSignal()
-	select {
-	case <-released:
-	case <-time.After(2 * time.Second):
-		t.Fatal("first signal did not release signal handling, so a second signal would be swallowed")
-	}
+	testutil.WaitForReceive(t, released, "the first signal to release signal handling for the second")
 	if ctx.Err() == nil {
 		t.Error("first signal must cancel the serve context")
 	}

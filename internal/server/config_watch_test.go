@@ -126,11 +126,7 @@ func (e *reloadEnv) startPoller() {
 
 func (e *reloadEnv) awaitCheck() {
 	e.t.Helper()
-	select {
-	case <-e.ticked:
-	case <-e.t.Context().Done():
-		e.t.Fatal("timed out waiting for poll check")
-	}
+	testutil.WaitForReceive(e.t, e.ticked, "the poll check")
 }
 
 func (e *reloadEnv) advanceTick() {
@@ -415,11 +411,7 @@ func TestProjectionReload_ctxCancelStopsPoller(t *testing.T) {
 
 	cancel()
 
-	select {
-	case <-done:
-	case <-t.Context().Done():
-		t.Fatal("poller did not exit after ctx cancel")
-	}
+	testutil.WaitForReceive(t, done, "the poller to exit after ctx cancel")
 }
 
 func TestProjectionReload_setProjectionFinalValuePersistedAndSurvivesReload(t *testing.T) {

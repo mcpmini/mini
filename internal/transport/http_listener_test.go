@@ -15,11 +15,12 @@ import (
 	"time"
 
 	"github.com/mcpmini/mini/internal/clock"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func newNotifListenerServer(t *testing.T, getHandler http.HandlerFunc) *httptest.Server {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			getHandler(w, r)
 			return
@@ -43,8 +44,7 @@ func newNotifListenerServer(t *testing.T, getHandler http.HandlerFunc) *httptest
 				"result": map[string]any{"ok": true},
 			})
 		}
-	}))
-	t.Cleanup(srv.Close)
+	})
 	return srv
 }
 
@@ -150,11 +150,7 @@ func TestNotificationListener_survivesReauthRequired(t *testing.T) {
 	advanceListenerTimer(t, clk, maxListenerBackoff)
 	advanceListenerTimer(t, clk, maxListenerBackoff)
 
-	select {
-	case <-streamOpened:
-	case <-time.After(5 * time.Second):
-		t.Fatal("notification stream never opened; listener stopped on ErrReauthRequired")
-	}
+	testutil.WaitForReceive(t, streamOpened, "the notification stream to open after ErrReauthRequired")
 }
 
 func TestNotificationListener_successResetsBackoffToOne(t *testing.T) {
@@ -189,11 +185,7 @@ func TestNotificationListener_successResetsBackoffToOne(t *testing.T) {
 	advanceListenerTimerAndAwaitNextSleep(t, clk, 2*time.Second)
 	// GET 4 hangs, so no next timer registers; the non-awaiting helper suffices.
 	advanceListenerTimer(t, clk, time.Second)
-	select {
-	case <-get4Fired:
-	case <-time.After(3 * time.Second):
-		t.Error("listener did not reconnect after 1s; 200 did not reset backoff")
-	}
+	testutil.WaitForReceive(t, get4Fired, "the listener to reconnect after 1s, a 200 having reset backoff")
 }
 
 func TestListenerDelay_failuresDoubleToCapAndSuccessResets(t *testing.T) {
@@ -302,11 +294,7 @@ func TestNotificationListener_survivesClientTimeout(t *testing.T) {
 		t.Fatalf("handshake failed: %v", err)
 	}
 
-	select {
-	case <-notifReceived:
-	case <-time.After(5 * time.Second):
-		t.Fatal("notification not received; stream may have been killed by the regular client timeout")
-	}
+	testutil.WaitForReceive(t, notifReceived, "a notification on a stream outliving the regular client timeout")
 }
 
 func TestNotificationListener_reauthWaitsMaxListenerBackoff(t *testing.T) {
@@ -401,14 +389,12 @@ func TestNewStreamClient_blockPrivateIPs_sharesSSRFTransport(t *testing.T) {
 
 func TestNewStreamClient_redirect_notFollowed(t *testing.T) {
 	var targetHits atomic.Int32
-	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	target := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		targetHits.Add(1)
-	}))
-	t.Cleanup(target.Close)
-	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	})
+	redirector := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, target.URL, http.StatusFound)
-	}))
-	t.Cleanup(redirector.Close)
+	})
 	conn, err := NewHTTPConnection(HTTPConnectionConfig{URL: redirector.URL, Clock: clock.NewFake()})
 	if err != nil {
 		t.Fatal(err)
@@ -467,7 +453,7 @@ func TestRestartListenerWithoutListenStopsTheRunningListener(t *testing.T) {
 		conn.restartListener(false)
 		close(restarted)
 	}()
-	waitForListenerSignal(t, restarted, "restartListener did not stop the running listener")
+	testutil.WaitForReceive(t, restarted, "restartListener to stop the running listener")
 	if !running.stopped() || conn.listener != nil {
 		t.Fatalf("old listener stopped = %v, current listener = %v; want it stopped and none started",
 			running.stopped(), conn.listener)

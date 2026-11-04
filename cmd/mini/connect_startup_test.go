@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/server"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -123,11 +125,7 @@ func (h logSignal) WithGroup(string) slog.Handler      { return h }
 
 func (h logSignal) wait(t *testing.T) {
 	t.Helper()
-	select {
-	case <-h.seen:
-	case <-time.After(5 * time.Second):
-		t.Fatalf("%q not logged within 5s", h.msg)
-	}
+	testutil.WaitForReceive(t, h.seen, fmt.Sprintf("%q to be logged", h.msg))
 }
 
 func projectedGetData(t *testing.T, srv *server.Server) map[string]any {
@@ -169,11 +167,7 @@ func waitForClose(t *testing.T, srv closer) {
 		srv.Close()
 		close(done)
 	}()
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("Close did not return after ctx cancel; connect goroutine leaked past the connect deadline")
-	}
+	testutil.WaitForReceive(t, done, "Close to return once the connect deadline passes")
 }
 
 type closer interface{ Close() }

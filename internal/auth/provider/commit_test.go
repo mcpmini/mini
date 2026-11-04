@@ -44,7 +44,7 @@ func (f *commitFixture) params() provider.Params {
 func (f *commitFixture) paramsFor(ac *config.AuthConfig) provider.Params {
 	cfg := *ac
 	if cfg.TokenURL == "" {
-		cfg.TokenURL = f.endpoint.Srv.URL + "/token"
+		cfg.TokenURL = f.endpoint.TokenURL()
 	}
 	return provider.Params{
 		AuthConfig: &cfg,
@@ -109,11 +109,7 @@ func TestCommitAuthorizedToken_duringRefresh_browserTokenWins(t *testing.T) {
 		_, refreshErr := prov.RefreshAuthorization(context.Background(), "Bearer stored-access")
 		refreshDone <- refreshErr
 	}()
-	select {
-	case <-rawReceived:
-	case <-time.After(5 * time.Second):
-		t.Fatal("token endpoint not reached within 5s")
-	}
+	testutil.WaitForReceive(t, rawReceived, "the refresh to reach the token endpoint")
 	commitDone := make(chan error, 1)
 	go func() {
 		browserTok := &oauth2.Token{AccessToken: "browser-access", RefreshToken: "browser-refresh"}

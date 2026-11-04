@@ -131,11 +131,10 @@ func TestRunAdd(t *testing.T) {
 
 	t.Run("--no-connect skips the connectivity probe", func(t *testing.T) {
 		hit := false
-		mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mcpSrv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 			hit = true
 			w.WriteHeader(http.StatusUnauthorized)
-		}))
-		defer mcpSrv.Close()
+		})
 
 		dir := t.TempDir()
 		var out bytes.Buffer
@@ -182,11 +181,10 @@ func TestRunAdd(t *testing.T) {
 	t.Run("auto-authorize failure does not exit the process", func(t *testing.T) {
 		// This server 401s with a Bearer challenge on a loopback URL, which SSRF validation
 		// rejects during OAuth endpoint discovery — a real, reachable auto-authorize failure.
-		oauthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		oauthSrv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("WWW-Authenticate", "Bearer")
 			w.WriteHeader(http.StatusUnauthorized)
-		}))
-		defer oauthSrv.Close()
+		})
 
 		dir := t.TempDir()
 		var out bytes.Buffer
@@ -260,10 +258,7 @@ func TestRunAdd(t *testing.T) {
 
 		err := runAdd(dir, []string{"svc", "--", "replacement"}, &bytes.Buffer{})
 
-		if err == nil ||
-			!strings.Contains(err.Error(), "svc is already configured; run `mini rm svc` first to replace it") {
-			t.Errorf("err = %v, want the already-configured error naming mini rm", err)
-		}
+		testutil.ErrorContains(t, err, "svc is already configured; run `mini rm svc` first to replace it")
 		if after := string(testutil.ReadFile(t, filepath.Join(dir, "servers", "svc.yaml"))); after != before {
 			t.Errorf("svc.yaml changed from %q to %q", before, after)
 		}
@@ -466,10 +461,7 @@ func TestRunAddImport(t *testing.T) {
 
 		err := runAdd(notADir, []string{"--from-claude", path}, &bytes.Buffer{})
 
-		if want := "1 of 1 servers in " + path + " could not be added"; err == nil ||
-			!strings.Contains(err.Error(), want) {
-			t.Errorf("err = %v, want %q", err, want)
-		}
+		testutil.ErrorContains(t, err, "1 of 1 servers in "+path+" could not be added")
 	})
 
 	t.Run("an unreadable config is an error", func(t *testing.T) {
@@ -486,8 +478,7 @@ func TestRunAddImport(t *testing.T) {
 func TestConnectAndAuthorizeIfNeeded_onlyStaticAuthSkipsLogin(t *testing.T) {
 	// A loopback URL fails SSRF validation during OAuth endpoint discovery, so an attempted
 	// login stops before any browser opens.
-	loopback := httptest.NewServer(http.NotFoundHandler())
-	t.Cleanup(loopback.Close)
+	loopback := testutil.Serve(t, http.NotFound)
 	tests := []struct {
 		name      string
 		headers   map[string]string

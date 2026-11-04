@@ -3,6 +3,8 @@ package transport
 import (
 	"strings"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 var validateURLCases = []struct {
@@ -68,12 +70,7 @@ func TestSSRFSafeDialer_BlocksPrivateIPs(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := d(t.Context(), "tcp", tc.addr)
-			if err == nil {
-				t.Fatalf("expected connection to %s to be blocked", tc.addr)
-			}
-			if !strings.Contains(err.Error(), "blocked") {
-				t.Errorf("unexpected error for %s: %v", tc.addr, err)
-			}
+			testutil.ErrorContains(t, err, "blocked")
 		})
 	}
 }

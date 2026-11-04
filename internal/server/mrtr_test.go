@@ -6,13 +6,13 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 	"github.com/mcpmini/mini/internal/transport/transporttest"
 )
@@ -152,7 +152,7 @@ func TestModernInputRequestRoundTripThroughModernHTTPUpstream(t *testing.T) {
 // that carries the request state back.
 func modernElicitingUpstream(t *testing.T, calls chan<- mrtrCallParams) string {
 	t.Helper()
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	upstream := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
@@ -176,8 +176,7 @@ func modernElicitingUpstream(t *testing.T, calls chan<- mrtrCallParams) string {
 				),
 			},
 		)
-	}))
-	t.Cleanup(upstream.Close)
+	})
 	return upstream.URL
 }
 

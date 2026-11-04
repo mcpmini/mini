@@ -16,6 +16,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -74,7 +75,7 @@ func TestCancellation_CancelsInFlightCall(t *testing.T) {
 	pw.Write(notification("notifications/cancelled", map[string]any{"requestId": 42})) //nolint:errcheck
 	pw.Close()
 
-	assertContextCanceled(t, callCtx, "after notifications/cancelled")
+	testutil.WaitForReceive(t, callCtx.Done(), "notifications/cancelled to cancel the upstream call")
 	<-serveErr
 }
 
@@ -105,7 +106,7 @@ func TestCancellation_CancelsInFlightCall_OverHTTP(t *testing.T) {
 		},
 	)
 
-	assertContextCanceled(t, callCtx, "over HTTP")
+	testutil.WaitForReceive(t, callCtx.Done(), "the HTTP cancellation to cancel the upstream call")
 }
 
 // TestCancellation_UnknownMethodReturnsError verifies that a completely unknown
@@ -166,15 +167,6 @@ func newSlowBlockingConn(callStarted *sync.WaitGroup, callCtx *context.Context) 
 
 func slowCallReq(id int) []byte {
 	return callToolWithID(id, "s__slow", nil)
-}
-
-func assertContextCanceled(t *testing.T, ctx context.Context, msg string) {
-	t.Helper()
-	select {
-	case <-ctx.Done():
-	case <-time.After(2 * time.Second):
-		t.Errorf("upstream call context was not canceled %s", msg)
-	}
 }
 
 func waitTimeout(wg *sync.WaitGroup, d time.Duration) bool {

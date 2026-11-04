@@ -8,10 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/catalog"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestResolveCatalogNames(t *testing.T) {
@@ -58,9 +58,7 @@ func TestInitRejectsEmptyAddBeforeChangingAnything(t *testing.T) {
 
 			err := cmd.Execute()
 
-			if err == nil || !strings.Contains(err.Error(), "at least one MCP name") {
-				t.Fatalf("init %s: error %v, want one asking for a server name", arg, err)
-			}
+			testutil.ErrorContains(t, err, "at least one MCP name")
 			if _, statErr := os.Stat(configDir); !errors.Is(statErr, fs.ErrNotExist) {
 				t.Errorf("config dir after a rejected --add: %v, want it not created", statErr)
 			}

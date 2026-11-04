@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/mcpmini/mini/internal/clock"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -69,11 +69,7 @@ func TestCancelListensEndsEveryListen(t *testing.T) {
 	session.cancelListens()
 	ended := make(chan struct{})
 	go func() { wg.Wait(); close(ended) }()
-	select {
-	case <-ended:
-	case <-time.After(5 * time.Second):
-		t.Fatal("cancelListens left a listen waiting")
-	}
+	testutil.WaitForReceive(t, ended, "cancelListens to release every waiting listen")
 	if len(session.listens) != 0 || len(session.inFlight) != 0 {
 		t.Fatalf("listens after cancelListens: %v, inFlight %d", session.listens, len(session.inFlight))
 	}

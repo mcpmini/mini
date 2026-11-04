@@ -5,7 +5,6 @@ package integration_test
 import (
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -680,11 +679,10 @@ func TestIntegrationCLI_auth_NoOAuth2Config(t *testing.T) {
 
 func TestIntegrationCLI_add_DetectsOAuthAndStartsAuthorization(t *testing.T) {
 	t.Parallel()
-	unauthorized := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	unauthorized := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer unauthorized.Close()
+	})
 
 	cfg := t.TempDir()
 	fixtureConfig := config.DefaultConfig()

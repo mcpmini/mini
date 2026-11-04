@@ -9,7 +9,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -25,45 +24,17 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-type testTokenEndpoint struct {
-	srv           *httptest.Server
-	hits          atomic.Int32
-	refreshToken  atomic.Value
-	resourceValue atomic.Value
-}
-
-func newTestTokenEndpoint(t *testing.T) *testTokenEndpoint {
+func newTestTokenEndpoint(t *testing.T) *authtest.TokenServer {
 	t.Helper()
-	e := &testTokenEndpoint{}
-	e.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		e.hits.Add(1)
-		r.ParseForm() //nolint:errcheck
-		e.refreshToken.Store(r.FormValue("refresh_token"))
-		e.resourceValue.Store(r.FormValue("resource"))
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-			"access_token": "refreshed", "refresh_token": "rotated",
-			"token_type": "Bearer", "expires_in": 3600,
-		})
-	}))
-	t.Cleanup(e.srv.Close)
-	return e
+	tokens := authtest.NewTokenServer(t)
+	tokens.AccessToken, tokens.RefreshToken = "refreshed", "rotated"
+	return tokens
 }
 
 type testMCPUpstream struct {
 	srv             *mcptest.Server
 	rejectWith401   atomic.Value
 	refreshTokenURL atomic.Value
-}
-
-func (u *testMCPUpstream) lastAuthFor(method string) string {
-	reqs := u.srv.Requests()
-	for i := len(reqs) - 1; i >= 0; i-- {
-		if reqs[i].Method == method {
-			return reqs[i].Header.Get("Authorization")
-		}
-	}
-	return ""
 }
 
 func (u *testMCPUpstream) authorize(r mcptest.Request) bool {
@@ -114,7 +85,7 @@ func oauthServerConfig(params oauthServerConfigParams) config.ServerConfig {
 
 type oauthTestSetup struct {
 	srv       *server.Server
-	token     *testTokenEndpoint
+	token     *authtest.TokenServer
 	upstream  *testMCPUpstream
 	configDir string
 }
@@ -123,10 +94,10 @@ func newOAuthTestSetup(t *testing.T, tok *oauth2.Token, clk clock.Clock) *oauthT
 	t.Helper()
 	configDir, token, upstream := t.TempDir(), newTestTokenEndpoint(t), newTestMCPUpstream(t)
 	sc := oauthServerConfig(
-		oauthServerConfigParams{Name: "live", MCPURL: upstream.srv.URL, TokenURL: token.srv.URL, Enabled: true},
+		oauthServerConfigParams{Name: "live", MCPURL: upstream.srv.URL, TokenURL: token.TokenURL(), Enabled: true},
 	)
 	sc.Auth.Issuer = upstream.srv.URL
-	upstream.refreshTokenURL.Store(token.srv.URL)
+	upstream.refreshTokenURL.Store(token.TokenURL())
 	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: configDir, ServerName: "live", Server: sc, Token: tok})
 	p := BuildServerParams{
 		Cfg: &config.Config{}, ConfigDir: configDir,

@@ -57,9 +57,7 @@ func TestMissingDefaultConfigRequiresExplicitDirectory(t *testing.T) {
 		return cmd.Execute()
 	}
 	err := run("ls")
-	if err == nil || !strings.Contains(err.Error(), "cannot determine default config directory; pass --config DIR") {
-		t.Fatalf("ls without --config error = %v, want explicit config guidance", err)
-	}
+	testutil.ErrorContains(t, err, "cannot determine default config directory; pass --config DIR")
 	if _, statErr := os.Stat(filepath.Join(dir, ".mini")); !os.IsNotExist(statErr) {
 		t.Fatalf("working-directory .mini stat error = %v, want no directory created", statErr)
 	}
@@ -72,9 +70,7 @@ func TestMissingDefaultConfigRequiresExplicitDirectory(t *testing.T) {
 		}
 	}
 	err = run("--config", dir, "call", "server", "tool", "--json", "--raw")
-	if err == nil || !strings.Contains(err.Error(), "choose only one output mode") {
-		t.Errorf("call PreRunE error = %v, want output mode validation", err)
-	}
+	testutil.ErrorContains(t, err, "choose only one output mode")
 }
 
 func TestCommandLogsGoToAFileNotTheTerminal(t *testing.T) {

@@ -6,7 +6,6 @@ import (
 	"bufio"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -189,13 +188,12 @@ const refreshedToken = `{"access_token":"rejected","token_type":"Bearer","expire
 func TestServerReload_aTokenMiniRefreshesWhileFailingIsNotANewLogin(t *testing.T) {
 	upstream := fakeOAuthMCPServer(t, "a token the auth server never issues", nil)
 	var refreshes atomic.Int32
-	tokens := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	tokens := testutil.Serve(t, func(w http.ResponseWriter, _ *http.Request) {
 		refreshes.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		//nolint:errcheck // A failed write fails the refresh, which the test counts all the same.
 		w.Write([]byte(refreshedToken))
-	}))
-	t.Cleanup(tokens.Close)
+	})
 	e := newServerReloadEnv(t)
 	sc := config.ServerConfig{Name: "svc", Transport: "http", URL: upstream.URL, Auth: &config.AuthConfig{
 		Type:     "oauth2",

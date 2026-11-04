@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/mcpmini/mini/internal/clock"
+	"github.com/mcpmini/mini/internal/mcptest"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/version"
 )
 
@@ -26,20 +28,13 @@ func okRPCResponse(id any) []byte {
 func newHungServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	done := make(chan struct{})
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-done:
 		case <-r.Context().Done():
 		}
-	}))
-	t.Cleanup(func() { close(done); srv.Close() })
-	return srv
-}
-
-func newJsonRPCServer(t *testing.T, handler func(http.ResponseWriter, *http.Request)) *httptest.Server {
-	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(handler))
-	t.Cleanup(srv.Close)
+	})
+	t.Cleanup(func() { close(done) })
 	return srv
 }
 
@@ -59,12 +54,7 @@ func mustHTTPConn(t *testing.T, cfg HTTPConnectionConfig) *HTTPConnection {
 func expectCallErrorContains(t *testing.T, conn *HTTPConnection, want string) {
 	t.Helper()
 	_, err := conn.Call(t.Context(), "ping", nil)
-	if err == nil {
-		t.Fatal("expected call error")
-	}
-	if !strings.Contains(err.Error(), want) {
-		t.Errorf("error should mention %s, got: %v", want, err)
-	}
+	testutil.ErrorContains(t, err, want)
 }
 
 func mustListTools(t *testing.T, conn *HTTPConnection) []ToolDefinition {
@@ -85,7 +75,7 @@ func mustLegacyHTTPConn(t *testing.T, cfg HTTPConnectionConfig) *HTTPConnection 
 
 func TestHTTPConnection_versionHeaderSent(t *testing.T) {
 	var receivedVersion string
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		receivedVersion = r.Header.Get("X-Mini-Version")
 		json.NewEncoder(w).Encode(map[string]any{
 			"jsonrpc": JsonRPCVersion, "id": 1, "result": map[string]any{},
@@ -101,7 +91,7 @@ func TestHTTPConnection_versionHeaderSent(t *testing.T) {
 
 func TestHTTPConnection_versionHeaderAlwaysSent(t *testing.T) {
 	var receivedVersion string
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		receivedVersion = r.Header.Get("X-Mini-Version")
 		json.NewEncoder(w).Encode(map[string]any{
 			"jsonrpc": JsonRPCVersion, "id": 1, "result": map[string]any{},
@@ -117,7 +107,7 @@ func TestHTTPConnection_versionHeaderAlwaysSent(t *testing.T) {
 
 func TestHTTPConnection_customHeadersSent(t *testing.T) {
 	var gotAuth string
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
 		json.NewEncoder(w).Encode(map[string]any{
 			"jsonrpc": JsonRPCVersion, "id": 1, "result": map[string]any{},
@@ -146,9 +136,7 @@ func TestParsePostBody_unmatchedErrorResponse(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := conn.parsePostBody([]byte(tc.body), 7)
-			if err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("parsePostBody error = %v, want containing %q", err, tc.want)
-			}
+			testutil.ErrorContains(t, err, tc.want)
 			if tc.wantCode != 0 {
 				var rpcErr *RPCError
 				if !errors.As(err, &rpcErr) || rpcErr.Code != tc.wantCode {
@@ -178,7 +166,7 @@ func TestHTTPStatusError_preservesTextAndRPC(t *testing.T) {
 func TestHTTPConnection_sessionIDPersisted(t *testing.T) {
 	callCount := 0
 	var receivedSessionID string
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		callCount++
 		var req Request
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -223,13 +211,9 @@ func TestHTTPConnection_buffersNotificationUntilHandlerInstalled(t *testing.T) {
 
 	received := make(chan Notification, 8)
 	conn.SetNotificationHandler(func(notification Notification) { received <- notification })
-	select {
-	case notification := <-received:
-		if notification.Method != NotificationToolsChanged {
-			t.Fatalf("method = %q", notification.Method)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("notification emitted before handler installation was lost")
+	notification := testutil.WaitForReceive(t, received, "the notification sent before the handler was installed")
+	if notification.Method != NotificationToolsChanged {
+		t.Fatalf("method = %q", notification.Method)
 	}
 	select {
 	case notification := <-received:
@@ -240,27 +224,16 @@ func TestHTTPConnection_buffersNotificationUntilHandlerInstalled(t *testing.T) {
 	conn.handleNotification(Notification{JsonRPC: JsonRPCVersion, Method: NotificationInitialized})
 	conn.handleNotification(Notification{JsonRPC: JsonRPCVersion, Method: NotificationToolsChanged})
 	got := []string{
-		mustReceiveBufferedNotification(t, received).Method,
-		mustReceiveBufferedNotification(t, received).Method,
+		testutil.WaitForReceive(t, received, "the first notification").Method,
+		testutil.WaitForReceive(t, received, "the second notification").Method,
 	}
 	if !slices.Equal(got, []string{NotificationInitialized, NotificationToolsChanged}) {
 		t.Fatalf("post-install notifications = %v", got)
 	}
 }
 
-func mustReceiveBufferedNotification(t *testing.T, ch <-chan Notification) Notification {
-	t.Helper()
-	select {
-	case notification := <-ch:
-		return notification
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for notification")
-		return Notification{}
-	}
-}
-
 func TestHTTPConnection_4xxError(t *testing.T) {
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not authorized", http.StatusUnauthorized)
 	})
 	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
@@ -268,7 +241,7 @@ func TestHTTPConnection_4xxError(t *testing.T) {
 }
 
 func TestHTTPConnection_401WrapsUnauthorizedError(t *testing.T) {
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().
 			Set("WWW-Authenticate", `Bearer resource_metadata="https://example.com/.well-known/oauth-protected-resource"`)
 		http.Error(w, "not authorized", http.StatusUnauthorized)
@@ -289,7 +262,7 @@ func TestHTTPConnection_401WrapsUnauthorizedError(t *testing.T) {
 }
 
 func TestHTTPConnection_5xxError(t *testing.T) {
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 	})
 	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
@@ -297,7 +270,7 @@ func TestHTTPConnection_5xxError(t *testing.T) {
 }
 
 func TestHTTPConnection_502Error(t *testing.T) {
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad gateway", http.StatusBadGateway)
 	})
 	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
@@ -305,22 +278,17 @@ func TestHTTPConnection_502Error(t *testing.T) {
 }
 
 func TestHTTPConnection_200WithNonJSONBody(t *testing.T) {
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.Write([]byte("<html>not json</html>")) //nolint:errcheck
 	})
 	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 	_, err := conn.Call(t.Context(), "ping", nil)
-	if err == nil {
-		t.Fatal("expected error for non-JSON 200 response")
-	}
-	if !strings.Contains(err.Error(), "parse response") {
-		t.Errorf("error should mention parse failure, got: %v", err)
-	}
+	testutil.ErrorContains(t, err, "parse response")
 }
 
 func TestHTTPConnection_connectionDroppedMidResponse(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Length", "1000")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"jsonrpc"`)) //nolint:errcheck
@@ -338,8 +306,7 @@ func TestHTTPConnection_connectionDroppedMidResponse(t *testing.T) {
 			return
 		}
 		conn.Close()
-	}))
-	defer srv.Close()
+	})
 
 	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 	_, err := conn.Call(t.Context(), "ping", nil)
@@ -349,16 +316,14 @@ func TestHTTPConnection_connectionDroppedMidResponse(t *testing.T) {
 }
 
 func TestHTTPConnection_redirectBlocked(t *testing.T) {
-	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	target := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Error("redirect was followed — session token could be exfiltrated")
 		json.NewEncoder(w).Encode(map[string]any{"jsonrpc": JsonRPCVersion, "id": 1, "result": map[string]any{}})
-	}))
-	defer target.Close()
+	})
 
-	redirecter := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	redirecter := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, target.URL, http.StatusFound)
-	}))
-	defer redirecter.Close()
+	})
 
 	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: redirecter.URL, Clock: clock.NewFake()})
 	_, err := conn.Call(t.Context(), "ping", nil)
@@ -367,14 +332,12 @@ func TestHTTPConnection_redirectBlocked(t *testing.T) {
 
 func TestNewNoRedirectClient_redirectNotFollowed(t *testing.T) {
 	var targetHits atomic.Int32
-	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	target := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		targetHits.Add(1)
-	}))
-	t.Cleanup(target.Close)
-	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	})
+	redirector := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, target.URL, http.StatusFound)
-	}))
-	t.Cleanup(redirector.Close)
+	})
 
 	resp, err := NewNoRedirectClient(NoRedirectClientOptions{}).Get(redirector.URL)
 	if err != nil {
@@ -387,10 +350,9 @@ func TestNewNoRedirectClient_redirectNotFollowed(t *testing.T) {
 }
 
 func TestNewNoRedirectClient_blockPrivateIPs(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
-	}))
-	t.Cleanup(server.Close)
+	})
 
 	for _, tc := range []struct {
 		name           string
@@ -459,7 +421,7 @@ func TestHTTPClientTimeout_firesForHungServer(t *testing.T) {
 }
 
 func TestHTTPClientTimeout_defaultAllowsLongRunning(t *testing.T) {
-	slow := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	slow := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(200 * time.Millisecond)
 		w.Write(okRPCResponse(1))
 	})
@@ -483,41 +445,24 @@ func TestHTTPClientTimeout_contextFiresBeforeClientTimeout(t *testing.T) {
 	assertFastTimeout(t, start)
 }
 
-func newHandshakeServer(t *testing.T, toolsResult any, calls *int) *httptest.Server {
+func newHandshakeServer(t *testing.T, toolsResult any) *mcptest.Server {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req map[string]any
-		json.NewDecoder(r.Body).Decode(&req)
-		if calls != nil {
-			*calls++
-		}
-		switch req["method"] {
-		case "initialize":
-			json.NewEncoder(w).Encode(map[string]any{
-				"jsonrpc": JsonRPCVersion, "id": req["id"],
-				"result": map[string]any{"protocolVersion": LegacyVersions[0]},
-			})
-		case "tools/list":
-			json.NewEncoder(w).Encode(map[string]any{
-				"jsonrpc": JsonRPCVersion, "id": req["id"],
-				"result": map[string]any{"tools": toolsResult},
-			})
-		}
-	}))
-	t.Cleanup(srv.Close)
-	return srv
+	return mcptest.NewHTTP(t, mcptest.Upstream{Methods: map[string]mcptest.Method{
+		"tools/list": func(mcptest.Request) mcptest.Reply {
+			return mcptest.Reply{Result: map[string]any{"tools": toolsResult}}
+		},
+	}})
 }
 
 func TestListTools_successfulHandshakeAndList(t *testing.T) {
-	var calls int
 	tools := []any{map[string]any{"name": "do_thing", "description": "does a thing", "inputSchema": map[string]any{}}}
-	srv := newHandshakeServer(t, tools, &calls)
+	srv := newHandshakeServer(t, tools)
 	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 	got := mustListTools(t, conn)
 	if len(got) != 1 || got[0].Name != "do_thing" {
 		t.Errorf("unexpected tools: %+v", got)
 	}
-	if calls != 3 {
+	if calls := len(srv.Requests()); calls != 3 {
 		t.Errorf("expected 3 calls (initialize + notifications/initialized + tools/list), got %d", calls)
 	}
 }
@@ -536,30 +481,15 @@ func TestListTools_deadlineErrorsWhenInitializeHangs(t *testing.T) {
 }
 
 func TestListTools_retriesInitializeAfterFailure(t *testing.T) {
-	var initializeCalls int
-	var listCalls int
-	tools := []any{map[string]any{"name": "do_thing", "inputSchema": map[string]any{}}}
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
-		var req map[string]any
-		json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
-		switch req["method"] {
-		case "initialize":
-			initializeCalls++
-			if initializeCalls == 1 {
-				http.Error(w, "transient initialize failure", http.StatusInternalServerError)
-				return
+	var failedOnce atomic.Bool
+	srv := mcptest.NewHTTP(t, mcptest.Upstream{
+		Tools: []mcptest.Tool{{Name: "do_thing"}},
+		Methods: map[string]mcptest.Method{"initialize": func(mcptest.Request) mcptest.Reply {
+			if failedOnce.CompareAndSwap(false, true) {
+				return mcptest.Reply{Status: http.StatusInternalServerError, Body: []byte("transient failure")}
 			}
-			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-				"jsonrpc": JsonRPCVersion, "id": req["id"],
-				"result": map[string]any{"protocolVersion": LegacyVersions[0]},
-			})
-		case "tools/list":
-			listCalls++
-			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-				"jsonrpc": JsonRPCVersion, "id": req["id"],
-				"result": map[string]any{"tools": tools},
-			})
-		}
+			return mcptest.Reply{Result: map[string]any{"protocolVersion": LegacyVersions[0]}}
+		}},
 	})
 	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 
@@ -571,46 +501,26 @@ func TestListTools_retriesInitializeAfterFailure(t *testing.T) {
 	if want := []string{"do_thing"}; !slices.Equal(toolNames(got), want) {
 		t.Fatalf("tool names = %v, want %v", toolNames(got), want)
 	}
-	if initializeCalls != 2 {
-		t.Fatalf("initialize calls = %d, want 2", initializeCalls)
+	if got := srv.Count("initialize"); got != 2 {
+		t.Fatalf("initialize calls = %d, want 2", got)
 	}
-	if listCalls != 1 {
-		t.Fatalf("tools/list calls = %d, want 1", listCalls)
+	if got := srv.Count("tools/list"); got != 1 {
+		t.Fatalf("tools/list calls = %d, want 1", got)
 	}
 }
 
 func TestListTools_reusesSuccessfulInitialize(t *testing.T) {
-	var initializeCalls int
-	var listCalls int
-	tools := []any{map[string]any{"name": "do_thing", "inputSchema": map[string]any{}}}
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
-		var req map[string]any
-		json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
-		switch req["method"] {
-		case "initialize":
-			initializeCalls++
-			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-				"jsonrpc": JsonRPCVersion, "id": req["id"],
-				"result": map[string]any{"protocolVersion": LegacyVersions[0]},
-			})
-		case "tools/list":
-			listCalls++
-			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-				"jsonrpc": JsonRPCVersion, "id": req["id"],
-				"result": map[string]any{"tools": tools},
-			})
-		}
-	})
+	srv := mcptest.NewHTTP(t, mcptest.Upstream{Tools: []mcptest.Tool{{Name: "do_thing"}}})
 	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 
 	mustListTools(t, conn)
 	mustListTools(t, conn)
 
-	if initializeCalls != 1 {
-		t.Fatalf("initialize calls = %d, want 1", initializeCalls)
+	if got := srv.Count("initialize"); got != 1 {
+		t.Fatalf("initialize calls = %d, want 1", got)
 	}
-	if listCalls != 2 {
-		t.Fatalf("tools/list calls = %d, want 2", listCalls)
+	if got := srv.Count("tools/list"); got != 2 {
+		t.Fatalf("tools/list calls = %d, want 2", got)
 	}
 }
 
@@ -623,7 +533,7 @@ func TestListTools_propagatesInputSchema(t *testing.T) {
 		"title":        json.RawMessage(`"Read File"`),
 		"outputSchema": json.RawMessage(outputSchema),
 	}}
-	srv := newHandshakeServer(t, tools, nil)
+	srv := newHandshakeServer(t, tools)
 	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 	got := mustListTools(t, conn)
 	if string(got[0].InputSchema) != schema {
@@ -638,7 +548,7 @@ func TestListTools_propagatesInputSchema(t *testing.T) {
 }
 
 func TestHealth_returns200(t *testing.T) {
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
@@ -648,7 +558,7 @@ func TestHealth_returns200(t *testing.T) {
 }
 
 func TestHealth_returns500_isError(t *testing.T) {
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	})
 	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
@@ -674,7 +584,7 @@ func TestListTools_HTTPPagination(t *testing.T) {
 		{"tools": []any{map[string]any{"name": "a", "inputSchema": map[string]any{}}}, "nextCursor": "p2"},
 		{"tools": []any{map[string]any{"name": "b", "inputSchema": map[string]any{}}}},
 	}
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]any
 		json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
 		switch req["method"] {

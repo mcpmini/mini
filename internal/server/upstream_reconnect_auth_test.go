@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"runtime"
 	"sync/atomic"
 	"testing"
@@ -19,15 +18,15 @@ import (
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
 func TestReconnect_detectsOAuthRequirement(t *testing.T) {
-	oauthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	oauthSrv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer oauthSrv.Close()
+	})
 
 	configDir := t.TempDir()
 	fakeClock := clock.NewFake()
@@ -75,20 +74,18 @@ func TestReconnect_reauthErrorDoesNotStartReconnect(t *testing.T) {
 
 func TestReconnect_transientTokenRefreshKeepsLoop(t *testing.T) {
 	var tokenHits atomic.Int32
-	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	tokenSrv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		tokenHits.Add(1)
 		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
-	}))
-	defer tokenSrv.Close()
+	})
 
-	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mcpSrv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		if serveOAuthMetadata(w, r) {
 			return
 		}
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer mcpSrv.Close()
+	})
 
 	configDir := t.TempDir()
 	fakeClock := clock.NewFake()
@@ -129,11 +126,10 @@ func TestReconnect_transientTokenRefreshKeepsLoop(t *testing.T) {
 }
 
 func TestReconnect_reauthDialFailureStopsLoop(t *testing.T) {
-	authSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	authSrv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer authSrv.Close()
+	})
 
 	configDir := t.TempDir()
 	fakeClock := clock.NewFake()
@@ -164,9 +160,5 @@ func TestReconnect_reauthDialFailureStopsLoop(t *testing.T) {
 	}
 	fakeClock.Advance(time.Second)
 
-	select {
-	case <-stopped:
-	case <-time.After(5 * time.Second):
-		t.Fatal("reconnect loop did not stop after ErrReauthRequired")
-	}
+	testutil.WaitForReceive(t, stopped, "the reconnect loop to stop after ErrReauthRequired")
 }

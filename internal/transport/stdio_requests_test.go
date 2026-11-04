@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/mcpmini/mini/internal/clock"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestAwaitResponse_ctxCancel(t *testing.T) {
@@ -67,7 +68,7 @@ func TestCall_roundTrip(t *testing.T) {
 	if got["value"] != "ok" {
 		t.Errorf("unexpected result: %v", got)
 	}
-	<-done
+	testutil.WaitForReceive(t, done, "the fake server to finish")
 }
 
 func TestCall_ctxCancelBeforeResponse(t *testing.T) {
@@ -100,7 +101,7 @@ func TestCall_sendsCorrectJSONRPC(t *testing.T) {
 	}()
 
 	conn.Call(context.Background(), "ping", nil)
-	<-done
+	testutil.WaitForReceive(t, done, "the fake server to finish")
 }
 
 func TestListTools_viaPipe(t *testing.T) {
@@ -201,11 +202,10 @@ func TestStdioModernCancellationTargetsSentRequest(t *testing.T) {
 	conn.setModern(ModernVersions[0])
 	scanner := bufio.NewScanner(serverR)
 	ctx, cancel := context.WithCancel(context.Background())
-	result := make(chan error, 1)
-	go func() {
+	result := testutil.RunInBackground(func() error {
 		_, err := conn.Call(ctx, "tools/call", json.RawMessage(`{"name":"slow","arguments":{}}`))
-		result <- err
-	}()
+		return err
+	})
 	call := readScannerRequest(t, scanner)
 	cancel()
 	notice := readScannerRequest(t, scanner)
@@ -219,7 +219,7 @@ func TestStdioModernCancellationTargetsSentRequest(t *testing.T) {
 			notice.Params,
 		)
 	}
-	if err := <-result; !errors.Is(err, context.Canceled) {
+	if err := testutil.WaitForReceive(t, result, "the cancelled Call"); !errors.Is(err, context.Canceled) {
 		t.Fatalf("Call error = %v, want context.Canceled", err)
 	}
 }
@@ -243,11 +243,7 @@ func TestStdioCancellationGivesUpOnItsTurnToWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	fakeClock.Advance(stdioCancelWriteTimeout)
-	select {
-	case <-sent:
-	case <-time.After(time.Second):
-		t.Fatal("the cancellation kept waiting behind another write")
-	}
+	testutil.WaitForReceive(t, sent, "the cancellation to give up waiting behind another write")
 	if conn.Health(context.Background()) != nil {
 		t.Fatal("a cancellation that never started writing ended the connection")
 	}

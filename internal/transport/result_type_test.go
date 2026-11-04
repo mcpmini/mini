@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestStdioModernCallValidatesResultTypeAndPreservesBytes(t *testing.T) {
@@ -51,7 +53,7 @@ func TestLegacyCallsKeepGenericResultBehavior(t *testing.T) {
 		}
 	})
 	t.Run("http", func(t *testing.T) {
-		server := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+		server := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 			req := decodeRequest(t, r)
 			switch req.Method {
 			case "initialize":

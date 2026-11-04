@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestClassifyDiscoverPassesTransportFailuresThrough(t *testing.T) {
@@ -169,7 +171,7 @@ type discoverFixture struct {
 
 func discoverFixtureServer(t *testing.T, f discoverFixture) *httptest.Server {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		if f.dropped {
 			conn, _, err := w.(http.Hijacker).Hijack()
 			if err != nil {
@@ -188,8 +190,7 @@ func discoverFixtureServer(t *testing.T, f discoverFixture) *httptest.Server {
 		if _, err := fmt.Fprint(w, f.body); err != nil {
 			t.Errorf("write fixture response: %v", err)
 		}
-	}))
-	t.Cleanup(srv.Close)
+	})
 	return srv
 }
 
@@ -238,9 +239,7 @@ func testStdioDiscoveryResult(t *testing.T, p stdioDiscoveryResultParams) {
 	defer cancel()
 	_, err := conn.negotiate(ctx)
 	if p.testCase.wantErr != "" {
-		if err == nil || !strings.Contains(err.Error(), p.testCase.wantErr) {
-			t.Fatalf("negotiate error = %v, want %s", err, p.testCase.wantErr)
-		}
+		testutil.ErrorContains(t, err, p.testCase.wantErr)
 	} else if err != nil || !conn.isModern() {
 		t.Fatalf("negotiate = %v, modern=%v; want modern discovery", err, conn.isModern())
 	}
@@ -294,7 +293,7 @@ func testHTTPDiscoveryResult(t *testing.T, tc discoveryResultCase) {
 
 func discoveryHTTPServer(t *testing.T, tc discoveryResultCase, methods *[]string) *httptest.Server {
 	t.Helper()
-	return newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	return testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		req := decodeRequest(t, r)
 		*methods = append(*methods, req.Method)
 		result := rawDiscoveryResult(tc.resultTypeJSON)

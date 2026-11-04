@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"net/http"
-	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -21,17 +20,15 @@ import (
 func TestRunListShowsConnectionStates(t *testing.T) {
 	dir := t.TempDir()
 	ready := mcptest.NewHTTP(t, mcptest.Upstream{})
-	unauthorized := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	unauthorized := testutil.Serve(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	t.Cleanup(unauthorized.Close)
+	})
 	var disabledRequests atomic.Int64
-	disabled := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	disabled := testutil.Serve(t, func(w http.ResponseWriter, _ *http.Request) {
 		disabledRequests.Add(1)
 		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	t.Cleanup(disabled.Close)
+	})
 	for _, sc := range []config.ServerConfig{
 		{Name: "ready", Transport: "http", URL: ready.URL},
 		{Name: "login", Transport: "http", URL: unauthorized.URL},
@@ -94,21 +91,19 @@ func slowServerWaitingOnHealthyServer(t *testing.T) []config.ServerConfig {
 	ready := mcptest.NewHTTP(t, mcptest.Upstream{})
 	readyStarted := make(chan struct{})
 	var start sync.Once
-	healthy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	healthy := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		start.Do(func() { close(readyStarted) })
 		ready.Config.Handler.ServeHTTP(w, r)
-	}))
-	t.Cleanup(healthy.Close)
+	})
 	releaseSlow := make(chan struct{})
-	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	slow := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-readyStarted:
 		case <-releaseSlow:
 		case <-r.Context().Done():
 		}
 		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	t.Cleanup(slow.Close)
+	})
 	t.Cleanup(func() { close(releaseSlow) })
 	return []config.ServerConfig{
 		{Name: "slow", Transport: "http", URL: slow.URL},

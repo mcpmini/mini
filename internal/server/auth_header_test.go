@@ -11,14 +11,6 @@ import (
 	"github.com/mcpmini/mini/internal/server"
 )
 
-func lastHeaderSent(up *mcptest.Server, name string) string {
-	reqs := up.Requests()
-	if len(reqs) == 0 {
-		return ""
-	}
-	return reqs[len(reqs)-1].Header.Get(name)
-}
-
 func TestAuthHeader_bearer(t *testing.T) {
 	httpSrv := mcptest.NewHTTP(t, mcptest.Upstream{})
 
@@ -32,7 +24,7 @@ func TestAuthHeader_bearer(t *testing.T) {
 	if err := srv.AddUpstream(context.Background(), sc); err != nil {
 		t.Fatalf("AddUpstream with bearer auth failed: %v", err)
 	}
-	if got := lastHeaderSent(httpSrv, "Authorization"); got != "Bearer tok-123" {
+	if got := httpSrv.Last("tools/list").Header.Get("Authorization"); got != "Bearer tok-123" {
 		t.Errorf("expected Bearer tok-123, got: %q", got)
 	}
 }
@@ -50,7 +42,7 @@ func TestAuthHeader_apikey(t *testing.T) {
 	if err := srv.AddUpstream(context.Background(), sc); err != nil {
 		t.Fatalf("AddUpstream with apikey auth failed: %v", err)
 	}
-	if got := lastHeaderSent(httpSrv, "X-Api-Key"); got != "key-abc" {
+	if got := httpSrv.Last("tools/list").Header.Get("X-Api-Key"); got != "key-abc" {
 		t.Errorf("expected key-abc in X-Api-Key, got: %q", got)
 	}
 }
@@ -68,7 +60,11 @@ func TestAuthHeader_emptyToken_noHeader(t *testing.T) {
 	if err := srv.AddUpstream(context.Background(), sc); err != nil {
 		t.Fatalf("AddUpstream failed: %v", err)
 	}
-	if got := lastHeaderSent(httpSrv, "Authorization"); got != "" {
+	listing := httpSrv.Last("tools/list")
+	if listing.Method == "" {
+		t.Fatal("the upstream never received tools/list")
+	}
+	if got := listing.Header.Get("Authorization"); got != "" {
 		t.Errorf("expected no Authorization header with empty token, got: %q", got)
 	}
 }

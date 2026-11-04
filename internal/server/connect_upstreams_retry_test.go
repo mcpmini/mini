@@ -18,6 +18,7 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/mcptest"
 	"github.com/mcpmini/mini/internal/server"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 const statusNotRetriedByTransport = http.StatusInternalServerError
@@ -35,14 +36,13 @@ func upstreamFailingFirst(
 ) (*httptest.Server, *atomic.Int32) {
 	t.Helper()
 	var attempts atomic.Int32
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		if attempts.Add(1) <= failures {
 			http.Error(w, "server error", statusNotRetriedByTransport)
 			return
 		}
 		afterFailures.ServeHTTP(w, r)
-	}))
-	t.Cleanup(ts.Close)
+	})
 	return ts, &attempts
 }
 
@@ -198,13 +198,13 @@ func TestConnectUpstreamAsync_closeDuringRetry_returnsPromptly(t *testing.T) {
 
 	r.waitForBackoffTimer(t)
 
-	mustCloseWithin(t, r.srv, 3*time.Second)
+	mustClose(t, r.srv)
 }
 
 func TestConnectUpstreamAsync_removedDuringRetry_isNotRedialed(t *testing.T) {
 	ts, attempts := upstreamFailingFirst(t, 1, pingHandler())
 	r := startRetrying(t, ts.URL, discardLogs())
-	defer mustCloseWithin(t, r.srv, 3*time.Second)
+	defer mustClose(t, r.srv)
 
 	r.waitForBackoffTimer(t)
 	serve(t, r.srv, callTool("config", map[string]any{"action": "remove_server", "server": "svc"}))
@@ -222,7 +222,7 @@ func TestConnectUpstreamAsync_removedDuringRetry_isNotRedialed(t *testing.T) {
 func TestConnectUpstreamAsync_runtimeAddDuringRetry_isNotOverwritten(t *testing.T) {
 	ts, attempts := upstreamFailingFirst(t, 1, pingHandler())
 	r := startRetrying(t, ts.URL, discardLogs())
-	defer mustCloseWithin(t, r.srv, 3*time.Second)
+	defer mustClose(t, r.srv)
 
 	r.waitForBackoffTimer(t)
 	if err := r.srv.AddConnection(
@@ -268,7 +268,7 @@ func TestConnectUpstreamAsync_runtimeAddWhileDialInFlight_doesNotOverwriteRuntim
 		}
 	})
 
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		var req map[string]any
 		json.Unmarshal(body, &req) //nolint:errcheck
@@ -281,19 +281,14 @@ func TestConnectUpstreamAsync_runtimeAddWhileDialInFlight_doesNotOverwriteRuntim
 		}
 		r.Body = io.NopCloser(bytes.NewReader(body))
 		pingHandler().ServeHTTP(w, r)
-	}))
-	t.Cleanup(ts.Close)
+	})
 
 	srv := newConnectTestServer(t)
-	defer mustCloseWithin(t, srv, 3*time.Second)
+	defer mustClose(t, srv)
 
 	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{{Name: "svc", Transport: "http", URL: ts.URL}})
 
-	select {
-	case <-reached:
-	case <-time.After(5 * time.Second):
-		t.Fatal("handler did not reach tools/list within 5s")
-	}
+	testutil.WaitForReceive(t, reached, "the handler to reach tools/list")
 
 	if err := srv.AddConnection(
 		context.Background(),

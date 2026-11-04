@@ -9,6 +9,7 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/mcptest"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -101,9 +102,7 @@ func TestRunList(t *testing.T) {
 		dir := t.TempDir()
 		var out bytes.Buffer
 		err := runList(dir, []string{"nope"}, &out)
-		if err == nil || !strings.Contains(err.Error(), "nope") {
-			t.Errorf("expected error mentioning server name, got %v", err)
-		}
+		testutil.ErrorContains(t, err, "nope")
 	})
 }
 
