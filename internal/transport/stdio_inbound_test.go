@@ -180,7 +180,7 @@ func TestStdioReplyGivesUpOnItsTurnToWrite(t *testing.T) {
 }
 
 func startStdioCall(conn *StdioConnection) <-chan error {
-	return testutil.Go(func() error {
+	return testutil.RunInBackground(func() error {
 		_, err := conn.Call(context.Background(), "tools/list", nil)
 		return err
 	})

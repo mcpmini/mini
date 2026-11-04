@@ -115,7 +115,7 @@ func TestIntegrationStdioConnection_aFailedHandshakeReturnsWhenAChildOfTheServer
 	// background sleep keeps stderr open after the server itself is killed.
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	returned := testutil.Go(func() error {
+	returned := testutil.RunInBackground(func() error {
 		_, err := NewStdioConnection(ctx, StdioCommand{
 			Command: "sh",
 			Args:    []string{"-c", "sleep 10 & sleep 60"},
@@ -151,7 +151,7 @@ func TestIntegrationStdioCallReturnsAtItsDeadlineWhenTheServerStopsReadingStdin(
 	ctx, cancel := clock.WithTimeout(context.Background(), fake, 200*time.Millisecond)
 	defer cancel()
 	largerThanThePipeBuffer := json.RawMessage(`"` + strings.Repeat("x", 1<<20) + `"`)
-	returned := testutil.Go(func() error {
+	returned := testutil.RunInBackground(func() error {
 		_, callErr := conn.Call(ctx, "ping", largerThanThePipeBuffer)
 		return callErr
 	})
@@ -222,7 +222,7 @@ func TestIntegrationStdioClose_killsTheUpstreamOnceAndRepeatsItsResult(t *testin
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { conn.Close() }) //nolint:errcheck // only reaps the child if the test fails first.
-	first := testutil.WaitForReceive(t, testutil.Go(conn.Close), "Close to kill an upstream that ignores stdin EOF")
+	first := testutil.WaitForReceive(t, testutil.RunInBackground(conn.Close), "Close to kill an upstream that ignores stdin EOF")
 	if second := conn.Close(); fmt.Sprint(second) != fmt.Sprint(first) {
 		t.Fatalf("second Close = %v, want the first result %v", second, first)
 	}

@@ -268,7 +268,7 @@ type backgroundCallParams struct {
 
 func callInBackground(t *testing.T, p backgroundCallParams) <-chan error {
 	t.Helper()
-	return testutil.Go(func() error {
+	return testutil.RunInBackground(func() error {
 		_, err := p.Connection.Call(t.Context(), p.Method, json.RawMessage(p.Params))
 		return err
 	})

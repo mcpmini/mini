@@ -136,7 +136,7 @@ func TestHTTPConnection_failedProbeRetriesNextCall(t *testing.T) {
 	})
 	clk := clock.NewFake()
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Clock: clk})
-	first := testutil.Go(func() error {
+	first := testutil.RunInBackground(func() error {
 		_, err := conn.Call(t.Context(), "ping", nil)
 		return err
 	})

@@ -227,7 +227,7 @@ func TestStdioDiscoveryTimeoutIsUnanswered(t *testing.T) {
 	fakeClock := clock.NewFake()
 	conn.clock = fakeClock
 	go io.Copy(io.Discard, serverR)
-	result := testutil.Go(func() error {
+	result := testutil.RunInBackground(func() error {
 		_, err := conn.discover(t.Context())
 		return err
 	})
@@ -246,7 +246,7 @@ func TestStdioDiscoveryParentCancellationIsTerminal(t *testing.T) {
 	conn, _, serverR := makePipeConn(t)
 	go io.Copy(io.Discard, serverR)
 	ctx, cancel := context.WithCancel(context.Background())
-	result := testutil.Go(func() error {
+	result := testutil.RunInBackground(func() error {
 		_, err := conn.discover(ctx)
 		return err
 	})
@@ -404,7 +404,7 @@ func TestStdioInitialize_offersNewestLegacyAndRejectsUnsupportedVersion(t *testi
 func initializeStdioForTest(t *testing.T, replyVersion string) (Request, error) {
 	t.Helper()
 	conn, serverW, serverR := makePipeConn(t)
-	done := testutil.Go(func() error { return conn.initialize(context.Background()) })
+	done := testutil.RunInBackground(func() error { return conn.initialize(context.Background()) })
 	request := readStdioRequest(t, serverR)
 	sendResponse(serverW, request.ID, InitializeResult{ProtocolVersion: replyVersion})
 	if IsLegacyVersion(replyVersion) {

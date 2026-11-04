@@ -202,7 +202,7 @@ func TestStdioModernCancellationTargetsSentRequest(t *testing.T) {
 	conn.setModern(ModernVersions[0])
 	scanner := bufio.NewScanner(serverR)
 	ctx, cancel := context.WithCancel(context.Background())
-	result := testutil.Go(func() error {
+	result := testutil.RunInBackground(func() error {
 		_, err := conn.Call(ctx, "tools/call", json.RawMessage(`{"name":"slow","arguments":{}}`))
 		return err
 	})

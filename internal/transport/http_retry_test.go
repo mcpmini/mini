@@ -99,7 +99,7 @@ func TestRetry_429WithoutRetryAfter_usesExponentialBackoff(t *testing.T) {
 
 	clk := clock.NewFake()
 	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL, Clock: clk})
-	done := testutil.Go(func() error {
+	done := testutil.RunInBackground(func() error {
 		_, err := conn.rpc(t.Context(), "ping", nil)
 		return err
 	})

@@ -17,7 +17,7 @@ func TestStdioWriteCancellationInterruptsABlockedPipeWrite(t *testing.T) {
 	writer := &blockedDeadlineWriter{started: make(chan struct{}), interrupted: make(chan struct{})}
 	conn := newWriteOnlyConn(writer)
 	ctx, cancel := context.WithCancel(context.Background())
-	result := testutil.Go(func() error { return conn.writeJSONContext(ctx, Notification{Method: "test"}) })
+	result := testutil.RunInBackground(func() error { return conn.writeJSONContext(ctx, Notification{Method: "test"}) })
 	testutil.WaitForReceive(t, writer.started, "the write to start")
 	cancel()
 	err := testutil.WaitForReceive(t, result, "cancellation to interrupt the blocked write")
@@ -33,7 +33,7 @@ func TestStdioQueuedCallThatGivesUpKeepsTheConnection(t *testing.T) {
 	}
 	defer conn.unlockWrite()
 	ctx, cancel := context.WithCancel(context.Background())
-	result := testutil.Go(func() error { _, err := conn.Call(ctx, "ping", nil); return err })
+	result := testutil.RunInBackground(func() error { _, err := conn.Call(ctx, "ping", nil); return err })
 	cancel()
 	err := testutil.WaitForReceive(t, result, "the cancelled Call to leave the write queue")
 	if !errors.Is(err, context.Canceled) {
@@ -71,7 +71,7 @@ func TestStdioBlockedWriteOnAPipeWithoutDeadlinesEndsTheConnection(t *testing.T)
 	pipe := &noDeadlinePipe{started: make(chan struct{}), closed: make(chan struct{})}
 	conn := newWriteOnlyConn(pipe)
 	ctx, cancel := context.WithCancel(context.Background())
-	result := testutil.Go(func() error { _, err := conn.Call(ctx, "ping", nil); return err })
+	result := testutil.RunInBackground(func() error { _, err := conn.Call(ctx, "ping", nil); return err })
 	testutil.WaitForReceive(t, pipe.started, "the write to start")
 	cancel()
 	if testutil.WaitForReceive(t, result, "the blocked write to give up with its caller") == nil {

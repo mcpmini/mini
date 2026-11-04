@@ -76,7 +76,7 @@ func TestStdioSubscriptionWhoseListenWriteFailsStopsWithoutBlockingClose(t *test
 	conn.setModern(ModernVersions[0])
 	conn.startSubscriptionListener(context.Background())
 	testutil.WaitForReceive(t, conn.listenDone, "the listener to stop after its listen write failed")
-	testutil.WaitForReceive(t, testutil.Go(conn.Close), "Close to return after the listener ended the connection")
+	testutil.WaitForReceive(t, testutil.RunInBackground(conn.Close), "Close to return after the listener ended the connection")
 }
 
 func TestStdioSubscriptionIgnoresAnUnrelatedCancellation(t *testing.T) {
@@ -233,7 +233,7 @@ type readerCatchUpParams struct {
 
 func waitForReaderToCatchUp(t *testing.T, p readerCatchUpParams) {
 	t.Helper()
-	done := testutil.Go(func() error {
+	done := testutil.RunInBackground(func() error {
 		_, err := p.Connection.Call(context.Background(), "ping", nil)
 		return err
 	})

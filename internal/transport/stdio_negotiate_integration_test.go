@@ -101,7 +101,7 @@ func TestIntegrationStdioCallerCancellationDuringUnansweredProbeDoesNotReplace(t
 	command.Env = append(command.Env, "MINI_STDIO_DISCOVERED="+marker)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	result := testutil.Go(func() error {
+	result := testutil.RunInBackground(func() error {
 		_, err := NewStdioConnection(ctx, command)
 		return err
 	})

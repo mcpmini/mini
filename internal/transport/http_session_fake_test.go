@@ -216,7 +216,7 @@ func mustPing(t *testing.T, conn *HTTPConnection) {
 }
 
 func pingInBackground(t *testing.T, conn *HTTPConnection) <-chan error {
-	return testutil.Go(func() error {
+	return testutil.RunInBackground(func() error {
 		_, err := conn.Call(t.Context(), "ping", nil)
 		return err
 	})

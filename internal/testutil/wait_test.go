@@ -6,17 +6,17 @@ import (
 	"testing/synctest"
 )
 
-func TestGo_deliversTheFunctionsError(t *testing.T) {
+func TestRunInBackground_deliversTheFunctionsError(t *testing.T) {
 	want := errors.New("boom")
 
-	if err := WaitForReceive(t, Go(func() error { return want }), "the error"); !errors.Is(err, want) {
-		t.Errorf("Go delivered %v, want %v", err, want)
+	if err := WaitForReceive(t, RunInBackground(func() error { return want }), "the error"); !errors.Is(err, want) {
+		t.Errorf("RunInBackground delivered %v, want %v", err, want)
 	}
 }
 
-func TestGo_finishesWhenNobodyReads(t *testing.T) {
+func TestRunInBackground_finishesWhenNobodyReads(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		Go(func() error { return nil })
+		RunInBackground(func() error { return nil })
 	})
 }
 
