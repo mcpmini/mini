@@ -137,9 +137,9 @@ These servers have bundled projections. `mini add` and `mini init` match the ups
 
 | Server | Projection config | Tools covered |
 |---|---|---|
-| GitHub | [github.yaml](internal/defaults/projections/github.yaml) | list_pull_requests, list_issues, issue_read, pull_request_read, list_commits, get_commit, search_code, search_repositories, search_issues |
-| Linear | [linear.yaml](internal/defaults/projections/linear.yaml) | list_issues, get_issue |
-| Atlassian | [atlassian.yaml](internal/defaults/projections/atlassian.yaml) | searchJiraIssuesUsingJql, getJiraIssue, editJiraIssue |
+| GitHub | [github.yaml](internal/defaults/projections/github.yaml) | list_pull_requests, issue_read, pull_request_read, list_commits, get_commit, search_issues, search_pull_requests, search_repositories |
+| Linear | [linear.yaml](internal/defaults/projections/linear.yaml) | get_issue, save_issue |
+| Atlassian | [atlassian.yaml](internal/defaults/projections/atlassian.yaml) | getJiraIssue, editJiraIssue, getConfluenceContent, executeRead |
 
 Other servers, including Slack and Sentry, use the global string limit without bundled field rules. Add projections to tune individual tools, or set `default_string_limit: 0` to disable the global string limit.
 
