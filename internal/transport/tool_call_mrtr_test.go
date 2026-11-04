@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 const modernToolCallParams = `{"name":"confirm","arguments":{"x":1},` +
@@ -69,7 +71,7 @@ func TestNewToolCallParamsCarriesOnlyElicitation(t *testing.T) {
 
 func TestLegacyHTTPToolCallDropsModernFields(t *testing.T) {
 	var got json.RawMessage
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		req := decodeRequest(t, r)
 		switch req.Method {
 		case "initialize":

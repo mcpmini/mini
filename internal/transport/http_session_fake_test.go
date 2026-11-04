@@ -12,7 +12,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
+
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 // sessionServer issues a new Mcp-Session-Id on every initialize and, while it
@@ -44,7 +45,7 @@ func newSessionFake() *sessionServer {
 func newSessionServer(t *testing.T) (*sessionServer, *httptest.Server) {
 	t.Helper()
 	m := newSessionFake()
-	return m, newJsonRPCServer(t, m.handle)
+	return m, testutil.Serve(t, m.handle)
 }
 
 func (m *sessionServer) handle(w http.ResponseWriter, r *http.Request) {
@@ -168,13 +169,7 @@ func (m *sessionServer) answerNotificationStreamWithNotFound() {
 
 func (m *sessionServer) awaitNotificationStream(t *testing.T) string {
 	t.Helper()
-	select {
-	case sid := <-m.gets:
-		return sid
-	case <-time.After(3 * time.Second):
-		t.Fatal("notification stream GET not received")
-		return ""
-	}
+	return testutil.WaitForReceive(t, m.gets, "the notification stream GET")
 }
 
 func (m *sessionServer) methods() []string {
@@ -221,23 +216,16 @@ func mustPing(t *testing.T, conn *HTTPConnection) {
 }
 
 func pingInBackground(t *testing.T, conn *HTTPConnection) <-chan error {
-	done := make(chan error, 1)
-	go func() {
+	return testutil.RunInBackground(func() error {
 		_, err := conn.Call(t.Context(), "ping", nil)
-		done <- err
-	}()
-	return done
+		return err
+	})
 }
 
 func awaitPing(t *testing.T, done <-chan error) {
 	t.Helper()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("background ping: %v", err)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("background ping did not finish")
+	if err := testutil.WaitForReceive(t, done, "the background ping"); err != nil {
+		t.Fatalf("background ping: %v", err)
 	}
 }
 
@@ -270,11 +258,7 @@ func (h *requestHold) blockIfArmed() bool {
 
 func (h *requestHold) awaitHeld(t *testing.T) {
 	t.Helper()
-	select {
-	case <-h.held:
-	case <-time.After(3 * time.Second):
-		t.Fatal("server did not hold the request")
-	}
+	testutil.WaitForReceive(t, h.held, "the server to hold the request")
 }
 
 func (h *requestHold) release() { close(h.released) }

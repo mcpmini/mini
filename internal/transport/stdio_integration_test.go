@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/mcpmini/mini/internal/clock"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestIntegrationStdioEnvironment_overlaysParent(t *testing.T) {
@@ -114,15 +115,14 @@ func TestIntegrationStdioConnection_aFailedHandshakeReturnsWhenAChildOfTheServer
 	// background sleep keeps stderr open after the server itself is killed.
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	returned := make(chan error, 1)
-	go func() {
+	returned := testutil.RunInBackground(func() error {
 		_, err := NewStdioConnection(ctx, StdioCommand{
 			Command: "sh",
 			Args:    []string{"-c", "sleep 10 & sleep 60"},
 			Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
 		})
-		returned <- err
-	}()
+		return err
+	})
 	select {
 	case err := <-returned:
 		if err == nil {
@@ -151,18 +151,16 @@ func TestIntegrationStdioCallReturnsAtItsDeadlineWhenTheServerStopsReadingStdin(
 	ctx, cancel := clock.WithTimeout(context.Background(), fake, 200*time.Millisecond)
 	defer cancel()
 	largerThanThePipeBuffer := json.RawMessage(`"` + strings.Repeat("x", 1<<20) + `"`)
-	returned := make(chan error, 1)
-	go func() { _, err := conn.Call(ctx, "ping", largerThanThePipeBuffer); returned <- err }()
+	returned := testutil.RunInBackground(func() error {
+		_, callErr := conn.Call(ctx, "ping", largerThanThePipeBuffer)
+		return callErr
+	})
 	// A deadline that passes before the write starts is a plain cancellation, not the interrupted write.
-	<-stdin.started
+	testutil.WaitForReceive(t, stdin.started, "the write to start")
 	fake.Advance(200 * time.Millisecond)
-	select {
-	case err := <-returned:
-		if !errors.Is(err, os.ErrDeadlineExceeded) {
-			t.Fatalf("Call error = %v, want the interrupted write", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("Call stayed blocked writing to a server that stopped reading stdin")
+	err = testutil.WaitForReceive(t, returned, "the Call writing to a server that stopped reading stdin")
+	if !errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Fatalf("Call error = %v, want the interrupted write", err)
 	}
 	if conn.Health(context.Background()) == nil {
 		t.Fatal("a half-written request left the connection usable")
@@ -201,11 +199,7 @@ func TestIntegrationStartSubprocess_prefixesUpstreamStderr(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { conn.Close() }) //nolint:errcheck // only reaps the child if the test fails first.
-	select {
-	case <-conn.done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("subprocess did not exit")
-	}
+	testutil.WaitForReceive(t, conn.done, "the subprocess to exit")
 	if err := conn.Close(); err != nil {
 		t.Fatalf("subprocess failed: %v", err)
 	}
@@ -228,14 +222,8 @@ func TestIntegrationStdioClose_killsTheUpstreamOnceAndRepeatsItsResult(t *testin
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { conn.Close() }) //nolint:errcheck // only reaps the child if the test fails first.
-	closed := make(chan error, 1)
-	go func() { closed <- conn.Close() }()
-	var first error
-	select {
-	case first = <-closed:
-	case <-time.After(5 * time.Second):
-		t.Fatal("Close waited for an upstream that ignores stdin EOF")
-	}
+	closed := testutil.RunInBackground(conn.Close)
+	first := testutil.WaitForReceive(t, closed, "Close to kill an upstream that ignores stdin EOF")
 	if second := conn.Close(); fmt.Sprint(second) != fmt.Sprint(first) {
 		t.Fatalf("second Close = %v, want the first result %v", second, first)
 	}

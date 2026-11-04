@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/mcpmini/mini/internal/clock"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestStdioModernDiscoverySendsModernMetadata(t *testing.T) {
@@ -226,18 +227,17 @@ func TestStdioDiscoveryTimeoutIsUnanswered(t *testing.T) {
 	fakeClock := clock.NewFake()
 	conn.clock = fakeClock
 	go io.Copy(io.Discard, serverR)
-	result := make(chan error, 1)
-	go func() {
+	result := testutil.RunInBackground(func() error {
 		_, err := conn.discover(t.Context())
-		result <- err
-	}()
+		return err
+	})
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	if err := fakeClock.BlockUntilContext(ctx, 1); err != nil {
 		t.Fatal(err)
 	}
 	fakeClock.Advance(stdioDiscoveryTimeout)
-	if got := <-result; !errors.Is(got, errProbeUnanswered) {
+	if got := testutil.WaitForReceive(t, result, "discovery to time out"); !errors.Is(got, errProbeUnanswered) {
 		t.Fatalf("discover after the probe timed out = %v, want errProbeUnanswered", got)
 	}
 }
@@ -246,13 +246,12 @@ func TestStdioDiscoveryParentCancellationIsTerminal(t *testing.T) {
 	conn, _, serverR := makePipeConn(t)
 	go io.Copy(io.Discard, serverR)
 	ctx, cancel := context.WithCancel(context.Background())
-	result := make(chan error, 1)
-	go func() {
+	result := testutil.RunInBackground(func() error {
 		_, err := conn.discover(ctx)
-		result <- err
-	}()
+		return err
+	})
 	cancel()
-	if err := <-result; !errors.Is(err, context.Canceled) {
+	if err := testutil.WaitForReceive(t, result, "the cancelled discovery"); !errors.Is(err, context.Canceled) {
 		t.Fatalf("discovery error = %v, want context.Canceled", err)
 	}
 }
@@ -405,14 +404,13 @@ func TestStdioInitialize_offersNewestLegacyAndRejectsUnsupportedVersion(t *testi
 func initializeStdioForTest(t *testing.T, replyVersion string) (Request, error) {
 	t.Helper()
 	conn, serverW, serverR := makePipeConn(t)
-	done := make(chan error, 1)
-	go func() { done <- conn.initialize(context.Background()) }()
+	done := testutil.RunInBackground(func() error { return conn.initialize(context.Background()) })
 	request := readStdioRequest(t, serverR)
 	sendResponse(serverW, request.ID, InitializeResult{ProtocolVersion: replyVersion})
 	if IsLegacyVersion(replyVersion) {
 		readStdioRequest(t, serverR)
 	}
-	return request, <-done
+	return request, testutil.WaitForReceive(t, done, "initialize to return")
 }
 
 func readStdioRequest(t *testing.T, r io.Reader) Request {

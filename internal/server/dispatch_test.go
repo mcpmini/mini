@@ -64,7 +64,7 @@ func TestPerSession_transportErrorRedialsConn(t *testing.T) {
 }
 
 func TestPerSession_aConnectionThatFailsToListToolsIsNotKeptForTheSession(t *testing.T) {
-	var failListOnDial atomic.Int32
+	var failListOnDial atomic.Int64
 	var up *mcptest.Server
 	up = mcptest.NewHTTP(t, mcptest.Upstream{Methods: map[string]mcptest.Method{
 		"tools/list": func(mcptest.Request) mcptest.Reply {
@@ -112,14 +112,8 @@ func pingCall(t *testing.T, mini *httptest.Server) httpExecToolTextParams {
 	return httpExecToolTextParams{T: t, HTTPServer: mini, SessionID: sid, ServerName: "svc", Tool: "ping"}
 }
 
-func dials(up *mcptest.Server) int32 {
-	var n int32
-	for _, req := range up.Requests() {
-		if req.Method == "initialize" {
-			n++
-		}
-	}
-	return n
+func dials(up *mcptest.Server) int64 {
+	return int64(up.Count("initialize"))
 }
 
 func dropConn(t *testing.T, w http.ResponseWriter) bool {

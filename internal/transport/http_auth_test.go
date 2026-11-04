@@ -7,13 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/clock"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 type fakeAuthProvider struct {
@@ -84,8 +84,7 @@ func (f *fakeAuthProvider) setCurrentAuth(v string) {
 
 func newAuthReplayConn(t *testing.T, handler http.HandlerFunc) (*HTTPConnection, *fakeAuthProvider) {
 	t.Helper()
-	srv := httptest.NewServer(handler)
-	t.Cleanup(srv.Close)
+	srv := testutil.Serve(t, handler)
 	provider := &fakeAuthProvider{current: "Bearer old", next: "Bearer new"}
 	conn, err := NewHTTPConnection(HTTPConnectionConfig{
 		URL: srv.URL, Clock: clock.NewFake(), ServerName: "myserver",
@@ -111,7 +110,7 @@ func TestNewHTTPConnection_authProviderWithoutHeaderName_isError(t *testing.T) {
 
 func TestCall_authProvider_setsConfiguredHeader(t *testing.T) {
 	var got string
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		got = r.Header.Get("X-Custom-Auth")
 		w.Write(okRPCResponse(1)) //nolint:errcheck
 	})
@@ -128,7 +127,7 @@ func TestCall_authProvider_setsConfiguredHeader(t *testing.T) {
 
 func TestHealth_authProvider_sendsProviderValue(t *testing.T) {
 	var gotAuth, gotContentType, gotAccept, gotSession string
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
 		gotContentType = r.Header.Get("Content-Type")
 		gotAccept = r.Header.Get("Accept")
@@ -159,7 +158,7 @@ func TestHealth_authProvider_sendsProviderValue(t *testing.T) {
 
 func TestCall_authProviderError_failsWithoutContactingUpstream(t *testing.T) {
 	var calls int
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		w.Write(okRPCResponse(1)) //nolint:errcheck
 	})
@@ -170,9 +169,7 @@ func TestCall_authProviderError_failsWithoutContactingUpstream(t *testing.T) {
 		AuthHeaderName: "Authorization",
 	})
 	_, err := conn.rpc(t.Context(), "ping", nil)
-	if err == nil || !strings.Contains(err.Error(), "no token") {
-		t.Errorf("expected provider error to propagate, got: %v", err)
-	}
+	testutil.ErrorContains(t, err, "no token")
 	if calls != 0 {
 		t.Errorf("no request should reach upstream when auth cannot be built, got %d", calls)
 	}
@@ -257,12 +254,7 @@ func TestCall_refreshFails_returnsErrorWithoutReplay(t *testing.T) {
 	})
 	provider.refreshErr = errors.New("token endpoint down")
 	_, err := conn.rpc(t.Context(), "ping", nil)
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if !strings.Contains(err.Error(), "token endpoint down") {
-		t.Errorf("error should contain cause, got: %v", err)
-	}
+	testutil.ErrorContains(t, err, "token endpoint down")
 	if calls.Load() != 1 {
 		t.Errorf("upstream attempts = %d, want 1 (no replay after failed refresh)", calls.Load())
 	}
@@ -300,7 +292,7 @@ func TestNotificationRequests_authProvider_sendHeader(t *testing.T) {
 	var initializedAuth, streamAuth string
 	getReceived := make(chan struct{})
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			streamAuth = r.Header.Get("Authorization")
 			close(getReceived)
@@ -326,8 +318,7 @@ func TestNotificationRequests_authProvider_sendHeader(t *testing.T) {
 				"result": map[string]any{"tools": []any{}},
 			})
 		}
-	}))
-	t.Cleanup(srv.Close)
+	})
 
 	conn := mustLegacyHTTPConn(t, HTTPConnectionConfig{
 		URL:            srv.URL,
@@ -354,7 +345,7 @@ func TestNotificationRequests_authProvider_sendHeader(t *testing.T) {
 
 func TestCall_staticAndProviderHeader_providerValueWins(t *testing.T) {
 	var got string
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		got = r.Header.Get("Authorization")
 		w.Write(okRPCResponse(1)) //nolint:errcheck
 	})

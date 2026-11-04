@@ -12,6 +12,8 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 // makePipeConn creates a StdioConnection backed by in-memory pipes.
@@ -79,7 +81,5 @@ func TestStartSubprocessReportsAMissingCommand(t *testing.T) {
 		Command: "mini-no-such-command",
 		Logger:  slog.New(slog.DiscardHandler),
 	})
-	if err == nil || !strings.Contains(err.Error(), "start mini-no-such-command") {
-		t.Fatalf("error = %v, want a start failure naming the command", err)
-	}
+	testutil.ErrorContains(t, err, "start mini-no-such-command")
 }

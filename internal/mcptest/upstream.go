@@ -82,6 +82,19 @@ func (h *Handler) Requests() []Request {
 	return append([]Request(nil), h.requests...)
 }
 
+// Count returns how many requests for method were received so far, rejected ones included.
+func (h *Handler) Count(method string) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	n := 0
+	for _, req := range h.requests {
+		if req.Method == method {
+			n++
+		}
+	}
+	return n
+}
+
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.upstream.Intercept != nil && h.upstream.Intercept(w, r) {
 		return

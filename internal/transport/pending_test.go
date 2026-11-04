@@ -5,6 +5,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestPendingMap_registerAndDeliver(t *testing.T) {
@@ -12,13 +14,8 @@ func TestPendingMap_registerAndDeliver(t *testing.T) {
 	ch := p.register(1)
 	p.deliver(int64(1), &Response{Result: []byte(`"ok"`)})
 
-	select {
-	case got := <-ch:
-		if string(got.Result) != `"ok"` {
-			t.Errorf("unexpected result: %s", got.Result)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for deliver")
+	if got := testutil.WaitForReceive(t, ch, "the delivery"); string(got.Result) != `"ok"` {
+		t.Errorf("unexpected result: %s", got.Result)
 	}
 }
 
@@ -27,13 +24,8 @@ func TestPendingMap_float64IdNormalizedToInt64(t *testing.T) {
 	ch := p.register(42)
 	p.deliver(float64(42), &Response{Result: []byte(`"hit"`)})
 
-	select {
-	case got := <-ch:
-		if string(got.Result) != `"hit"` {
-			t.Errorf("unexpected result: %s", got.Result)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out")
+	if got := testutil.WaitForReceive(t, ch, "the delivery"); string(got.Result) != `"hit"` {
+		t.Errorf("unexpected result: %s", got.Result)
 	}
 }
 
@@ -96,13 +88,9 @@ func TestPendingMap_concurrentDeliversRouteCorrectly(t *testing.T) {
 	channels := registerChannels(&p, n)
 	deliverAll(&p, n)
 	for i, ch := range channels {
-		select {
-		case resp := <-ch:
-			if want := fmt.Sprintf(`%d`, i); string(resp.Result) != want {
-				t.Errorf("id %d: got %s, want %s", i, resp.Result, want)
-			}
-		case <-time.After(time.Second):
-			t.Errorf("id %d: timed out waiting for delivery", i)
+		resp := testutil.WaitForReceive(t, ch, fmt.Sprintf("the delivery to id %d", i))
+		if want := fmt.Sprintf(`%d`, i); string(resp.Result) != want {
+			t.Errorf("id %d: got %s, want %s", i, resp.Result, want)
 		}
 	}
 }

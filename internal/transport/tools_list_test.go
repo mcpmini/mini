@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mcpmini/mini/internal/clock"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func makeTool(name string) ToolDefinition {
@@ -341,10 +342,11 @@ func TestToolsListHTTPKeepsRequestEraAcrossReset(t *testing.T) {
 		toolList, _ := conn.ListTools(t.Context())
 		done <- toolList
 	}()
-	<-entered
+	testutil.WaitForReceive(t, entered, "the listing to reach the upstream")
 	conn.resetModernEra()
 	close(release)
-	if got, want := (<-done).Freshness, (Freshness{managed: true, until: fc.Now().Add(time.Second)}); got != want {
+	listing := testutil.WaitForReceive(t, done, "the listing to finish")
+	if got, want := listing.Freshness, (Freshness{managed: true, until: fc.Now().Add(time.Second)}); got != want {
 		t.Fatalf("freshness after an era reset mid-request = %+v, want %+v", got, want)
 	}
 }

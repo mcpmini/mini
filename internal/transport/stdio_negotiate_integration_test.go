@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestIntegrationStdioModernProcessNegotiatesListsAndCalls(t *testing.T) {
@@ -99,14 +101,13 @@ func TestIntegrationStdioCallerCancellationDuringUnansweredProbeDoesNotReplace(t
 	command.Env = append(command.Env, "MINI_STDIO_DISCOVERED="+marker)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	result := make(chan error, 1)
-	go func() {
+	result := testutil.RunInBackground(func() error {
 		_, err := NewStdioConnection(ctx, command)
-		result <- err
-	}()
+		return err
+	})
 	waitForHelperMarker(t, marker)
 	cancel()
-	if err := <-result; !errors.Is(err, context.Canceled) {
+	if err := testutil.WaitForReceive(t, result, "the cancelled connect"); !errors.Is(err, context.Canceled) {
 		t.Fatalf("connect error = %v, want context.Canceled", err)
 	}
 	if got := helperStarts(t, starts); got != 1 {

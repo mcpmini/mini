@@ -3,7 +3,6 @@
 package transport
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mcpmini/mini/internal/clock"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestHTTPModernListener_acknowledgesChangesAndReconnects(t *testing.T) {
@@ -43,10 +43,10 @@ func TestHTTPModernListener_acknowledgesChangesAndReconnects(t *testing.T) {
 		t.Fatalf("Call: %v", err)
 	}
 	advanceListenerTimer(t, fakeClock, time.Second)
-	waitForListenerSignal(t, acknowledgements, "first acknowledgement was not sent")
-	waitForListenerSignal(t, acknowledgements, "re-listen acknowledgement was not sent")
-	waitForListenerSignal(t, notifications, "first acknowledgement did not refresh tools")
-	waitForListenerSignal(t, notifications, "re-listen acknowledgement did not refresh tools")
+	testutil.WaitForReceive(t, acknowledgements, "the first acknowledgement")
+	testutil.WaitForReceive(t, acknowledgements, "the re-listen acknowledgement")
+	testutil.WaitForReceive(t, notifications, "the first acknowledgement to refresh tools")
+	testutil.WaitForReceive(t, notifications, "the re-listen acknowledgement to refresh tools")
 	if got := listens.Load(); got != 2 {
 		t.Errorf("listen requests = %d, want 2", got)
 	}
@@ -73,8 +73,8 @@ func TestHTTPModernListener_dispatchesTaggedToolChange(t *testing.T) {
 	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
 		t.Fatalf("Call: %v", err)
 	}
-	waitForListenerSignal(t, notifications, "first acknowledgement did not refresh tools")
-	waitForListenerSignal(t, notifications, "tool-change notification was not dispatched")
+	testutil.WaitForReceive(t, notifications, "the first acknowledgement to refresh tools")
+	testutil.WaitForReceive(t, notifications, "the tool-change notification")
 }
 
 func TestHTTPModernListener_firstAckAfterFailedListenRefreshes(t *testing.T) {
@@ -102,8 +102,8 @@ func TestHTTPModernListener_firstAckAfterFailedListenRefreshes(t *testing.T) {
 		t.Fatalf("Call: %v", err)
 	}
 	advanceListenerTimer(t, fakeClock, time.Second)
-	waitForListenerSignal(t, acknowledgements, "listen after the failed attempt was not acknowledged")
-	waitForListenerSignal(t, notifications, "first acknowledgement after a failed listen did not refresh tools")
+	testutil.WaitForReceive(t, acknowledgements, "the acknowledgement of the listen after the failed attempt")
+	testutil.WaitForReceive(t, notifications, "the first acknowledgement after a failed listen to refresh tools")
 }
 
 func TestHTTPModernListener_requestCarriesProtocolAndFilter(t *testing.T) {
@@ -135,8 +135,8 @@ func TestHTTPModernListener_requestCarriesProtocolAndFilter(t *testing.T) {
 	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
 		t.Fatalf("Call: %v", err)
 	}
-	waitForListenerSignal(t, checked, "modern listen request was not sent")
-	waitForListenerSignal(t, conn.listener.done, "405 did not stop the modern listener")
+	testutil.WaitForReceive(t, checked, "the modern listen request")
+	testutil.WaitForReceive(t, conn.listener.done, "a 405 to stop the modern listener")
 	if got := listens.Load(); got != 1 {
 		t.Errorf("listen requests after 405 = %d, want 1", got)
 	}
@@ -151,7 +151,7 @@ func TestHTTPModernListener_stopsWhenAckOmitsToolChanges(t *testing.T) {
 	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
 		t.Fatalf("Call: %v", err)
 	}
-	waitForListenerSignal(t, conn.listener.done, "listener kept running after an acknowledgement without tool changes")
+	testutil.WaitForReceive(t, conn.listener.done, "the listener to stop after an acknowledgement without tool changes")
 }
 
 func TestHTTPModernListener_errorResponseIsARejectedAttempt(t *testing.T) {
@@ -225,7 +225,7 @@ func TestHTTPModernListener_noListenWithoutAdvertisedCapability(t *testing.T) {
 }
 
 func TestHTTPModernListener_noListenForUnsupportedVersionError(t *testing.T) {
-	srv := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		req := decodeRequest(t, r)
 		if req.Method == "server/discover" {
 			response := Response{
@@ -294,11 +294,11 @@ func TestHTTPModernListener_reprobeReplacesAStoppedListener(t *testing.T) {
 	if _, err := conn.Call(t.Context(), "ping", nil); err == nil {
 		t.Fatal("first ping succeeded, want the -32022 that resets the era")
 	}
-	<-conn.listener.done
+	testutil.WaitForReceive(t, conn.listener.done, "the reset to stop the listener")
 	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
 		t.Fatalf("ping after re-probe: %v", err)
 	}
-	waitForListenerSignal(t, relisten, "re-probe kept the stopped listener instead of subscribing again")
+	testutil.WaitForReceive(t, relisten, "the re-probe to subscribe again instead of keeping the stopped listener")
 }
 
 func TestHTTPModernListener_eraResetWaitsForReprobeAndListensAgain(t *testing.T) {
@@ -340,7 +340,7 @@ func TestHTTPModernListener_eraResetWaitsForReprobeAndListensAgain(t *testing.T)
 		t.Fatalf("ping after re-probe: %v", err)
 	}
 	advanceListenerTimer(t, fakeClock, time.Second)
-	waitForListenerSignal(t, relisten, "listener did not subscribe again after the re-probe")
+	testutil.WaitForReceive(t, relisten, "the listener to subscribe again after the re-probe")
 	if got := gets.Load(); got != 0 {
 		t.Errorf("legacy GET streams = %d, want 0 from a modern listener", got)
 	}
@@ -349,7 +349,7 @@ func TestHTTPModernListener_eraResetWaitsForReprobeAndListensAgain(t *testing.T)
 func TestHTTPModernListener_probeFinishingAfterCloseStartsNoListener(t *testing.T) {
 	probing := make(chan struct{})
 	releaseProbe := make(chan struct{})
-	server := newJsonRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+	server := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		req := decodeRequest(t, r)
 		if req.Method == "server/discover" {
 			close(probing)
@@ -376,12 +376,12 @@ func TestHTTPModernListener_probeFinishingAfterCloseStartsNoListener(t *testing.
 		defer close(called)
 		conn.Call(t.Context(), "ping", nil) //nolint:errcheck // Only the listener state after Close matters here.
 	}()
-	<-probing
+	testutil.WaitForReceive(t, probing, "the probe to start")
 	if err := conn.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
 	close(releaseProbe)
-	<-called
+	testutil.WaitForReceive(t, called, "the call to return after Close")
 	if conn.listener != nil {
 		t.Fatal("a probe that finished after Close started a notification listener")
 	}
@@ -399,20 +399,9 @@ func TestHTTPModernListener_closeCancelsStream(t *testing.T) {
 	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
 		t.Fatalf("Call: %v", err)
 	}
-	waitForListenerSignal(t, entered, "listener did not open its stream")
+	testutil.WaitForReceive(t, entered, "the listener to open its stream")
 	if err := conn.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
-	}
-}
-
-func waitForListenerSignal(t *testing.T, signal <-chan struct{}, failure string) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
-	defer cancel()
-	select {
-	case <-signal:
-	case <-ctx.Done():
-		t.Fatal(failure)
 	}
 }
 

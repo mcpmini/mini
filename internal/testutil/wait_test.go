@@ -1,9 +1,24 @@
 package testutil
 
 import (
+	"errors"
 	"testing"
 	"testing/synctest"
 )
+
+func TestRunInBackground_deliversTheFunctionsError(t *testing.T) {
+	want := errors.New("boom")
+
+	if err := WaitForReceive(t, RunInBackground(func() error { return want }), "the error"); !errors.Is(err, want) {
+		t.Errorf("RunInBackground delivered %v, want %v", err, want)
+	}
+}
+
+func TestRunInBackground_finishesWhenNobodyReads(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		RunInBackground(func() error { return nil })
+	})
+}
 
 func TestWaitForReceive_returnsTheValueSent(t *testing.T) {
 	ch := make(chan int, 1)
