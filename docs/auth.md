@@ -5,12 +5,12 @@ When `mini init` finishes, it lists each MCP that still needs a step:
 | Line | Meaning | What to do |
 |---|---|---|
 | requires a login | The MCP supports browser login | Run `mini auth <name>` |
-| requires a custom OAuth app | The MCP uses OAuth but won't let mini register itself | Register an OAuth app, or use a token if the provider offers one |
-| requires manual configuration | The MCP needs a token, API key, or setting only you can supply | Edit the MCP's file |
+| requires a custom OAuth app | OAuth app credentials in the file are still placeholders | Register an OAuth app and fill in its credentials |
+| requires manual configuration | mini cannot complete setup automatically | Follow the provider's instructions and edit the MCP's file |
 
 Each MCP's file is `~/.mini/servers/<name>.yaml`. If you ran init with `--config DIR`, it's `DIR/servers/<name>.yaml`, and every `mini` command below needs the same `--config DIR`.
 
-After any of these steps, restart your agents as in [Applying changes](#applying-changes).
+A running mini picks up file edits and new logins within a few seconds; a new environment variable needs a restart. See [Applying changes](#applying-changes).
 
 ## requires a login
 
@@ -20,15 +20,15 @@ mini auth linear
 
 mini opens your browser to the provider's sign-in page and prints the URL in case the browser doesn't open. Once you approve, the browser returns to mini on `http://localhost:6464/callback` and mini saves the token in `~/.mini/internal/linear.token.json` (`DIR/internal/` with `--config DIR`). The login waits 5 minutes and prints `authorized linear` and the token's expiry when it's done. mini refreshes the token when it expires. If the refresh stops working, run `mini auth linear` again.
 
-The login is tied to the MCP's URL, `client_id` and `token_url` as they were when you logged in. If you change any of them, mini stops sending the old token and asks you to run `mini auth linear` again; restart your agents afterward, as in [Applying changes](#applying-changes).
+The login is tied to the MCP's URL, `client_id` and `token_url` as they were when you logged in. If you change any of them, mini stops sending the old token and asks you to run `mini auth linear` again.
 
 OAuth works with MCPs you configure on localhost or private networks, including Tailscale. MCPs added by agents cannot use private OAuth destinations, even with `dangerous_allow_private_urls`.
 
-When an operation fails with an OAuth scope challenge, run `mini auth <name>`. Restart your agents as described in [Applying changes](#applying-changes), then retry the operation. mini does not automatically repeat a failed tool call.
+When an operation fails with an OAuth scope challenge, run `mini auth <name>`, restart mini as described in [Applying changes](#applying-changes), then retry the operation. mini does not automatically repeat a failed tool call.
 
 ## requires a custom OAuth app
 
-Open the MCP's file first. If its comment says to create a token, as GitHub's does, follow [requires manual configuration](#requires-manual-configuration) instead; a token is quicker than an OAuth app.
+This line means the MCP's file still contains placeholder OAuth app credentials. Open the file and follow its setup comment.
 
 If the comment holds OAuth app steps, they look like Asana's:
 
@@ -118,7 +118,7 @@ env:
 
 The command already inherits mini's environment. Listing the variable under `env:` makes mini report it by name when it isn't set, instead of starting a command that fails.
 
-If the file has no setup comment, run `mini status`. Its error names any variable that isn't set. If none is missing, the MCP turned mini away without asking for OAuth, and its documentation says which header or variable it expects.
+If the file has no setup comment, run `mini status`. Its error names any variable that isn't set. If none is missing, the MCP turned mini away without offering a login mini can use, and its documentation says which header, variable or OAuth app it expects.
 
 If you'd rather not set up an MCP now, remove it with `mini rm <name>`.
 
@@ -131,7 +131,7 @@ If a variable isn't set, mini doesn't connect to that MCP; it doesn't send the l
 mini takes its environment from the agent that starts it, and every agent shares that one mini. To add a variable:
 
 1. Export it in your shell profile and open a new terminal.
-2. Restart as in [Applying changes](#applying-changes), starting your first agent from that terminal.
+2. Restart mini as in [Applying changes](#applying-changes), starting your first agent from that terminal.
 
 An agent started from the Dock or a desktop launcher usually doesn't see variables from your shell profile. Start it from a terminal, or write the value into the file.
 
@@ -139,7 +139,9 @@ A literal value in the file works too. init writes server files readable only by
 
 ## Applying changes
 
-mini reads an MCP's file and saved login when it connects. A running mini doesn't reconnect after you edit a file or run `mini auth`, and it doesn't connect MCPs added while it's running. For a change to take effect:
+A running mini checks the files in `servers/` every 5 seconds. When you add, edit or remove an MCP's file, it connects, reconnects or drops that MCP and tells your agents their tool list changed. A login saved by `mini auth` or `mini add` connects an MCP that was waiting for one; an MCP that's already connected keeps its current login until mini restarts. If an agent doesn't show the change, restart that agent.
+
+mini keeps the environment it started with, and it reads `config.yaml` at startup. After changing an environment variable or `config.yaml`, restart mini:
 
 1. Quit every agent that uses mini.
 2. Stop mini's background process, if one is running:
@@ -149,7 +151,7 @@ mini reads an MCP's file and saved login when it connects. A running mini doesn'
    ```
 
    `mini daemon status` shows whether it's still running.
-3. Start your agents again. The first one starts mini with the new files.
+3. Start your agents again. The first one starts mini with the new settings.
 
 You don't need to run `mini init` again.
 
@@ -178,17 +180,19 @@ Common errors:
 - **`<field>: NAME isn't set where mini runs`** (or `aren't set` for several): see [Environment variables](#environment-variables).
 - **`<field>: ${NAME} isn't expanded`**: `${...}` was used in a field that doesn't expand it. See [Environment variables](#environment-variables).
 
-If `mini auth <name>` fails with **no client_id configured and server provides no registration endpoint**, the MCP needs a custom OAuth app. See [requires a custom OAuth app](#requires-a-custom-oauth-app). If it fails with **the server only accepts mini's client metadata document, which lists callback port 6464**, remove `auth.callback_port` or set up your own app.
+If `mini auth <name>` fails with **no client_id configured and server provides no registration endpoint**, mini cannot register a client automatically. Check the provider's MCP setup instructions: configure a token if supported (see [requires manual configuration](#requires-manual-configuration)), or register your own OAuth app and add its `auth:` block as in [requires a custom OAuth app](#requires-a-custom-oauth-app). If it fails with **the server only accepts mini's client metadata document, which lists callback port 6464**, remove `auth.callback_port` or set up your own app.
 
 ## How mini decides
 
 If the MCP asks for OAuth, mini reads its authorization server's metadata:
 
 - If the server lets clients register themselves (client ID metadata documents or dynamic client registration), mini can log in by itself: **requires a login**. Client ID metadata documents only work on the default callback port, 6464, so with `auth.callback_port` set to another port, mini needs dynamic client registration.
-- If it doesn't, the provider only accepts apps registered by hand: **requires a custom OAuth app**. The same line shows while the file still holds `<your app's client ID>` or `<your app's client secret>`.
+- If mini cannot register a client and the file has no client ID, init reports **requires manual configuration**. Discovery cannot tell whether the provider accepts a token or requires your own app; follow its setup instructions.
+- If the file still holds `<your app's client ID>` or `<your app's client secret>`, init reports **requires a custom OAuth app**.
 
 **requires manual configuration** means one of:
 
 - The file references an environment variable that isn't set, such as `${GITHUB_TOKEN}`.
 - A header still holds the placeholder init wrote, `<your token>`.
 - The MCP refused the connection without asking for OAuth, so it wants a credential mini can't get for you.
+- Browser registration is unavailable and the file has no OAuth client ID; the provider's setup guide determines whether to use a token or register an app.
