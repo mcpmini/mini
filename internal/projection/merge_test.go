@@ -8,15 +8,12 @@ import (
 
 func TestMergeWithDefaultsNilConfigUsesDefaults(t *testing.T) {
 	defaults := &Defaults{
-		StringLimit: 1000, DepthLimit: 4,
+		StringLimit:   1000,
 		ContentFields: []string{"body", "summary"}, AutoStripThreshold: 500,
 	}
 	got := mergeWithDefaults(nil, defaults)
 	if got.defaultStringLimit != 1000 {
 		t.Fatalf("defaultStringLimit = %d, want 1000", got.defaultStringLimit)
-	}
-	if got.depthLimit != 4 {
-		t.Fatalf("depthLimit = %d, want 4", got.depthLimit)
 	}
 	if !got.contentFieldSet["body"] || !got.contentFieldSet["summary"] {
 		t.Fatalf("contentFieldSet = %#v, want bundled content fields", got.contentFieldSet)
@@ -29,16 +26,12 @@ func TestMergeWithDefaultsNilConfigUsesDefaults(t *testing.T) {
 func TestDefaultsFrom(t *testing.T) {
 	cfg := &config.Config{
 		DefaultStringLimit: 100,
-		DefaultDepthLimit:  5,
 		ContentFields:      []string{"body", "text"},
 		AutoStripThreshold: 200,
 	}
 	d := DefaultsFrom(cfg)
 	if d.StringLimit != 100 {
 		t.Errorf("StringLimit = %d, want 100", d.StringLimit)
-	}
-	if d.DepthLimit != 5 {
-		t.Errorf("DepthLimit = %d, want 5", d.DepthLimit)
 	}
 	if len(d.ContentFields) != 2 || d.ContentFields[0] != "body" {
 		t.Errorf("ContentFields = %v, want [body text]", d.ContentFields)
@@ -49,7 +42,7 @@ func TestDefaultsFrom(t *testing.T) {
 }
 
 func TestMergeWithDefaultsStripMarkupWithoutSlim(t *testing.T) {
-	defaults := &Defaults{StringLimit: 1000, DepthLimit: 3}
+	defaults := &Defaults{StringLimit: 1000}
 	cfg := &config.ProjectionConfig{StripMarkup: true}
 
 	got := mergeWithDefaults(cfg, defaults)
@@ -59,8 +52,5 @@ func TestMergeWithDefaultsStripMarkupWithoutSlim(t *testing.T) {
 	}
 	if got.defaultStringLimit != 1000 {
 		t.Fatalf("defaultStringLimit = %d, want defaults preserved", got.defaultStringLimit)
-	}
-	if got.depthLimit != 3 {
-		t.Fatalf("depthLimit = %d, want defaults preserved", got.depthLimit)
 	}
 }

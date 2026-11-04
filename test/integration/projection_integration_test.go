@@ -277,27 +277,6 @@ func TestIntegrationProjection_persistToDisk(t *testing.T) {
 	}
 }
 
-func TestIntegrationProjection_depthLimit(t *testing.T) {
-	t.Parallel()
-	client := quickServerWith(t, quickServerParams{
-		Fixtures: map[string]string{"get_item": `{"a":{"b":{"c":{"d":"deep"}}}}`},
-		Projections: map[string]*config.ProjectionConfig{
-			"get_item": {
-				DepthLimit: 2,
-			},
-		},
-	})
-
-	b, _ := json.Marshal(client.execResult("svc", "get_item", nil).Data)
-	if strings.Contains(string(b), `"deep"`) {
-		t.Errorf("depth_limit should have replaced deep field, got: %s", b)
-	}
-	if !strings.Contains(string(b), "depth") && !strings.Contains(string(b), "limit") &&
-		!strings.Contains(string(b), "...") {
-		t.Errorf("depth_limit placeholder should be present in response, got: %s", b)
-	}
-}
-
 func TestIntegrationProjection_includeAndExclude(t *testing.T) {
 	t.Parallel()
 	client := quickServerWith(t, quickServerParams{

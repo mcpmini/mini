@@ -248,18 +248,6 @@ func TestExcludeArrayItemFieldsWithinLimits(t *testing.T) {
 			t.Errorf("truncated = %v, want %v", result.Truncated, wantCut)
 		}
 	})
-	t.Run("fields below the depth limit are not traversed", func(t *testing.T) {
-		cfg := &config.ProjectionConfig{Exclude: []string{"[].author.avatar_url"}, DepthLimit: 1}
-		result := Apply(exclusionJSON(t, input), cfg, &Defaults{})
-		first := result.Summary.([]any)[0].(map[string]any)
-		if first["author"] != "[depth limit reached]" || len(result.ExcludedKeys) != 0 {
-			t.Errorf(
-				"author = %v, excluded = %v; want the depth marker and no exclusions",
-				first["author"],
-				result.ExcludedKeys,
-			)
-		}
-	})
 }
 
 func exclusionJSON(t *testing.T, raw string) any {

@@ -331,7 +331,7 @@ func TestIntegrationServer_configureProjectionOverride(t *testing.T) {
 
 			Tool: "list_pull_requests",
 
-			Projection: map[string]any{"include_only": []string{"number"}, "depth_limit": 1},
+			Projection: map[string]any{"include_only": []string{"number"}},
 
 			SessionOnly: true,
 		},

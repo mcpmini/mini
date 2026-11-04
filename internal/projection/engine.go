@@ -67,10 +67,6 @@ func sortTruncated(truncated []Truncation) {
 }
 
 func project(value any, ctx projCtx) any {
-	if ctx.cfg.depthLimit > 0 && ctx.depth >= ctx.cfg.depthLimit {
-		return "[depth limit reached]"
-	}
-
 	switch v := value.(type) {
 	case map[string]any:
 		return projectMap(v, ctx)

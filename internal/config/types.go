@@ -83,9 +83,6 @@ type Config struct {
 	// projection config.
 	DefaultStringLimit int `yaml:"default_string_limit"`
 
-	// DefaultDepthLimit is the default max nesting depth. 0 means no limit (default).
-	DefaultDepthLimit int `yaml:"default_depth_limit"`
-
 	// ContentFields are field names that get HTML/MD stripped automatically
 	// when their value is >= AutoStripThreshold chars.
 	// Defaults to common content fields: body, description, summary, etc.
@@ -148,7 +145,6 @@ var DefaultContentFields = []string{
 func DefaultConfig() *Config {
 	return &Config{
 		DefaultStringLimit:   2000,
-		DefaultDepthLimit:    0,
 		AutoStripThreshold:   0,
 		ResponseTTL:          "1h",
 		ResponseDiskBudgetMB: 500,
@@ -332,7 +328,6 @@ type ProjectionConfig struct {
 	// StringLimits overrides the global DefaultStringLimit per field name.
 	// 0 disables truncation for that field (ignoring the global default).
 	StringLimits map[string]int `yaml:"string_limits,omitempty" json:"string_limits,omitempty"`
-	DepthLimit   int            `yaml:"depth_limit,omitempty"    json:"depth_limit,omitempty"`
 	StripMarkup  bool           `yaml:"strip_markup,omitempty"   json:"strip_markup,omitempty"`
 	Format       ResponseFormat `yaml:"format,omitempty"         json:"format,omitempty"`
 }

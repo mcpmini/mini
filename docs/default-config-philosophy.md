@@ -70,10 +70,6 @@ These are starting points, not rules. If a field is important and the limit is c
 
 See [Exclude paths](#exclude-paths) for stepping into array items with `[]`. Keep an array when its items contain useful context; do not remove it just to discard metadata on each item.
 
-### `depth_limit`
-
-`depth_limit` stops deeply-nested objects from being included in full. It is a blunt instrument — use it only on named per-tool configs where you've seen the real response shape and know that deep nesting is noise. Do not set it in the `"*"` wildcard; an unlisted tool will silently lose nested data you haven't inspected.
-
 ### HTML/Markdown stripping
 
 Stripping is opt-in. There are two mechanisms:
@@ -116,8 +112,7 @@ When an agent creates a PR, posts a comment, or pushes files, the response typic
 3. Use `include_only` only for list operations, and only when you can name everything an agent needs
 4. Set string limits generously, using the guidance above
 5. For each tool, justify API URL, URL template or node ID exclusions against the workflow and the information retained
-6. Add `depth_limit: 2-3` only on specific tools where you've confirmed deep nesting is noise
-7. Use `strip_markup: true` on a specific tool only if the response embeds raw HTML that adds no value
+6. Use `strip_markup: true` on a specific tool only if the response embeds raw HTML that adds no value
 
 ### Validating configs
 
