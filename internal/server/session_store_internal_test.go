@@ -11,6 +11,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -135,13 +136,8 @@ func TestSessionStore_evictIdle_unblocksPendingWaiters(t *testing.T) {
 
 	st.evictIdle(fakeClock.Now().Add(-time.Hour))
 
-	select {
-	case got := <-unblocked:
-		if got {
-			t.Error("waitInitialized should return false for evicted session")
-		}
-	case <-time.After(time.Second):
-		t.Fatal("waitInitialized blocked after session eviction")
+	if testutil.WaitForReceive(t, unblocked, "waitInitialized to return after session eviction") {
+		t.Error("waitInitialized should return false for evicted session")
 	}
 }
 
@@ -170,11 +166,7 @@ func TestRunSessionEviction_evictsIdleSessions(t *testing.T) {
 	}
 	fakeClock.Advance(30 * time.Minute)
 
-	select {
-	case <-evicted:
-	case <-t.Context().Done():
-		t.Fatal("eviction did not complete")
-	}
+	testutil.WaitForReceive(t, evicted, "the eviction to complete")
 	cancel()
 	<-done
 	if got := srv.sessions.count(); got != 0 {

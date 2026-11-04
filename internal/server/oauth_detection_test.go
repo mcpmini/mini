@@ -5,20 +5,19 @@ package server_test
 import (
 	"context"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestAddUpstream_detectsOAuthFrom401(t *testing.T) {
-	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mcpSrv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer mcpSrv.Close()
+	})
 
 	dir := t.TempDir()
 	configtest.WriteServer(t, dir, config.ServerConfig{Name: "needsauth", Transport: "http", URL: mcpSrv.URL})
@@ -27,12 +26,7 @@ func TestAddUpstream_detectsOAuthFrom401(t *testing.T) {
 
 	sc := loadServerConfig(t, dir, "needsauth")
 	err := srv.AddUpstream(context.Background(), sc)
-	if err == nil {
-		t.Fatal("expected AddUpstream to return an error")
-	}
-	if !strings.Contains(err.Error(), "mini auth needsauth") {
-		t.Errorf("error should mention `mini auth needsauth`, got: %v", err)
-	}
+	testutil.ErrorContains(t, err, "mini auth needsauth")
 
 	if !config.IsOAuthDetected(dir, "needsauth") {
 		t.Error("expected the oauth-detected marker to be written")
@@ -44,11 +38,10 @@ func TestAddUpstream_detectsOAuthFrom401(t *testing.T) {
 }
 
 func TestAddUpstream_doesNotOverwriteExistingAuth(t *testing.T) {
-	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mcpSrv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer mcpSrv.Close()
+	})
 
 	dir := t.TempDir()
 	configtest.WriteServer(t, dir, config.ServerConfig{
@@ -75,14 +68,13 @@ func TestAddUpstream_doesNotOverwriteExistingAuth(t *testing.T) {
 }
 
 func TestAddUpstream_bare401WithNoEvidenceDoesNotMarkOAuth(t *testing.T) {
-	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mcpSrv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/.well-known/oauth-protected-resource" {
 			http.NotFound(w, r)
 			return
 		}
 		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer mcpSrv.Close()
+	})
 
 	dir := t.TempDir()
 	configtest.WriteServer(t, dir, config.ServerConfig{Name: "plain401", Transport: "http", URL: mcpSrv.URL})
@@ -104,11 +96,10 @@ func TestAddUpstream_bare401WithNoEvidenceDoesNotMarkOAuth(t *testing.T) {
 }
 
 func TestAddUpstream_staticBearerHeaderIsNotMisclassifiedAsOAuth(t *testing.T) {
-	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mcpSrv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer mcpSrv.Close()
+	})
 
 	dir := t.TempDir()
 	configtest.WriteServer(t, dir, config.ServerConfig{
@@ -133,11 +124,10 @@ func TestAddUpstream_staticBearerHeaderIsNotMisclassifiedAsOAuth(t *testing.T) {
 }
 
 func TestAddUpstream_customAuthHeaderIsNotMisclassifiedAsOAuth(t *testing.T) {
-	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mcpSrv := testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer mcpSrv.Close()
+	})
 
 	dir := t.TempDir()
 	configtest.WriteServer(t, dir, config.ServerConfig{

@@ -11,6 +11,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -98,13 +99,8 @@ func TestWaitForStartup_aWindowOpenedDuringTheHoldDoesNotExtendIt(t *testing.T) 
 	srv.openConnectWindow("svc")
 	fc.Advance(startupHold - time.Second)
 
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Errorf("waitForStartup = %v, want nil at its deadline", err)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("a window reopened during the hold kept the listing waiting past startupHold")
+	if err := testutil.WaitForReceive(t, done, "the listing to stop waiting at startupHold"); err != nil {
+		t.Errorf("waitForStartup = %v, want nil at its deadline", err)
 	}
 }
 

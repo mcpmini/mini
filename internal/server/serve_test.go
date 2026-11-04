@@ -11,10 +11,10 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -156,10 +156,5 @@ func TestServer_closeStopsServe(t *testing.T) {
 	pw.Write(initReq) //nolint:errcheck
 	cancel()
 	pw.Close()
-	select {
-	case err := <-done:
-		_ = err
-	case <-time.After(2 * time.Second):
-		t.Error("Serve did not exit after context cancel + pipe close")
-	}
+	testutil.WaitForReceive(t, done, "Serve to exit after context cancel and pipe close")
 }

@@ -154,13 +154,8 @@ func TestRunning_checksHealthzPath(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 	daemon.Running(dir)
-	select {
-	case p := <-gotPath:
-		if p != "/healthz" {
-			t.Errorf("expected /healthz path, got %q", p)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("healthcheck did not call the daemon")
+	if p := testutil.WaitForReceive(t, gotPath, "the health check to call the daemon"); p != "/healthz" {
+		t.Errorf("expected /healthz path, got %q", p)
 	}
 }
 

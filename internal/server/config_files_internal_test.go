@@ -284,11 +284,7 @@ func TestBackgroundLoop_stopCancelsTheLoopAndWaitsForIt(t *testing.T) {
 		close(stopped)
 	}()
 
-	select {
-	case <-stopped:
-	case <-time.After(3 * time.Second):
-		t.Fatal("stop didn't end a loop that runs until its context is canceled")
-	}
+	testutil.WaitForReceive(t, stopped, "stop to end a loop that runs until its context is canceled")
 	if !exited {
 		t.Error("stop returned before the loop exited")
 	}

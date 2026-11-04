@@ -13,6 +13,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 const (
@@ -79,13 +80,8 @@ func (r startupRetry) waitUntilHeld(t *testing.T, held heldRequest, otherTimers 
 
 func (h heldRequest) answer(t *testing.T) string {
 	t.Helper()
-	select {
-	case output := <-h.output:
-		return responseText(h.session.response(t, output))
-	case <-time.After(5 * time.Second):
-		t.Fatal("held request wasn't answered within 5s")
-		return ""
-	}
+	output := testutil.WaitForReceive(t, h.output, "the held request's answer")
+	return responseText(h.session.response(t, output))
 }
 
 func TestProxyToolsList_heldUntilAConnectingServerIsReady(t *testing.T) {
@@ -155,7 +151,7 @@ func TestProxyToolsList_closeReleasesAHeldList(t *testing.T) {
 
 	held := inBackground(r.srv, proxySession(t, rpc("tools/list", nil)))
 	r.waitUntilHeld(t, held, 0)
-	mustCloseWithin(t, r.srv, 3*time.Second)
+	mustClose(t, r.srv)
 
 	if got := held.answer(t); !strings.Contains(got, "shutting down") {
 		t.Errorf("tools/list held at Close = %s, want a shutdown error", got)

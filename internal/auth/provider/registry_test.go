@@ -5,7 +5,6 @@ package provider_test
 import (
 	"context"
 	"net/http"
-	"sync"
 	"testing"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -125,30 +125,16 @@ func TestProviderRegistry_close_abortsInFlightRefresh(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var wg sync.WaitGroup
-	wg.Add(1)
+	refreshed := make(chan struct{})
 	go func() {
-		defer wg.Done()
-		prov.Authorization(context.Background()) //nolint:errcheck
+		defer close(refreshed)
+		prov.Authorization(context.Background()) //nolint:errcheck // only its return matters here
 	}()
-	select {
-	case <-received:
-	case <-time.After(5 * time.Second):
-		t.Fatal("token endpoint not reached within 5s")
-	}
+	testutil.WaitForReceive(t, received, "the refresh to reach the token endpoint")
 
 	registry.Close()
 
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Error("registry.Close() did not abort in-flight refresh within 5s")
-	}
+	testutil.WaitForReceive(t, refreshed, "registry.Close() to abort the in-flight refresh")
 }
 
 func TestProviderRegistry_forget(t *testing.T) {
@@ -243,22 +229,14 @@ func TestProviderRegistry_forget(t *testing.T) {
 			t.Fatal(err)
 		}
 		go old.Authorization(context.Background()) //nolint:errcheck // the refresh's outcome is read from disk below
-		select {
-		case <-received:
-		case <-time.After(5 * time.Second):
-			t.Fatal("token endpoint not reached within 5s")
-		}
+		testutil.WaitForReceive(t, received, "the refresh to reach the token endpoint")
 
 		forgotten := make(chan struct{})
 		go func() {
 			registry.Forget("srv")
 			close(forgotten)
 		}()
-		select {
-		case <-forgotten:
-		case <-time.After(5 * time.Second):
-			t.Fatal("Forget did not abort the in-flight refresh within 5s")
-		}
+		testutil.WaitForReceive(t, forgotten, "Forget to abort the in-flight refresh")
 
 		saved, err := loadSavedToken(dir)
 		if err != nil {

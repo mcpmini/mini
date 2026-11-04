@@ -5,7 +5,8 @@ package server
 import (
 	"context"
 	"testing"
-	"time"
+
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 type blockingConnects struct {
@@ -23,22 +24,14 @@ func newBlockingConnector() (*upstreamConnector, blockingConnects) {
 
 func (b blockingConnects) awaitStarted(t *testing.T) {
 	t.Helper()
-	select {
-	case <-b.started:
-	case <-time.After(10 * time.Second):
-		t.Fatal("connect never started")
-	}
+	testutil.WaitForReceive(t, b.started, "a connect to start")
 }
 
 func waitWithin(t *testing.T, c *upstreamConnector) {
 	t.Helper()
 	done := make(chan struct{})
 	go func() { c.wait(); close(done) }()
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatal("connects still running")
-	}
+	testutil.WaitForReceive(t, done, "the running connects to finish")
 }
 
 func TestUpstreamConnector_stop_cancelsRunningConnects(t *testing.T) {

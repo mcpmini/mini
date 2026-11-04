@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestAcquireSpawnLock(t *testing.T) {
@@ -55,13 +57,8 @@ func TestAcquireSpawnLock(t *testing.T) {
 
 		release1()
 
-		select {
-		case err := <-acquired:
-			if err != nil {
-				t.Fatalf("second acquire errored after release: %v", err)
-			}
-		case <-time.After(2 * time.Second):
-			t.Fatal("second acquire did not unblock after release")
+		if err := testutil.WaitForReceive(t, acquired, "the second acquire to unblock after release"); err != nil {
+			t.Fatalf("second acquire errored after release: %v", err)
 		}
 	})
 }

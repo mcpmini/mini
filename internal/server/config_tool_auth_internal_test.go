@@ -4,13 +4,11 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
@@ -144,19 +142,11 @@ func TestRunAuthFlow_CloseCancelsReconnectAfterLogin(t *testing.T) {
 	t.Cleanup(srv.Close)
 	url, initializing := stalledAuthInitialize(t, authtest.NewTokenServer(t).Srv.URL)
 	ctx := startCompletedAuthFlow(t, srv, config.ServerConfig{Name: "svc", Transport: "http", URL: url})
-	select {
-	case <-initializing:
-	case <-time.After(time.Second):
-		t.Fatal("OAuth reconnect did not reach upstream initialize")
-	}
+	testutil.WaitForReceive(t, initializing, "the OAuth reconnect to reach upstream initialize")
 
 	closed := make(chan struct{})
 	go func() { srv.Close(); close(closed) }()
-	select {
-	case <-closed:
-	case <-time.After(time.Second):
-		t.Fatal("Close did not complete while upstream initialize remained blocked")
-	}
+	testutil.WaitForReceive(t, closed, "Close to complete while upstream initialize stays blocked")
 	if ctx.Err() != context.Canceled {
 		t.Fatal("Close did not cancel the auth flow")
 	}
@@ -168,14 +158,21 @@ func TestRunAuthFlow_CloseCancelsReconnectAfterLogin(t *testing.T) {
 	}
 }
 
+// stalledAuthInitialize is an OAuth-protected MCP server that challenges requests without a
+// token, so login discovery finishes, and holds every request with a token, so the reconnect
+// after login blocks in initialize until the test ends.
 func stalledAuthInitialize(t *testing.T, issuer string) (string, <-chan struct{}) {
 	t.Helper()
 	initializing, release := make(chan struct{}, 1), make(chan struct{})
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			w.Header().Set("Content-Type", "application/json")
-			metadata := map[string]any{"resource": "http://" + r.Host, "authorization_servers": []string{issuer}}
-			json.NewEncoder(w).Encode(metadata) //nolint:errcheck
+			testutil.WriteJSON(w, http.StatusOK, authtest.ProtectedResource{
+				Resource: "http://" + r.Host, AuthorizationServers: []string{issuer},
+			})
+			return
+		}
+		if r.Header.Get("Authorization") == "" {
+			authtest.Challenge{ResourceMetadata: "http://" + r.Host + "/.well-known/oauth-protected-resource"}.Write(w)
 			return
 		}
 		select {

@@ -14,6 +14,7 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/mcptest"
 	"github.com/mcpmini/mini/internal/server"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -112,11 +113,7 @@ func waitForReconnect(params waitForReconnectParams) {
 		params.T.Fatalf("waiting for reconnect timer: %v", err)
 	}
 	params.FakeClock.Advance(time.Second)
-	select {
-	case <-reconnected:
-	case <-time.After(5 * time.Second):
-		params.T.Fatal("timed out waiting for reconnect to complete")
-	}
+	testutil.WaitForReceive(params.T, reconnected, "the reconnect to complete")
 }
 
 func newReconnectSrv(t *testing.T) (*server.Server, *clock.Fake) {

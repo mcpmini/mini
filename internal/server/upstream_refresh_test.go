@@ -10,6 +10,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -66,11 +67,7 @@ func TestRemoveServerWhoseCloseDeliversToolsChanged(t *testing.T) {
 		close(removed)
 	}()
 
-	select {
-	case <-removed:
-	case <-time.After(3 * time.Second):
-		t.Fatal("remove_server hung closing a connection that delivered tools/list_changed during Close")
-	}
+	testutil.WaitForReceive(t, removed, "remove_server to close a connection that sent tools/list_changed during Close")
 	if srv.ToolCount("svc") != 0 {
 		t.Error("svc still registered after remove_server")
 	}

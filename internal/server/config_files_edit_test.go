@@ -10,7 +10,6 @@ import (
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/mcptest"
-	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/testutil"
 )
 
@@ -151,19 +150,6 @@ func TestServerReload_aLoginStartedAfterAnEdit_survivesAndIsKept(t *testing.T) {
 	if strings.Contains(e.logs.String(), reconnectedLog) {
 		t.Errorf("a check reconnected svc around a login for its current file; logs:\n%s", e.logs.String())
 	}
-}
-
-func startAuth(t *testing.T, srv *server.Server, name string) string {
-	t.Helper()
-	result := parseEnvelope(
-		t,
-		toolResultText(t, serve(t, srv, callTool("config", map[string]any{"action": "start_auth", "server": name}))),
-	)
-	url, _ := result["url"].(string)
-	if url == "" {
-		t.Fatalf("start_auth = %v, want an authorization URL", result)
-	}
-	return url
 }
 
 func TestServerReload_anEditThatFailsToConnect_tellsAgentsTheToolsAreGone(t *testing.T) {
