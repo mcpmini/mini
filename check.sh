@@ -9,18 +9,9 @@ if [[ -z "${CI:-}" ]]; then
   golangci-lint fmt
 fi
 go build ./...
-# go vet ./... doesn't run against all tags by default
-# specifying the tags here runs it over all the prod code AND the tests
-go vet -tags integration,test ./...
 staticcheck ./...
 golangci-lint run
-GOFLAGS="${GOFLAGS:-} -tags=integration,test" go run ./tools/structlint ./...
-go run ./tools/funclen .
-go run ./tools/params .
-go run ./tools/returns .
-go run ./tools/clocklint .
-go run ./tools/testkind .
-go run ./tools/fileiolint .
+scripts/lint.sh
 testbin=$(mktemp -d)
 scripts/test-bins.sh "$testbin" > "$testbin/env"
 while IFS= read -r line; do export "$line"; done < "$testbin/env"
