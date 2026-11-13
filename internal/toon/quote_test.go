@@ -73,6 +73,29 @@ func TestEncodeStringUnquotedWhenSafe(t *testing.T) {
 	}
 }
 
+func TestEncodeLeadingBOMQuotesRootStringOnly(t *testing.T) {
+	cases := []struct {
+		name string
+		v    Value
+		want string
+	}{
+		{"root string starting with BOM", strVal("\ufeff8"), "\"\ufeff8\""},
+		{"root string that is only BOM", strVal("\ufeff"), "\"\ufeff\""},
+		{"field string starting with BOM", objVal(Field{Key: "k", Val: strVal("\ufeff8")}), "k: \ufeff8"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := Encode(tc.v)
+			if err != nil {
+				t.Fatalf("Encode unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("Encode() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestEncodeKey(t *testing.T) {
 	cases := []struct {
 		name string

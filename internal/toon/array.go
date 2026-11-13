@@ -8,12 +8,12 @@ import (
 // arrayCtx positions an array whose header-line prefix (indent or "- ") the
 // caller has already written. ItemDepth is where rows/list items go: field
 // depth+1 for keyed fields, hyphen depth+1 for keyless list-item arrays
-// (§9.4: https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md?plain=1#L531),
+// (§9.4: https://github.com/toon-format/spec/blob/d09c3d33e37389345a74bd96981eb96dd9be6c5e/SPEC.md?plain=1#L511),
 // 1 at the root. AllowTabular is false in keyless list-item position
 // where §9.4 forbids tabular form. FieldEmpty selects §9.1
-// (https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md?plain=1#L467)
+// (https://github.com/toon-format/spec/blob/d09c3d33e37389345a74bd96981eb96dd9be6c5e/SPEC.md?plain=1#L450)
 // `key: []` over §9.2
-// (https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md?plain=1#L481)
+// (https://github.com/toon-format/spec/blob/d09c3d33e37389345a74bd96981eb96dd9be6c5e/SPEC.md?plain=1#L463)
 // `[0]:` for empty arrays.
 type arrayCtx struct {
 	Key          string
@@ -24,7 +24,7 @@ type arrayCtx struct {
 
 // tabularCol describes one column in a tabular header. Children is nil for
 // primitive leaf columns and non-nil for nested-uniform object columns
-// (§9.3: https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md?plain=1#L495).
+// (§9.3: https://github.com/toon-format/spec/blob/d09c3d33e37389345a74bd96981eb96dd9be6c5e/SPEC.md?plain=1#L477).
 type tabularCol struct {
 	key      string
 	children []tabularCol
@@ -207,7 +207,7 @@ func writePrimitiveListItem(sb *strings.Builder, item Value, depth int) error {
 }
 
 // §10: the first field shares the hyphen line; all others render at hyphen depth+1.
-// https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md?plain=1#L577
+// https://github.com/toon-format/spec/blob/d09c3d33e37389345a74bd96981eb96dd9be6c5e/SPEC.md?plain=1#L555
 func writeObjectListItem(sb *strings.Builder, item Value, depth int) error {
 	indent := strings.Repeat(indentUnit, depth)
 	if len(item.fields()) == 0 {
@@ -243,7 +243,7 @@ func joinPrimitives(items []Value) (string, error) {
 
 // §9.3 eligibility: shared key set across all elements, every column is
 // uniform-primitive or nested-uniform (recursive). Header order follows the first element.
-// https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md?plain=1#L495
+// https://github.com/toon-format/spec/blob/d09c3d33e37389345a74bd96981eb96dd9be6c5e/SPEC.md?plain=1#L477
 func tabularFields(items []Value) ([]tabularCol, bool) {
 	if items[0].kind() != KindObject || len(items[0].fields()) == 0 {
 		return nil, false
