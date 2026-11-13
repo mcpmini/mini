@@ -106,13 +106,13 @@ func TestPKCECallback_providerErrorEndsLogin(t *testing.T) {
 	for _, tc := range []struct {
 		name, code, description, authCode, want string
 	}{
-		{name: "denied", code: "access_denied", want: "access_denied"},
-		{name: "errorOverridesCode", code: "access_denied", authCode: "synthetic-code", want: "access_denied"},
-		{name: "description", code: "access_denied", description: "User declined", want: "access_denied: User declined"},
-		{name: "controls", code: "access\x1b_denied", description: "No\n\r\t\x00thanks", want: "access_denied: Nothanks"},
+		{name: "codeOnly", code: "invalid_scope", want: "invalid_scope"},
+		{name: "errorOverridesCode", code: "invalid_scope", authCode: "synthetic-code", want: "invalid_scope"},
+		{name: "description", code: "invalid_scope", description: "Scope not allowed", want: "invalid_scope: Scope not allowed"},
+		{name: "controls", code: "invalid\x1b_scope", description: "No\n\r\t\x00thanks", want: "invalid_scope: Nothanks"},
 		{name: "longFields", code: strings.Repeat("x", 300), description: strings.Repeat("y", 300), want: strings.Repeat("x", 256) + ": " + strings.Repeat("y", 256)},
-		{name: "unicodeLimit", code: "access_denied", description: strings.Repeat("é", 200), want: "access_denied: " + strings.Repeat("é", 128)},
-		{name: "html", code: "access_denied", description: "<script>synthetic</script>", want: "access_denied: <script>synthetic</script>"},
+		{name: "unicodeLimit", code: "invalid_scope", description: strings.Repeat("é", 200), want: "invalid_scope: " + strings.Repeat("é", 128)},
+		{name: "html", code: "invalid_scope", description: "<script>synthetic</script>", want: "invalid_scope: <script>synthetic</script>"},
 		{name: "emptyError", want: ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -170,7 +170,8 @@ func TestPKCECallback_pageShowsOutcomeOffline(t *testing.T) {
 		namesServer bool
 	}{
 		{name: "signedIn", query: url.Values{"code": {"synthetic-code"}}, status: http.StatusOK, outcome: "example is now connected to mini.", namesServer: true},
-		{name: "providerError", query: url.Values{"error": {"access_denied"}}, status: http.StatusOK, outcome: "Sign-in failed", namesServer: true},
+		{name: "declined", query: url.Values{"error": {"access_denied"}}, status: http.StatusOK, outcome: "You declined access, so example isn't connected to mini.", namesServer: true},
+		{name: "providerError", query: url.Values{"error": {"server_error"}}, status: http.StatusOK, outcome: "Sign-in failed", namesServer: true},
 		{name: "missingCode", query: url.Values{}, status: http.StatusBadRequest, outcome: "Sign-in failed", namesServer: true},
 		{name: "stateMismatchHidesServer", query: url.Values{"state": {"wrong-state"}}, status: http.StatusBadRequest, outcome: "Sign-in failed"},
 	} {

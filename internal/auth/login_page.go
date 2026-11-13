@@ -3,6 +3,7 @@ package auth
 import (
 	_ "embed"
 	"encoding/base64"
+	"errors"
 	"html/template"
 	"net/http"
 	"net/url"
@@ -36,16 +37,22 @@ func newLoginTarget(name, serverURL string) loginTarget {
 }
 
 type loginPage struct {
-	Target loginTarget
-	OK     bool
-	Detail string
+	Target   loginTarget
+	OK       bool
+	Declined bool
+	Detail   string
 }
 
 func loginResultPage(target loginTarget, err error) loginPage {
-	if err != nil {
+	var providerErr *providerError
+	switch {
+	case err == nil:
+		return loginPage{Target: target, OK: true}
+	case errors.As(err, &providerErr) && providerErr.code == "access_denied":
+		return loginPage{Target: target, Declined: true}
+	default:
 		return failedLoginPage(target, printableLoginText(err.Error(), loginPageDetailBytes))
 	}
-	return loginPage{Target: target, OK: true}
 }
 
 func failedLoginPage(target loginTarget, detail string) loginPage {

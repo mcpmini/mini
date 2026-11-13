@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>{{with .Target.Name}}{{.}} {{end}}{{if .OK}}connected{{else}}sign-in failed{{end}} · mini</title>
+<title>{{with .Target.Name}}{{.}} {{end}}{{if .OK}}connected{{else if .Declined}}not connected{{else}}sign-in failed{{end}} · mini</title>
 <link rel="icon" type="image/png" href="{{miniIcon}}">
 <style>
 :root {
@@ -16,6 +16,7 @@
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 }
 .fail { --accent: #c2281d; }
+.declined { --accent: var(--muted); }
 @media (prefers-color-scheme: dark) {
   :root { --bg: #101113; --text: #f1f0ec; --muted: #8e929b; --line: #26282c; --accent: #4ade80; }
   .fail { --accent: #ff6b5e; }
@@ -87,12 +88,15 @@ h1.rise { animation-delay: .15s; }
 }
 </style>
 </head>
-<body{{if not .OK}} class="fail"{{end}}>
+<body{{if .Declined}} class="declined"{{else if not .OK}} class="fail"{{end}}>
 <main>
   <p class="status rise">
     {{- if .OK}}
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 12.5l5 5L19.5 7"/></svg>
     Connected
+    {{- else if .Declined}}
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" aria-hidden="true"><path d="M6 12h12"/></svg>
+    Not connected
     {{- else}}
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
     Sign-in failed
@@ -107,6 +111,9 @@ h1.rise { animation-delay: .15s; }
   {{- if .OK}}
   <p class="message rise">{{with .Target.Name}}{{.}} is now{{else}}Now{{end}} connected to mini.</p>
   <p class="hint rise">You can close this tab.</p>
+  {{- else if .Declined}}
+  <p class="message rise">You declined access, so {{with .Target.Name}}{{.}}{{else}}the server{{end}} isn't connected to mini.</p>
+  <p class="hint rise">To connect it, close this tab and sign in again.</p>
   {{- else}}
   <p class="hint rise">Close this tab and sign in again.</p>
   <p class="detail rise">{{.Detail}}</p>
