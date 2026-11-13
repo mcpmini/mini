@@ -5,7 +5,7 @@ This file provides guidance to coding agents and contributors working in this re
 ## Commands
 
 ```bash
-export PATH="/opt/homebrew/bin:$(go env GOPATH)/bin:$PATH"   # Go 1.26.1 + staticcheck
+export PATH="/opt/homebrew/bin:$(go env GOPATH)/bin:$PATH"   # Go 1.27.4 + staticcheck
 
 go build ./...
 # Unit tests
