@@ -71,7 +71,7 @@ func TestConfigureStartAuth_handoffSurvivesRequestCancellationAndCloseJoins(t *t
 	if flow == nil {
 		t.Fatal("start_auth did not register the OAuth flow")
 	}
-	auth.BufferCallbackCode(flow.login, "test-auth-code")
+	auth.ExchangeCallbackCode(flow.login, "test-auth-code")
 	testutil.WaitForReceive(t, initializing, "the OAuth reconnect to start after the configure request was canceled")
 	closed := make(chan struct{})
 	go func() { srv.Close(); close(closed) }()
