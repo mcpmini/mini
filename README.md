@@ -129,7 +129,7 @@ mini add atlassian --url https://mcp.atlassian.com/v2/mcp
 
 To import every server from an existing agent config at once, use `mini init --from claude-code` (or `claude-desktop`, `codex`, `cursor`, `windsurf`, or a path to a config file).
 
-Bundled projections install when you first add a matching server without your own projection rules. Existing server files keep their rules and URLs when mini is upgraded.
+Bundled projections install when you first add a matching server without your own projection rules.
 
 ### Bundled server configs
 
