@@ -210,14 +210,7 @@ func encodeRootPrimitive(v Value) (string, error) {
 	if !ok || !strings.HasPrefix(string(text), "\ufeff") {
 		return encodePrimitive(v)
 	}
-	if err := validateUTF8(string(text)); err != nil {
-		return "", err
-	}
-	s := quoteString(string(text))
-	if len(s) > maxEncodeBytes {
-		return "", errEncodeTooLarge
-	}
-	return s, nil
+	return renderText(text, quoteString)
 }
 
 func encodeNumber(n numberValue) (string, error) {
@@ -232,10 +225,14 @@ func encodeNumber(n numberValue) (string, error) {
 }
 
 func encodeText(text stringValue) (string, error) {
+	return renderText(text, encodeString)
+}
+
+func renderText(text stringValue, render func(string) string) (string, error) {
 	if err := validateUTF8(string(text)); err != nil {
 		return "", err
 	}
-	s := encodeString(string(text))
+	s := render(string(text))
 	if len(s) > maxEncodeBytes {
 		return "", errEncodeTooLarge
 	}
