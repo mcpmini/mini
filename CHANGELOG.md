@@ -18,7 +18,6 @@
 - **Updated bundled defaults** — no tools are hidden by default. GitHub, Linear, Atlassian and Slack projections use current tool names; stale Sentry rules are removed. New Atlassian catalog additions use the v2 endpoint.
 - **Exclusions match root-relative object paths** — `user.avatar_url` targets one nested field; bare names match only the root. Exclusions no longer recurse on their own; `[]` steps into every array item, as in `[].author.avatar_url`.
 - **Projection option errors are reported** — misspelled or removed options are rejected in server files and `set_projection`, with the offending key and valid options in the error.
-- **`depth_limit` is removed** — string and array limits cover the same need without dropping nested data the agent might use.
 - **`mini call` runs the MCP handshake** before calling, so servers that require it work from the CLI.
 - **Quieter CLI** — log lines go to `internal/cli.log` (and `internal/init.log` for `mini init`) instead of the terminal.
 
@@ -38,7 +37,6 @@
 - `mini add --from-gemini` is gone; use `mini init --from` with an agent name or config file.
 - `mini connect --tool-mode` is gone, along with compact mode's `list`, `call` and `perm_call` tools.
 - `mini perm-call` is gone; use `mini call`. Entries under `permissions.protected` are ignored, so those tools become callable like any other: rely on your client's approval settings, or move them to `permissions.hidden`.
-- `depth_limit` is no longer a projection option; remove it from server files, where it now makes that projection invalid.
 - `mini connect --http` and `--dangerous-nonloopback-http` are gone. Agents connect over stdio with `mini connect`, which shares the background daemon by default.
 
 ## v0.2.0 — 2026-07-08
