@@ -35,12 +35,15 @@ type providerError struct {
 }
 
 func (e *providerError) Error() string {
-	code := printableLoginText(e.code, loginFieldBytes)
+	summary := "oauth authorization failed: " + printableLoginText(e.code, loginFieldBytes)
+	if e.code == "access_denied" {
+		summary = "access was denied"
+	}
 	description := printableLoginText(e.description, loginFieldBytes)
 	if description == "" {
-		return fmt.Sprintf("oauth authorization failed: %s", code)
+		return summary
 	}
-	return fmt.Sprintf("oauth authorization failed: %s: %s", code, description)
+	return summary + ": " + description
 }
 
 func parseAuthorizationResponse(q url.Values) authorizationResponse {
@@ -133,6 +136,11 @@ type callbackOutcome struct {
 }
 
 func callbackOutcomeOf(resp authorizationResponse, issuer ExpectedIssuer) (outcome callbackOutcome, complete bool) {
+	// Some providers (Linear) send errors without iss even when they advertise it. An error has
+	// no code to exchange, so accepting it can't help a mix-up attack.
+	if resp.providerErr != nil && resp.iss == nil {
+		return callbackOutcome{err: resp.providerErr}, true
+	}
 	if err := issuer.check(resp); err != nil {
 		return callbackOutcome{err: err}, true
 	}
