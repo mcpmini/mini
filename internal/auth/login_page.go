@@ -49,7 +49,11 @@ func loginResultPage(target loginTarget, err error) loginPage {
 	case err == nil:
 		return loginPage{Target: target, OK: true}
 	case errors.As(err, &providerErr) && providerErr.code == "access_denied":
-		return loginPage{Target: target, Declined: true}
+		return loginPage{
+			Target:   target,
+			Declined: true,
+			Detail:   printableLoginText(providerErr.description, loginFieldBytes),
+		}
 	default:
 		return failedLoginPage(target, printableLoginText(err.Error(), loginPageDetailBytes))
 	}

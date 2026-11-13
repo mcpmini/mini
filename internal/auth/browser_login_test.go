@@ -170,7 +170,8 @@ func TestPKCECallback_pageShowsOutcomeOffline(t *testing.T) {
 		namesServer bool
 	}{
 		{name: "signedIn", query: url.Values{"code": {"synthetic-code"}}, status: http.StatusOK, outcome: "example is now connected to mini.", namesServer: true},
-		{name: "declined", query: url.Values{"error": {"access_denied"}}, status: http.StatusOK, outcome: "You declined access, so example isn't connected to mini.", namesServer: true},
+		{name: "declined", query: url.Values{"error": {"access_denied"}}, status: http.StatusOK, outcome: "Access was denied, so example isn't connected to mini.", namesServer: true},
+		{name: "declinedShowsReason", query: url.Values{"error": {"access_denied"}, "error_description": {"User is not assigned to the client application"}}, status: http.StatusOK, outcome: "User is not assigned to the client application", namesServer: true},
 		{name: "providerError", query: url.Values{"error": {"server_error"}}, status: http.StatusOK, outcome: "Sign-in failed", namesServer: true},
 		{name: "missingCode", query: url.Values{}, status: http.StatusBadRequest, outcome: "Sign-in failed", namesServer: true},
 		{name: "stateMismatchHidesServer", query: url.Values{"state": {"wrong-state"}}, status: http.StatusBadRequest, outcome: "Sign-in failed"},

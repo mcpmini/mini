@@ -112,8 +112,11 @@ h1.rise { animation-delay: .15s; }
   <p class="message rise">{{with .Target.Name}}{{.}} is now{{else}}Now{{end}} connected to mini.</p>
   <p class="hint rise">You can close this tab.</p>
   {{- else if .Declined}}
-  <p class="message rise">You declined access, so {{with .Target.Name}}{{.}}{{else}}the server{{end}} isn't connected to mini.</p>
+  <p class="message rise">Access was denied, so {{with .Target.Name}}{{.}}{{else}}the server{{end}} isn't connected to mini.</p>
   <p class="hint rise">To connect it, close this tab and sign in again.</p>
+  {{- with .Detail}}
+  <p class="detail rise">{{.}}</p>
+  {{- end}}
   {{- else}}
   <p class="hint rise">Close this tab and sign in again.</p>
   <p class="detail rise">{{.Detail}}</p>
