@@ -16,6 +16,7 @@ import (
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestBrowserLogin_endToEnd(t *testing.T) {
@@ -224,9 +225,9 @@ func TestPKCECallback_closingTheTabMidExchangeStillCompletesLogin(t *testing.T) 
 	tab, closeTab := context.WithCancel(context.Background())
 	tabClosed := sendCallbackFromTab(t, tab, login)
 
-	waitForSignal(t, "the token exchange to start", exchangeStarted)
+	testutil.WaitForReceive(t, exchangeStarted, "the token exchange to start")
 	closeTab()
-	waitForSignal(t, "the tab's request to end", tabClosed)
+	testutil.WaitForReceive(t, tabClosed, "the tab's request to end")
 	close(releaseExchange)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -437,22 +438,13 @@ func TestBrowserLogin_closeCancelsExchangeAndDiscardsToken(t *testing.T) {
 	login := authtest.StartLogin(t, mock.AuthConfig())
 	callbackDone := sendCallbackFromTab(t, context.Background(), login)
 	waitDone := waitInBackground(login)
-	waitForSignal(t, "the token exchange to start", exchangeStarted)
+	testutil.WaitForReceive(t, exchangeStarted, "the token exchange to start")
 
 	login.Close() //nolint:errcheck
 
-	waitForSignal(t, "Close to cancel the token exchange", exchangeCanceled)
+	testutil.WaitForReceive(t, exchangeCanceled, "Close to cancel the token exchange")
 	if err := <-waitDone; !errors.Is(err, auth.ErrLoginClosed) {
 		t.Errorf("Wait returned %v after Close, want ErrLoginClosed", err)
 	}
-	waitForSignal(t, "the callback request to end", callbackDone)
-}
-
-func waitForSignal(t *testing.T, what string, ch <-chan struct{}) {
-	t.Helper()
-	select {
-	case <-ch:
-	case <-time.After(5 * time.Second):
-		t.Fatalf("timed out waiting for %s", what)
-	}
+	testutil.WaitForReceive(t, callbackDone, "the callback request to end")
 }
