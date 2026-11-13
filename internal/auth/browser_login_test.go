@@ -131,6 +131,27 @@ func TestPKCECallback_providerErrorEndsLogin(t *testing.T) {
 	}
 }
 
+func TestPKCECallback_accessDenied_saysAccessWasDenied(t *testing.T) {
+	for _, tc := range []struct {
+		name, description, want string
+	}{
+		{name: "noReason", want: "access was denied"},
+		{name: "reason", description: "User did not authorize the request", want: "access was denied: User did not authorize the request"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			login := authtest.StartLogin(t, &config.AuthConfig{})
+			requestLoginCallback(
+				t,
+				login,
+				url.Values{"error": {"access_denied"}, "error_description": {tc.description}},
+			)
+			if err := waitForLogin(t, login); err == nil || err.Error() != tc.want {
+				t.Fatalf("Wait error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
 func TestPKCECallback_wrongStateErrorLeavesLoginUsable(t *testing.T) {
 	mock := authtest.NewTokenServer(t)
 	login := authtest.StartLogin(t, mock.AuthConfig())

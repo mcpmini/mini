@@ -56,6 +56,28 @@ func TestBrowserLogin_issInTheResponse_isCheckedBeforeTheCodeIsExchanged(t *test
 	}
 }
 
+func TestBrowserLogin_errorResponse_endsWithTheProviderErrorUnlessIssIsWrong(t *testing.T) {
+	advertised := auth.ExpectedIssuer{Issuer: honestIssuer, AlwaysSent: true}
+	for _, tc := range []struct {
+		name    string
+		iss     []string
+		wantErr string
+	}{
+		{name: "missing iss", wantErr: "access was denied"},
+		{name: "matching iss", iss: []string{honestIssuer}, wantErr: "access was denied"},
+		{name: "another issuer", iss: []string{"https://attacker.example"}, wantErr: "came from issuer"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tokens := authtest.NewTokenServer(t)
+			login := startLoginExpecting(t, tokens, advertised)
+
+			requestLoginCallback(t, login, url.Values{"error": {"access_denied"}, "iss": tc.iss})
+
+			testutil.ErrorContains(t, waitForLogin(t, login), tc.wantErr)
+		})
+	}
+}
+
 func startLoginExpecting(t *testing.T, tokens *authtest.TokenServer, expect auth.ExpectedIssuer) *auth.BrowserLogin {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
