@@ -54,7 +54,7 @@ Every client connects mini the same way — by running `mini connect`. The quick
 mini init
 ```
 
-It imports the MCP servers you already set up in Claude Code, Codex, Cursor and other agents, lets you pick more from the MCP catalog, logs you in to the ones that use OAuth, and connects mini to your agents, backing up each config it changes. To skip the questions, use `mini init --import` (every agent found), `mini init --from cursor` (one agent or config file), or `mini init --add linear,sentry` (catalog servers); these leave logins and agent configs alone and print what's left to do.
+It imports the MCP servers you already use in your agents, lets you add more from the catalog, logs you in, and connects mini to your agents. It backs up every config it changes.
 
 To register mini with a client yourself:
 
@@ -73,7 +73,7 @@ Any other client: point its MCP config at `mini connect`:
 }
 ```
 
-`mini connect` re-exposes each upstream tool under a namespaced name (`github__list_pull_requests`, `linear__list_issues`, etc.) and trims its response. mini isn't hidden — the tools are served by the `mini` MCP server, so your client lists them under `mini`, and the agent calls them through it.
+Your agent sees each upstream tool under the `mini` server, named like `github__list_pull_requests`.
 
 ## Add a server and make your first call
 
@@ -97,6 +97,8 @@ mini call github list_pull_requests '{"owner":"golang","repo":"go","perPage":5}'
 
 mini recognizes GitHub's URL and installs its bundled projections automatically. Every tool is visible by default; use your MCP client's approval settings to control writes.
 
+Restart your agent. It now has `github__list_pull_requests` and the other GitHub tools, and their results come through mini, trimmed.
+
 ### Other servers
 
 ```bash
@@ -106,22 +108,9 @@ mini add slack  --url https://mcp.slack.com/mcp
 mini add atlassian --url https://mcp.atlassian.com/v2/mcp
 ```
 
-To import every server from an existing agent config at once, use `mini init --from claude-code` (or `claude-desktop`, `codex`, `cursor`, `windsurf`, or a path to a config file).
+To skip the `mini init` questions, use `mini init --import` (every agent found), `mini init --from cursor` (one agent or config file), or `mini init --add linear,sentry` (catalog servers); these leave logins and agent configs alone and print what's left to do.
 
-Bundled projections install when you first add a matching server without your own projection rules.
-
-### Bundled server configs
-
-These servers have bundled projections. `mini add` and `mini init` match the upstream's URL or command, rather than the name you give it.
-
-| Server | Projection config | Tools covered |
-|---|---|---|
-| GitHub | [github.yaml](internal/defaults/projections/github.yaml) | list_pull_requests, issue_read, pull_request_read, list_commits, get_commit, search_issues, search_pull_requests, search_repositories |
-| Linear | [linear.yaml](internal/defaults/projections/linear.yaml) | get_issue, save_issue |
-| Atlassian | [atlassian.yaml](internal/defaults/projections/atlassian.yaml) | getJiraIssue, editJiraIssue, getConfluenceContent, executeRead |
-| Slack | [slack.yaml](internal/defaults/projections/slack.yaml) | slack_read_channel, slack_read_thread, slack_search_public, slack_search_public_and_private, slack_search_channels, slack_search_users, slack_list_user_channels, slack_read_user_profile |
-
-Other servers, including Sentry, use the global string limit without bundled field rules. Add projections to tune individual tools, or set `default_string_limit: 0` to disable the global string limit.
+mini ships with default projections for popular tools including Slack, GitHub, Atlassian. You can see all [the bundled settings here](internal/defaults/projections/).
 
 ## How it works
 
@@ -135,9 +124,9 @@ sequenceDiagram
 
     Agent->>mini: github__list_pull_requests
     mini->>Upstream: list_pull_requests
-    Upstream-->>mini: full response (40+ fields, ~18 KB)
+    Upstream-->>mini: full response
     mini->>mini: apply projection
-    mini-->>Agent: trimmed response (8 fields, ~400 bytes)
+    mini-->>Agent: trimmed response
 ```
 
 mini re-exposes each upstream tool under a namespaced name (`github__list_pull_requests`, etc.) and serves it from its own MCP server, so in your client the tools appear under `mini` and every call goes through it. mini is the one resolving, forwarding, and trimming — the agent talks to mini, mini talks to the upstreams.
@@ -171,51 +160,65 @@ graph TB
     end
 ```
 
-## Projection config
-
-Projections are the rules that control what mini keeps, limits, or removes from responses. They live under `projections:` in each server's `~/.mini/servers/<server>.yaml`, keyed by tool name (`"*"` applies to every tool), and are installed automatically for known servers by `mini add` and `mini init`.
-
-For most users the bundled projections are enough. If you want to tune them:
-
-```yaml
-# ~/.mini/servers/github.yaml
-projections:
-  list_pull_requests:
-    string_limits:
-      body: 1500            # cap at 1500 chars in list view
-  pull_request_read:
-    exclude: [user.avatar_url]
-    string_limits:
-      body: 8000            # generous limit for detail view
-```
-
-The bar for exclusion is high: keep fields that could reasonably help during a typical month of development, including fork descriptions, identities, revision references and useful links. When in doubt, keep the field. See [docs/default-config-philosophy.md](docs/default-config-philosophy.md) for full guidance.
-
-`exclude` matches exact dotted object paths relative to the response document root. `user.avatar_url` removes only that user's avatar; `description` removes only a root-level field. In proxy mode, each parsed JSON text block or structured-content value is its own document root. A path never crosses an array on its own: `[]` steps into every item, as in `"[].author.avatar_url"` for a list of commits or `"items[].author.avatar_url"` for one wrapped in `items`. Quote any path containing `[]`, or the YAML won't parse. Array indexes, wildcards and jq expressions are rejected. See [docs/default-config-philosophy.md](docs/default-config-philosophy.md#exclude-paths) for the full rules.
-
-Config directory layout:
+## Configuring mini
 
 ```
 ~/.mini/
-  config.yaml              # global settings (see below)
-  servers/<name>.yaml      # one file per upstream server, including its projections
+  config.yaml              # global settings
+  servers/<name>.yaml      # one file per upstream server
   internal/                # machine-managed runtime state
 ```
 
-### Global config
+mini checks `~/.mini/servers/` every few seconds while it runs. A new file connects its server, a deleted file disconnects it, changed settings reconnect it, and projection edits apply to the next call. No restart is needed. `config.yaml` is read at startup.
 
-`~/.mini/config.yaml` controls mini's overall behavior:
+A complete server file:
 
 ```yaml
-log_level: info       # debug | info | warn | error
-response_format: json # json (default) | toon
+# ~/.mini/servers/github.yaml
+transport: http
+url: https://api.githubcopilot.com/mcp
+auth:
+  type: bearer
+  token: "${GITHUB_TOKEN}"     # expanded from the environment
+permissions:
+  hidden: [delete_file]        # agents never see this tool
+projections:                   # keyed by tool name; "*" = every tool
+  list_issues:
+    exclude:
+      - "issues[].user.avatar_url"  # remove a field from each issue
+    string_limits:
+      body: 1500               # cap each issue body at 1,500 chars
+    array_limits:
+      labels: 5                # keep the first 5 labels per issue
+  issue_read:
+    string_limits:
+      body: 25000              # a single issue's body arrives whole
 ```
 
-**`response_format: toon`** switches projected responses to [TOON](https://github.com/toon-format/toon), which writes a list's field names once on a header row, then one line per item — useful if your agent handles plain text better than structured data.
+Servers that log in through a browser (Linear, Slack, Sentry and others) need no `auth:` block. `mini add` and `mini init` log you in, and `mini auth NAME` logs in again.
 
-By default, mini caps strings at 2000 chars to keep responses manageable. You can raise, lower, or disable this with `default_string_limit` in `~/.mini/config.yaml` (set to `0` to disable). Projection configs can override the limit per field with `string_limits`.
+A server file can also set `enabled: false` to turn the server off, or `tool_timeout: 5m` (default 30s).
 
-### Recovering filtered data
+Projection rules:
+
+- `exclude`: remove fields by exact path, such as `user.avatar_url` or `"[].user.avatar_url"`. See [the path rules](docs/default-config-philosophy.md#exclude-paths).
+- `include_only`: keep only these top-level fields, or each item's fields when the result is a list.
+- `string_limits`: max characters for a field name at any depth. Overrides `default_string_limit`; `0` means no cap.
+- `array_limits`: max items for an array field name; `default` applies to every array.
+- `strip_markup: true`: strip HTML and Markdown from every string.
+- `format`: `json` or `toon` for this tool, overriding `response_format`.
+
+Global settings in `~/.mini/config.yaml`:
+
+```yaml
+log_level: info            # debug | info | warn | error
+response_format: json      # json (default) | toon
+default_string_limit: 2000 # max chars per string; 0 disables
+```
+
+`response_format: toon` switches projected responses to [TOON](https://github.com/toon-format/toon), which writes a list's field names once on a header row, then one line per item.
+
+## Recovering filtered data
 
 In the default proxy mode, the agent gets the upstream server's own result, trimmed in place: `structuredContent`, JSON and text blocks are projected, while images, other blocks and `_meta` pass through unchanged. With `response_format: toon`, JSON text blocks are re-encoded as TOON. Tools take the upstream's own arguments.
 
@@ -237,23 +240,6 @@ Results that projection doesn't change have no notice and no stored file. Respon
 
 Clients such as Claude Code check `structuredContent` against the tool's `outputSchema`. mini relaxes each advertised `outputSchema` (dropping `required`, length and item-count limits, and similar checks) so a trimmed result and its notice still validate.
 
-## Auth
-
-`mini init` and `mini add` log you in to servers that support browser login (Linear, Slack, Sentry and others). To log in again later:
-
-```bash
-mini auth linear   # opens browser to complete auth handshake
-```
-
-For servers using API keys or Bearer tokens, set them in the server config or reference an env var:
-
-```yaml
-# ~/.mini/servers/github.yaml
-auth:
-  type: bearer
-  token: "${GITHUB_TOKEN}"
-```
-
 ## Using mini from the CLI
 
 You don't have to connect mini to an agent via MCP. `mini call` works as a standalone command — pipe it from scripts, use it in CI, or have your agent invoke it as a subprocess rather than connecting via MCP at all:
@@ -268,18 +254,6 @@ This is useful when:
 - You want projection and auth handled for shell scripts or CI pipelines without an agent involved
 - You're debugging what a tool actually returns before writing a projection config
 - Your agent environment can run subprocesses but has limited MCP support
-
-## Tool visibility
-
-Every upstream tool is visible by default. To hide one, list it under `permissions.hidden` in the server's file; hidden tools are left out of discovery, and calls to them fail as not found, over MCP and from `mini call`:
-
-```yaml
-# ~/.mini/servers/github.yaml
-permissions:
-  hidden: [delete_file]
-```
-
-mini doesn't approve calls itself. Your MCP client decides which calls need approval, using the `readOnlyHint` and `destructiveHint` annotations mini passes through unchanged.
 
 ## Commands
 
