@@ -1,6 +1,6 @@
 # mini
 
-**mini** sits between your agent and its [MCP](https://modelcontextprotocol.io) servers. It drops fields the agent doesn't need and shortens long text, so responses cost fewer tokens. Anything it cuts is saved, and the agent can read it back.
+**mini** sits between your agent and its [MCP](https://modelcontextprotocol.io) servers. It drops fields the agent doesn't need and shortens long text, so responses cost fewer tokens.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/call-flow-dark.svg">
@@ -38,6 +38,8 @@
   }
 }
 ```
+
+Nothing is lost. mini keeps the full response for an hour, and the agent can fetch anything that was cut with mini's `read` tool.
 
 ## Install
 
