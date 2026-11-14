@@ -2,6 +2,13 @@
 
 **mini** sits between your agent and its [MCP](https://modelcontextprotocol.io) servers. It drops fields the agent doesn't need and shortens long text, so responses cost fewer tokens. Anything it cuts is saved, and the agent can read it back.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/call-flow-dark.svg">
+  <img alt="A 71k-char response from GitHub MCP passes through mini and reaches your agent as 23k chars" src="docs/images/call-flow-light.svg">
+</picture>
+
+<sub>Listing 10 open issues on golang/go.</sub>
+
 **Before:** one pull request from a `list_pull_requests` page:
 
 ```jsonc
@@ -31,8 +38,6 @@
   }
 }
 ```
-
-Listing 10 open issues on golang/go: 71k characters down to 23k.
 
 ## Install
 
@@ -114,11 +119,6 @@ mini ships with default projections for popular tools including Slack, GitHub, A
 ## How it works
 
 mini runs on your machine. When your agent calls a tool, mini forwards the call to the server that owns it, trims the response with that tool's projection, and returns the result.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/call-flow-dark.svg">
-  <img alt="A 71k-char response from GitHub MCP passes through mini and reaches your agent as 23k chars" src="docs/images/call-flow-light.svg">
-</picture>
 
 ## One mini for all your agents
 
