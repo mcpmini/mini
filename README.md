@@ -129,8 +129,6 @@ sequenceDiagram
     mini-->>Agent: trimmed response
 ```
 
-mini re-exposes each upstream tool under a namespaced name (`github__list_pull_requests`, etc.) and serves it from its own MCP server, so in your client the tools appear under `mini` and every call goes through it. mini is the one resolving, forwarding, and trimming — the agent talks to mini, mini talks to the upstreams.
-
 ## Daemon mode
 
 `mini connect` auto-detects a running daemon and routes through it, sharing one set of upstream connections across all agent sessions. If no daemon is running, `mini connect` starts one on demand. You usually do not need to manage it yourself; use `mini daemon status` to check whether it is running, or `mini daemon` to start it manually.
@@ -192,7 +190,7 @@ projections:                   # keyed by tool name; "*" = every tool
       labels: 5                # keep the first 5 labels per issue
   issue_read:
     string_limits:
-      body: 25000              # a single issue's body arrives whole
+      body: 25000              # cap a single issue body at 25,000 chars
 ```
 
 Servers that log in through a browser (Linear, Slack, Sentry and others) need no `auth:` block. `mini add` and `mini init` log you in, and `mini auth NAME` logs in again.
@@ -203,8 +201,8 @@ Projection rules:
 
 - `exclude`: remove fields by exact path, such as `user.avatar_url` or `"[].user.avatar_url"`. See [the path rules](docs/default-config-philosophy.md#exclude-paths).
 - `include_only`: keep only these top-level fields, or each item's fields when the result is a list.
-- `string_limits`: max characters for a field name at any depth. Overrides `default_string_limit`; `0` means no cap.
-- `array_limits`: max items for an array field name; `default` applies to every array.
+- `string_limits`: max characters for any field with this name, at any depth. Overrides `default_string_limit`; `0` means no cap.
+- `array_limits`: max items for any array with this name, at any depth; `default` applies to every array.
 - `strip_markup: true`: strip HTML and Markdown from every string.
 - `format`: `json` or `toon` for this tool, overriding `response_format`.
 
