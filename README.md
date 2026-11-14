@@ -8,11 +8,11 @@
 
 **Before:** one pull request from a `list_pull_requests` page:
 
-```json
+```jsonc
 {
   "number": 83077,
   "title": "cmd/compile: avoid copying byte slices in read-only string ranges",
-  "body": "Reuse a byte slice's backing storage for a string conversion directly in a range expression when iteration cannot change the source bytes. … (3,899 chars)",
+  "body": "Reuse a byte slice's backing storage…", // 3,899 chars
   "user": {
     "login": "gopher",
     "id": 1234567,
@@ -24,15 +24,16 @@
 
 **After:** what the agent gets through mini:
 
-```json
+```jsonc
 {
   "number": 83077,
   "title": "cmd/compile: avoid copying byte slices in read-only string ranges",
-  "body": "Reuse a byte slice's backing storage for a string conversion directly in a range expression when iteration cannot change the source bytes. … (first 1,966 chars)",
+  "body": "Reuse a byte slice's backing storage…", // cut to 1,966 chars
   "user": {
     "login": "gopher",
     "id": 1234567,
     "profile_url": "https://github.com/gopher"
+    // avatar_url removed
   }
 }
 ```
@@ -43,7 +44,9 @@ The list ends with a notice of what was cut. Each path is a filter the agent pas
 "__mini": {
   "file": "1794658721344",
   "excluded": [".structuredContent | .[].user.avatar_url"],
-  "truncated": [{ "path": ".structuredContent | .[1].body", "chars": 1933 }]
+  "truncated": [
+    { "path": ".structuredContent | .[1].body", "chars": 1933 }
+  ]
 }
 ```
 
