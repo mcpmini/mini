@@ -27,6 +27,7 @@
   "user": {
     "login": "gopher",
     "profile_url": "https://github.com/gopher"
+    // avatar_url removed: agents don't need images
   }
 }
 ```
