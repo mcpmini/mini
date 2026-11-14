@@ -1,65 +1,44 @@
 # mini
 
-**mini** is an MCP proxy that sits between your AI agent and the tools it calls.
-
-MCP servers are verbose — a GitHub `list_pull_requests` returns PR bodies, avatar URLs, node IDs, assignee objects, merge metadata, and dozens of URL template fields. Most of it your agent never reads. mini strips the noise so only what matters reaches context, saving tokens on every tool call.
+**mini** sits between your agent and its MCP servers. It drops fields the agent doesn't need and shortens long text, so responses cost fewer tokens. Anything it cuts is saved, and the agent can read it back.
 
 > **New to MCP?** [Model Context Protocol](https://modelcontextprotocol.io) is how AI agents connect to external tools. mini sits in front of all of them.
 
 ## What it does
 
-**Before** — `list_pull_requests` on `golang/go`, raw (`mini call -r`). The `body` alone is ~6,800 characters of benchmark tables, and every PR repeats the same `head`/`base`/`user` sub-objects:
+**Before:** one pull request from a `list_pull_requests` page:
 
-```json
+```jsonc
 {
-  "data": [
-    {
-      "number": 79998,
-      "title": "internal/bytealg: optimize memequal",
-      "body": "Implement vectorization optimization for small size memory comparing.\n\ngoos: linux\ngoarch: riscv64\n[~6,800 chars of benchmark tables]",
-      "state": "open",
-      "draft": false,
-      "merged": false,
-      "html_url": "https://github.com/golang/go/pull/79998",
-      "user": { "login": "lxq015", "id": 79146446, "profile_url": "https://github.com/lxq015", "avatar_url": "https://avatars.githubusercontent.com/u/79146446?v=4" },
-      "head": { "ref": "optimize_memequal", "sha": "bf5f9a21...", "repo": { "full_name": "lxq015/go", "description": "The Go programming language" } },
-      "base": { "ref": "master", "sha": "dfc01c32...", "repo": { "full_name": "golang/go", "description": "The Go programming language" } },
-      "created_at": "2026-06-13T07:39:36Z",
-      "updated_at": "2026-06-13T08:10:43Z"
-    },
-    { "...": "9 more PRs, same shape" }
-  ]
+  "number": 83077,
+  "title": "cmd/compile: avoid copying byte slices in read-only string ranges",
+  "body": "Reuse a byte slice's backing storage…", // 3.9k chars
+  "user": {
+    "login": "gopher",
+    "id": 1234567,
+    "profile_url": "https://github.com/gopher",
+    "avatar_url": "https://avatars.githubusercontent.com/u/1234567?v=4"
+  }
 }
 ```
 
-**After** — the same list through a projection that keeps just the fields you scan in a list view (`include_only: [number, state, draft, title, html_url]`). Default JSON (`mini call -j`):
+**After:** what the agent gets through mini:
 
-```json
+```jsonc
 {
-  "data": [
-    { "draft": false, "html_url": "https://github.com/golang/go/pull/79998", "number": 79998,
-      "state": "open", "title": "internal/bytealg: optimize memequal" },
-    { "draft": false, "html_url": "https://github.com/golang/go/pull/79997", "number": 79997,
-      "state": "open", "title": "internal/bytealg: optimize indexbyte_riscv64.s" }
-  ],
-  "excluded": [".[].base", ".[].body", ".[].created_at", ".[].head", ".[].merged", ".[].updated_at", ".[].user"],
-  "file": "1792044466301"
+  "number": 83077,
+  "title": "cmd/compile: avoid copying byte slices in read-only string ranges",
+  "body": "Reuse a byte slice's backing storage…", // cut to ~2k chars
+  "user": {
+    "login": "gopher",
+    "id": 1234567,
+    "profile_url": "https://github.com/gopher"
+    // avatar_url removed
+  }
 }
 ```
 
-`excluded` lists what the projection removed, and `file` is the key for reading the full response back.
-
-Or [TOON](https://github.com/toon-format/toon) (`mini call -t`): field names once on a header row, then one line per item. Most token-efficient for long lists:
-
-```
-data[2]{draft,html_url,number,state,title}:
-  false,"https://github.com/golang/go/pull/79998",79998,open,"internal/bytealg: optimize memequal"
-  false,"https://github.com/golang/go/pull/79997",79997,open,"internal/bytealg: optimize indexbyte_riscv64.s"
-excluded[7]: ".[].base",".[].body",".[].created_at",".[].head",".[].merged",".[].updated_at",".[].user"
-file: "1792044466301"
-```
-
-You control exactly which fields survive — see [Projection config](#projection-config). `mini call -r` always returns the untouched upstream response when you need it.
+Listing 10 open issues on golang/go: 71k characters down to 23k.
 
 ## Install
 
@@ -96,7 +75,7 @@ Any other client: point its MCP config at `mini connect`:
 
 `mini connect` re-exposes each upstream tool under a namespaced name (`github__list_pull_requests`, `linear__list_issues`, etc.) and trims its response. mini isn't hidden — the tools are served by the `mini` MCP server, so your client lists them under `mini`, and the agent calls them through it.
 
-## Adding servers
+## Add a server and make your first call
 
 ### Example: GitHub MCP
 
@@ -229,10 +208,10 @@ Config directory layout:
 
 ```yaml
 log_level: info       # debug | info | warn | error
-response_format: json # json (default) | toon (see above)
+response_format: json # json (default) | toon
 ```
 
-**`response_format: toon`** switches projected responses to the TOON format shown above — useful if your agent handles plain text better than structured data.
+**`response_format: toon`** switches projected responses to [TOON](https://github.com/toon-format/toon), which writes a list's field names once on a header row, then one line per item — useful if your agent handles plain text better than structured data.
 
 By default, mini caps strings at 2000 chars to keep responses manageable. You can raise, lower, or disable this with `default_string_limit` in `~/.mini/config.yaml` (set to `0` to disable). Projection configs can override the limit per field with `string_limits`.
 
