@@ -12,7 +12,7 @@
 {
   "number": 83077,
   "title": "cmd/compile: avoid copying byte slices in read-only string ranges",
-  "body": "Reuse a byte slice's backing storage…", // 3,899 chars
+  "body": "Reuse a byte slice's backing storage…", // 3.9k chars
   "user": {
     "login": "gopher",
     "id": 1234567,
@@ -28,7 +28,7 @@
 {
   "number": 83077,
   "title": "cmd/compile: avoid copying byte slices in read-only string ranges",
-  "body": "Reuse a byte slice's backing storage…", // cut to 1,966 chars
+  "body": "Reuse a byte slice's backing storage…", // cut to ~2k chars
   "user": {
     "login": "gopher",
     "id": 1234567,
@@ -38,21 +38,9 @@
 }
 ```
 
-The list ends with a notice of what was cut. Each path is a filter the agent passes to `read`, with the `file`, to get that data back:
+mini saves what it cuts, and the agent can fetch any of it back with mini's `read` tool.
 
-```json
-"__mini": {
-  "file": "1794658721344",
-  "excluded": [".structuredContent | .[].user.avatar_url"],
-  "truncated": [
-    { "path": ".structuredContent | .[1].body", "chars": 1933 }
-  ]
-}
-```
-
-Listing 10 open issues on golang/go: 71k characters down to 23k. When an agent reads a single PR or issue, mini keeps bodies up to 25,000 characters, so the body almost always arrives whole.
-
-mini can also return [TOON](#global-config), a more compact encoding for lists of records. To choose which fields survive, see [Projection config](#projection-config).
+Listing 10 open issues on golang/go: 71k characters down to 23k.
 
 ## Install
 
@@ -89,7 +77,7 @@ Any other client: point its MCP config at `mini connect`:
 
 `mini connect` re-exposes each upstream tool under a namespaced name (`github__list_pull_requests`, `linear__list_issues`, etc.) and trims its response. mini isn't hidden — the tools are served by the `mini` MCP server, so your client lists them under `mini`, and the agent calls them through it.
 
-## Adding servers
+## Add a server and make your first call
 
 ### Example: GitHub MCP
 
