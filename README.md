@@ -1,10 +1,6 @@
 # mini
 
-**mini** sits between your agent and its MCP servers. It drops fields the agent doesn't need and shortens long text, so responses cost fewer tokens. Anything it cuts is saved, and the agent can read it back.
-
-> **New to MCP?** [Model Context Protocol](https://modelcontextprotocol.io) is how AI agents connect to external tools. mini sits in front of all of them.
-
-## What it does
+**mini** sits between your agent and its [MCP](https://modelcontextprotocol.io) servers. It drops fields the agent doesn't need and shortens long text, so responses cost fewer tokens. Anything it cuts is saved, and the agent can read it back.
 
 **Before:** one pull request from a `list_pull_requests` page:
 
@@ -15,7 +11,6 @@
   "body": "Reuse a byte slice's backing storage…", // 3.9k chars
   "user": {
     "login": "gopher",
-    "id": 1234567,
     "profile_url": "https://github.com/gopher",
     "avatar_url": "https://avatars.githubusercontent.com/u/1234567?v=4"
   }
@@ -31,9 +26,7 @@
   "body": "Reuse a byte slice's backing storage…", // cut to ~2k chars
   "user": {
     "login": "gopher",
-    "id": 1234567,
     "profile_url": "https://github.com/gopher"
-    // avatar_url removed
   }
 }
 ```
@@ -46,24 +39,33 @@ Listing 10 open issues on golang/go: 71k characters down to 23k.
 go install github.com/mcpmini/mini/cmd/mini@latest
 ```
 
-## Connect to your agent
+## Connect to your agents
 
-Every client connects mini the same way — by running `mini connect`. The quickest start is `mini init`:
+### Quick setup: mini init
 
 ```bash
 mini init
 ```
 
-It imports the MCP servers you already use in your agents, lets you add more from the catalog, logs you in, and connects mini to your agents. It backs up every config it changes.
+It:
 
-To register mini with a client yourself:
+- imports the MCP servers your agents already use
+- lets you add more from the MCP catalog
+- logs you in to servers that need it
+- connects mini to your agents
+- backs up every config it changes
+
+### Manual setup
+
+Register `mini connect` as an MCP server:
 
 ```bash
-# Claude Code
-claude mcp add mini -- mini connect
+claude mcp add -s user mini -- mini connect   # Claude Code
+codex mcp add mini -- mini connect            # Codex
+gemini mcp add -s user mini mini connect      # Gemini CLI
 ```
 
-Any other client: point its MCP config at `mini connect`:
+Any other client takes the same command in its MCP config:
 
 ```json
 {
@@ -95,9 +97,7 @@ mini status
 mini call github list_pull_requests '{"owner":"golang","repo":"go","perPage":5}'
 ```
 
-mini recognizes GitHub's URL and installs its bundled projections automatically. Every tool is visible by default; use your MCP client's approval settings to control writes.
-
-Restart your agent. It now has `github__list_pull_requests` and the other GitHub tools, and their results come through mini, trimmed.
+mini recognizes GitHub's URL and installs its bundled projections. Every tool is visible; your MCP client's approval settings control writes.
 
 ### Other servers
 
@@ -108,13 +108,13 @@ mini add slack  --url https://mcp.slack.com/mcp
 mini add atlassian --url https://mcp.atlassian.com/v2/mcp
 ```
 
-To skip the `mini init` questions, use `mini init --import` (every agent found), `mini init --from cursor` (one agent or config file), or `mini init --add linear,sentry` (catalog servers); these leave logins and agent configs alone and print what's left to do.
+To skip the `mini init` questions, use `mini init --import` (every agent found), `mini init --from cursor` (one agent or config file), or `mini init --add linear,sentry` (catalog servers). These leave logins and agent configs alone and print what's left to do.
 
 mini ships with default projections for popular tools including Slack, GitHub, Atlassian. You can see all [the bundled settings here](internal/defaults/projections/).
 
 ## How it works
 
-mini is a local process that runs on your machine and sits between your agent and your MCP servers. When your agent calls a tool, mini resolves which upstream server owns it, forwards the call, applies your projection config to the response (trimming fields, capping strings, stripping noise), then returns the result. The agent never connects to upstream servers directly.
+mini runs on your machine. When your agent calls a tool, mini forwards the call to the server that owns it, trims the response with that tool's projection, and returns the result.
 
 ```mermaid
 sequenceDiagram
@@ -129,9 +129,9 @@ sequenceDiagram
     mini-->>Agent: trimmed response
 ```
 
-## Daemon mode
+## One mini for all your agents
 
-`mini connect` auto-detects a running daemon and routes through it, sharing one set of upstream connections across all agent sessions. If no daemon is running, `mini connect` starts one on demand. You usually do not need to manage it yourself; use `mini daemon status` to check whether it is running, or `mini daemon` to start it manually.
+All your agent sessions share one mini, so each upstream server gets one connection instead of one per chat. `mini connect` starts the shared daemon when it isn't running. Check it with `mini daemon status`.
 
 ```mermaid
 graph TB
@@ -158,7 +158,7 @@ graph TB
     end
 ```
 
-## Configuring mini
+## Configuration
 
 ```
 ~/.mini/
@@ -167,9 +167,7 @@ graph TB
   internal/                # machine-managed runtime state
 ```
 
-mini checks `~/.mini/servers/` every few seconds while it runs. A new file connects its server, a deleted file disconnects it, changed settings reconnect it, and projection edits apply to the next call. No restart is needed. `config.yaml` is read at startup.
-
-A complete server file:
+A server file:
 
 ```yaml
 # ~/.mini/servers/github.yaml
@@ -177,81 +175,28 @@ transport: http
 url: https://api.githubcopilot.com/mcp
 auth:
   type: bearer
-  token: "${GITHUB_TOKEN}"     # expanded from the environment
-permissions:
-  hidden: [delete_file]        # agents never see this tool
-projections:                   # keyed by tool name; "*" = every tool
+  token: "${GITHUB_TOKEN}"
+projections:
   list_issues:
-    exclude:
-      - "issues[].user.avatar_url"  # remove a field from each issue
     string_limits:
-      body: 1500               # cap each issue body at 1,500 chars
-    array_limits:
-      labels: 5                # keep the first 5 labels per issue
-  issue_read:
-    string_limits:
-      body: 25000              # cap a single issue body at 25,000 chars
+      body: 1500     # cap each issue body at 1,500 chars
 ```
 
-Servers that log in through a browser (Linear, Slack, Sentry and others) need no `auth:` block. `mini add` and `mini init` log you in, and `mini auth NAME` logs in again.
-
-A server file can also set `enabled: false` to turn the server off, or `tool_timeout: 5m` (default 30s).
-
-Projection rules:
-
-- `exclude`: remove fields by exact path, such as `user.avatar_url` or `"[].user.avatar_url"`. See [the path rules](docs/default-config-philosophy.md#exclude-paths).
-- `include_only`: keep only these top-level fields, or each item's fields when the result is a list.
-- `string_limits`: max characters for any field with this name, at any depth. Overrides `default_string_limit`; `0` means no cap.
-- `array_limits`: max items for any array with this name, at any depth; `default` applies to every array.
-- `strip_markup: true`: strip HTML and Markdown from every string.
-- `format`: `json` or `toon` for this tool, overriding `response_format`.
-
-Global settings in `~/.mini/config.yaml`:
-
-```yaml
-log_level: info            # debug | info | warn | error
-response_format: json      # json (default) | toon
-default_string_limit: 2000 # max chars per string; 0 disables
-```
-
-`response_format: toon` switches projected responses to [TOON](https://github.com/toon-format/toon), which writes a list's field names once on a header row, then one line per item.
+Edit the files in `~/.mini/servers/`; mini picks up changes without a restart. Every option is in [docs/configuration.md](docs/configuration.md).
 
 ## Recovering filtered data
 
-In the default proxy mode, the agent gets the upstream server's own result, trimmed in place: `structuredContent`, JSON and text blocks are projected, while images, other blocks and `_meta` pass through unchanged. With `response_format: toon`, JSON text blocks are re-encoded as TOON. Tools take the upstream's own arguments.
-
-Embedded resource text is limited as text; JSON field rules do not parse objects inside that text.
-
-When projection cuts something, the result carries a `__mini` notice, as a key in the result object, as the last element of a result list, or as a final text block:
-
-```json
-"__mini": {
-  "msg": "Response filtered, some fields were excluded or truncated, use read(<file>, <jq filter>) to fetch full values.",
-  "file": "1792180588821",
-  "truncated": [{ "path": ".content[0].text | fromjson | .items[0].body", "chars": 444 }]
-}
-```
-
-The full upstream result is stored in `~/.mini/internal/responses/`. The agent passes `file` to `read`, with a listed path (or any jq filter built on it) as `filter`, to recover just the value it needs. A call can also pass `__mini: {"projection": "raw"}` to get the whole result at once.
-
-Results that projection doesn't change have no notice and no stored file. Response files are cleaned up automatically by TTL and disk budget.
-
-Clients such as Claude Code check `structuredContent` against the tool's `outputSchema`. mini relaxes each advertised `outputSchema` (dropping `required`, length and item-count limits, and similar checks) so a trimmed result and its notice still validate.
+When mini cuts something, the result carries a `__mini` notice with a `file` key and the paths it cut. The full upstream result is saved on disk. The agent calls `read` with that `file` and a path to get back just what it needs. Details are in [docs/configuration.md](docs/configuration.md#recovering-filtered-data).
 
 ## Using mini from the CLI
 
-You don't have to connect mini to an agent via MCP. `mini call` works as a standalone command — pipe it from scripts, use it in CI, or have your agent invoke it as a subprocess rather than connecting via MCP at all:
+`mini call` runs a tool without an agent. Use it in scripts and CI, to see what a tool returns before you write a projection, or from an agent that runs commands but has weak MCP support:
 
 ```bash
 mini call github list_pull_requests '{"owner":"golang","repo":"go","perPage":3}'
 mini call -t github list_issues '{"owner":"golang","repo":"go","state":"open","perPage":10}'
 mini call -r github get_file_contents '{"owner":"golang","repo":"go","path":"README.md"}'
 ```
-
-This is useful when:
-- You want projection and auth handled for shell scripts or CI pipelines without an agent involved
-- You're debugging what a tool actually returns before writing a projection config
-- Your agent environment can run subprocesses but has limited MCP support
 
 ## Commands
 
