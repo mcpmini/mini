@@ -63,14 +63,14 @@ func validateItemsDepth(items []Value, depth int) error {
 }
 
 // Encode renders v as a TOON document per spec §5 root-form rules.
-// https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md?plain=1#L262
+// https://github.com/toon-format/spec/blob/d09c3d33e37389345a74bd96981eb96dd9be6c5e/SPEC.md?plain=1#L254
 func Encode(v Value) (string, error) {
 	if err := validateDepth(v, 0); err != nil {
 		return "", err
 	}
 	switch payload := v.payload.(type) {
 	case nullValue, boolValue, numberValue, stringValue:
-		return encodePrimitive(v)
+		return encodeRootPrimitive(v)
 	case objectValue:
 		return encodeRootObject(payload)
 	case arrayValue:
@@ -203,6 +203,16 @@ func encodePrimitive(v Value) (string, error) {
 	return "", errors.New("toon: uninitialized value")
 }
 
+// encodeRootPrimitive always quotes a root string starting with U+FEFF: a
+// decoder strips a leading byte-order mark (§12), so it must stay quoted.
+func encodeRootPrimitive(v Value) (string, error) {
+	text, ok := v.payload.(stringValue)
+	if !ok || !strings.HasPrefix(string(text), "\ufeff") {
+		return encodePrimitive(v)
+	}
+	return renderText(text, quoteString)
+}
+
 func encodeNumber(n numberValue) (string, error) {
 	s, err := encodeNum(n)
 	if err != nil {
@@ -215,10 +225,14 @@ func encodeNumber(n numberValue) (string, error) {
 }
 
 func encodeText(text stringValue) (string, error) {
+	return renderText(text, encodeString)
+}
+
+func renderText(text stringValue, render func(string) string) (string, error) {
 	if err := validateUTF8(string(text)); err != nil {
 		return "", err
 	}
-	s := encodeString(string(text))
+	s := render(string(text))
 	if len(s) > maxEncodeBytes {
 		return "", errEncodeTooLarge
 	}

@@ -1,14 +1,14 @@
 # Vendored TOON spec fixtures
 
-Encode test fixtures from the [TOON specification](https://github.com/toon-format/spec), release [v4.1.1](https://github.com/toon-format/spec/tree/62f16b369408180f1faf1cba7da1b46d1f336f12).
+Encode test fixtures from the [TOON specification](https://github.com/toon-format/spec), release [v4.4.0](https://github.com/toon-format/spec/tree/d09c3d33e37389345a74bd96981eb96dd9be6c5e).
 
 ## Provenance
 
 | | |
 |---|---|
 | Source | https://github.com/toon-format/spec |
-| Release | v4.1.1 |
-| Commit | `62f16b369408180f1faf1cba7da1b46d1f336f12` |
+| Release | v4.4.0 |
+| Commit | `d09c3d33e37389345a74bd96981eb96dd9be6c5e` |
 | Vendored | `tests/fixtures/encode/*.json` → `encode/`, `LICENSE` → `LICENSE` |
 | License | MIT (see [LICENSE](LICENSE)) |
 

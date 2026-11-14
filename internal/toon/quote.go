@@ -8,17 +8,17 @@ import (
 )
 
 // numericLikeRE mirrors spec §7.2's /^[+-]?\d+(?:\.\d+)?(?:e[+-]?\d+)?$/i.
-// https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md?plain=1#L414
+// https://github.com/toon-format/spec/blob/d09c3d33e37389345a74bd96981eb96dd9be6c5e/SPEC.md?plain=1#L401
 var numericLikeRE = regexp.MustCompile(`(?i)^[+-]?\d+(\.\d+)?(e[+-]?\d+)?$`)
 
 // unquotedKeyRE mirrors spec §7.3's ^[A-Za-z_][A-Za-z0-9_.]*$.
-// https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md?plain=1#L430
+// https://github.com/toon-format/spec/blob/d09c3d33e37389345a74bd96981eb96dd9be6c5e/SPEC.md?plain=1#L417
 var unquotedKeyRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.]*$`)
 
 // structuralChars is spec §7.2's always-quote set (colon, quote, backslash,
 // brackets/braces) plus the document delimiter, hardcoded to comma per 1a's
 // locked options (no delimiter option plumbing yet).
-// https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md?plain=1#L414
+// https://github.com/toon-format/spec/blob/d09c3d33e37389345a74bd96981eb96dd9be6c5e/SPEC.md?plain=1#L401
 const structuralChars = ":\"\\[]{},"
 
 func encodeString(s string) string {
@@ -67,7 +67,7 @@ func needsQuoting(s string) bool {
 	return strings.HasPrefix(s, "-")
 }
 
-// Spec §12 (https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md?plain=1#L620)
+// Spec §12 (https://github.com/toon-format/spec/blob/d09c3d33e37389345a74bd96981eb96dd9be6c5e/SPEC.md?plain=1#L582)
 // trims exactly U+0020; the broader ASCII check is harmless since control
 // chars (tab, newline, etc.) are already caught by containsControlChar.
 func hasLeadingOrTrailingASCIISpace(s string) bool {

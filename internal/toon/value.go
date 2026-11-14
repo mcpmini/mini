@@ -1,6 +1,6 @@
 // Package toon encodes values into TOON (Token-Oriented Object Notation),
-// spec v4.1, pinned to release v4.1.1 of https://github.com/toon-format/spec.
-// https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md?plain=1#L1
+// spec v4.4, pinned to release v4.4.0 of https://github.com/toon-format/spec.
+// https://github.com/toon-format/spec/blob/d09c3d33e37389345a74bd96981eb96dd9be6c5e/SPEC.md?plain=1#L1
 package toon
 
 type valueKind int
