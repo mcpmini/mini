@@ -39,7 +39,7 @@
 }
 ```
 
-Agents can recover trimmed data with mini's `read` MCP tool, which keeps the full response temporarily in case the agent needs it.
+Agents can recover trimmed data via mini's `read` MCP tool. Responses are temporarily stored to avoid repeating requests.
 
 ## Install
 
