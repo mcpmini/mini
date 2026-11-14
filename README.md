@@ -38,8 +38,6 @@
 }
 ```
 
-mini saves what it cuts, and the agent can fetch any of it back with mini's `read` tool.
-
 Listing 10 open issues on golang/go: 71k characters down to 23k.
 
 ## Install
