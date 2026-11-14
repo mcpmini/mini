@@ -3,7 +3,6 @@
 package server_test
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,7 +11,6 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/testutil"
-	"github.com/mcpmini/mini/internal/transport"
 )
 
 func TestConfigureSetProjection_aFailedSaveKeepsTheLiveRuleAndSessionOnlyStillApplies(t *testing.T) {
@@ -36,57 +34,24 @@ func TestConfigureSetProjection_aFailedSaveKeepsTheLiveRuleAndSessionOnlyStillAp
 	}
 	for name, breakFile := range cases {
 		t.Run(name, func(t *testing.T) {
-			srv := newTestServer(t, server.Params{})
-			addEdgeConn(addConnectionParams{
-				T:      t,
-				Server: srv,
-				Config: config.ServerConfig{Name: "svc", Projections: map[string]*config.ProjectionConfig{
-					"getData": {IncludeOnly: []string{"a"}},
-				}},
-				Connection: fakeGetData(),
-			})
+			rules := rulesByScope{"getData": {IncludeOnly: []string{"a"}}}
+			srv := newProjectionServer(t, config.ServerConfig{Name: "svc", Projections: rules})
 			path := config.ServerPath(srv.ConfigDir(), "svc")
 			breakFile(t, path)
 			before := serverFileText(t, path)
-			const sessionID = "cccccccc-cccc-cccc-cccc-000000000004"
-			postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: initMsg()})
+			s := openSession(t, srv)
 
-			saved := postMCP(
-				postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: setGetDataProjection(2, false)},
-			)
+			saved := s.configure(includeOnlyB(false))
 			assertIsErrorResult(t, saved)
 			if text := toolResultText(t, saved); !strings.Contains(text, "session_only") {
 				t.Errorf("failed save = %q, want session_only advice", text)
 			}
-			assertProjectedFields(
-				assertProjectedFieldsParams{
-					T: t,
-					Text: toolResultText(
-						t,
-						postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: callGetData(3)}),
-					),
-					Present: []string{"a"},
-					Absent:  []string{"b"},
-				},
-			)
+			s.expectGetDataFields([]string{"a"}, []string{"b"})
 
-			sessionOnly := postMCP(
-				postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: setGetDataProjection(4, true)},
-			)
-			if text := toolResultText(t, sessionOnly); strings.Contains(text, `"error"`) {
+			if text := toolResultText(t, s.configure(includeOnlyB(true))); strings.Contains(text, `"error"`) {
 				t.Fatalf("session_only set_projection = %s", text)
 			}
-			assertProjectedFields(
-				assertProjectedFieldsParams{
-					T: t,
-					Text: toolResultText(
-						t,
-						postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: callGetData(5)}),
-					),
-					Present: []string{"b"},
-					Absent:  []string{"a"},
-				},
-			)
+			s.expectGetDataFields([]string{"b"}, []string{"a"})
 			if after := serverFileText(t, path); after != before {
 				t.Errorf("server file = %q, want it untouched (%q)", after, before)
 			}
@@ -143,48 +108,31 @@ func TestConfigureSetProjection_rejectsUnknownOption(t *testing.T) {
 func TestConfigureProjectionRejectsUnsupportedExcludePathsWithoutPublishing(t *testing.T) {
 	for _, scope := range []string{"server", "session"} {
 		t.Run(scope, func(t *testing.T) {
-			const sessionID = "cccccccc-cccc-cccc-cccc-000000000051"
 			previous := &config.ProjectionConfig{Exclude: []string{"head.repo.description", "[].author.avatar_url"}}
-			srv := newProjectionServer(t, sessionID, map[string]*config.ProjectionConfig{"getData": previous})
+			s := newProjectionSession(t, rulesByScope{"getData": previous})
 			args := map[string]any{
 				"action": "set_projection", "server": "svc", "tool": "getData", "session_only": scope == "session",
 				"projection": previous,
 			}
-			resp := postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: configCall(11, args)})
-			if text := toolResultText(t, resp); !strings.Contains(text, `"ok":true`) {
+			if text := toolResultText(t, s.configure(args)); !strings.Contains(text, `"ok":true`) {
 				t.Fatalf("valid projection was rejected: %s", text)
 			}
-			want := getProjection(getProjectionParams{T: t, Server: srv, SessionID: sessionID, Tool: "getData"})
-			file := config.ServerPath(srv.ConfigDir(), "svc")
+			want := s.projection("getData")
+			file := config.ServerPath(s.h.srv.ConfigDir(), "svc")
 			before := string(testutil.ReadFile(t, file))
 			args["projection"] = &config.ProjectionConfig{Exclude: []string{"number", "items[0].desc"}}
-			resp = postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: configCall(12, args)})
+			resp := s.configure(args)
 			assertIsErrorResult(t, resp)
 			text := toolResultText(t, resp)
 			if !strings.Contains(text, `invalid exclude path "items[0].desc"`) ||
 				!strings.Contains(text, "for example items[].secret") {
 				t.Errorf("rejected path needs actionable error: %s", text)
 			}
-			assertReport(
-				t,
-				getProjection(getProjectionParams{T: t, Server: srv, SessionID: sessionID, Tool: "getData"}),
-				want,
-			)
+			assertReport(t, s.projection("getData"), want)
 			if after := string(testutil.ReadFile(t, file)); after != before {
 				t.Errorf("invalid projection changed persisted rule: %s", after)
 			}
 		})
-	}
-}
-
-func fakeGetData() *transport.FakeConnection {
-	return &transport.FakeConnection{
-		Tools: []transport.ToolDefinition{
-			{Name: "getData", Description: "get", InputSchema: json.RawMessage(`{}`)},
-		},
-		Responses: map[string]json.RawMessage{
-			"tools/call": json.RawMessage(`{"content":[{"type":"text","text":"{\"a\":1,\"b\":2}"}]}`),
-		},
 	}
 }
 
@@ -194,15 +142,4 @@ func serverFileText(t *testing.T, path string) string {
 		return "<missing>"
 	}
 	return string(testutil.ReadFile(t, path))
-}
-
-func callGetData(id int) map[string]any {
-	return map[string]any{
-		"jsonrpc": transport.JsonRPCVersion,
-		"id":      id,
-		"method":  "tools/call",
-		"params": map[string]any{
-			"name": "svc__getData", "arguments": map[string]any{},
-		},
-	}
 }
