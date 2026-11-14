@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.3.0 — 2026-11-13
+
+- **`mini init` is a full-screen setup** — it imports the MCPs you already use in Claude Code, Claude Desktop, Codex, Cursor and Windsurf, offers more from a curated catalog, runs browser logins, and connects mini to your agents, backing up each config it changes. `--import`, `--from` and `--add` set up servers without asking.
+- **Agents get the upstream's own results** — trimmed in place, keeping `structuredContent`, images, resources and `_meta`. A trimmed result carries a `__mini` notice listing what was cut, and `read` fetches it back.
+- **Trimmed results pass client schema checks** — mini advertises a relaxed `outputSchema`, so clients that validate results, such as Claude Code, accept trimmed ones.
+- **MCP 2026-07-28 support** — for agents and upstreams that speak the new revision, including tool-list lifetimes. Older revisions are negotiated properly on both sides.
+- **Changes apply without a restart** — a running mini picks up added, edited and removed server files, projection edits and new logins, and tells agents their tool list changed.
+- **Faster, sturdier startup** — servers connect concurrently, mini serves agents at once, and a broken server file only skips that server. `config status` says which servers are still starting or unavailable, and why.
+- **More reliable OAuth** — tokens refresh before they expire and after a 401. mini identifies itself with a client ID metadata document, falls back to dynamic registration, and checks the authorization server's issuer. The browser page reports success only once mini holds the token, and says so when access was denied.
+- **TOON output** — `response_format: toon` and `mini call -t` encode responses as [TOON](https://github.com/toon-format/toon): lossless, and much smaller than JSON for lists of records.
+- **`mini ls` shows connection state** — ready, needs auth or failed for each server, and `mini ls <server>` lists its tools with their annotation hints.
+- **Projections live in the server's file** — under `projections:` in `servers/<name>.yaml`, with nested exclusions written as paths such as `[].user.avatar_url`.
+- **Compact mode and `protected` are removed** — agents get each upstream tool directly, and the MCP client decides which calls need approval. `permissions.hidden` still hides tools.
+
 ## v0.2.0 — 2026-07-08
 
 - **One command replaces `serve` and `proxy`** — use `mini connect`. The default exposes upstream tools directly as `server__tool`; pass `--tool-mode compact` for the four-meta-tool interface (`list`/`call`/`perm_call`/`config`). Both old commands are removed.
