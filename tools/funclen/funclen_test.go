@@ -1,21 +1,13 @@
 package main
 
 import (
-	"go/parser"
-	"go/token"
 	"strings"
 	"testing"
 )
 
-// parseIssues parses src as a Go file and returns any funclen issues found.
 func parseIssues(t *testing.T, src string) []issue {
 	t.Helper()
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "test.go", src, 0)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	return collectFuncIssues(f, fset, strings.Split(src, "\n"))
+	return testSource(t, src).funcIssues()
 }
 
 // codeLines returns n lines of valid Go statements for use as a function body.
@@ -103,6 +95,22 @@ func TestCommentExclusion(t *testing.T) {
 		issues := parseIssues(t, src(body))
 		if len(issues) != 1 {
 			t.Fatalf("want 1 issue (trailing comment is code), got %+v", issues)
+		}
+	})
+
+	t.Run("comment opener inside a raw string leaves later functions counted", func(t *testing.T) {
+		s := "package p\nvar fixture = `\n/* not a comment\n`\nfunc f() {\n" + codeLines(25) + "}\n"
+		issues := parseIssues(t, s)
+		if len(issues) != 1 || issues[0].lines != 25 {
+			t.Fatalf("want f flagged at 25 lines, got %+v", issues)
+		}
+	})
+
+	t.Run("every line of a multi-line raw string counts as code", func(t *testing.T) {
+		body := "\t_ = `\n" + strings.Repeat("// looks like a comment\n", 16) + "`\n"
+		issues := parseIssues(t, src(body))
+		if len(issues) != 1 || issues[0].lines != 18 {
+			t.Fatalf("want 18 code lines, got %+v", issues)
 		}
 	})
 }

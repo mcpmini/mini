@@ -273,6 +273,7 @@ Report explicit project-rule violations, but assess their severity from concrete
 
 **Project style violations** (AGENTS.md):
 - Boolean or empty-string flags as positional args — `check.sh` catches function length and param count mechanically; this is what it misses
+- An added or raised entry in `tools/funclen/test_baseline.txt`. The baseline only shrinks, so the test should be shortened instead. A key renamed along with its test, keeping its number, is fine.
 
 **Comments to inspect:**
 - Describes what the code does rather than why (rename instead)

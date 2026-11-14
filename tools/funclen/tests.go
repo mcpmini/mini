@@ -1,0 +1,62 @@
+package main
+
+import (
+	"fmt"
+	"go/token"
+)
+
+type testFunc struct {
+	name           string
+	path           string
+	longest        scope
+	overLimitTotal int
+}
+
+func (f testFunc) describe() string {
+	return fmt.Sprintf("%s:%d: %s/%s", f.path, f.longest.line, f.name, f.longest.name)
+}
+
+func measureTests(paths []string, fset *token.FileSet) (map[string]testFunc, error) {
+	funcs := map[string]testFunc{}
+	for _, path := range paths {
+		s, err := readSource(path, fset)
+		if err != nil {
+			// Skipping the file instead would let a prune drop the allowances it holds.
+			return nil, err
+		}
+		for _, f := range s.testFuncs() {
+			key := pkgDir(path) + ":" + f.name
+			// The internal and external test packages share a directory, so a name can repeat.
+			if prev, seen := funcs[key]; seen {
+				f = prev.merge(f)
+			}
+			funcs[key] = f
+		}
+	}
+	return funcs, nil
+}
+
+func (f testFunc) merge(other testFunc) testFunc {
+	f.overLimitTotal += other.overLimitTotal
+	if other.longest.lines > f.longest.lines {
+		f.path, f.longest = other.path, other.longest
+	}
+	return f
+}
+
+func (s *sourceFile) testFuncs() []testFunc {
+	var funcs []testFunc
+	for _, fd := range s.funcDecls() {
+		f := testFunc{name: funcName(fd), path: s.path}
+		for _, sc := range s.leafScopes(fd.Body, "body", s.line(fd.Pos())) {
+			if sc.lines > f.longest.lines || f.longest.name == "" {
+				f.longest = sc
+			}
+			if sc.lines >= errorAt {
+				f.overLimitTotal += sc.lines
+			}
+		}
+		funcs = append(funcs, f)
+	}
+	return funcs
+}

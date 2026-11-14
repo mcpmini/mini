@@ -121,17 +121,10 @@ func findTool(tools []map[string]any, name string) map[string]any {
 	return nil
 }
 
-func setGetDataProjection(id int, sessionOnly bool) map[string]any {
+func includeOnlyB(sessionOnly bool) map[string]any {
 	return map[string]any{
-		"jsonrpc": transport.JsonRPCVersion,
-		"id":      id,
-		"method":  "tools/call",
-		"params": map[string]any{
-			"name": "config", "arguments": map[string]any{
-				"action": "set_projection", "server": "svc", "tool": "getData", "session_only": sessionOnly,
-				"projection": map[string]any{"include_only": []string{"b"}},
-			},
-		},
+		"action": "set_projection", "server": "svc", "tool": "getData", "session_only": sessionOnly,
+		"projection": map[string]any{"include_only": []string{"b"}},
 	}
 }
 
