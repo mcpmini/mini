@@ -48,7 +48,7 @@ go install github.com/mcpmini/mini/cmd/mini@latest
 mini init
 ```
 
-It walks you through setup:
+`mini init` walks you through setup:
 
 - Imports the MCP servers your agents already use
 - Lets you add more from the MCP catalog
