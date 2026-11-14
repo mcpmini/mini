@@ -115,47 +115,19 @@ mini ships with default projections for popular tools including Slack, GitHub, A
 
 mini runs on your machine. When your agent calls a tool, mini forwards the call to the server that owns it, trims the response with that tool's projection, and returns the result.
 
-```mermaid
-sequenceDiagram
-    participant Agent
-    participant mini
-    participant Upstream as GitHub MCP
-
-    Agent->>mini: github__list_pull_requests
-    mini->>Upstream: list_pull_requests
-    Upstream-->>mini: full response
-    mini->>mini: apply projection
-    mini-->>Agent: trimmed response
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/call-flow-dark.svg">
+  <img alt="A 71k-char response from GitHub MCP passes through mini and reaches your agent as 23k chars" src="docs/images/call-flow-light.svg">
+</picture>
 
 ## One mini for all your agents
 
 All your agent sessions share one mini, so each upstream server gets one connection instead of one per chat. `mini connect` starts the shared daemon when it isn't running. Check it with `mini daemon status`.
 
-```mermaid
-graph TB
-    subgraph before["Without daemon: each chat owns upstream connections"]
-        direction LR
-        a1[Claude Code] --> g1[GitHub MCP]
-        a1 --> l1[Linear MCP]
-        a2[Codex] --> g2[GitHub MCP]
-        a2 --> l2[Linear MCP]
-        a3[Cursor] --> g3[GitHub MCP]
-        a3 --> l3[Linear MCP]
-    end
-
-    subgraph after["With daemon: mini connect relays to one shared daemon"]
-        direction LR
-        b1[Claude Code] --> p1[mini connect]
-        b2[Codex] --> p2[mini connect]
-        b3[Cursor] --> p3[mini connect]
-        p1 --> d[mini daemon]
-        p2 --> d
-        p3 --> d
-        d --> bg[GitHub MCP]
-        d --> bl[Linear MCP]
-    end
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/shared-mini-dark.svg">
+  <img alt="Without mini, three agents open 6 connections to GitHub and Linear. With mini, they share one mini and 2 connections." src="docs/images/shared-mini-light.svg">
+</picture>
 
 ## Configuration
 
