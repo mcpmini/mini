@@ -48,13 +48,12 @@ go install github.com/mcpmini/mini/cmd/mini@latest
 mini init
 ```
 
-It:
+It walks you through setup:
 
-- imports the MCP servers your agents already use
-- lets you add more from the MCP catalog
-- logs you in to servers that need it
-- connects mini to your agents
-- backs up every config it changes
+- Imports the MCP servers your agents already use
+- Lets you add more from the MCP catalog
+- Logs you in to servers that need it
+- Connects mini to your agents
 
 ### Manual setup
 
@@ -63,7 +62,6 @@ Register `mini connect` as an MCP server:
 ```bash
 claude mcp add -s user mini -- mini connect   # Claude Code
 codex mcp add mini -- mini connect            # Codex
-gemini mcp add -s user mini mini connect      # Gemini CLI
 ```
 
 Any other client takes the same command in its MCP config:
