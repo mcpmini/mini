@@ -39,7 +39,7 @@
 }
 ```
 
-Nothing is lost. mini keeps the full response for an hour, and the agent can fetch anything that was cut with mini's `read` tool.
+Agents can recover trimmed data with mini's `read` MCP tool, which keeps the full response temporarily in case the agent needs it.
 
 ## Install
 
