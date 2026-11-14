@@ -182,7 +182,7 @@ projections:
       body: 1500     # cap each issue body at 1,500 chars
 ```
 
-Edit the files in `~/.mini/servers/`; mini picks up changes without a restart. Every option is in [docs/configuration.md](docs/configuration.md).
+Edit the files in `~/.mini/servers/`; mini picks up changes without a restart. More in [docs/configuration.md](docs/configuration.md).
 
 ## Recovering filtered data
 
