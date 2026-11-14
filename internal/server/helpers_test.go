@@ -6,10 +6,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io/fs"
+	"os"
+	"slices"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -83,10 +90,17 @@ func containsName(tools []map[string]any, name string) bool {
 
 func assertRemoveOk(t *testing.T, srv *server.Server, serverName string) {
 	t.Helper()
-	resp := serve(t, srv, callTool("config", map[string]any{
-		"action": "remove_server",
-		"server": serverName,
-	}))
+	removing := inBackground(srv, newTestSession(t, removeServerCall(serverName)))
+	output := testutil.WaitForReceive(t, removing.output, "remove_server to return")
+	assertConfigOk(t, removing.session.response(t, output))
+}
+
+func removeServerCall(serverName string) []byte {
+	return callTool("config", map[string]any{"action": "remove_server", "server": serverName})
+}
+
+func assertConfigOk(t *testing.T, resp map[string]any) {
+	t.Helper()
 	text := toolResultText(t, resp)
 	var result map[string]any
 	if err := json.Unmarshal([]byte(text), &result); err != nil {
@@ -166,4 +180,78 @@ type assertProjectedFieldsParams struct {
 	Text    string
 	Present []string
 	Absent  []string
+}
+
+type heldStep struct {
+	t       *testing.T
+	reached chan struct{}
+	gate    chan struct{}
+	arrive  func()
+	release func()
+}
+
+func newHeldStep(t *testing.T) *heldStep {
+	h := &heldStep{t: t, reached: make(chan struct{}), gate: make(chan struct{})}
+	h.arrive = sync.OnceFunc(func() { close(h.reached) })
+	h.release = sync.OnceFunc(func() { close(h.gate) })
+	t.Cleanup(h.release)
+	return h
+}
+
+func (h *heldStep) hold() {
+	h.arrive()
+	select {
+	case <-h.gate:
+	case <-h.t.Context().Done(): // a failing test must not hang in a server's Close on a held handler
+	}
+}
+
+func (h *heldStep) awaitReached(what string) {
+	h.t.Helper()
+	testutil.WaitForReceive(h.t, h.reached, what)
+}
+
+func assertNoFile(t *testing.T, what, path string) {
+	t.Helper()
+	if _, err := os.Stat(path); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("%s: stat = %v, want no file", what, err)
+	}
+}
+
+var svcLifecycleChanges = []struct {
+	name        string
+	change      func(*testing.T, *server.Server)
+	servesAfter []string
+}{
+	{
+		name:   "removed",
+		change: func(t *testing.T, srv *server.Server) { assertRemoveOk(t, srv, "svc") },
+	},
+	{
+		name: "replaced",
+		change: func(t *testing.T, srv *server.Server) {
+			if err := srv.AddConnection(
+				context.Background(),
+				config.ServerConfig{Name: "svc"},
+				fakeConn("replacement"),
+			); err != nil {
+				t.Fatal(err)
+			}
+		},
+		servesAfter: []string{"svc__replacement"},
+	},
+}
+
+func assertSvcServes(t *testing.T, srv *server.Server, want ...string) {
+	t.Helper()
+	var got []string
+	for _, name := range toolNames(toolsList(t, srv)) {
+		if strings.HasPrefix(name, "svc__") {
+			got = append(got, name)
+		}
+	}
+	slices.Sort(got)
+	if !slices.Equal(got, want) {
+		t.Errorf("svc serves %v, want %v", got, want)
+	}
 }

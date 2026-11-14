@@ -18,6 +18,8 @@ func (s *Server) ReplaceProjections(p map[string]map[string]*config.ProjectionCo
 
 func (s *Server) WaitForStartupConnects() { s.connector.wait() }
 
+func (s *Server) WaitForLogins() { s.authWg.Wait() }
+
 func (s *Server) ConfigDir() string { return s.configDir }
 
 func (s *Server) LiveProjection(server, tool string) *config.ProjectionConfig {

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -21,6 +22,7 @@ import (
 	"golang.org/x/oauth2"
 	"gopkg.in/yaml.v3"
 
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
@@ -288,6 +290,91 @@ func TestStartAuth_e2e_withStaleToken_browserTokenUsedOnFirstRequest(t *testing.
 	if n := upstream.rejectedWithToken.Load(); n > 0 {
 		t.Errorf("browser token caused %d unexpected 401 responses after auth, want 0", n)
 	}
+}
+
+func TestStartAuth_aStartupAttemptFinishingAfterTheLoginLeavesTheLoginsTools(t *testing.T) {
+	savedTokenListing := newHeldStep(t)
+	e := newOAuthEnv(t, func(loginToken string) *mcptest.Server {
+		return toolPerTokenUpstream(t, loginToken, savedTokenListing)
+	})
+	e.saveToken("saved")
+	e.srv.ConnectUpstreams(context.Background(), []config.ServerConfig{e.serverConfig()})
+	savedTokenListing.awaitReached("the startup attempt to list tools with the saved token")
+
+	e.completeLogin()
+	savedTokenListing.release()
+	e.srv.WaitForStartupConnects()
+
+	assertSvcServes(t, e.srv, "svc__from_login")
+}
+
+type oauthEnv struct {
+	t      *testing.T
+	dir    string
+	tokens *authtest.TokenServer
+	srv    *server.Server
+}
+
+func newOAuthEnv(t *testing.T, upstream func(loginToken string) *mcptest.Server) *oauthEnv {
+	t.Helper()
+	e := &oauthEnv{t: t, dir: t.TempDir(), tokens: authtest.NewTokenServer(t)}
+	e.srv = newOAuthServer(newOAuthServerParams{
+		T:          t,
+		ConfigDir:  e.dir,
+		ServerName: "svc",
+		TokenURL:   e.tokens.Srv.URL,
+		MCPURL:     upstream(e.tokens.AccessToken).URL,
+	})
+	return e
+}
+
+func (e *oauthEnv) serverConfig() config.ServerConfig {
+	e.t.Helper()
+	return loadServerConfig(e.t, e.dir, "svc")
+}
+
+func (e *oauthEnv) saveToken(accessToken string) {
+	e.t.Helper()
+	authtest.SaveToken(e.t, authtest.TokenFile{
+		ConfigDir: e.dir, ServerName: "svc", Server: e.serverConfig(),
+		Token: &oauth2.Token{AccessToken: accessToken, RefreshToken: "r"},
+	})
+}
+
+func (e *oauthEnv) completeLogin() {
+	e.t.Helper()
+	authtest.CompleteAuthorization(e.t, startAuth(e.t, e.srv, "svc"), "test-code")
+	e.srv.WaitForLogins()
+}
+
+func (e *oauthEnv) assertNoTokenOrTools() {
+	e.t.Helper()
+	assertNoFile(e.t, "svc's token", auth.TokenPath(e.dir, "svc"))
+	if n := e.srv.ToolCount("svc"); n != 0 {
+		e.t.Errorf("svc tools = %d, want 0", n)
+	}
+}
+
+func toolPerTokenUpstream(t *testing.T, loginToken string, savedListing *heldStep) *mcptest.Server {
+	return mcptest.NewHTTP(t, mcptest.Upstream{
+		Intercept: serveOAuthMetadata,
+		Authorize: func(r mcptest.Request) bool {
+			return slices.Contains([]string{"Bearer saved", "Bearer " + loginToken}, r.Header.Get("Authorization"))
+		},
+		Methods: map[string]mcptest.Method{"tools/list": func(r mcptest.Request) mcptest.Reply {
+			if r.Header.Get("Authorization") == "Bearer saved" {
+				savedListing.hold()
+				return toolListReply("from_saved_token")
+			}
+			return toolListReply("from_login")
+		}},
+	})
+}
+
+func toolListReply(name string) mcptest.Reply {
+	return mcptest.Reply{Result: map[string]any{
+		"tools": []map[string]any{{"name": name, "inputSchema": map[string]any{"type": "object"}}},
+	}}
 }
 
 func serveOAuthMetadata(w http.ResponseWriter, r *http.Request) bool {

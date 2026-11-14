@@ -73,6 +73,45 @@ func TestRemoveServerWhoseCloseDeliversToolsChanged(t *testing.T) {
 	}
 }
 
+func TestToolsChangedRefreshFinishingAfterItsServerWasRemovedOrReplaced_publishesNothing(t *testing.T) {
+	for _, tc := range svcLifecycleChanges {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, finishRefresh := refreshHeldInListTools(t)
+
+			tc.change(t, srv)
+			finishRefresh()
+			srv.Close() // waits for the refresh to finish
+
+			assertSvcServes(t, srv, tc.servesAfter...)
+		})
+	}
+}
+
+func refreshHeldInListTools(t *testing.T) (srv *server.Server, finishRefresh func()) {
+	t.Helper()
+	srv, refresh := newTestServer(t, server.Params{}), newHeldStep(t)
+	conn := &heldRefreshConn{FakeConnection: fakeConn("tool"), refresh: refresh}
+	if err := srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, conn); err != nil {
+		t.Fatal(err)
+	}
+	conn.SetTools(fakeConn("late").Tools)
+	emitToolsChanged(conn.FakeConnection)
+	refresh.awaitReached("the refresh to list tools")
+	return srv, refresh.release
+}
+
+type heldRefreshConn struct {
+	*transport.FakeConnection
+	refresh *heldStep
+}
+
+func (c *heldRefreshConn) ListTools(ctx context.Context) (transport.ToolList, error) {
+	if c.ListToolsCallCount() > 0 {
+		c.refresh.hold() // ignores ctx: the refresh must finish after the test's change
+	}
+	return c.FakeConnection.ListTools(ctx)
+}
+
 type notifyOnCloseConn struct{ *transport.FakeConnection }
 
 func (c notifyOnCloseConn) Close() error {
