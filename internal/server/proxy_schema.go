@@ -6,10 +6,11 @@ import (
 	"fmt"
 
 	"github.com/mcpmini/mini/internal/registry"
+	"github.com/mcpmini/mini/internal/toolresult"
 )
 
-func buildProxyToolSchemas(entries []*registry.ToolEntry) ([]map[string]any, error) {
-	out := []map[string]any{miniConfigSchema(), miniReadSchema()}
+func upstreamToolSchemas(entries []*registry.ToolEntry) ([]map[string]any, error) {
+	out := make([]map[string]any, 0, len(entries))
 	for _, e := range entries {
 		schema, err := proxyUpstreamToolSchema(e)
 		if err != nil {
@@ -27,7 +28,7 @@ func proxyUpstreamToolSchema(e *registry.ToolEntry) (map[string]any, error) {
 	}
 	m["name"] = e.Server + "__" + e.ToolName.Name()
 	m["inputSchema"] = proxyInputSchema(e)
-	setProxyOutputSchema(m)
+	toolresult.AdaptOutputSchema(m)
 	prefixDisplayTitles(m, e.Server)
 	return m, nil
 }

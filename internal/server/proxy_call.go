@@ -12,6 +12,7 @@ import (
 	"github.com/mcpmini/mini/internal/invoke"
 	"github.com/mcpmini/mini/internal/registry"
 	"github.com/mcpmini/mini/internal/response"
+	"github.com/mcpmini/mini/internal/toolresult"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -164,7 +165,7 @@ func (s *Server) proxyCallUpstream(ctx context.Context, p proxyCallParams) (any,
 	)
 	upstream.totalLatencyMs.Add(latencyMs)
 	if p.MRTR == nil {
-		raw = legacyStructuredContent(raw)
+		raw = toolresult.LegacyStructuredContent(raw)
 	}
 	if errors.Is(toolErr, invoke.ErrInputRequired) && p.MRTR != nil {
 		p.Session.recordCall(latencyMs, 0, false)
@@ -219,15 +220,22 @@ func (s *Server) proxyResultBytes(r proxyReply) (json.RawMessage, error) {
 	if r.Call.Controls.Projection == projectionRaw {
 		return r.Raw, nil
 	}
-	built, err := s.buildProxyResult(proxyResultParams{Raw: r.Raw, ProjCfg: r.ProjCfg})
+	shaped, err := toolresult.Shape(toolresult.ShapeParams{
+		Raw: r.Raw, Projection: r.ProjCfg, Defaults: s.projDefaults, Store: s.store,
+	})
 	if err != nil {
 		return nil, err
 	}
 	if !s.usesToon(r.ProjCfg) {
-		return built.Raw, nil
+		return shaped.Raw, nil
 	}
-	return s.toonifyProxyResult(toonParams{Server: r.Call.Server, Tool: r.Call.Tool, Built: built})
+	return shaped.Toon(s.logger.With("server", r.Call.Server, "tool", r.Call.Tool))
 }
+
+// upstreamResult is a tools/call result sent to the client exactly as built, not wrapped as text.
+type upstreamResult json.RawMessage
+
+func (r upstreamResult) MarshalJSON() ([]byte, error) { return []byte(r), nil }
 
 func (s *Server) usesToon(projCfg *config.ProjectionConfig) bool {
 	return config.EffectiveFormat("", config.ProjectionFormat(projCfg), s.cfg.ResponseFormat) == config.FormatToon

@@ -1,4 +1,4 @@
-package server
+package toolresult
 
 import (
 	"bytes"
@@ -74,10 +74,11 @@ func parseResultDoc(raw json.RawMessage) (*resultDoc, bool) {
 	return d, true
 }
 
-// Before 2026-07-28 structuredContent must be an object, and clients that validate results reject the
-// whole call when a newer upstream returns a list there:
+// LegacyStructuredContent moves a non-object structuredContent into a text block. Before 2026-07-28
+// structuredContent must be an object, and clients that validate results reject the whole call when
+// a newer upstream returns a list there:
 // https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c4c367f9f58296a7053f5c78a52fd02bfbb56a49/schema/2025-11-25/schema.ts#L1110-L1113
-func legacyStructuredContent(raw json.RawMessage) json.RawMessage {
+func LegacyStructuredContent(raw json.RawMessage) json.RawMessage {
 	d, ok := parseResultDoc(raw)
 	if !ok || !nonObjectStructured(d.result.StructuredContent) {
 		return raw

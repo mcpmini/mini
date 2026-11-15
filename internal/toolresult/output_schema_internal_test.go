@@ -1,6 +1,6 @@
 //go:build test
 
-package server
+package toolresult
 
 import (
 	"encoding/json"
@@ -201,12 +201,12 @@ func TestOutputSchema_FallsBackToRootTypeWhenTheNoticeCannotBePlaced(t *testing.
 
 func TestOutputSchema_NonObjectSchemaIsLeftAlone(t *testing.T) {
 	tool := map[string]any{"outputSchema": true}
-	setProxyOutputSchema(tool)
+	AdaptOutputSchema(tool)
 	if tool["outputSchema"] != true {
 		t.Errorf("boolean schema changed to %v", tool["outputSchema"])
 	}
 	tool = map[string]any{"outputSchema": nil}
-	setProxyOutputSchema(tool)
+	AdaptOutputSchema(tool)
 	if _, present := tool["outputSchema"]; present {
 		t.Error("null outputSchema is still advertised")
 	}
@@ -254,15 +254,15 @@ func runOutputSchemaCases(t *testing.T, cases []outputSchemaCase) {
 				t.Fatalf("upstream: %v", err)
 			}
 			tool := map[string]any{"outputSchema": schema}
-			setProxyOutputSchema(tool)
-			assertSameJSON(t, tool["outputSchema"], expandNoticeSchemas(tc.want))
+			AdaptOutputSchema(tool)
+			assertSameJSON(t, tool["outputSchema"], expandNoticeSchemas(t, tc.want))
 		})
 	}
 }
 
-func expandNoticeSchemas(want string) string {
-	want = strings.ReplaceAll(want, "NOTICE_ITEM", mustJSON(miniNoticeItemSchema()))
-	return strings.ReplaceAll(want, "MINI", mustJSON(miniOutputMetaSchema()))
+func expandNoticeSchemas(t *testing.T, want string) string {
+	want = strings.ReplaceAll(want, "NOTICE_ITEM", jsonText(t, miniNoticeItemSchema()))
+	return strings.ReplaceAll(want, "MINI", jsonText(t, miniOutputMetaSchema()))
 }
 
 func assertSameJSON(t *testing.T, got any, want string) {
@@ -271,7 +271,7 @@ func assertSameJSON(t *testing.T, got any, want string) {
 	if err := json.Unmarshal([]byte(want), &wantValue); err != nil {
 		t.Fatalf("want: %v", err)
 	}
-	if gotJSON, wantJSON := mustJSON(got), mustJSON(wantValue); gotJSON != wantJSON {
+	if gotJSON, wantJSON := jsonText(t, got), jsonText(t, wantValue); gotJSON != wantJSON {
 		t.Errorf("advertised outputSchema\n got: %s\nwant: %s", gotJSON, wantJSON)
 	}
 }

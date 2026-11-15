@@ -1,4 +1,4 @@
-package server
+package toolresult
 
 import (
 	"slices"
@@ -42,7 +42,8 @@ var knownDialects = []string{
 	"json-schema.org/draft/2019-09/schema", "json-schema.org/draft/2020-12/schema",
 }
 
-func setProxyOutputSchema(tool map[string]any) {
+// AdaptOutputSchema loosens a tool's outputSchema so the results Shape trims still match it.
+func AdaptOutputSchema(tool map[string]any) {
 	schema, ok := tool["outputSchema"].(map[string]any)
 	if !ok {
 		if tool["outputSchema"] == nil {
@@ -172,6 +173,15 @@ func placeMiniProperty(schema map[string]any) {
 	if _, upstreamOwnsKey := properties["__mini"]; !upstreamOwnsKey {
 		properties["__mini"] = miniOutputMetaSchema()
 	}
+}
+
+func schemaProperties(schema map[string]any) map[string]any {
+	properties, ok := schema["properties"].(map[string]any)
+	if !ok {
+		properties = map[string]any{}
+		schema["properties"] = properties
+	}
+	return properties
 }
 
 func placeMiniInBranches(schema map[string]any) bool {
