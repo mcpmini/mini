@@ -16,18 +16,6 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-// connError wraps transport-level errors so callers can distinguish them from
-// tool-level errors and trigger reconnect logic.
-type connError struct{ err error }
-
-func (e connError) Error() string { return e.err.Error() }
-func (e connError) Unwrap() error { return e.err }
-
-func isConnError(err error) bool {
-	var ce connError
-	return errors.As(err, &ce)
-}
-
 type upstreamServer struct {
 	cfg      config.ServerConfig
 	mu       sync.RWMutex // protects conn during reconnect
@@ -106,7 +94,7 @@ func (u *upstreamServer) dispatchCall(ctx context.Context, params json.RawMessag
 	u.lastCallAt.Store(&now)
 	raw, err := u.callConn(ctx, params)
 	if err != nil {
-		return nil, u.classifyCallError(err)
+		return nil, u.recordCallError(err)
 	}
 	toolErr := invoke.CheckResult(raw)
 	if toolErr != nil && !errors.Is(toolErr, invoke.ErrInputRequired) {
@@ -129,18 +117,9 @@ func (u *upstreamServer) currentConn() transport.Connection {
 	return u.conn
 }
 
-func (u *upstreamServer) classifyCallError(err error) error {
+func (u *upstreamServer) recordCallError(err error) error {
 	u.recordError(err.Error())
-	// Context cancellation/timeout: upstream is still alive — don't reconnect.
-	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-		return err
-	}
-	// JSON-RPC application errors (e.g. -32602): not transport failures — don't reconnect.
-	var rpcErr *transport.RPCError
-	if errors.As(err, &rpcErr) {
-		return err
-	}
-	return connError{err}
+	return classifyCallError(err)
 }
 
 const maxErrMsgBytes = 512

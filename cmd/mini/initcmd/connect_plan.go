@@ -5,7 +5,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/clock"
-	"github.com/mcpmini/mini/internal/server"
+	"github.com/mcpmini/mini/internal/invoke"
 )
 
 // ConnectPlan is what Connect knows before its connection checks: mini's servers and, per agent,
@@ -110,5 +110,5 @@ func (s Setup) probe() probeFunc {
 	if s.Probe != nil {
 		return s.Probe
 	}
-	return server.ProbeServer
+	return invoke.ProbeServer
 }

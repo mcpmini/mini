@@ -80,7 +80,7 @@ func (s *Server) refreshTools(u *upstreamServer) error {
 	toolList, err := conn.ListTools(ctx)
 	if err != nil {
 		if transport.IsConnectionError(err) {
-			s.maybeReconnect(u, connError{err: err})
+			s.maybeReconnect(u, markConnError(err))
 		}
 		return err
 	}

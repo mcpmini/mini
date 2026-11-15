@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -32,7 +31,6 @@ func (s *Server) dispatchRawCall(ctx context.Context, p dispatchParams) (json.Ra
 		return s.callPerSession(ctx, p)
 	}
 	raw, err := p.Upstream.callTool(ctx, callToolParams{Tool: p.Tool, Args: p.Params, MRTR: p.MRTR})
-	//nolint:contextcheck // Recovery belongs to the shared upstream and must survive one request's cancellation.
 	s.maybeReconnect(p.Upstream, err)
 	return raw, err
 }
@@ -63,14 +61,14 @@ type sessionConnErrParams struct {
 }
 
 func (s *Server) handleSessionConnErr(p sessionConnErrParams) error {
-	var rpcErr *transport.RPCError
-	if errors.As(p.Err, &rpcErr) || errors.Is(p.Err, context.DeadlineExceeded) || errors.Is(p.Err, context.Canceled) {
-		return p.Err
+	err := classifyCallError(p.Err)
+	if !isConnError(err) {
+		return err
 	}
 	s.logger.Warn("per-session connection error", "server", p.Upstream.cfg.Name, "err", p.Err)
 	p.Session.EvictConn(p.Upstream.cfg.Name, p.Conn)
 	p.Conn.Close() //nolint:errcheck // The call error is returned; Close only releases the evicted connection.
-	return connError{p.Err}
+	return err
 }
 
 func (s *Server) getOrDialSessionConn(
@@ -111,13 +109,9 @@ func (s *Server) dialPerSessionConn(
 	if conn := session.Conn(upstream.cfg.Name); conn != nil {
 		return conn, nil
 	}
-	conn, err := s.dialUpstream(ctx, upstream.cfg)
+	conn, _, err := s.openUpstream(ctx, upstream.cfg)
 	if err != nil {
 		return nil, err
-	}
-	if _, err := conn.ListTools(ctx); err != nil {
-		conn.Close() //nolint:errcheck // ListTools failure is returned; Close only releases the failed connection.
-		return nil, fmt.Errorf("init per_session conn: %w", err)
 	}
 	return session.GetOrSetConn(upstream.cfg.Name, conn), nil
 }
