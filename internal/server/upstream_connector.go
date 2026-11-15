@@ -6,7 +6,7 @@ import (
 )
 
 type upstreamConnector struct {
-	connectUntilRegistered func(context.Context, upstreamInstall)
+	connectUntilRegistered func(context.Context, *upstreamServer)
 	mu                     sync.Mutex
 	stopped                bool
 	lifetime               context.Context
@@ -14,12 +14,12 @@ type upstreamConnector struct {
 	wg                     sync.WaitGroup
 }
 
-func newUpstreamConnector(connectUntilRegistered func(context.Context, upstreamInstall)) *upstreamConnector {
+func newUpstreamConnector(connectUntilRegistered func(context.Context, *upstreamServer)) *upstreamConnector {
 	lifetime, cancel := context.WithCancel(context.Background())
 	return &upstreamConnector{connectUntilRegistered: connectUntilRegistered, lifetime: lifetime, cancelAll: cancel}
 }
 
-func (c *upstreamConnector) connect(ctx context.Context, in upstreamInstall) {
+func (c *upstreamConnector) connect(ctx context.Context, u *upstreamServer) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.stopped {
@@ -33,7 +33,7 @@ func (c *upstreamConnector) connect(ctx context.Context, in upstreamInstall) {
 		defer c.wg.Done()
 		defer stopOnClose()
 		defer cancel()
-		c.connectUntilRegistered(ctx, in)
+		c.connectUntilRegistered(ctx, u)
 	}()
 }
 

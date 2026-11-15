@@ -21,12 +21,11 @@ func (s *Server) lookupTool(server, tool string) (*registry.ToolEntry, error) {
 }
 
 func (s *Server) serverNotReadyError(server string) (*response.Envelope, bool) {
-	s.stateMu.RLock()
-	defer s.stateMu.RUnlock()
-	if _, recorded := s.configServers[server]; !recorded {
+	u := s.upstreams.get(server)
+	if u == nil || !u.fromConfig {
 		return nil, false
 	}
-	state := s.startup.state(server, s.clock.Now())
+	state := u.startupState(s.clock.Now())
 	if state.phase() == phaseConnected {
 		return nil, false
 	}

@@ -85,21 +85,11 @@ type statusInputs struct {
 	projections map[string][]string
 }
 
-// One snapshot, so a server that finishes connecting meanwhile is never listed both as ready and as starting.
 func (s *Server) snapshotStatusInputs() statusInputs {
+	ready, report := s.classifyStartup(s.upstreams.snapshot())
 	s.stateMu.RLock()
 	defer s.stateMu.RUnlock()
-	ready := make(map[string]*upstreamServer, len(s.upstreams))
-	for name, u := range s.upstreams {
-		if s.startup.ready(name) {
-			ready[name] = u
-		}
-	}
-	return statusInputs{
-		ready:       ready,
-		startup:     s.startupReportLocked(),
-		projections: snapshotProjectionNames(s.projections),
-	}
+	return statusInputs{ready: ready, startup: report, projections: snapshotProjectionNames(s.projections)}
 }
 
 func snapshotProjectionNames(projections map[string]map[string]*config.ProjectionConfig) map[string][]string {

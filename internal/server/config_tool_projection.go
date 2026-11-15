@@ -31,7 +31,7 @@ func (s *Server) getProjection(session *Session, p configureParams) (any, error)
 	}
 	tool, listed := s.upstreamToolName(p.ServerName, p.Tool)
 	rules := s.rulesFor(p.ServerName, tool, session)
-	if !listed && rules.Session == nil && rules.Server == nil && s.isUpstreamRegistered(p.ServerName) {
+	if !listed && rules.Session == nil && rules.Server == nil && s.isUpstreamConnected(p.ServerName) {
 		return nil, fmt.Errorf("server %q has no tool %q", p.ServerName, p.Tool)
 	}
 	return map[string]any{"tool": toolFullName(p.ServerName, p.Tool), "rules": rules}, nil
@@ -41,7 +41,7 @@ func (s *Server) upstreamToolName(server, visibleTool string) (tool string, list
 	if entry, ok := s.reg.LookupWithHidden(toolFullName(server, visibleTool)); ok {
 		return entry.ToolName.UpstreamName, true
 	}
-	if s.isUpstreamRegistered(server) {
+	if s.isUpstreamConnected(server) {
 		return visibleTool, false
 	}
 	if tool, ok := s.toolForAlias(server, visibleTool); ok {

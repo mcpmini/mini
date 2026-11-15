@@ -177,7 +177,7 @@ func TestRunAuthFlow_CloseCancelsReconnectAfterLogin(t *testing.T) {
 	if got := len(srv.reg.AllFull()); got != 0 {
 		t.Errorf("registered tools after Close = %d, want 0", got)
 	}
-	if srv.isUpstreamRegistered("svc") {
+	if srv.isUpstreamConnected("svc") {
 		t.Error("server remained registered after Close")
 	}
 }
@@ -206,7 +206,7 @@ func TestAuthFlow_loginInstallingAnUnrecordedServerRecordsItSoRmRemovesIt(t *tes
 	f := newLoginFixture(t, authtest.OAuthMCPServerParams{})
 	stream := f.postLogin(t.Context(), t, "svc")
 	authtest.CompleteAuthorization(t, stream.authURL(t), "test-auth-code")
-	if line := stream.next(t); line["ok"] != true || !f.srv.isUpstreamRegistered("svc") {
+	if line := stream.next(t); line["ok"] != true || !f.srv.isUpstreamConnected("svc") {
 		t.Fatalf("outcome = %v, want svc connected by the login", line)
 	}
 
@@ -215,7 +215,7 @@ func TestAuthFlow_loginInstallingAnUnrecordedServerRecordsItSoRmRemovesIt(t *tes
 	}
 	f.srv.applyServerFiles(t.Context())
 
-	if f.srv.isUpstreamRegistered("svc") {
+	if f.srv.isUpstreamConnected("svc") {
 		t.Error("svc still runs after its file was removed")
 	}
 }

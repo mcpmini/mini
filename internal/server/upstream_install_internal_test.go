@@ -327,18 +327,18 @@ func TestRetryStartupAfter_stopsForFailuresARetryCantFix(t *testing.T) {
 	srv := newInstallTestServer(t)
 	refused := fmt.Errorf("connect to svc: svc: %w", invoke.ErrAgentCommandNotAllowed)
 
-	if srv.retryStartupAfter(upstreamInstall{cfg: config.ServerConfig{Name: "svc"}}, refused, time.Second) {
+	if srv.retryStartupAfter(srv.startupInstall(config.ServerConfig{Name: "svc"}), refused, time.Second) {
 		t.Error("startup retries a command dangerous_allow_runtime_stdio doesn't allow, so it warns forever")
 	}
 	unset := fmt.Errorf(
 		"connect to svc: %w",
 		&config.UnsetEnvError{Field: "headers.Authorization", Names: []string{"GITHUB_TOKEN"}},
 	)
-	if srv.retryStartupAfter(upstreamInstall{cfg: config.ServerConfig{Name: "svc"}}, unset, time.Second) {
+	if srv.retryStartupAfter(srv.startupInstall(config.ServerConfig{Name: "svc"}), unset, time.Second) {
 		t.Error("startup retries a server whose environment variable isn't set, which a retry can't fix")
 	}
 	if !srv.retryStartupAfter(
-		upstreamInstall{cfg: config.ServerConfig{Name: "svc"}},
+		srv.startupInstall(config.ServerConfig{Name: "svc"}),
 		errors.New("connection refused"),
 		time.Second,
 	) {

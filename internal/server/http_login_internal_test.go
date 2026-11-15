@@ -122,7 +122,7 @@ func TestServeLogin_urlLineComesFirstAndOutcomeFollowsTheReconnect(t *testing.T)
 	if line["ok"] != true || line["expires"] == nil || line["connect_error"] != nil {
 		t.Errorf("outcome = %v, want ok with an expiry and no connect error", line)
 	}
-	if !f.srv.isUpstreamRegistered("svc") {
+	if !f.srv.isUpstreamConnected("svc") {
 		t.Error("svc isn't connected when the outcome arrives")
 	}
 }
@@ -233,11 +233,11 @@ func TestServeLogin_endingTheRequestAfterTheTokenIsSavedLetsTheReconnectFinish(t
 	f.upstream.UnblockConnecting()
 
 	testutil.WaitForReceive(t, flow.done, "the reconnect to finish")
-	if flow.outcome.err != nil || flow.outcome.connectErr != nil || !f.srv.isUpstreamRegistered("svc") {
+	if flow.outcome.err != nil || flow.outcome.connectErr != nil || !f.srv.isUpstreamConnected("svc") {
 		t.Errorf(
 			"outcome = %+v, connected %v; want the reconnect to complete",
 			flow.outcome,
-			f.srv.isUpstreamRegistered("svc"),
+			f.srv.isUpstreamConnected("svc"),
 		)
 	}
 }
@@ -252,7 +252,7 @@ func TestServeLogin_loginReplacedAfterItsTokenIsSavedStillConnects(t *testing.T)
 	f.upstream.UnblockConnecting()
 
 	line := stream.next(t)
-	connected := f.srv.isUpstreamRegistered("svc")
+	connected := f.srv.isUpstreamConnected("svc")
 	if line["ok"] != true || line["connect_error"] != nil || !connected {
 		t.Errorf("outcome = %v, connected %v; want ok and svc connected", line, connected)
 	}

@@ -16,14 +16,29 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
+// upstreamServer is one incarnation of a server: from the start of its first connect until it is
+// stopped. A config edit or a login replaces it with a new incarnation.
 type upstreamServer struct {
-	cfg      config.ServerConfig
-	mu       sync.RWMutex // protects conn during reconnect
-	conn     transport.Connection
+	cfg        config.ServerConfig
+	fromConfig bool                // started from servers/, the only servers a config edit removes
+	saved      config.ServerConfig // own copy of the settings, compared with the file on each check
+	removeGen  uint64
+	openedAt   time.Time // start of the startup hold
+	ctx        context.Context
+	cancel     context.CancelFunc
+	clock      clock.Clock
+
+	mu       sync.RWMutex
+	conn     transport.Connection // nil until the first connect succeeds
 	lastDefs []transport.ToolDefinition
-	ctx      context.Context
-	cancel   context.CancelFunc
-	clock    clock.Clock
+	ready    bool // set once the registry has the tools
+	failure  startupFailure
+	// loginSavedAt is the token file's time when the server stopped at needs auth. Taken then, not
+	// before connecting, so a token mini refreshed during that attempt doesn't count as a new login.
+	loginSavedAt time.Time
+	// OAuth mini detected on a failure, which every later load merges in. Compared with it, the next
+	// check doesn't take the note for an edit of the file.
+	detectedAuth *config.AuthConfig
 
 	reconnecting atomic.Bool
 	sem          chan struct{} // nil when MaxPendingRequests == 0 (unlimited)
@@ -52,7 +67,9 @@ func (u *upstreamServer) shutdownAndClose() {
 	u.shutdown()
 	// Outside u.mu: HTTP Close waits for notification callbacks that take u.mu. Once u.ctx is done no
 	// reconnect can swap u.conn, so this is the last connection.
-	u.currentConn().Close() //nolint:errcheck // Server removal has no caller to receive connection cleanup errors.
+	if conn := u.currentConn(); conn != nil {
+		conn.Close() //nolint:errcheck // Server removal has no caller to receive connection cleanup errors.
+	}
 }
 
 type callToolParams struct {
@@ -92,7 +109,12 @@ func (u *upstreamServer) dispatchCall(ctx context.Context, params json.RawMessag
 	now := u.clock.Now()
 	u.calls.Add(1)
 	u.lastCallAt.Store(&now)
-	raw, err := u.callConn(ctx, params)
+	conn := u.currentConn()
+	if conn == nil {
+		// Looked up just before a replace; the new incarnation hasn't connected yet.
+		return nil, fmt.Errorf("server %q is still connecting; try again in a few seconds", u.cfg.Name)
+	}
+	raw, err := callConn(ctx, conn, params)
 	if err != nil {
 		return nil, u.recordCallError(err)
 	}
@@ -103,12 +125,12 @@ func (u *upstreamServer) dispatchCall(ctx context.Context, params json.RawMessag
 	return raw, toolErr
 }
 
-func (u *upstreamServer) callConn(ctx context.Context, params json.RawMessage) (json.RawMessage, error) {
+func callConn(ctx context.Context, conn transport.Connection, params json.RawMessage) (json.RawMessage, error) {
 	// Not under u.mu, so a reconnect needn't wait for in-flight calls. A swap
 	// during a call is safe: HTTPConnection.Close stops only the notification
 	// listener, and StdioConnection.Close kills the subprocess, which fails the
 	// call with an error.
-	return u.currentConn().Call(ctx, "tools/call", params)
+	return conn.Call(ctx, "tools/call", params)
 }
 
 func (u *upstreamServer) currentConn() transport.Connection {

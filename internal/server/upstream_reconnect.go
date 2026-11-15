@@ -5,7 +5,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/mcpmini/mini/internal/registry"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -118,12 +117,7 @@ func (s *Server) publishReconnectedTools(
 		return false
 	}
 	u.adoptToolList(toolList)
-	s.reg.ReplaceServer(registry.ServerParams{
-		Name:            u.cfg.Name,
-		Defs:            toolList.Tools,
-		Perm:            u.cfg.Permissions,
-		AliasByToolName: s.currentAliasesFor(u.cfg.Name),
-	})
+	s.publishTools(u, toolList.Tools)
 	return true
 }
 

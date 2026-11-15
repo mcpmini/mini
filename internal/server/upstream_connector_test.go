@@ -15,7 +15,7 @@ type blockingConnects struct {
 
 func newBlockingConnector() (*upstreamConnector, blockingConnects) {
 	b := blockingConnects{started: make(chan struct{}, 1)}
-	c := newUpstreamConnector(func(ctx context.Context, _ upstreamInstall) {
+	c := newUpstreamConnector(func(ctx context.Context, _ *upstreamServer) {
 		b.started <- struct{}{}
 		<-ctx.Done()
 	})
@@ -36,7 +36,7 @@ func waitWithin(t *testing.T, c *upstreamConnector) {
 
 func TestUpstreamConnector_stop_cancelsRunningConnects(t *testing.T) {
 	c, connects := newBlockingConnector()
-	c.connect(context.Background(), upstreamInstall{})
+	c.connect(context.Background(), &upstreamServer{})
 	connects.awaitStarted(t)
 
 	c.stop()
@@ -47,7 +47,7 @@ func TestUpstreamConnector_stop_cancelsRunningConnects(t *testing.T) {
 func TestUpstreamConnector_callerCancel_stopsItsConnect(t *testing.T) {
 	c, connects := newBlockingConnector()
 	ctx, cancel := context.WithCancel(context.Background())
-	c.connect(ctx, upstreamInstall{})
+	c.connect(ctx, &upstreamServer{})
 	connects.awaitStarted(t)
 
 	cancel()
@@ -59,7 +59,7 @@ func TestUpstreamConnector_connectAfterStop_neverRuns(t *testing.T) {
 	c, connects := newBlockingConnector()
 	c.stop()
 
-	c.connect(context.Background(), upstreamInstall{})
+	c.connect(context.Background(), &upstreamServer{})
 	c.wait()
 
 	select {

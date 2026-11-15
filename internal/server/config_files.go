@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"maps"
 	"os"
 	"reflect"
 	"slices"
@@ -12,42 +11,12 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
-type configServer struct {
-	settings config.ServerConfig
-	// loginSavedAt is the token file's time when the server stopped at needs auth. Taken then, not
-	// before connecting, so a token mini refreshed during that attempt doesn't count as a new login.
-	loginSavedAt time.Time
-}
-
-func (s *Server) recordConfigServers(servers []config.ServerConfig) {
-	records := make(map[string]configServer, len(servers))
-	for _, sc := range servers {
-		if sc.IsEnabled() {
-			records[sc.Name] = configServer{settings: withOwnAuth(sc)}
-		}
-	}
-	s.stateMu.Lock()
-	defer s.stateMu.Unlock()
-	maps.Copy(s.configServers, records)
-}
-
 func (s *Server) loginSavedAt(name string) time.Time {
 	info, err := os.Stat(auth.TokenPath(s.configDir, name))
 	if err != nil {
 		return time.Time{} // no saved login yet
 	}
 	return info.ModTime()
-}
-
-func (s *Server) configServerNames() []string {
-	s.stateMu.RLock()
-	defer s.stateMu.RUnlock()
-	names := make([]string, 0, len(s.configServers))
-	for name := range s.configServers {
-		names = append(names, name)
-	}
-	slices.Sort(names)
-	return names
 }
 
 // applyServerFiles connects and removes servers to match servers/. It looks at every name each tick,
@@ -72,7 +41,7 @@ func (s *Server) namesToApply() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	names := append(s.configServerNames(), saved...)
+	names := append(s.upstreams.configNames(), saved...)
 	slices.Sort(names)
 	return slices.Compact(names), nil
 }
@@ -127,28 +96,33 @@ func (s *Server) loginSavedSinceAuthFailed(name string) bool {
 	if s.hasAuthFlow(name) { // a login start_auth runs reconnects the server itself
 		return false
 	}
-	s.stateMu.RLock()
-	record, recorded := s.configServers[name]
-	_, needsAuth := s.startup.state(name, s.clock.Now()).status.(needsAuthStatus)
-	s.stateMu.RUnlock()
-	return recorded && needsAuth && s.loginSavedAt(name).After(record.loginSavedAt)
-}
-
-// recordSettings creates the record when there is none: a login can install a server before the
-// reload loop first sees its file, and without a record the loop would never remove it.
-func (s *Server) recordSettings(sc config.ServerConfig) {
-	s.stateMu.Lock()
-	defer s.stateMu.Unlock()
-	record := s.configServers[sc.Name]
-	record.settings = sc
-	s.configServers[sc.Name] = record
+	u := s.upstreams.get(name)
+	if u == nil || !u.fromConfig {
+		return false
+	}
+	_, needsAuth := u.startupState(s.clock.Now()).status.(needsAuthStatus)
+	return needsAuth && s.loginSavedAt(name).After(u.loginSavedAtFailure())
 }
 
 func (s *Server) settingsChanged(sc config.ServerConfig) bool {
-	s.stateMu.RLock()
-	record, recorded := s.configServers[sc.Name]
-	s.stateMu.RUnlock()
-	return recorded && !sameSettings(record.settings, sc)
+	u := s.upstreams.get(sc.Name)
+	return u != nil && u.fromConfig && !sameSettings(u.savedSettings(), sc)
+}
+
+func (u *upstreamServer) loginSavedAtFailure() time.Time {
+	u.mu.RLock()
+	defer u.mu.RUnlock()
+	return u.loginSavedAt
+}
+
+func (u *upstreamServer) savedSettings() config.ServerConfig {
+	u.mu.RLock()
+	defer u.mu.RUnlock()
+	saved := u.saved
+	if saved.Auth == nil {
+		saved.Auth = u.detectedAuth
+	}
+	return saved
 }
 
 // sameSettings ignores what applies without a reconnect, and UnsetEnv, which only explains a failure.
@@ -179,15 +153,10 @@ func (s *Server) reconnectConfigServer(ctx context.Context, sc config.ServerConf
 }
 
 func (s *Server) isKnownServer(name string) bool {
-	s.stateMu.RLock()
-	defer s.stateMu.RUnlock()
-	_, recorded := s.configServers[name]
-	return s.upstreams[name] != nil || recorded
+	return s.upstreams.get(name) != nil
 }
 
 func (s *Server) isConfigServer(name string) bool {
-	s.stateMu.RLock()
-	defer s.stateMu.RUnlock()
-	_, recorded := s.configServers[name]
-	return recorded
+	u := s.upstreams.get(name)
+	return u != nil && u.fromConfig
 }

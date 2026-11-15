@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/mcpmini/mini/internal/config"
-	"github.com/mcpmini/mini/internal/registry"
 )
 
 const configPollInterval = 5 * time.Second
@@ -280,12 +279,7 @@ func (s *Server) reapplyAliases() {
 		if u.lastDefs == nil {
 			continue
 		}
-		s.reg.ReplaceServer(registry.ServerParams{
-			Name:            u.cfg.Name,
-			Defs:            u.lastDefs,
-			Perm:            u.cfg.Permissions,
-			AliasByToolName: s.currentAliasesFor(u.cfg.Name),
-		})
+		s.publishTools(u, u.lastDefs)
 	}
 }
 
