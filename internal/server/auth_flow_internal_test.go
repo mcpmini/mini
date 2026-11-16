@@ -6,8 +6,6 @@ import (
 	"context"
 	"io"
 	"log/slog"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/auth"
@@ -140,9 +138,12 @@ func TestRunAuthFlow_loginCompletingAfterRemoveServerDoesNotReinstall(t *testing
 func TestRunAuthFlow_CloseCancelsReconnectAfterLogin(t *testing.T) {
 	srv := newInternalAuthTestServer(t)
 	t.Cleanup(srv.Close)
-	url, initializing := stalledAuthInitialize(t, authtest.NewTokenServer(t).Srv.URL)
-	ctx := startCompletedAuthFlow(t, srv, config.ServerConfig{Name: "svc", Transport: "http", URL: url})
-	testutil.WaitForReceive(t, initializing, "the OAuth reconnect to reach upstream initialize")
+	upstream := authtest.NewOAuthMCPServer(
+		t,
+		authtest.OAuthMCPServerParams{AuthServerURL: authtest.NewTokenServer(t).Srv.URL, BlockConnecting: true},
+	)
+	ctx := startCompletedAuthFlow(t, srv, config.ServerConfig{Name: "svc", Transport: "http", URL: upstream.URL})
+	testutil.WaitForReceive(t, upstream.Connecting, "the OAuth reconnect to reach upstream initialize")
 
 	closed := make(chan struct{})
 	go func() { srv.Close(); close(closed) }()
@@ -156,34 +157,6 @@ func TestRunAuthFlow_CloseCancelsReconnectAfterLogin(t *testing.T) {
 	if srv.isUpstreamRegistered("svc") {
 		t.Error("server remained registered after Close")
 	}
-}
-
-// stalledAuthInitialize is an OAuth-protected MCP server that challenges requests without a
-// token, so login discovery finishes, and holds every request with a token, so the reconnect
-// after login blocks in initialize until the test ends.
-func stalledAuthInitialize(t *testing.T, issuer string) (string, <-chan struct{}) {
-	t.Helper()
-	initializing, release := make(chan struct{}, 1), make(chan struct{})
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			testutil.WriteJSON(w, http.StatusOK, authtest.ProtectedResource{
-				Resource: "http://" + r.Host, AuthorizationServers: []string{issuer},
-			})
-			return
-		}
-		if r.Header.Get("Authorization") == "" {
-			authtest.Challenge{ResourceMetadata: "http://" + r.Host + "/.well-known/oauth-protected-resource"}.Write(w)
-			return
-		}
-		select {
-		case initializing <- struct{}{}:
-		default:
-		}
-		<-release
-		w.WriteHeader(http.StatusBadRequest)
-	}))
-	t.Cleanup(func() { close(release); upstream.Close() })
-	return upstream.URL, initializing
 }
 
 func startCompletedAuthFlow(t *testing.T, srv *Server, sc config.ServerConfig) context.Context {
