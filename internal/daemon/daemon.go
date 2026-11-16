@@ -89,6 +89,7 @@ func Start(configDir string, timeout time.Duration, clock clock.Clock) error {
 
 func spawnDaemon(exe, configDir string) error {
 	cmd := exec.Command(exe, "--config", configDir, "daemon")
+	detachFromTerminal(cmd)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start daemon: %w", err)
 	}
