@@ -135,6 +135,28 @@ func TestRunAuthFlow_loginCompletingAfterRemoveServerDoesNotReinstall(t *testing
 	}
 }
 
+func TestRunAuthFlow_loginToADisabledServerSavesTheTokenWithoutConnecting(t *testing.T) {
+	echomcp := testutil.Binary(t, "ECHOMCP_BIN")
+	srv := newInternalAuthTestServer(t)
+	t.Cleanup(srv.Close)
+	ac := authtest.NewTokenServer(t).AuthConfig()
+	ac.ResourceURL = "https://mcp.example.com/mcp"
+	disabled := false
+	sc := config.ServerConfig{Name: "svc", Command: echomcp, URL: ac.ResourceURL, Auth: ac, Enabled: &disabled}
+	login := authtest.StartLogin(t, ac)
+	auth.ExchangeCallbackCode(login, "test-auth-code")
+
+	srv.authWg.Add(1)
+	srv.runAuthFlow(t.Context(), srv.replacingInstall(sc), &authFlowState{cancel: func() {}, login: login})
+
+	if _, err := auth.LoadLogin(srv.configDir, "svc"); err != nil {
+		t.Fatalf("saved login: %v; want the token saved", err)
+	}
+	if len(srv.reg.AllFull()) > 0 {
+		t.Error("the login connected a disabled server")
+	}
+}
+
 func TestRunAuthFlow_CloseCancelsReconnectAfterLogin(t *testing.T) {
 	srv := newInternalAuthTestServer(t)
 	t.Cleanup(srv.Close)

@@ -114,7 +114,9 @@ func (s *Server) awaitAuthAndReconnect(ctx context.Context, install upstreamInst
 		s.logger.Error("commit oauth token failed", "server", sc.Name, "err", err)
 		return
 	}
-	if s.reconnectWithToken(ctx, install) {
+	// The reload loop never removes a server it didn't connect, so installing a disabled one
+	// would leave it running.
+	if sc.IsEnabled() && s.reconnectWithToken(ctx, install) {
 		s.recordLoginSettings(install, flow.settings)
 	}
 }
