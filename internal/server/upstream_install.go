@@ -287,7 +287,7 @@ func (s *Server) currentAliasesFor(serverName string) map[string]string {
 }
 
 func (s *Server) detachAndCloseServer(serverName string) {
-	s.cancelExistingAuthFlow(serverName)
+	s.cancelExistingAuthFlow(serverName, errLoginServerGone)
 	s.serverOpMu.Lock()
 	defer s.serverOpMu.Unlock()
 	s.detachAndCloseLocked(serverName)

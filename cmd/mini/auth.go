@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -34,7 +35,10 @@ func runAuth(configDir, serverName string) {
 	if err != nil {
 		fatalf("%v", err)
 	}
-	if _, err := logIn(logInParams{configDir: configDir, cfg: cfg, sc: sc, out: os.Stdout}); err != nil {
+	err = logIn(logInParams{
+		configDir: configDir, cfg: cfg, sc: sc, out: os.Stdout, reachDaemon: daemonReacher(configDir),
+	})
+	if err != nil {
 		fatalf("%v", err)
 	}
 }
@@ -54,26 +58,33 @@ func loadOAuthServerAndConfig(
 }
 
 type pkceFlowParams struct {
-	configDir  string
-	serverName string
-	opener     func(string) error
-	sc         *config.ServerConfig
+	configDir   string
+	serverName  string
+	opener      func(string) error
+	sc          *config.ServerConfig
+	reachDaemon daemonReach
 }
 
 type logInParams struct {
-	configDir string
-	cfg       *config.Config
-	sc        *config.ServerConfig
-	out       io.Writer
+	configDir   string
+	cfg         *config.Config
+	sc          *config.ServerConfig
+	out         io.Writer
+	reachDaemon daemonReach
 }
 
-func logIn(p logInParams) (*oauth2.Token, error) {
-	token, err := doPKCEFlow(pkceFlowParamsFor(p.configDir, p.cfg, p.sc))
+func logIn(p logInParams) error {
+	flow := pkceFlowParamsFor(p.configDir, p.cfg, p.sc)
+	flow.reachDaemon = p.reachDaemon
+	result, err := doPKCEFlow(flow)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	printAuthResult(p.out, p.sc.Name, token.Expiry)
-	return token, nil
+	printAuthResult(p.out, p.sc.Name, result.expiry)
+	if result.connectErr != "" {
+		printNotice(p.out, "authorized, but connecting to %s failed: %s\n", p.sc.Name, result.connectErr)
+	}
+	return nil
 }
 
 func pkceFlowParamsFor(configDir string, cfg *config.Config, sc *config.ServerConfig) pkceFlowParams {
@@ -82,23 +93,37 @@ func pkceFlowParamsFor(configDir string, cfg *config.Config, sc *config.ServerCo
 
 const loginTimeout = 5 * time.Minute
 
-func doPKCEFlow(p pkceFlowParams) (*oauth2.Token, error) {
+func doPKCEFlow(p pkceFlowParams) (loginResult, error) {
 	printNotice(os.Stdout, "Authorizing %s...\n", p.serverName)
 	login, err := startBrowserLogin(context.Background(), p)
 	if err != nil {
-		return nil, err
+		return loginResult{}, err
 	}
 	printNotice(os.Stdout, "Open this URL in your browser:\n%s\n\n", login.url)
 	return login.wait()
 }
 
-// browserLogin is a login waiting on the browser; wait ends it and saves the token.
 type browserLogin struct {
 	url  string
-	wait func() (*oauth2.Token, error)
+	wait func() (loginResult, error)
+}
+
+type loginResult struct {
+	expiry     time.Time
+	connectErr string
 }
 
 func startBrowserLogin(ctx context.Context, p pkceFlowParams) (browserLogin, error) {
+	if p.reachDaemon != nil {
+		login, err := startDaemonLogin(ctx, p)
+		if !errors.Is(err, errUseLocalLogin) {
+			return login, err
+		}
+	}
+	return startLocalLogin(ctx, p)
+}
+
+func startLocalLogin(ctx context.Context, p pkceFlowParams) (browserLogin, error) {
 	ctx, cancel := context.WithTimeout(ctx, loginTimeout)
 	params := auth.BeginLoginParams{ConfigDir: p.configDir, ServerName: p.serverName, Clock: clock.System()}
 	login, err := auth.BeginLogin(ctx, *p.sc, params)
@@ -107,9 +132,13 @@ func startBrowserLogin(ctx context.Context, p pkceFlowParams) (browserLogin, err
 		return browserLogin{}, err
 	}
 	p.opener(login.AuthURL()) //nolint:errcheck // the caller shows the URL, so a failed open only costs a click
-	wait := func() (*oauth2.Token, error) {
+	wait := func() (loginResult, error) {
 		defer cancel()
-		return finishBrowserLogin(ctx, login, p)
+		token, err := finishBrowserLogin(ctx, login, p)
+		if err != nil {
+			return loginResult{}, err
+		}
+		return loginResult{expiry: token.Expiry}, nil
 	}
 	return browserLogin{url: login.AuthURL(), wait: wait}, nil
 }

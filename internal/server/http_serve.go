@@ -15,6 +15,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.serveHealthz(w)
 	case "/mcp":
 		s.serveMCP(w, r)
+	case "/login":
+		s.serveLogin(w, r)
 	default:
 		http.NotFound(w, r)
 	}
@@ -28,15 +30,19 @@ func (s *Server) serveHealthz(w http.ResponseWriter) {
 	})
 }
 
-func (s *Server) serveMCP(w http.ResponseWriter, r *http.Request) {
+func (s *Server) admitLocalRequest(w http.ResponseWriter, r *http.Request) bool {
 	if !s.authorizeDaemon(w, r) {
-		return
+		return false
 	}
 	if !hostIsLoopback(r.Host) {
 		http.Error(w, "forbidden: non-loopback Host", http.StatusForbidden)
-		return
+		return false
 	}
-	if rejectCrossOrigin(w, r) {
+	return !rejectCrossOrigin(w, r)
+}
+
+func (s *Server) serveMCP(w http.ResponseWriter, r *http.Request) {
+	if !s.admitLocalRequest(w, r) {
 		return
 	}
 	switch r.Method {

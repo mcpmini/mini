@@ -31,6 +31,7 @@ func run() error {
 		return err
 	}
 	defer func() {
+		stopDaemon(configDir)
 		if removeErr := os.RemoveAll(configDir); removeErr != nil {
 			fmt.Fprintln(os.Stderr, "remove config:", removeErr)
 		}

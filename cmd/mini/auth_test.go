@@ -2,6 +2,11 @@ package main
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +14,7 @@ import (
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func oauthServerWithBrowserCmd(cmd string) config.ServerConfig {
@@ -78,32 +84,151 @@ func TestPrintAuthResult(t *testing.T) {
 	}
 }
 
+func oauthServerFor(tokenServer *authtest.TokenServer) *config.ServerConfig {
+	return &config.ServerConfig{
+		Name: "svc", Transport: "http", URL: tokenServer.Srv.URL + "/mcp", Auth: tokenServer.AuthConfig(),
+	}
+}
+
 func TestLogIn_savesTokenAndReportsSuccess(t *testing.T) {
 	tokenServer := authtest.NewTokenServer(t)
-	orig := openBrowser
-	openBrowser = func(authURL string) error {
-		authtest.CompleteAuthorization(t, authURL, "test-auth-code")
-		return nil
-	}
-	t.Cleanup(func() { openBrowser = orig })
+	browserThat(t, func(authURL string) { authtest.CompleteAuthorization(t, authURL, "test-auth-code") })
 	dir := t.TempDir()
-	sc := &config.ServerConfig{
-		Name:      "svc",
-		Transport: "http",
-		URL:       tokenServer.Srv.URL + "/mcp",
-		Auth:      tokenServer.AuthConfig(),
-	}
 	var out bytes.Buffer
 
-	token, err := logIn(logInParams{configDir: dir, cfg: &config.Config{}, sc: sc, out: &out})
+	err := logIn(logInParams{configDir: dir, cfg: &config.Config{}, sc: oauthServerFor(tokenServer), out: &out})
 	if err != nil {
 		t.Fatalf("logIn: %v", err)
 	}
 	saved, err := auth.LoadLogin(dir, "svc")
-	if err != nil || saved.Token.AccessToken != token.AccessToken {
-		t.Errorf("saved token = %+v (err %v), want the returned token %q", saved, err, token.AccessToken)
+	if err != nil || saved.Token.AccessToken != tokenServer.AccessToken {
+		t.Errorf("saved token = %+v (err %v), want the token server's %q", saved, err, tokenServer.AccessToken)
 	}
 	if !strings.HasPrefix(out.String(), "authorized svc (") {
 		t.Errorf("output = %q, want the authorized line for svc", out.String())
+	}
+}
+
+func unreachableDaemon() (string, string, error) { return "", "", errors.New("no daemon in tests") }
+
+func fakeLoginDaemon(t *testing.T, handler http.HandlerFunc) daemonReach {
+	t.Helper()
+	socket := filepath.Join(testutil.ShortTempDir(t), "d.sock")
+	testutil.StartUnixServer(t, socket, handler)
+	return func() (string, string, error) { return socket, "test-token", nil }
+}
+
+func streamLoginLines(lines ...string) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		for _, line := range lines {
+			fmt.Fprintln(w, line) //nolint:errcheck // a failed write shows as the test's missing line
+		}
+	}
+}
+
+const daemonLoginURL = `{"url":"https://as.example.com/authorize?state=s"}`
+
+func TestLogIn_unreachableDaemonLogsInHere(t *testing.T) {
+	tokenServer := authtest.NewTokenServer(t)
+	browserThat(t, func(authURL string) { authtest.CompleteAuthorization(t, authURL, "test-auth-code") })
+	dir := t.TempDir()
+
+	err := logIn(logInParams{
+		configDir: dir, cfg: &config.Config{}, sc: oauthServerFor(tokenServer), out: io.Discard,
+		reachDaemon: unreachableDaemon,
+	})
+
+	if _, loadErr := auth.LoadLogin(dir, "svc"); err != nil || loadErr != nil {
+		t.Errorf("logIn = %v, saved login error = %v; want the login run and saved here", err, loadErr)
+	}
+}
+
+func TestLogIn_daemonWithoutTheLoginRouteLogsInHere(t *testing.T) {
+	tokenServer := authtest.NewTokenServer(t)
+	browserThat(t, func(authURL string) { authtest.CompleteAuthorization(t, authURL, "test-auth-code") })
+	dir := t.TempDir()
+
+	err := logIn(logInParams{
+		configDir: dir, cfg: &config.Config{}, sc: oauthServerFor(tokenServer), out: io.Discard,
+		reachDaemon: fakeLoginDaemon(t, http.NotFound),
+	})
+
+	if _, loadErr := auth.LoadLogin(dir, "svc"); err != nil || loadErr != nil {
+		t.Errorf("logIn = %v, saved login error = %v; want the login run and saved here", err, loadErr)
+	}
+}
+
+func TestLogIn_streamEndingWithoutAnOutcomeIsInterrupted(t *testing.T) {
+	browserThat(t, func(string) {})
+	var out bytes.Buffer
+
+	err := logIn(logInParams{
+		configDir: t.TempDir(), cfg: &config.Config{}, sc: oauthServerFor(authtest.NewTokenServer(t)), out: &out,
+		reachDaemon: fakeLoginDaemon(t, streamLoginLines(daemonLoginURL)),
+	})
+
+	if err == nil || err.Error() != "login interrupted" {
+		t.Errorf("logIn = %v, want login interrupted", err)
+	}
+	if out.Len() > 0 {
+		t.Errorf("output = %q, want nothing for an interrupted login", out.String())
+	}
+}
+
+func TestLogIn_daemonLoginErrorIsReturnedWithoutLoggingInHere(t *testing.T) {
+	tokenServer := authtest.NewTokenServer(t)
+	opened := 0
+	browserThat(t, func(string) { opened++ })
+	refuse := func(w http.ResponseWriter, _ *http.Request) {
+		testutil.WriteJSON(w, http.StatusUnprocessableEntity, map[string]any{
+			"error": "login_failed", "message": "resolve oauth endpoints: boom",
+		})
+	}
+
+	err := logIn(logInParams{
+		configDir: t.TempDir(), cfg: &config.Config{}, sc: oauthServerFor(tokenServer), out: io.Discard,
+		reachDaemon: fakeLoginDaemon(t, refuse),
+	})
+
+	if err == nil || err.Error() != "resolve oauth endpoints: boom" {
+		t.Errorf("logIn = %v, want the daemon's error", err)
+	}
+	if opened != 0 || tokenServer.Hits.Load() != 0 {
+		t.Errorf(
+			"browser opened %d times, token server hit %d times; want no login here",
+			opened,
+			tokenServer.Hits.Load(),
+		)
+	}
+}
+
+func TestLogIn_daemonOutcomeErrorIsReturned(t *testing.T) {
+	browserThat(t, func(string) {})
+	failed := `{"error":"login_failed","message":"auth flow: access_denied"}`
+
+	err := logIn(logInParams{
+		configDir: t.TempDir(), cfg: &config.Config{}, sc: oauthServerFor(authtest.NewTokenServer(t)), out: io.Discard,
+		reachDaemon: fakeLoginDaemon(t, streamLoginLines(daemonLoginURL, failed)),
+	})
+
+	if err == nil || err.Error() != "auth flow: access_denied" {
+		t.Errorf("logIn = %v, want the daemon's outcome error", err)
+	}
+}
+
+func TestLogIn_daemonConnectErrorIsPrintedAfterAuthorized(t *testing.T) {
+	browserThat(t, func(string) {})
+	authorized := `{"ok":true,"expires":"2030-01-02T03:04:05Z","connect_error":"initialize: boom"}`
+	var out bytes.Buffer
+
+	err := logIn(logInParams{
+		configDir: t.TempDir(), cfg: &config.Config{}, sc: oauthServerFor(authtest.NewTokenServer(t)), out: &out,
+		reachDaemon: fakeLoginDaemon(t, streamLoginLines(daemonLoginURL, authorized)),
+	})
+
+	want := "authorized svc (expires 2030-01-02T03:04:05Z)\nauthorized, but connecting to svc failed: initialize: boom\n"
+	if err != nil || out.String() != want {
+		t.Errorf("logIn = %v, output %q; want %q", err, out.String(), want)
 	}
 }

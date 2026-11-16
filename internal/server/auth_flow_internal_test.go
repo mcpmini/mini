@@ -13,6 +13,8 @@ import (
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
+	"github.com/mcpmini/mini/internal/ops"
 	"github.com/mcpmini/mini/internal/testutil"
 )
 
@@ -33,7 +35,7 @@ func TestCancelExistingAuthFlow_closesListenerSynchronously(t *testing.T) {
 	srv.authFlows["srv1"] = &authFlowState{cancel: func() { cancelled = true }, login: login}
 	srv.authMu.Unlock()
 
-	srv.cancelExistingAuthFlow("srv1")
+	srv.cancelExistingAuthFlow("srv1", errLoginReplaced)
 
 	if !cancelled {
 		t.Error("expected cancel() to be called")
@@ -76,7 +78,7 @@ func TestRunAuthFlow_staleCleanupPreservesNewerFlow(t *testing.T) {
 
 	_, staleCancel := context.WithCancel(context.Background())
 	defer staleCancel()
-	staleFlow := &authFlowState{cancel: staleCancel, login: staleLogin}
+	staleFlow := newAuthFlow(staleCancel, staleLogin, config.ServerConfig{})
 
 	activeLogin := authtest.StartLogin(t, &config.AuthConfig{})
 
@@ -128,7 +130,7 @@ func TestRunAuthFlow_loginCompletingAfterRemoveServerDoesNotReinstall(t *testing
 			}
 			auth.ExchangeCallbackCode(login, "test-auth-code")
 			srv.authWg.Add(1)
-			srv.runAuthFlow(t.Context(), installAtStartAuth, &authFlowState{cancel: func() {}, login: login})
+			srv.runAuthFlow(t.Context(), installAtStartAuth, newAuthFlow(func() {}, login, sc))
 
 			if got := len(srv.reg.AllFull()) > 0; got != tc.wantTools {
 				t.Errorf("tools registered = %v, want %v", got, tc.wantTools)
@@ -198,10 +200,64 @@ func startCompletedAuthFlow(t *testing.T, srv *Server, sc config.ServerConfig) c
 	auth.ExchangeCallbackCode(login, "test-auth-code")
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
-	flow := &authFlowState{cancel: cancel, login: login}
+	flow := newAuthFlow(cancel, login, sc)
 	srv.storeAuthFlow(sc.Name, flow)
 	install := srv.replacingInstall(sc)
 	srv.authWg.Add(1)
 	go srv.runAuthFlow(ctx, install, flow)
 	return ctx
+}
+
+func TestAuthFlow_loginToADisabledServerSavesTheTokenWithoutConnecting(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		start func(t *testing.T, f *loginFixture) *authFlowState
+	}{
+		{"terminal login", func(t *testing.T, f *loginFixture) *authFlowState {
+			f.postLogin(t.Context(), t, "svc").authURL(t)
+			return authFlow(f.srv, "svc")
+		}},
+		{"agent start_auth", func(t *testing.T, f *loginFixture) *authFlowState {
+			if _, err := configureStartAuth(t.Context(), f.srv); err != nil {
+				t.Fatal(err)
+			}
+			return authFlow(f.srv, "svc")
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newLoginFixture(t, loginUpstreamParams{})
+			disabled := false
+			f.sc.Enabled = &disabled
+			configtest.WriteServer(t, f.srv.configDir, f.sc)
+			flow := tc.start(t, f)
+
+			authtest.CompleteAuthorization(t, flow.login.AuthURL(), "test-auth-code")
+
+			testutil.WaitForReceive(t, flow.done, "the login to finish")
+			if _, err := auth.LoadLogin(f.srv.configDir, "svc"); flow.outcome.err != nil || err != nil {
+				t.Fatalf("outcome %+v, saved login error %v; want the token saved", flow.outcome, err)
+			}
+			if f.srv.isUpstreamRegistered("svc") {
+				t.Error("the login connected a disabled server")
+			}
+		})
+	}
+}
+
+func TestAuthFlow_loginInstallingAnUnrecordedServerRecordsItSoRmRemovesIt(t *testing.T) {
+	f := newLoginFixture(t, loginUpstreamParams{})
+	stream := f.postLogin(t.Context(), t, "svc")
+	authtest.CompleteAuthorization(t, stream.authURL(t), "test-auth-code")
+	if line := stream.next(t); line["ok"] != true || !f.srv.isUpstreamRegistered("svc") {
+		t.Fatalf("outcome = %v, want svc connected by the login", line)
+	}
+
+	if err := ops.RemoveServer(f.srv.configDir, "svc"); err != nil {
+		t.Fatal(err)
+	}
+	f.srv.applyServerFiles(t.Context())
+
+	if f.srv.isUpstreamRegistered("svc") {
+		t.Error("svc still runs after its file was removed")
+	}
 }
