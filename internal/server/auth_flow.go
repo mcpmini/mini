@@ -25,8 +25,9 @@ type authFlowState struct {
 }
 
 type loginOutcome struct {
-	expiry time.Time
-	err    error
+	expiry     time.Time
+	connectErr error
+	err        error
 }
 
 func (s *Server) beginAuthFlow(ctx context.Context, p authFlowParams) (*authFlowState, error) {
@@ -178,10 +179,18 @@ func (s *Server) awaitAuthAndReconnect(ctx context.Context, install upstreamInst
 	outcome := loginOutcome{expiry: savedLogin.Token.Expiry}
 	// The reload loop never removes a server it didn't connect, so installing a disabled one
 	// would leave it running.
-	if sc.IsEnabled() && s.reconnectWithToken(ctx, install) {
-		s.recordLoginSettings(install, flow.settings)
+	if sc.IsEnabled() {
+		outcome.connectErr = s.connectAfterLogin(ctx, install, flow)
 	}
 	return outcome
+}
+
+func (s *Server) connectAfterLogin(ctx context.Context, install upstreamInstall, flow *authFlowState) error {
+	err := s.reconnectWithToken(ctx, install)
+	if err == nil {
+		s.recordLoginSettings(install, flow.settings)
+	}
+	return err
 }
 
 // An edit or remove applied since the login started has its own record, which this mustn't replace.
@@ -215,7 +224,7 @@ func (s *Server) providerParamsFor(sc config.ServerConfig) provider.Params {
 	}
 }
 
-func (s *Server) reconnectWithToken(ctx context.Context, install upstreamInstall) bool {
+func (s *Server) reconnectWithToken(ctx context.Context, install upstreamInstall) error {
 	serverName := install.cfg.Name
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -224,9 +233,9 @@ func (s *Server) reconnectWithToken(ctx context.Context, install upstreamInstall
 	// old upstream in-place; on failure the old upstream is untouched.
 	if err := s.addUpstream(ctx, install); err != nil {
 		s.logger.Error("reconnect after auth failed", "server", serverName, "err", err)
-		return false
+		return err
 	}
 	s.notifyAllSessions()
 	s.logger.Info("reconnected after auth", "server", serverName)
-	return true
+	return nil
 }

@@ -114,8 +114,8 @@ func TestServeLogin_urlLineComesFirstAndOutcomeFollowsTheReconnect(t *testing.T)
 	f.upstream.UnblockConnecting()
 
 	line := stream.next(t)
-	if line["ok"] != true || line["expires"] == nil {
-		t.Errorf("outcome = %v, want ok with an expiry", line)
+	if line["ok"] != true || line["expires"] == nil || line["connect_error"] != nil {
+		t.Errorf("outcome = %v, want ok with an expiry and no connect error", line)
 	}
 	if !f.srv.isUpstreamRegistered("svc") {
 		t.Error("svc isn't connected when the outcome arrives")
@@ -184,5 +184,17 @@ func TestServeLogin_failedSaveIsASaveLoginError(t *testing.T) {
 	line := stream.next(t)
 	if message, _ := line["message"].(string); line["error"] == nil || !strings.HasPrefix(message, "save login: ") {
 		t.Errorf("outcome = %v, want a save login error", line)
+	}
+}
+
+func TestServeLogin_failedReconnectIsOKWithItsConnectError(t *testing.T) {
+	f := newLoginFixture(t, authtest.OAuthMCPServerParams{FailConnecting: true})
+	stream := f.postLogin(t.Context(), t, "svc")
+
+	authtest.CompleteAuthorization(t, stream.authURL(t), "test-auth-code")
+
+	line := stream.next(t)
+	if connectErr, _ := line["connect_error"].(string); line["ok"] != true || connectErr == "" {
+		t.Errorf("outcome = %v, want ok with the reconnect's error", line)
 	}
 }

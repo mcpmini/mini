@@ -142,6 +142,7 @@ func loginResultFrom(line daemon.LoginLine) loginResult {
 		//nolint:errcheck // an unparsable expiry reads as none, which is what the terminal then prints
 		result.expiry, _ = time.Parse(time.RFC3339, line.Expires)
 	}
+	result.connectErr = line.ConnectError
 	return result
 }
 
