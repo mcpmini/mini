@@ -22,6 +22,9 @@ type authFlowState struct {
 	settings config.ServerConfig
 	done     chan struct{} // closed once outcome is set, after the login's reconnect
 	outcome  loginOutcome
+	// cancelReason and committed are guarded by Server.authMu.
+	cancelReason error
+	committed    bool
 }
 
 type loginOutcome struct {
@@ -29,6 +32,13 @@ type loginOutcome struct {
 	connectErr error
 	err        error
 }
+
+var (
+	errLoginReplaced     = errors.New("replaced by another login")
+	errLoginSettingsEdit = errors.New("the server's settings changed")
+	errLoginServerGone   = errors.New("the server was removed")
+	errLoginRequestEnded = errors.New("the login request ended")
+)
 
 func (s *Server) beginAuthFlow(ctx context.Context, p authFlowParams) (*authFlowState, error) {
 	if err := ctx.Err(); err != nil {
@@ -82,7 +92,7 @@ func (s *Server) startPKCEFlow(
 	serverName string,
 	sc config.ServerConfig,
 ) (*auth.BrowserLogin, error) {
-	s.cancelExistingAuthFlow(serverName)
+	s.cancelExistingAuthFlow(serverName, errLoginReplaced)
 	params := auth.BeginLoginParams{ConfigDir: s.configDir, ServerName: serverName, Clock: s.clock}
 	login, err := auth.BeginLogin(ctx, sc, params)
 	if err != nil {
@@ -130,19 +140,46 @@ func (s *Server) hasAuthFlow(serverName string) bool {
 	return s.authFlows[serverName] != nil
 }
 
-func (s *Server) cancelExistingAuthFlow(serverName string) {
+func (s *Server) cancelExistingAuthFlow(serverName string, reason error) {
 	s.authMu.Lock()
 	old := s.authFlows[serverName]
-	if old != nil {
+	delete(s.authFlows, serverName)
+	// A newer login can still be abandoned in the browser, so one whose token is saved finishes
+	// its own reconnect.
+	savedLoginKeepsReconnecting := old != nil && old.committed && errors.Is(reason, errLoginReplaced)
+	cancel := old != nil && !savedLoginKeepsReconnecting
+	if cancel {
+		old.markCancelledLocked(reason)
+	}
+	s.authMu.Unlock()
+	if cancel {
+		old.stop()
+	}
+}
+
+func (s *Server) cancelUncommittedAuthFlow(serverName string, flow *authFlowState) {
+	s.authMu.Lock()
+	current := s.authFlows[serverName] == flow && !flow.committed
+	if current {
+		flow.markCancelledLocked(errLoginRequestEnded)
 		delete(s.authFlows, serverName)
 	}
 	s.authMu.Unlock()
-	if old == nil {
-		return
+	if current {
+		flow.stop()
 	}
+}
+
+func (f *authFlowState) markCancelledLocked(reason error) {
+	if f.cancelReason == nil {
+		f.cancelReason = reason
+	}
+}
+
+func (f *authFlowState) stop() {
 	//nolint:errcheck // Close joins the callback server and currently always returns nil.
-	old.login.Close()
-	old.cancel()
+	f.login.Close()
+	f.cancel()
 }
 
 func (s *Server) runAuthFlow(ctx context.Context, install upstreamInstall, flow *authFlowState) {
@@ -170,7 +207,10 @@ func (s *Server) awaitAuthAndReconnect(ctx context.Context, install upstreamInst
 	savedLogin, err := flow.login.Wait(ctx)
 	if err != nil {
 		s.logger.Error("oauth flow failed", "server", sc.Name, "err", err)
-		return loginOutcome{err: fmt.Errorf("auth flow: %w", err)}
+		return loginOutcome{err: s.loginFailure(flow, fmt.Errorf("auth flow: %w", err))}
+	}
+	if !s.beginCommit(flow) {
+		return loginOutcome{err: s.loginFailure(flow, nil)}
 	}
 	if err := s.commitTokenUnlessRemoved(install, savedLogin); err != nil {
 		s.logger.Error("commit oauth token failed", "server", sc.Name, "err", err)
@@ -190,7 +230,7 @@ func (s *Server) connectAfterLogin(ctx context.Context, install upstreamInstall,
 	if err == nil {
 		s.recordLoginSettings(install, flow.settings)
 	}
-	return err
+	return s.connectFailure(flow, err)
 }
 
 // An edit or remove applied since the login started has its own record, which this mustn't replace.
@@ -200,6 +240,35 @@ func (s *Server) recordLoginSettings(install upstreamInstall, settings config.Se
 	if s.removeGen[install.cfg.Name] == install.removeGen {
 		s.recordSettings(settings)
 	}
+}
+
+// beginCommit makes the commit and cancellation exclusive: a cancelled flow never saves its token,
+// and one that has begun saving it is no longer cancelled by its request ending.
+func (s *Server) beginCommit(flow *authFlowState) bool {
+	s.authMu.Lock()
+	defer s.authMu.Unlock()
+	flow.committed = flow.cancelReason == nil
+	return flow.committed
+}
+
+func (s *Server) loginFailure(flow *authFlowState, err error) error {
+	s.authMu.Lock()
+	defer s.authMu.Unlock()
+	if flow.cancelReason != nil {
+		return fmt.Errorf("login cancelled: %w", flow.cancelReason)
+	}
+	return err
+}
+
+// A settings edit or remove that cancels this login after its token is saved reconnects or drops the
+// server itself, so this login's cut-short reconnect is no failure of it.
+func (s *Server) connectFailure(flow *authFlowState, err error) error {
+	s.authMu.Lock()
+	defer s.authMu.Unlock()
+	if flow.cancelReason != nil {
+		return nil
+	}
+	return err
 }
 
 func (s *Server) commitTokenUnlessRemoved(install upstreamInstall, login *auth.Login) error {

@@ -169,7 +169,7 @@ func withOwnAuth(sc config.ServerConfig) config.ServerConfig {
 
 func (s *Server) reconnectConfigServer(ctx context.Context, sc config.ServerConfig) {
 	// A login still waiting in the browser was started for the old settings.
-	s.cancelExistingAuthFlow(sc.Name)
+	s.cancelExistingAuthFlow(sc.Name, errLoginSettingsEdit)
 	s.serverOpMu.Lock()
 	s.removeGen[sc.Name]++
 	s.closeDetached(sc.Name, s.detachUpstreamKeepingProjections(sc.Name))

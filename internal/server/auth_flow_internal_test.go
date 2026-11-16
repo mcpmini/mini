@@ -31,7 +31,7 @@ func TestCancelExistingAuthFlow_closesListenerSynchronously(t *testing.T) {
 	srv.authFlows["srv1"] = newAuthFlow(func() { cancelled = true }, login, config.ServerConfig{})
 	srv.authMu.Unlock()
 
-	srv.cancelExistingAuthFlow("srv1")
+	srv.cancelExistingAuthFlow("srv1", errLoginReplaced)
 
 	if !cancelled {
 		t.Error("expected cancel() to be called")

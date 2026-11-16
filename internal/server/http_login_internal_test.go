@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -26,6 +27,7 @@ import (
 type loginFixture struct {
 	srv      *Server
 	http     *httptest.Server
+	handled  chan struct{}
 	upstream *authtest.OAuthMCPServer
 	sc       config.ServerConfig
 }
@@ -37,10 +39,13 @@ func newLoginFixture(t *testing.T, p authtest.OAuthMCPServerParams) *loginFixtur
 	srv.cfg.DisableAuthBrowserOpen = true
 	tokenServer := authtest.NewTokenServer(t)
 	p.AuthServerURL = tokenServer.Srv.URL
-	f := &loginFixture{srv: srv, upstream: authtest.NewOAuthMCPServer(t, p)}
+	f := &loginFixture{srv: srv, handled: make(chan struct{}, 8), upstream: authtest.NewOAuthMCPServer(t, p)}
 	f.sc = config.ServerConfig{Name: "svc", Transport: "http", URL: f.upstream.URL, Auth: tokenServer.AuthConfig()}
 	configtest.WriteServer(t, srv.configDir, f.sc)
-	f.http = testutil.Serve(t, srv.ServeHTTP)
+	f.http = testutil.Serve(t, func(w http.ResponseWriter, r *http.Request) {
+		srv.ServeHTTP(w, r)
+		f.handled <- struct{}{}
+	})
 	return f
 }
 
@@ -197,4 +202,119 @@ func TestServeLogin_failedReconnectIsOKWithItsConnectError(t *testing.T) {
 	if connectErr, _ := line["connect_error"].(string); line["ok"] != true || connectErr == "" {
 		t.Errorf("outcome = %v, want ok with the reconnect's error", line)
 	}
+}
+
+func TestServeLogin_endingTheRequestCancelsTheLoginAndReleasesItsPort(t *testing.T) {
+	f := newLoginFixture(t, authtest.OAuthMCPServerParams{})
+	ctx, cancel := context.WithCancel(t.Context())
+	stream := f.postLogin(ctx, t, "svc")
+	stream.authURL(t)
+	flow := authFlow(f.srv, "svc")
+
+	cancel()
+
+	testutil.WaitForReceive(t, flow.done, "the login to end with its request")
+	if !errors.Is(flow.outcome.err, errLoginRequestEnded) {
+		t.Errorf("outcome = %+v, want the login cancelled by its request ending", flow.outcome)
+	}
+	authtest.RequireCallbackPortReleased(t, flow.login)
+}
+
+func TestServeLogin_endingTheRequestAfterTheTokenIsSavedLetsTheReconnectFinish(t *testing.T) {
+	f := newLoginFixture(t, authtest.OAuthMCPServerParams{BlockConnecting: true})
+	ctx, cancel := context.WithCancel(t.Context())
+	stream := f.postLogin(ctx, t, "svc")
+	authtest.CompleteAuthorization(t, stream.authURL(t), "test-auth-code")
+	testutil.WaitForReceive(t, f.upstream.Connecting, "the reconnect, which follows the token save")
+	flow := authFlow(f.srv, "svc")
+
+	cancel()
+	testutil.WaitForReceive(t, f.handled, "the login request to end")
+	f.upstream.UnblockConnecting()
+
+	testutil.WaitForReceive(t, flow.done, "the reconnect to finish")
+	if flow.outcome.err != nil || flow.outcome.connectErr != nil || !f.srv.isUpstreamRegistered("svc") {
+		t.Errorf(
+			"outcome = %+v, connected %v; want the reconnect to complete",
+			flow.outcome,
+			f.srv.isUpstreamRegistered("svc"),
+		)
+	}
+}
+
+func TestServeLogin_loginReplacedAfterItsTokenIsSavedStillConnects(t *testing.T) {
+	f := newLoginFixture(t, authtest.OAuthMCPServerParams{BlockConnecting: true})
+	stream := f.postLogin(t.Context(), t, "svc")
+	authtest.CompleteAuthorization(t, stream.authURL(t), "test-auth-code")
+	testutil.WaitForReceive(t, f.upstream.Connecting, "the reconnect, which follows the token save")
+	f.postLogin(t.Context(), t, "svc").authURL(t)
+
+	f.upstream.UnblockConnecting()
+
+	line := stream.next(t)
+	connected := f.srv.isUpstreamRegistered("svc")
+	if line["ok"] != true || line["connect_error"] != nil || !connected {
+		t.Errorf("outcome = %v, connected %v; want ok and svc connected", line, connected)
+	}
+}
+
+func TestServeLogin_cancelledLoginReportsWhy(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		cancel func(t *testing.T, f *loginFixture)
+		want   string
+	}{
+		{"another login", func(t *testing.T, f *loginFixture) {
+			f.postLogin(t.Context(), t, "svc").authURL(t)
+		}, "login cancelled: replaced by another login"},
+		{"a settings change", func(t *testing.T, f *loginFixture) {
+			edited := f.sc
+			edited.Headers = map[string]string{"X-Edited": "1"}
+			configtest.WriteServer(t, f.srv.configDir, edited)
+			f.srv.applyServerFiles(t.Context())
+		}, "login cancelled: the server's settings changed"},
+		{"remove_server", func(t *testing.T, f *loginFixture) {
+			if _, err := f.srv.removeServerFromAgent("svc"); err != nil {
+				t.Fatal(err)
+			}
+		}, "login cancelled: the server was removed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newLoginFixture(t, authtest.OAuthMCPServerParams{})
+			recordLoadedServer(t, f.srv, "svc")
+			stream := f.postLogin(t.Context(), t, "svc")
+			stream.authURL(t)
+
+			tc.cancel(t, f)
+
+			if line := stream.next(t); line["message"] != tc.want {
+				t.Errorf("outcome = %v, want %q", line, tc.want)
+			}
+		})
+	}
+}
+
+func TestServeLogin_reloadMatchingTheLoginsSettingsDoesNotCancelIt(t *testing.T) {
+	f := newLoginFixture(t, authtest.OAuthMCPServerParams{})
+	before := f.sc
+	before.Headers = map[string]string{"X-Before-Probe": "1"}
+	f.srv.recordConfigServers([]config.ServerConfig{before})
+	stream := f.postLogin(t.Context(), t, "svc")
+	authURL := stream.authURL(t)
+
+	f.srv.applyServerFiles(t.Context())
+	authtest.CompleteAuthorization(t, authURL, "test-auth-code")
+
+	if line := stream.next(t); line["ok"] != true {
+		t.Errorf("outcome = %v, want the login to finish despite the reload", line)
+	}
+}
+
+func recordLoadedServer(t *testing.T, srv *Server, name string) {
+	t.Helper()
+	sc, found, err := config.LookupServer(srv.configDir, name)
+	if err != nil || !found {
+		t.Fatalf("load %s: found=%v err=%v", name, found, err)
+	}
+	srv.recordConfigServers([]config.ServerConfig{sc})
 }
