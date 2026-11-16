@@ -13,37 +13,11 @@ import (
 )
 
 func (s *Server) handleStartAuth(ctx context.Context, serverName string) (any, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	if err := validateServerName(serverName); err != nil {
-		return nil, err
-	}
-	// Held until the login is registered, so a remove_server either runs first or cancels the
-	// login, and can't delete the server's files while the login is still writing them.
-	unlock := s.serverNames.lock(serverName)
-	defer unlock()
-	sc, err := s.loadOAuthServerConfig(serverName)
+	flow, err := s.beginAuthFlow(ctx, authFlowParams{Server: serverName})
 	if err != nil {
 		return nil, err
 	}
-	if contextErr := ctx.Err(); contextErr != nil {
-		return nil, contextErr
-	}
-	settings := withOwnAuth(sc)
-	install := s.replacingInstall(sc)
-	login, err := s.startPKCEFlow(ctx, serverName, sc)
-	if err != nil {
-		return nil, err
-	}
-	authCtx, flow, err := s.registerAuthFlow(ctx, login, settings)
-	if err != nil {
-		return nil, err
-	}
-	s.authWg.Add(1)
-	go s.runAuthFlow(authCtx, install, flow)
-	s.maybeOpenAuthBrowser(sc, login.AuthURL())
-	return authStartResponse(serverName, login.AuthURL()), nil
+	return authStartResponse(serverName, flow.login.AuthURL()), nil
 }
 
 func (s *Server) loadOAuthServerConfig(serverName string) (config.ServerConfig, error) {

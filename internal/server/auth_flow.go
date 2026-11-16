@@ -11,10 +11,62 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
+type authFlowParams struct {
+	Server             string
+	LeaveBrowserClosed bool
+}
+
 type authFlowState struct {
 	cancel   context.CancelFunc
 	login    *auth.BrowserLogin
 	settings config.ServerConfig
+	done     chan struct{} // closed once outcome is set, after the login's reconnect
+	outcome  loginOutcome
+}
+
+type loginOutcome struct {
+	expiry time.Time
+	err    error
+}
+
+func (s *Server) beginAuthFlow(ctx context.Context, p authFlowParams) (*authFlowState, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := validateServerName(p.Server); err != nil {
+		return nil, err
+	}
+	// Held until the login is registered, so a remove_server either runs first or cancels the
+	// login, and can't delete the server's files while the login is still writing them.
+	unlock := s.serverNames.lock(p.Server)
+	defer unlock()
+	sc, err := s.loadOAuthServerConfig(p.Server)
+	if err != nil {
+		return nil, err
+	}
+	if contextErr := ctx.Err(); contextErr != nil {
+		return nil, contextErr
+	}
+	return s.launchAuthFlow(ctx, sc, p)
+}
+
+func (s *Server) launchAuthFlow(ctx context.Context, sc config.ServerConfig, p authFlowParams) (*authFlowState, error) {
+	settings := withOwnAuth(sc)
+	install := s.replacingInstall(sc)
+	login, err := s.startPKCEFlow(ctx, sc.Name, sc)
+	if err != nil {
+		return nil, err
+	}
+	authCtx, flow, err := s.registerAuthFlow(ctx, login, settings)
+	if err != nil {
+		return nil, err
+	}
+	s.authWg.Add(1)
+	go s.runAuthFlow(authCtx, install, flow)
+	if !p.LeaveBrowserClosed {
+		s.maybeOpenAuthBrowser(sc, login.AuthURL())
+	}
+	return flow, nil
 }
 
 func (s *Server) maybeOpenAuthBrowser(sc config.ServerConfig, authURL string) {
@@ -47,9 +99,13 @@ func (s *Server) registerAuthFlow(
 		return nil, nil, errors.Join(err, login.Close())
 	}
 	authCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Minute)
-	state := &authFlowState{cancel: cancel, login: login, settings: settings}
+	state := newAuthFlow(cancel, login, settings)
 	s.storeAuthFlow(settings.Name, state)
 	return authCtx, state, nil
+}
+
+func newAuthFlow(cancel context.CancelFunc, login *auth.BrowserLogin, settings config.ServerConfig) *authFlowState {
+	return &authFlowState{cancel: cancel, login: login, settings: settings, done: make(chan struct{})}
 }
 
 func (s *Server) storeAuthFlow(serverName string, state *authFlowState) {
@@ -92,7 +148,7 @@ func (s *Server) runAuthFlow(ctx context.Context, install upstreamInstall, flow 
 	defer s.authWg.Done()
 	defer flow.cancel()
 	defer s.clearAuthFlow(install.cfg.Name, flow)
-	s.awaitAuthAndReconnect(ctx, install, flow)
+	flow.finish(s.awaitAuthAndReconnect(ctx, install, flow))
 }
 
 func (s *Server) clearAuthFlow(serverName string, flow *authFlowState) {
@@ -103,22 +159,29 @@ func (s *Server) clearAuthFlow(serverName string, flow *authFlowState) {
 	s.authMu.Unlock()
 }
 
-func (s *Server) awaitAuthAndReconnect(ctx context.Context, install upstreamInstall, flow *authFlowState) {
+func (f *authFlowState) finish(outcome loginOutcome) {
+	f.outcome = outcome
+	close(f.done)
+}
+
+func (s *Server) awaitAuthAndReconnect(ctx context.Context, install upstreamInstall, flow *authFlowState) loginOutcome {
 	sc := install.cfg
 	savedLogin, err := flow.login.Wait(ctx)
 	if err != nil {
 		s.logger.Error("oauth flow failed", "server", sc.Name, "err", err)
-		return
+		return loginOutcome{err: fmt.Errorf("auth flow: %w", err)}
 	}
 	if err := s.commitTokenUnlessRemoved(install, savedLogin); err != nil {
 		s.logger.Error("commit oauth token failed", "server", sc.Name, "err", err)
-		return
+		return loginOutcome{err: fmt.Errorf("save login: %w", err)}
 	}
+	outcome := loginOutcome{expiry: savedLogin.Token.Expiry}
 	// The reload loop never removes a server it didn't connect, so installing a disabled one
 	// would leave it running.
 	if sc.IsEnabled() && s.reconnectWithToken(ctx, install) {
 		s.recordLoginSettings(install, flow.settings)
 	}
+	return outcome
 }
 
 // An edit or remove applied since the login started has its own record, which this mustn't replace.

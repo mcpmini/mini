@@ -82,7 +82,7 @@ func TestApplyServerFile_leavesAServerAtNeedsAuthWithoutANewLogin(t *testing.T) 
 		},
 		"login in flight": func(t *testing.T) *Server {
 			srv, _ := newNeedsAuthServer(t)
-			srv.storeAuthFlow("svc", &authFlowState{cancel: func() {}})
+			srv.storeAuthFlow("svc", newAuthFlow(func() {}, nil, config.ServerConfig{}))
 			writeLogin(t, srv)
 			return srv
 		},
@@ -151,7 +151,7 @@ func TestApplyServerFile_anEditCancelsALoginStartedForTheOldSettings(t *testing.
 		AuthURL:  "https://auth.example.com/authorize",
 		TokenURL: "https://auth.example.com/token",
 	})
-	srv.storeAuthFlow("svc", &authFlowState{cancel: func() { cancelled = true }, login: login})
+	srv.storeAuthFlow("svc", newAuthFlow(func() { cancelled = true }, login, config.ServerConfig{}))
 
 	sc.Args = []string{"--moved"}
 	configtest.WriteServer(t, srv.configDir, sc)
