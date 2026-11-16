@@ -11,6 +11,7 @@ import (
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/ops"
 	"github.com/mcpmini/mini/internal/testutil"
 )
 
@@ -199,4 +200,22 @@ func startCompletedAuthFlow(t *testing.T, srv *Server, sc config.ServerConfig) c
 	srv.authWg.Add(1)
 	go srv.runAuthFlow(ctx, install, flow)
 	return ctx
+}
+
+func TestAuthFlow_loginInstallingAnUnrecordedServerRecordsItSoRmRemovesIt(t *testing.T) {
+	f := newLoginFixture(t, authtest.OAuthMCPServerParams{})
+	stream := f.postLogin(t.Context(), t, "svc")
+	authtest.CompleteAuthorization(t, stream.authURL(t), "test-auth-code")
+	if line := stream.next(t); line["ok"] != true || !f.srv.isUpstreamRegistered("svc") {
+		t.Fatalf("outcome = %v, want svc connected by the login", line)
+	}
+
+	if err := ops.RemoveServer(f.srv.configDir, "svc"); err != nil {
+		t.Fatal(err)
+	}
+	f.srv.applyServerFiles(t.Context())
+
+	if f.srv.isUpstreamRegistered("svc") {
+		t.Error("svc still runs after its file was removed")
+	}
 }

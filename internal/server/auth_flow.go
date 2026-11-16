@@ -217,8 +217,6 @@ func (s *Server) awaitAuthAndReconnect(ctx context.Context, install upstreamInst
 		return loginOutcome{err: fmt.Errorf("save login: %w", err)}
 	}
 	outcome := loginOutcome{expiry: savedLogin.Token.Expiry}
-	// The reload loop never removes a server it didn't connect, so installing a disabled one
-	// would leave it running.
 	if sc.IsEnabled() {
 		outcome.connectErr = s.connectAfterLogin(ctx, install, flow)
 	}
