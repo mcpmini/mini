@@ -20,7 +20,7 @@ func runFullScreenInit(configDir string) error {
 	out, runErr := tui.Run(tui.Params{
 		Setup:       setup,
 		LoadCatalog: publishedCatalogSource().load,
-		StartLogin:  startInitLogin,
+		StartLogin:  initLoginStarter(configDir),
 	})
 	restore()
 	err = reportFullScreenInit(configDir, out, runErr)
