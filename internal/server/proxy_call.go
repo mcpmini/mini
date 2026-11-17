@@ -163,6 +163,9 @@ func (s *Server) proxyCallUpstream(ctx context.Context, p proxyCallParams) (any,
 		dispatchParams{Upstream: upstream, Tool: p.Tool, Params: p.Params, Session: p.Session, MRTR: p.MRTR},
 	)
 	upstream.totalLatencyMs.Add(latencyMs)
+	if p.MRTR == nil {
+		raw = legacyStructuredContent(raw)
+	}
 	if errors.Is(toolErr, invoke.ErrInputRequired) && p.MRTR != nil {
 		p.Session.recordCall(latencyMs, 0, false)
 		return upstreamResult(raw), nil

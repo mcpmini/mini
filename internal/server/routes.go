@@ -41,8 +41,8 @@ func (s *Server) handleRequest(
 	if req.Method == "initialize" && err == nil {
 		session.markInitialized()
 	}
-	if err == nil {
-		result, err = shapeResultForEra(req.Method, result, requestEra(modern))
+	if err == nil && modern {
+		result, err = addModernResultFields(req.Method, result)
 	}
 	return buildRouteResponse(req.ID, result, err)
 }

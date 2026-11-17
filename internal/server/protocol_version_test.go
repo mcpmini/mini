@@ -290,9 +290,32 @@ func TestLegacyToolCall_TrimmedListKeepsNoticeInText(t *testing.T) {
 	if _, ok := result["structuredContent"]; ok {
 		t.Errorf("legacy agent got non-object structuredContent: %v", result)
 	}
-	texts := contentTexts(result)
-	if len(texts) != 1 || !strings.Contains(texts[0], `"__mini"`) || strings.Contains(texts[0], `"secret":`) {
-		t.Errorf("want one trimmed text block carrying the notice, got %q", texts)
+	joined := strings.Join(contentTexts(result), "\n")
+	if !strings.Contains(joined, `[{"id":1}]`) || !strings.Contains(joined, `"__mini"`) {
+		t.Errorf("want the trimmed list and the notice in text, got %q", joined)
+	}
+}
+
+func TestLegacyToolCall_ListBesideProseIsAddedAsText(t *testing.T) {
+	h := newProxyHarness(t, newTestServer(t, server.Params{}))
+	h.addUpstream("svc", `{"content":[{"type":"text","text":"Found 1."}],"structuredContent":[{"id":42}]}`, "list")
+
+	texts := contentTexts(h.call("svc__list", nil))
+
+	if len(texts) != 2 || texts[0] != "Found 1." || texts[1] != `[{"id":42}]` {
+		t.Errorf("want the prose and then the list, got %q", texts)
+	}
+}
+
+func TestLegacyToolCall_TrimmedStructuredOnlyListKeepsTheList(t *testing.T) {
+	h := newProxyHarness(t, newTestServer(t, server.Params{}))
+	h.addUpstream("svc", `{"content":[],"structuredContent":[{"id":42,"secret":"x"}]}`, "list")
+	h.setProjection("svc", "list", map[string]any{"exclude": []string{"[].secret"}})
+
+	joined := strings.Join(contentTexts(h.call("svc__list", nil)), "\n")
+
+	if !strings.Contains(joined, `[{"id":42}]`) || !strings.Contains(joined, `"__mini"`) {
+		t.Errorf("want the trimmed list and the notice in text, got %q", joined)
 	}
 }
 
