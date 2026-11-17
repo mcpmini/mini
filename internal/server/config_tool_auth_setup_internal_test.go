@@ -56,9 +56,12 @@ func TestConfigureStartAuth_handoffSurvivesRequestCancellationAndCloseJoins(t *t
 	t.Cleanup(srv.Close)
 	srv.cfg.DisableAuthBrowserOpen = true
 	tokenServer := authtest.NewTokenServer(t)
-	upstreamURL, initializing := stalledAuthInitialize(t, tokenServer.Srv.URL)
+	upstream := authtest.NewOAuthMCPServer(
+		t,
+		authtest.OAuthMCPServerParams{AuthServerURL: tokenServer.Srv.URL, BlockConnecting: true},
+	)
 	configtest.WriteServer(t, srv.configDir, config.ServerConfig{
-		Name: "svc", Transport: "http", URL: upstreamURL,
+		Name: "svc", Transport: "http", URL: upstream.URL,
 		Auth: authConfigWithFreeCallbackPort(t, tokenServer.AuthConfig()),
 	})
 	ctx, cancel := context.WithCancel(t.Context())
@@ -72,7 +75,11 @@ func TestConfigureStartAuth_handoffSurvivesRequestCancellationAndCloseJoins(t *t
 		t.Fatal("start_auth did not register the OAuth flow")
 	}
 	auth.ExchangeCallbackCode(flow.login, "test-auth-code")
-	testutil.WaitForReceive(t, initializing, "the OAuth reconnect to start after the configure request was canceled")
+	testutil.WaitForReceive(
+		t,
+		upstream.Connecting,
+		"the OAuth reconnect to start after the configure request was canceled",
+	)
 	closed := make(chan struct{})
 	go func() { srv.Close(); close(closed) }()
 	testutil.WaitForReceive(t, closed, "Close to cancel and join the handed-off OAuth flow")
