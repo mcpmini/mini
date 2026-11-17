@@ -3,7 +3,6 @@ package server
 import (
 	"bytes"
 	"encoding/json"
-	"reflect"
 )
 
 // toolResult is an MCP CallToolResult that mini can edit in place. Members it doesn't model, such as
@@ -152,44 +151,4 @@ func joinObject(known any, extra extraFields) ([]byte, error) {
 		all[name] = value
 	}
 	return marshalCompact(all)
-}
-
-// Before 2026-07-28 structuredContent must be an object, and clients that validate results reject the
-// whole call when a newer upstream returns a list there:
-// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c4c367f9f58296a7053f5c78a52fd02bfbb56a49/schema/2025-11-25/schema.ts#L1110-L1113
-func legacyStructuredContent(raw json.RawMessage) json.RawMessage {
-	var doc toolResult
-	if json.Unmarshal(raw, &doc) != nil || !nonObjectStructured(doc.StructuredContent) {
-		return raw
-	}
-	if !doc.textMirrorsStructured() {
-		doc.Content = append(doc.Content, newTextBlock(string(doc.StructuredContent)))
-	}
-	doc.StructuredContent = nil
-	encoded, err := json.Marshal(doc)
-	if err != nil {
-		return raw // Re-encoding a result that was just decoded doesn't fail.
-	}
-	return encoded
-}
-
-func nonObjectStructured(raw json.RawMessage) bool {
-	trimmed := bytes.TrimSpace(raw)
-	return len(trimmed) > 0 && trimmed[0] != '{' && !bytes.Equal(trimmed, []byte("null"))
-}
-
-func (r toolResult) textMirrorsStructured() bool {
-	structured, ok := decodeJSONValue(r.StructuredContent)
-	if !ok {
-		return false
-	}
-	for _, block := range r.Content {
-		if block.Type != "text" || block.Text == nil {
-			continue
-		}
-		if text, isJSON := trimmedJSONValue(*block.Text); isJSON && reflect.DeepEqual(text, structured) {
-			return true
-		}
-	}
-	return false
 }

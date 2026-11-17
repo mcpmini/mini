@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -71,6 +72,31 @@ func parseResultDoc(raw json.RawMessage) (*resultDoc, bool) {
 		d.structured, d.hasStructured = decodeJSONValue(d.result.StructuredContent)
 	}
 	return d, true
+}
+
+// Before 2026-07-28 structuredContent must be an object, and clients that validate results reject the
+// whole call when a newer upstream returns a list there:
+// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c4c367f9f58296a7053f5c78a52fd02bfbb56a49/schema/2025-11-25/schema.ts#L1110-L1113
+func legacyStructuredContent(raw json.RawMessage) json.RawMessage {
+	d, ok := parseResultDoc(raw)
+	if !ok || !nonObjectStructured(d.result.StructuredContent) {
+		return raw
+	}
+	d.collectUnits()
+	if len(d.mirrors) == 0 {
+		d.result.Content = append(d.result.Content, newTextBlock(string(d.result.StructuredContent)))
+	}
+	d.result.StructuredContent = nil
+	encoded, err := d.encode()
+	if err != nil {
+		return raw // Re-encoding a result that was just decoded doesn't fail.
+	}
+	return encoded
+}
+
+func nonObjectStructured(raw json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(raw)
+	return len(trimmed) > 0 && trimmed[0] != '{' && !bytes.Equal(trimmed, []byte("null"))
 }
 
 func (d *resultDoc) collectUnits() []projectUnit {
