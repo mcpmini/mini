@@ -319,6 +319,20 @@ func TestLegacyToolCall_TrimmedStructuredOnlyListKeepsTheList(t *testing.T) {
 	}
 }
 
+func TestLegacyToolCall_ErrorResultListBecomesText(t *testing.T) {
+	h := newProxyHarness(t, newTestServer(t, server.Params{}))
+	h.addUpstream("svc", `{"isError":true,"content":[],"structuredContent":["bad"]}`, "list")
+
+	result := h.call("svc__list", nil)
+
+	if _, ok := result["structuredContent"]; ok || result["isError"] != true {
+		t.Errorf("want an isError result without structuredContent, got %v", result)
+	}
+	if texts := contentTexts(result); len(texts) != 1 || texts[0] != `["bad"]` {
+		t.Errorf("want the list as a text block, got %q", texts)
+	}
+}
+
 func TestLegacyToolCall_ObjectStructuredContentPassesThrough(t *testing.T) {
 	h := newProxyHarness(t, newTestServer(t, server.Params{}))
 	h.addUpstream("svc", `{"content":[{"type":"text","text":"{\"id\":1}"}],"structuredContent":{"id":1}}`, "get")

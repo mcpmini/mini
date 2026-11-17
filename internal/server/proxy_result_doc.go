@@ -82,7 +82,7 @@ func legacyStructuredContent(raw json.RawMessage) json.RawMessage {
 	if !ok || !nonObjectStructured(d.result.StructuredContent) {
 		return raw
 	}
-	d.collectUnits()
+	d.collectUnits() // Fills d.mirrors with the text blocks that already carry structuredContent.
 	if len(d.mirrors) == 0 {
 		d.result.Content = append(d.result.Content, newTextBlock(string(d.result.StructuredContent)))
 	}
