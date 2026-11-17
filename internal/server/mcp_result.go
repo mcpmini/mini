@@ -155,8 +155,7 @@ func joinObject(known any, extra extraFields) ([]byte, error) {
 }
 
 // Before 2026-07-28 structuredContent must be an object, and clients that validate results reject the
-// whole call when a newer upstream returns a list there. This runs before projection, so the data reaches
-// a legacy agent as JSON text that projection and TOON then treat like any other text block:
+// whole call when a newer upstream returns a list there:
 // https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c4c367f9f58296a7053f5c78a52fd02bfbb56a49/schema/2025-11-25/schema.ts#L1110-L1113
 func legacyStructuredContent(raw json.RawMessage) json.RawMessage {
 	var doc toolResult
@@ -169,7 +168,7 @@ func legacyStructuredContent(raw json.RawMessage) json.RawMessage {
 	doc.StructuredContent = nil
 	encoded, err := json.Marshal(doc)
 	if err != nil {
-		return raw // Unreachable for a result just decoded; the upstream bytes are the safe fallback.
+		return raw // Re-encoding a result that was just decoded doesn't fail.
 	}
 	return encoded
 }
