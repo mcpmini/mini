@@ -266,6 +266,20 @@ func TestLegacyToolCall_ListStructuredContentWithoutTextBecomesText(t *testing.T
 	}
 }
 
+func TestLegacyToolCall_ToonFormat_ListIsNotAddedAgainAsJSON(t *testing.T) {
+	h := newProxyHarness(t, newProxyToonServer(t, nil))
+	h.addUpstream("svc", listResultWithText, "list")
+
+	result := h.call("svc__list", nil)
+
+	if _, ok := result["structuredContent"]; ok {
+		t.Errorf("legacy agent got non-object structuredContent: %v", result)
+	}
+	if texts := contentTexts(result); len(texts) != 1 || strings.Contains(texts[0], `"id"`) {
+		t.Errorf("want only the TOON text block, got %q", texts)
+	}
+}
+
 func TestLegacyToolCall_TrimmedListKeepsNoticeInText(t *testing.T) {
 	h := newProxyHarness(t, newTestServer(t, server.Params{}))
 	h.addUpstream("svc", listResultWithText, "list")

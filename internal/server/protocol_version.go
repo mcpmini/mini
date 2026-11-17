@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"reflect"
 
 	"github.com/mcpmini/mini/internal/transport"
 	"github.com/mcpmini/mini/internal/version"
@@ -136,9 +135,6 @@ func shapeResultForEra(method string, result any, era transport.Era) (any, error
 	return result, nil
 }
 
-// Before 2026-07-28, structuredContent must be an object, and clients that validate results reject
-// the whole call when an upstream on 2026-07-28 returns a list there:
-// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c4c367f9f58296a7053f5c78a52fd02bfbb56a49/schema/2025-11-25/schema.ts#L1110-L1113
 func legacyToolResult(result any) (any, error) {
 	raw, ok := result.(upstreamResult)
 	if !ok {
@@ -146,12 +142,13 @@ func legacyToolResult(result any) (any, error) {
 	}
 	var doc toolResult
 	if err := json.Unmarshal(raw, &doc); err != nil {
-		return result, nil //nolint:nilerr // A result mini can't parse goes to the agent as the upstream sent it.
+		return result, nil //nolint:nilerr // Opaque upstream results pass through.
 	}
-	if isObjectJSON(doc.StructuredContent) {
+	if !nonObjectStructured(doc.StructuredContent) {
 		return result, nil
 	}
-	if !isJSONNull(doc.StructuredContent) && !doc.textMirrorsStructured() {
+	// The spec has servers mirror structuredContent in a text block, which may be TOON by now.
+	if !doc.hasText() {
 		doc.Content = append(doc.Content, newTextBlock(string(doc.StructuredContent)))
 	}
 	doc.StructuredContent = nil
@@ -162,25 +159,17 @@ func legacyToolResult(result any) (any, error) {
 	return upstreamResult(encoded), nil
 }
 
-func isObjectJSON(raw json.RawMessage) bool {
+// Before 2026-07-28 structuredContent must be an object, and clients that validate results reject the
+// whole call when a newer upstream returns a list there:
+// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c4c367f9f58296a7053f5c78a52fd02bfbb56a49/schema/2025-11-25/schema.ts#L1110-L1113
+func nonObjectStructured(raw json.RawMessage) bool {
 	trimmed := bytes.TrimSpace(raw)
-	return len(trimmed) == 0 || trimmed[0] == '{'
+	return len(trimmed) > 0 && trimmed[0] != '{' && !bytes.Equal(trimmed, []byte("null"))
 }
 
-func isJSONNull(raw json.RawMessage) bool {
-	return bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
-}
-
-func (r toolResult) textMirrorsStructured() bool {
-	structured, ok := decodeJSONValue(r.StructuredContent)
-	if !ok {
-		return false
-	}
+func (r toolResult) hasText() bool {
 	for _, block := range r.Content {
-		if block.Type != "text" || block.Text == nil {
-			continue
-		}
-		if text, isJSON := trimmedJSONValue(*block.Text); isJSON && reflect.DeepEqual(text, structured) {
+		if block.Type == "text" && block.Text != nil {
 			return true
 		}
 	}
