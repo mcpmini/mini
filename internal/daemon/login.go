@@ -12,6 +12,8 @@ type LoginLine struct {
 	URL     string `json:"url,omitempty"`
 	OK      bool   `json:"ok,omitempty"`
 	Expires string `json:"expires,omitempty"`
-	Error   string `json:"error,omitempty"`
-	Message string `json:"message,omitempty"`
+	// ConnectError is set when the login saved its token but connecting with it then failed.
+	ConnectError string `json:"connect_error,omitempty"`
+	Error        string `json:"error,omitempty"`
+	Message      string `json:"message,omitempty"`
 }

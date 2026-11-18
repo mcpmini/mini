@@ -81,7 +81,14 @@ func logIn(p logInParams) error {
 		return err
 	}
 	printAuthResult(p.out, p.sc.Name, result.expiry)
+	if result.connectErr != "" {
+		printConnectFailure(p.out, p.sc.Name, result.connectErr)
+	}
 	return nil
+}
+
+func printConnectFailure(out io.Writer, name, connectErr string) {
+	printNotice(out, "connecting to %s failed: %s; run `mini auth %s` to try again\n", name, connectErr, name)
 }
 
 func pkceFlowParamsFor(configDir string, cfg *config.Config, sc *config.ServerConfig) pkceFlowParams {
@@ -106,7 +113,8 @@ type browserLogin struct {
 }
 
 type loginResult struct {
-	expiry time.Time
+	expiry     time.Time
+	connectErr string
 }
 
 func startBrowserLogin(ctx context.Context, p pkceFlowParams) (browserLogin, error) {

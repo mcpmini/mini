@@ -183,3 +183,19 @@ func TestLogIn_daemonLoginFailureIsReturnedWithoutLoggingInHere(t *testing.T) {
 		})
 	}
 }
+
+func TestLogIn_daemonConnectErrorIsPrintedAfterAuthorized(t *testing.T) {
+	browserThat(t, func(string) {})
+	authorized := `{"ok":true,"expires":"2030-01-02T03:04:05Z","connect_error":"initialize: boom"}`
+	var out bytes.Buffer
+
+	err := logIn(logInParams{
+		configDir: t.TempDir(), cfg: &config.Config{}, sc: oauthServerFor(authtest.NewTokenServer(t)), out: &out,
+		locateDaemon: fakeLoginDaemon(t, streamLoginLines(daemonLoginURL, authorized)),
+	})
+
+	want := "authorized svc (expires 2030-01-02T03:04:05Z)\nconnecting to svc failed: initialize: boom; run `mini auth svc` to try again\n"
+	if err != nil || out.String() != want {
+		t.Errorf("logIn = %v, output %q; want %q", err, out.String(), want)
+	}
+}

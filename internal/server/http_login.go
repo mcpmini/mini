@@ -60,6 +60,9 @@ func loginOutcomeLine(o loginOutcome) daemon.LoginLine {
 	if !o.expiry.IsZero() {
 		line.Expires = o.expiry.Format(time.RFC3339)
 	}
+	if o.connectErr != nil {
+		line.ConnectError = o.connectErr.Error()
+	}
 	return line
 }
 
