@@ -28,7 +28,7 @@ func TestCancelExistingAuthFlow_closesListenerSynchronously(t *testing.T) {
 
 	cancelled := false
 	srv.authMu.Lock()
-	srv.authFlows["srv1"] = &authFlowState{cancel: func() { cancelled = true }, login: login}
+	srv.authFlows["srv1"] = newAuthFlow(func() { cancelled = true }, login, config.ServerConfig{})
 	srv.authMu.Unlock()
 
 	srv.cancelExistingAuthFlow("srv1")
@@ -52,7 +52,7 @@ func TestRemoveServer_closesPendingLogin(t *testing.T) {
 	login := authtest.StartLogin(t, &config.AuthConfig{})
 	_, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	srv.storeAuthFlow("svc", &authFlowState{cancel: cancel, login: login})
+	srv.storeAuthFlow("svc", newAuthFlow(cancel, login, config.ServerConfig{}))
 
 	if _, err := srv.removeServerFromAgent("svc"); err != nil {
 		t.Fatal(err)
@@ -74,13 +74,13 @@ func TestRunAuthFlow_staleCleanupPreservesNewerFlow(t *testing.T) {
 
 	_, staleCancel := context.WithCancel(context.Background())
 	defer staleCancel()
-	staleFlow := &authFlowState{cancel: staleCancel, login: staleLogin}
+	staleFlow := newAuthFlow(staleCancel, staleLogin, config.ServerConfig{})
 
 	activeLogin := authtest.StartLogin(t, &config.AuthConfig{})
 
 	_, activeCancel := context.WithCancel(context.Background())
 	defer activeCancel()
-	activeFlow := &authFlowState{cancel: activeCancel, login: activeLogin}
+	activeFlow := newAuthFlow(activeCancel, activeLogin, config.ServerConfig{})
 
 	srv.authMu.Lock()
 	srv.authFlows["svc"] = activeFlow
@@ -126,7 +126,7 @@ func TestRunAuthFlow_loginCompletingAfterRemoveServerDoesNotReinstall(t *testing
 			}
 			auth.ExchangeCallbackCode(login, "test-auth-code")
 			srv.authWg.Add(1)
-			srv.runAuthFlow(t.Context(), installAtStartAuth, &authFlowState{cancel: func() {}, login: login})
+			srv.runAuthFlow(t.Context(), installAtStartAuth, newAuthFlow(func() {}, login, sc))
 
 			if got := len(srv.reg.AllFull()) > 0; got != tc.wantTools {
 				t.Errorf("tools registered = %v, want %v", got, tc.wantTools)
@@ -147,7 +147,7 @@ func TestRunAuthFlow_loginToADisabledServerSavesTheTokenWithoutConnecting(t *tes
 	auth.ExchangeCallbackCode(login, "test-auth-code")
 
 	srv.authWg.Add(1)
-	srv.runAuthFlow(t.Context(), srv.replacingInstall(sc), &authFlowState{cancel: func() {}, login: login})
+	srv.runAuthFlow(t.Context(), srv.replacingInstall(sc), newAuthFlow(func() {}, login, sc))
 
 	if _, err := auth.LoadLogin(srv.configDir, "svc"); err != nil {
 		t.Fatalf("saved login: %v; want the token saved", err)
@@ -193,7 +193,7 @@ func startCompletedAuthFlow(t *testing.T, srv *Server, sc config.ServerConfig) c
 	auth.ExchangeCallbackCode(login, "test-auth-code")
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
-	flow := &authFlowState{cancel: cancel, login: login}
+	flow := newAuthFlow(cancel, login, sc)
 	srv.storeAuthFlow(sc.Name, flow)
 	install := srv.replacingInstall(sc)
 	srv.authWg.Add(1)

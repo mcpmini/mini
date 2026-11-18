@@ -3,7 +3,9 @@
 package server_test
 
 import (
+	"bytes"
 	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -198,5 +200,34 @@ func TestStartAuth_loadsTheNamedServerWhenAnotherServerFileIsBroken(t *testing.T
 	resp := serve(t, srv, callTool("config", map[string]any{"action": "start_auth", "server": "plain"}))
 	if text := toolResultText(t, resp); !strings.Contains(text, `"plain" does not have oauth2 auth configured`) {
 		t.Errorf("start_auth plain = %q, want the OAuth check on plain's own config", text)
+	}
+}
+
+func TestServeLogin_serverThatCantLogInIsAJSONError(t *testing.T) {
+	dir := t.TempDir()
+	configtest.WriteServer(t, dir, config.ServerConfig{Name: "plain", Command: "echo hello"})
+	_, ts := newHTTPTestServer(t, server.Params{ConfigDir: dir})
+	for _, name := range []string{"nonexistent", "plain", "bad name!"} {
+		t.Run(name, func(t *testing.T) {
+			body, err := json.Marshal(map[string]string{"server": name})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			resp, err := ts.Client().Post(ts.URL+"/login", "application/json", bytes.NewReader(body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+
+			var result map[string]any
+			decodeErr := json.NewDecoder(resp.Body).Decode(&result)
+			if resp.StatusCode != http.StatusUnprocessableEntity {
+				t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusUnprocessableEntity)
+			}
+			if message, _ := result["message"].(string); decodeErr != nil || result["error"] == nil || message == "" {
+				t.Errorf("body = %v (decode error %v), want a JSON error with a message", result, decodeErr)
+			}
+		})
 	}
 }

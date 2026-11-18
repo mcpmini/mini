@@ -99,6 +99,42 @@ func TestHTTPServer_HostLoopbackCheck(t *testing.T) {
 	}
 }
 
+func TestDaemonAuth_LoginRejectsWhatMCPRejects(t *testing.T) {
+	ts := newAuthHTTPTestServer(t)
+	cases := []struct {
+		name    string
+		prepare func(*http.Request)
+		want    int
+	}{
+		{"missing bearer", func(*http.Request) {}, http.StatusUnauthorized},
+		{"non-loopback Host", func(r *http.Request) {
+			r.Header.Set("Authorization", "Bearer "+testDaemonToken)
+			r.Host = "evil.com"
+		}, http.StatusForbidden},
+		{"cross-origin", func(r *http.Request) {
+			r.Header.Set("Authorization", "Bearer "+testDaemonToken)
+			r.Header.Set("Origin", "http://evil.com")
+		}, http.StatusForbidden},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req, err := http.NewRequest(http.MethodPost, ts.URL+"/login", bytes.NewReader([]byte(`{"server":"svc"}`)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			tc.prepare(req)
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp.Body.Close()
+			if resp.StatusCode != tc.want {
+				t.Errorf("got %d, want %d", resp.StatusCode, tc.want)
+			}
+		})
+	}
+}
+
 func TestHTTPServer_SessionID(t *testing.T) {
 	_, ts := newHTTPTestServer(t, server.Params{})
 
