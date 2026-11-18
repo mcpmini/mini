@@ -239,3 +239,32 @@ func (c *slowErrConn) ListTools(_ context.Context) (transport.ToolList, error) {
 func (c *slowErrConn) Health(_ context.Context) error { return nil }
 
 func (c *slowErrConn) Close() error { return nil }
+
+func TestReconnect_finishingAfterItsServerWasRemovedOrReplaced_publishesNothing(t *testing.T) {
+	for _, tc := range svcLifecycleChanges {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, finishHandshake := reconnectHeldInHandshake(t)
+
+			tc.change(t, srv)
+			finishHandshake()
+			srv.Close() // waits for the reconnect to finish
+
+			assertSvcServes(t, srv, tc.servesAfter...)
+		})
+	}
+}
+
+func reconnectHeldInHandshake(t *testing.T) (srv *server.Server, finishHandshake func()) {
+	t.Helper()
+	upstream, handshaking, finishHandshake := newGatedMCPServer(t)
+	srv, fakeClock := newReconnectSrv(t)
+	errOnCall := true
+	srv.AddConnection(context.Background(), httpServer("svc", upstream.URL), makeErrConn(&errOnCall))
+	assertCallSuccess(assertCallSuccessParams{T: t, Server: srv, ServerName: "svc", ToolName: "ping"})
+	if err := fakeClock.BlockUntilContext(t.Context(), responseCleanupTimer+1); err != nil {
+		t.Fatalf("waiting for the reconnect's backoff: %v", err)
+	}
+	fakeClock.Advance(time.Second)
+	testutil.WaitForReceive(t, handshaking, "the reconnect to reach the upstream")
+	return srv, finishHandshake
+}

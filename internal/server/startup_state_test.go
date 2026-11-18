@@ -208,6 +208,38 @@ func TestConfigStatus_aServerRemovedDuringStartupIsNotListed(t *testing.T) {
 	}
 }
 
+func TestConfigStatus_anAttemptFailingAfterItsServerWasReplacedKeepsTheNewServersReason(t *testing.T) {
+	staleAttempt := newHeldStep(t)
+	r := connectWithFakeClock(t, httpServer("svc", heldNeedsAuthUpstream(t, staleAttempt)))
+	staleAttempt.awaitReached("the first attempt to reach the upstream")
+
+	assertRemoveOk(t, r.srv, "svc")
+	r.srv.ConnectUpstreams(context.Background(), []config.ServerConfig{needingUnsetEnv("svc", "MINI_TEST_UNSET")})
+	staleAttempt.release()
+	r.srv.WaitForStartupConnects()
+
+	status := statusOf(t, r.srv)
+	if reason := status.Unavailable["svc"].Reason; !strings.Contains(reason, "MINI_TEST_UNSET") {
+		t.Errorf("svc reason = %q, want the replacement's unset variable, not the removed attempt's failure:\n%s",
+			reason, status.raw)
+	}
+}
+
+func heldNeedsAuthUpstream(t *testing.T, step *heldStep) (url string) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		step.hold()
+		requireBearer(w, r)
+	}))
+	t.Cleanup(ts.Close)
+	return ts.URL
+}
+
+func needingUnsetEnv(name, envVar string) config.ServerConfig {
+	sc := httpServer(name, "http://127.0.0.1:1/mcp")
+	sc.UnsetEnv = &config.UnsetEnvError{Field: "headers.Authorization", Names: []string{envVar}}
+	return sc
+}
+
 func TestConfigStatus_aStartupFailureReasonNeverCarriesTheUpstreamError(t *testing.T) {
 	needsAuth := httptest.NewServer(http.HandlerFunc(requireBearer))
 	t.Cleanup(needsAuth.Close)

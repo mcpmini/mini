@@ -19,6 +19,7 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/mcptest"
 	"github.com/mcpmini/mini/internal/server"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -308,6 +309,21 @@ func TestConfigureRemoveServer_clearsDiscover(t *testing.T) {
 	if strings.Contains(discoverText, "ping") {
 		t.Errorf("removed server's tools should not appear in discover, got: %s", discoverText)
 	}
+}
+
+func TestConfigRemoveServer_whileATokenRefreshIsHeld_returnsAndLeavesNoToken(t *testing.T) {
+	refresh := newHeldStep(t)
+	e := newOAuthEnv(t, func(loginToken string) *mcptest.Server { return fakeOAuthMCPServer(t, loginToken, pingTools) })
+	holdNextTokenRequest(t, e.tokens, refresh)
+	e.saveToken("stale")
+	added := testutil.RunInBackground(func() error { return e.srv.AddUpstream(context.Background(), e.serverConfig()) })
+	refresh.awaitReached("the upstream's 401 to start a token refresh")
+
+	assertRemoveOk(t, e.srv, "svc")
+	refresh.release()
+	testutil.WaitForReceive(t, added, "AddUpstream to return after the refresh is released")
+
+	e.assertNoTokenOrTools()
 }
 
 type slowFakeConn struct {

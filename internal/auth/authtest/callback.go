@@ -24,11 +24,23 @@ func LoopbackRedirectURI(t *testing.T, authURL string) *url.URL {
 
 func CompleteAuthorization(t *testing.T, authURL, code string) {
 	t.Helper()
+	DeliverCallback(CallbackURL(t, authURL, code))
+}
+
+// CallbackURL is the redirect the browser makes once the user approves authURL's request.
+func CallbackURL(t *testing.T, authURL, code string) string {
+	t.Helper()
 	callback := LoopbackRedirectURI(t, authURL)
 	parsed, _ := url.Parse(authURL)
 	callback.RawQuery = url.Values{"code": {code}, "state": {parsed.Query().Get("state")}}.Encode()
+	return callback.String()
+}
+
+// DeliverCallback makes the browser's redirect. It takes no *testing.T, so it can run on its own
+// goroutine while a test holds the login.
+func DeliverCallback(callbackURL string) {
 	// unchecked: once it has the code, the flow may close its server mid-response
-	if resp, err := http.Get(callback.String()); err == nil {
+	if resp, err := http.Get(callbackURL); err == nil {
 		resp.Body.Close()
 	}
 }

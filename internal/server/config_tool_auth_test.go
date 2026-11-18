@@ -15,6 +15,7 @@ import (
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
+	"github.com/mcpmini/mini/internal/mcptest"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/testutil"
 )
@@ -230,4 +231,93 @@ func TestServeLogin_serverThatCantLogInIsAJSONError(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestStartAuth_removeServerWhileTheLoginFinishes_leavesNoTokenOrTools(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		arrange func(*testing.T, *heldStep) *oauthEnv
+	}{
+		{name: "removed during the token exchange", arrange: loginHeldAtTokenExchange},
+		{name: "removed during the reconnect with the new token", arrange: loginHeldAtReconnect},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			step := newHeldStep(t)
+			e := tc.arrange(t, step)
+			callbackAnswered := deliverLoginCallback(t, startAuth(t, e.srv, "svc"))
+			step.awaitReached("the login to reach the held step")
+
+			assertRemoveOk(t, e.srv, "svc")
+			step.release()
+			testutil.WaitForReceive(t, callbackAnswered, "the login page to answer")
+			e.srv.WaitForLogins()
+
+			e.assertNoTokenOrTools()
+			assertNoFile(t, "svc's server file", config.ServerPath(e.dir, "svc"))
+		})
+	}
+}
+
+func TestClose_duringTheReconnectOfAFinishedLogin_returnsAndLeavesNoTools(t *testing.T) {
+	step := newHeldStep(t)
+	e := loginHeldAtReconnect(t, step)
+	authtest.CompleteAuthorization(t, startAuth(t, e.srv, "svc"), "test-code")
+	step.awaitReached("the login's reconnect to reach initialize")
+
+	closed := testutil.RunInBackground(func() error { e.srv.Close(); return nil })
+	testutil.WaitForReceive(t, closed, "Close to return while the reconnect is held")
+
+	if n := e.srv.ToolCount("svc"); n != 0 {
+		t.Errorf("tools after Close = %d, want 0", n)
+	}
+}
+
+func deliverLoginCallback(t *testing.T, authURL string) <-chan error {
+	callback := authtest.CallbackURL(t, authURL, "test-code")
+	// the login page answers only after the token exchange, which these tests hold
+	return testutil.RunInBackground(func() error {
+		authtest.DeliverCallback(callback)
+		return nil
+	})
+}
+
+func loginHeldAtTokenExchange(t *testing.T, step *heldStep) *oauthEnv {
+	e := newOAuthEnv(t, func(loginToken string) *mcptest.Server {
+		return fakeOAuthMCPServer(t, loginToken, pingTools)
+	})
+	holdNextTokenRequest(t, e.tokens, step)
+	return e
+}
+
+func loginHeldAtReconnect(t *testing.T, step *heldStep) *oauthEnv {
+	return newOAuthEnv(t, func(loginToken string) *mcptest.Server {
+		return mcptest.NewHTTP(t, mcptest.Upstream{
+			Tools:     pingTools,
+			Intercept: serveOAuthMetadata,
+			Authorize: func(r mcptest.Request) bool {
+				authorized := r.Header.Get("Authorization") == "Bearer "+loginToken
+				if authorized && r.Method == "initialize" {
+					step.hold()
+				}
+				return authorized
+			},
+		})
+	})
+}
+
+func holdNextTokenRequest(t *testing.T, tokens *authtest.TokenServer, step *heldStep) {
+	// The token server closes its ready channel itself, so it gets its own; step.reached is
+	// closed only through step.arrive.
+	ready := make(chan struct{})
+	tokens.Mu.Lock()
+	tokens.HoldReady, tokens.HoldGate = ready, step.gate
+	tokens.Mu.Unlock()
+	go func() {
+		select {
+		case <-ready:
+			step.arrive()
+		case <-t.Context().Done():
+		}
+	}()
+	t.Cleanup(step.release) // the token server waits on the gate alone, and closes before earlier cleanups
 }

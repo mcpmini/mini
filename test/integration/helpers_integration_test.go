@@ -225,12 +225,19 @@ func readControlAddr(t *testing.T, r io.Reader) string {
 
 func (c *FakeMCPControl) SetFault(f map[string]any) {
 	c.t.Helper()
-	body, _ := json.Marshal(f)
-	resp, err := http.Post("http://"+c.addr+"/fault", "application/json", strings.NewReader(string(body)))
+	body, _ := json.Marshal(f) //nolint:errcheck // a map of JSON scalars always encodes
+	req, err := http.NewRequest(http.MethodPut, "http://"+c.addr+"/fault", strings.NewReader(string(body)))
+	if err != nil {
+		c.t.Fatalf("SetFault: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		c.t.Fatalf("SetFault: %v", err)
 	}
 	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		c.t.Fatalf("SetFault %s: status %d", body, resp.StatusCode)
+	}
 }
 
 func (c *FakeMCPControl) ClearFaults() {
@@ -707,6 +714,7 @@ type faultServerParams struct {
 	ToolTimeout        string
 	HandshakeTimeout   string
 	MaxPendingRequests int
+	ControlFile        string
 }
 
 func writeFaultServer(t *testing.T, p faultServerParams) {
@@ -719,6 +727,9 @@ func writeFaultServer(t *testing.T, p faultServerParams) {
 	server.ToolTimeout = p.ToolTimeout
 	server.HandshakeTimeout = p.HandshakeTimeout
 	server.MaxPendingRequests = p.MaxPendingRequests
+	if p.ControlFile != "" {
+		server.Args = append(server.Args, "--control-file", p.ControlFile)
+	}
 	configtest.WriteServer(t, p.ConfigDir, server)
 }
 
