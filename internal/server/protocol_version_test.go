@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -231,5 +232,133 @@ func TestModernMetadataRejectedBeforeActivationOrDispatch(t *testing.T) {
 	}
 	if len(conn.LastParams) != 0 {
 		t.Fatalf("invalid tools/call reached upstream with params %s", conn.LastParams)
+	}
+}
+
+const listResultWithText = `{"content":[{"type":"text","text":"[{\"id\":1,\"secret\":\"x\"}]"}],` +
+	`"structuredContent":[{"id":1,"secret":"x"}]}`
+
+func TestLegacyToolCall_ListStructuredContentIsDroppedAndTextKept(t *testing.T) {
+	h := newProxyHarness(t, newTestServer(t, server.Params{}))
+	h.addUpstream("svc", listResultWithText, "list")
+
+	result := h.call("svc__list", nil)
+
+	if _, ok := result["structuredContent"]; ok {
+		t.Errorf("legacy agent got non-object structuredContent: %v", result)
+	}
+	if texts := contentTexts(result); len(texts) != 1 || texts[0] != `[{"id":1,"secret":"x"}]` {
+		t.Errorf("want the upstream text block unchanged, got %q", texts)
+	}
+}
+
+func TestLegacyToolCall_ListStructuredContentWithoutTextBecomesText(t *testing.T) {
+	h := newProxyHarness(t, newTestServer(t, server.Params{}))
+	h.addUpstream("svc", `{"content":[],"structuredContent":[1,2]}`, "list")
+
+	result := h.call("svc__list", nil)
+
+	if _, ok := result["structuredContent"]; ok {
+		t.Errorf("legacy agent got non-object structuredContent: %v", result)
+	}
+	if texts := contentTexts(result); len(texts) != 1 || texts[0] != "[1,2]" {
+		t.Errorf("want the list as a text block, got %q", texts)
+	}
+}
+
+func TestLegacyToolCall_ToonFormat_ListIsNotAddedAgainAsJSON(t *testing.T) {
+	h := newProxyHarness(t, newProxyToonServer(t, nil))
+	h.addUpstream("svc", listResultWithText, "list")
+
+	result := h.call("svc__list", nil)
+
+	if _, ok := result["structuredContent"]; ok {
+		t.Errorf("legacy agent got non-object structuredContent: %v", result)
+	}
+	if texts := contentTexts(result); len(texts) != 1 || strings.Contains(texts[0], `"id"`) {
+		t.Errorf("want only the TOON text block, got %q", texts)
+	}
+}
+
+func TestLegacyToolCall_TrimmedListKeepsNoticeInText(t *testing.T) {
+	h := newProxyHarness(t, newTestServer(t, server.Params{}))
+	h.addUpstream("svc", listResultWithText, "list")
+	h.setProjection("svc", "list", map[string]any{"exclude": []string{"[].secret"}})
+
+	result := h.call("svc__list", nil)
+
+	if _, ok := result["structuredContent"]; ok {
+		t.Errorf("legacy agent got non-object structuredContent: %v", result)
+	}
+	joined := strings.Join(contentTexts(result), "\n")
+	if !strings.Contains(joined, `[{"id":1}]`) || !strings.Contains(joined, `"__mini"`) {
+		t.Errorf("want the trimmed list and the notice in text, got %q", joined)
+	}
+}
+
+func TestLegacyToolCall_ListBesideProseIsAddedAsText(t *testing.T) {
+	h := newProxyHarness(t, newTestServer(t, server.Params{}))
+	h.addUpstream("svc", `{"content":[{"type":"text","text":"Found 1."}],"structuredContent":[{"id":42}]}`, "list")
+
+	texts := contentTexts(h.call("svc__list", nil))
+
+	if len(texts) != 2 || texts[0] != "Found 1." || texts[1] != `[{"id":42}]` {
+		t.Errorf("want the prose and then the list, got %q", texts)
+	}
+}
+
+func TestLegacyToolCall_TrimmedStructuredOnlyListKeepsTheList(t *testing.T) {
+	h := newProxyHarness(t, newTestServer(t, server.Params{}))
+	h.addUpstream("svc", `{"content":[],"structuredContent":[{"id":42,"secret":"x"}]}`, "list")
+	h.setProjection("svc", "list", map[string]any{"exclude": []string{"[].secret"}})
+
+	joined := strings.Join(contentTexts(h.call("svc__list", nil)), "\n")
+
+	if !strings.Contains(joined, `[{"id":42}]`) || !strings.Contains(joined, `"__mini"`) {
+		t.Errorf("want the trimmed list and the notice in text, got %q", joined)
+	}
+}
+
+func TestLegacyToolCall_ErrorResultListBecomesText(t *testing.T) {
+	h := newProxyHarness(t, newTestServer(t, server.Params{}))
+	h.addUpstream("svc", `{"isError":true,"content":[],"structuredContent":["bad"]}`, "list")
+
+	result := h.call("svc__list", nil)
+
+	if _, ok := result["structuredContent"]; ok || result["isError"] != true {
+		t.Errorf("want an isError result without structuredContent, got %v", result)
+	}
+	if texts := contentTexts(result); len(texts) != 1 || texts[0] != `["bad"]` {
+		t.Errorf("want the list as a text block, got %q", texts)
+	}
+}
+
+func TestLegacyToolCall_ObjectStructuredContentPassesThrough(t *testing.T) {
+	h := newProxyHarness(t, newTestServer(t, server.Params{}))
+	h.addUpstream("svc", `{"content":[{"type":"text","text":"{\"id\":1}"}],"structuredContent":{"id":1}}`, "get")
+
+	structured, ok := h.call("svc__get", nil)["structuredContent"].(map[string]any)
+
+	if !ok || structured["id"] != float64(1) {
+		t.Errorf("object structuredContent must reach a legacy agent, got %v", structured)
+	}
+}
+
+func TestModernToolCall_ListStructuredContentPassesThrough(t *testing.T) {
+	srv := newTestServer(t, server.Params{})
+	conn := fakeConn("list")
+	conn.Responses["tools/call"] = json.RawMessage(listResultWithText)
+	if err := srv.AddConnection(t.Context(), config.ServerConfig{Name: "svc"}, conn); err != nil {
+		t.Fatal(err)
+	}
+	call := transport.ToolCallParams{Name: "svc__list", Arguments: map[string]any{}}
+
+	response := responsesByID(serveModern(t, srv, transporttest.ModernRequest(1, "tools/call", call)))[1]
+
+	result := decodeResult[struct {
+		StructuredContent []map[string]any `json:"structuredContent"`
+	}](t, response)
+	if len(result.StructuredContent) != 1 {
+		t.Errorf("modern agent must get the list structuredContent, got %s", response.Result)
 	}
 }
