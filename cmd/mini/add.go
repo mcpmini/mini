@@ -324,7 +324,10 @@ func authorizeServer(p authorizeParams) {
 		return
 	}
 	printNotice(p.out, "%s requires OAuth authorization\n", p.name)
-	if err := logIn(logInParams{configDir: p.configDir, cfg: cfg, sc: &p.sc, out: p.out}); err != nil {
+	err = logIn(logInParams{
+		configDir: p.configDir, cfg: cfg, sc: &p.sc, out: p.out, locateDaemon: daemonLocatorFor(p.configDir),
+	})
+	if err != nil {
 		printNotice(p.out, "note: automatic authorization failed (%v); run `mini auth %s` to retry\n", err, p.name)
 	}
 }

@@ -134,13 +134,14 @@ func (s *Server) loginSavedSinceAuthFailed(name string) bool {
 	return recorded && needsAuth && s.loginSavedAt(name).After(record.loginSavedAt)
 }
 
+// recordSettings creates the record when there is none: a login can install a server before the
+// reload loop first sees its file, and without a record the loop would never remove it.
 func (s *Server) recordSettings(sc config.ServerConfig) {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
-	if record, ok := s.configServers[sc.Name]; ok {
-		record.settings = sc
-		s.configServers[sc.Name] = record
-	}
+	record := s.configServers[sc.Name]
+	record.settings = sc
+	s.configServers[sc.Name] = record
 }
 
 func (s *Server) settingsChanged(sc config.ServerConfig) bool {
