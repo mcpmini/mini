@@ -15,7 +15,18 @@ type pipeRead struct {
 // than the pipe's buffer can't block fn.
 func CaptureStdout(t *testing.T, fn func()) string {
 	t.Helper()
-	r, w := redirectStdout(t)
+	return capture(t, &os.Stdout, fn)
+}
+
+// CaptureStderr is CaptureStdout for os.Stderr.
+func CaptureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	return capture(t, &os.Stderr, fn)
+}
+
+func capture(t *testing.T, stream **os.File, fn func()) string {
+	t.Helper()
+	r, w := redirect(t, stream)
 	read := readAllAsync(r)
 	fn()
 	if err := w.Close(); err != nil {
@@ -28,16 +39,16 @@ func CaptureStdout(t *testing.T, fn func()) string {
 	return string(got.data)
 }
 
-func redirectStdout(t *testing.T) (r, w *os.File) {
+func redirect(t *testing.T, stream **os.File) (r, w *os.File) {
 	t.Helper()
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
 	}
-	stdout := os.Stdout
-	os.Stdout = w
+	original := *stream
+	*stream = w
 	t.Cleanup(func() {
-		os.Stdout = stdout
+		*stream = original
 		_ = w.Close() // already closed unless fn stopped the test; then this ends the read
 		_ = r.Close() // the read already finished, or fn stopped the test and nothing waits for it
 	})
