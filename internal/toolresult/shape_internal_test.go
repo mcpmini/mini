@@ -1,6 +1,6 @@
 //go:build test
 
-package server
+package toolresult
 
 import (
 	"bytes"
@@ -14,8 +14,10 @@ import (
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/jq"
 	"github.com/mcpmini/mini/internal/projection"
 	"github.com/mcpmini/mini/internal/response"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 type proxyResultCase struct {
@@ -117,24 +119,33 @@ func countFiles(t *testing.T, dir string) int {
 	return n
 }
 
-func newResultServer(t *testing.T) *Server {
+func newResultStore(t *testing.T) *response.Store {
 	t.Helper()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	srv := New(Params{Config: cfg, ConfigDir: t.TempDir(), Logger: discardLogger()})
-	t.Cleanup(srv.Close)
-	return srv
+	store, err := response.NewStore(response.StoreConfigFrom(cfg, t.TempDir()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(store.Close)
+	return store
+}
+
+func shapeWithDefaults(t *testing.T, raw json.RawMessage, cfg *config.ProjectionConfig) (Shaped, *response.Store) {
+	t.Helper()
+	store := newResultStore(t)
+	shaped, err := Shape(ShapeParams{
+		Raw: raw, Projection: cfg, Defaults: projection.DefaultsFrom(config.DefaultConfig()), Store: store,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return shaped, store
 }
 
 func runProxyResultCase(t *testing.T, tc proxyResultCase) {
 	t.Helper()
-	srv := newResultServer(t)
-	out, err := srv.buildProxyResult(
-		proxyResultParams{Raw: json.RawMessage(jsonText(t, tc.upstream)), ProjCfg: tc.projection},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	out, store := shapeWithDefaults(t, json.RawMessage(jsonText(t, tc.upstream)), tc.projection)
 	var result map[string]any
 	if err := json.Unmarshal(out.Raw, &result); err != nil {
 		t.Fatal(err)
@@ -144,36 +155,34 @@ func runProxyResultCase(t *testing.T, tc proxyResultCase) {
 		t.Errorf("result:\n got %s\nwant %s", jsonText(t, masked), jsonText(t, want))
 	}
 	if len(tc.recovered) == 0 {
-		if file != "" || countFiles(t, srv.store.Dir()) != 0 {
-			t.Errorf("no recovery file expected, file=%q files=%d", file, countFiles(t, srv.store.Dir()))
+		if file != "" || countFiles(t, store.Dir()) != 0 {
+			t.Errorf("no recovery file expected, file=%q files=%d", file, countFiles(t, store.Dir()))
 		}
 		return
 	}
 	if file == "" {
 		t.Fatalf("expected a recovery file key in the notice: %v", result)
 	}
-	assertRecovered(assertRecoveredParams{T: t, Server: srv, File: file, Recovered: tc.recovered})
+	assertRecovered(assertRecoveredParams{T: t, Store: store, File: file, Recovered: tc.recovered})
 }
 
 type assertRecoveredParams struct {
 	T         *testing.T
-	Server    *Server
+	Store     *response.Store
 	File      string
 	Recovered map[string]any
 }
 
 func assertRecovered(params assertRecoveredParams) {
 	params.T.Helper()
+	stored := testutil.ReadFile(params.T, filepath.Join(params.Store.Dir(), params.File+".json"))
 	for path, want := range params.Recovered {
-		got, err := params.Server.handleRead(
-			context.Background(),
-			json.RawMessage(jsonText(params.T, map[string]string{"file": params.File, "filter": path})),
-		)
+		got, err := jq.Eval(context.Background(), stored, path)
 		if err != nil {
 			params.T.Fatalf("read %q: %v", path, err)
 		}
 		var value any
-		if err := json.Unmarshal([]byte(got.(string)), &value); err != nil {
+		if err := json.Unmarshal([]byte(got), &value); err != nil {
 			params.T.Fatalf("read %q returned non-JSON %v: %v", path, got, err)
 		}
 		if expected := roundTrip(params.T, want); !reflect.DeepEqual(value, expected) {
@@ -182,7 +191,7 @@ func assertRecovered(params assertRecoveredParams) {
 	}
 }
 
-func TestBuildProxyResult_trimsContentBlocksInPlace(t *testing.T) {
+func TestShape_trimsContentBlocksInPlace(t *testing.T) {
 	object := map[string]any{"id": 1, "body": longBody}
 	trimmed := map[string]any{"id": 1, "body": "abcde"}
 	objectPath := ".content[0].text | fromjson | .body"

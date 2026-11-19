@@ -1,4 +1,4 @@
-package server
+package toolresult
 
 import (
 	"bytes"
@@ -12,36 +12,35 @@ import (
 	"github.com/mcpmini/mini/internal/response"
 )
 
-// upstreamResult is a tools/call result sent to the client exactly as built, not wrapped as text.
-type upstreamResult json.RawMessage
-
-func (r upstreamResult) MarshalJSON() ([]byte, error) { return []byte(r), nil }
-
-type proxyResultParams struct {
-	Raw     json.RawMessage
-	ProjCfg *config.ProjectionConfig
+type ShapeParams struct {
+	Raw        json.RawMessage
+	Projection *config.ProjectionConfig
+	Defaults   *projection.Defaults
+	Store      *response.Store
 }
 
-type builtProxyResult struct {
+type Shaped struct {
 	Raw json.RawMessage
-	// NoticeBlock is the index of the appended notice block in Raw's content; -1 when absent.
-	NoticeBlock int
+	// noticeBlock is the index of the appended notice block in Raw's content; -1 when absent.
+	noticeBlock int
 }
 
-func (s *Server) buildProxyResult(p proxyResultParams) (builtProxyResult, error) {
-	unchanged := builtProxyResult{Raw: p.Raw, NoticeBlock: -1}
+// Shape trims an upstream tools/call result in place. When it cuts anything, it stores the
+// untrimmed result and adds a notice whose paths read it back.
+func Shape(p ShapeParams) (Shaped, error) {
+	unchanged := Shaped{Raw: p.Raw, noticeBlock: -1}
 	doc, ok := parseResultDoc(p.Raw)
 	if !ok {
 		return unchanged, nil
 	}
 	units := doc.collectUnits()
 	for i := range units {
-		units[i].project(p.ProjCfg, s.projDefaults)
+		units[i].project(p.Projection, p.Defaults)
 	}
 	carrier := pickCarrier(units, doc.hasStructured)
-	notice, err := s.proxyNotice(p.Raw, units)
+	notice, err := storeNotice(p.Store, p.Raw, units)
 	if err != nil {
-		return builtProxyResult{}, err
+		return Shaped{}, err
 	}
 	if notice == nil && !anyChanged(units) {
 		return unchanged, nil
@@ -49,12 +48,12 @@ func (s *Server) buildProxyResult(p proxyResultParams) (builtProxyResult, error)
 	return doc.assemble(units, carrier, notice)
 }
 
-func (s *Server) proxyNotice(raw json.RawMessage, units []projectUnit) (*response.ProjectionMeta, error) {
+func storeNotice(store *response.Store, raw json.RawMessage, units []projectUnit) (*response.ProjectionMeta, error) {
 	excluded, truncated := reportedPaths(units)
 	if len(excluded) == 0 && len(truncated) == 0 {
 		return nil, nil //nolint:nilnil // No notice is a normal outcome, not an error.
 	}
-	key, err := s.store.WriteRaw(raw)
+	key, err := store.WriteRaw(raw)
 	if err != nil {
 		return nil, fmt.Errorf("store response: %w", err)
 	}
@@ -87,25 +86,25 @@ func (d *resultDoc) assemble(
 	units []projectUnit,
 	carrier *projectUnit,
 	notice *response.ProjectionMeta,
-) (builtProxyResult, error) {
+) (Shaped, error) {
 	if carrier != nil && notice != nil {
 		carrier.carry(notice)
 	}
 	for i := range units {
 		if err := d.applyUnit(&units[i]); err != nil {
-			return builtProxyResult{}, err
+			return Shaped{}, err
 		}
 	}
-	built := builtProxyResult{NoticeBlock: -1}
+	shaped := Shaped{noticeBlock: -1}
 	if notice != nil && !d.noticeCarried(carrier) {
 		if err := d.appendNoticeBlock(notice); err != nil {
-			return builtProxyResult{}, err
+			return Shaped{}, err
 		}
-		built.NoticeBlock = len(d.result.Content) - 1
+		shaped.noticeBlock = len(d.result.Content) - 1
 	}
 	raw, err := d.encode()
-	built.Raw = raw
-	return built, err
+	shaped.Raw = raw
+	return shaped, err
 }
 
 func (d *resultDoc) noticeCarried(carrier *projectUnit) bool {

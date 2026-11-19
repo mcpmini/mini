@@ -164,11 +164,11 @@ func (s *Server) handleToolsList(ctx context.Context) (any, error) {
 	if err := s.awaitCurrentToolLists(ctx); err != nil {
 		return nil, err
 	}
-	schemas, err := buildProxyToolSchemas(s.reg.AllFull())
+	upstream, err := upstreamToolSchemas(s.reg.AllFull())
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"tools": schemas}, nil
+	return map[string]any{"tools": append([]map[string]any{miniConfigSchema(), miniReadSchema()}, upstream...)}, nil
 }
 
 func (s *Server) handleToolsCall(ctx context.Context, params json.RawMessage, session *Session) (any, error) {

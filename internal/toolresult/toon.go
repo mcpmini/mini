@@ -1,33 +1,30 @@
-package server
+package toolresult
 
 import (
 	"encoding/json"
+	"log/slog"
 	"strings"
 
 	"github.com/mcpmini/mini/internal/toon"
 )
 
-type toonParams struct {
-	Server string
-	Tool   string
-	Built  builtProxyResult
-}
-
-func (s *Server) toonifyProxyResult(p toonParams) (json.RawMessage, error) {
-	d, ok := parseResultDoc(p.Built.Raw)
+// Toon re-encodes the result's JSON text blocks as TOON. A block that fails to encode stays JSON;
+// logger records why.
+func (s Shaped) Toon(logger *slog.Logger) (json.RawMessage, error) {
+	d, ok := parseResultDoc(s.Raw)
 	if !ok || len(d.result.Content) == 0 {
-		return p.Built.Raw, nil
+		return s.Raw, nil
 	}
 	for i := range d.result.Content {
 		// mini's own notice block stays JSON; a notice carried inside an object is encoded with it.
-		if i != p.Built.NoticeBlock {
-			s.toonifyBlock(p, &d.result.Content[i])
+		if i != s.noticeBlock {
+			toonifyBlock(logger, &d.result.Content[i])
 		}
 	}
 	return d.encode()
 }
 
-func (s *Server) toonifyBlock(p toonParams, block *contentBlock) {
+func toonifyBlock(logger *slog.Logger, block *contentBlock) {
 	if block.Type != "text" || block.Text == nil {
 		return
 	}
@@ -35,15 +32,15 @@ func (s *Server) toonifyBlock(p toonParams, block *contentBlock) {
 	if !json.Valid(trimmed) {
 		return
 	}
-	if text, encoded := s.encodeToonText(p, trimmed); encoded {
+	if text, encoded := encodeToonText(logger, trimmed); encoded {
 		block.setText(text)
 	}
 }
 
-func (s *Server) encodeToonText(p toonParams, raw json.RawMessage) (string, bool) {
+func encodeToonText(logger *slog.Logger, raw json.RawMessage) (string, bool) {
 	text, err := encodeToonJSON(raw)
 	if err != nil {
-		s.logger.Warn("toon encode failed", "server", p.Server, "tool", p.Tool, "err", err)
+		logger.Warn("toon encode failed", "err", err)
 		return "", false
 	}
 	// TOON renders an empty object as "", which reads as no output at all.

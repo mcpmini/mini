@@ -1,6 +1,6 @@
 //go:build test
 
-package server
+package toolresult
 
 import (
 	"bytes"
@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestBuildProxyResult_projectsStructuredContentOnceAndMirrorsIt(t *testing.T) {
+func TestShape_projectsStructuredContentOnceAndMirrorsIt(t *testing.T) {
 	object := map[string]any{"id": 1, "body": longBody}
 	trimmed := withMini(
 		map[string]any{"id": 1, "body": "abcde"},
@@ -108,13 +108,10 @@ func TestBuildProxyResult_projectsStructuredContentOnceAndMirrorsIt(t *testing.T
 	}
 }
 
-func TestBuildProxyResult_largeIntegersSurviveARewrittenBlock(t *testing.T) {
+func TestShape_largeIntegersSurviveARewrittenBlock(t *testing.T) {
 	object := map[string]any{"id": json.Number("9007199254740993"), "body": longBody}
 	raw := json.RawMessage(jsonText(t, map[string]any{"content": []any{textBlock(jsonText(t, object))}}))
-	out, err := newResultServer(t).buildProxyResult(proxyResultParams{Raw: raw, ProjCfg: bodyLimit})
-	if err != nil {
-		t.Fatal(err)
-	}
+	out, _ := shapeWithDefaults(t, raw, bodyLimit)
 	if !bytes.Contains(out.Raw, []byte(`\"id\":9007199254740993`)) {
 		t.Errorf("large integer changed in the rewritten block: %s", out.Raw)
 	}

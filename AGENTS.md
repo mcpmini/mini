@@ -99,9 +99,7 @@ mini re-exposes each upstream tool directly (`github__list_pull_requests`, etc.)
                                          ↓
                                    dispatchRaw()       — calls the upstream connection
                                          ↓
-                                   projection.Apply()  — trim/strip/limit the response
-                                         ↓
-                           buildProxyResult()  — the upstream result, trimmed in place
+                                   toolresult.Shape()  — trims the upstream result in place (projection.Apply), stores the raw one
 ```
 
 The direct CLI uses `internal/invoke` and `response.Builder.Build()` for its `{data, …}` envelope. Both interfaces write the raw response to the store when projection cuts something.
@@ -116,6 +114,7 @@ The direct CLI uses `internal/invoke` and `response.Builder.Build()` for its `{d
 | `internal/server` | `Server` struct + `Serve()` loop + handlers; `Session` (per-connection projection overrides) |
 | `internal/projection` | `Apply(value, cfg, defaults)` → `Result{Summary, ExcludedKeys, Truncated}`; HTML/MD stripping |
 | `internal/response` | `Builder`/`Store`; always-inline projected data; TTL-based raw file lifecycle |
+| `internal/toolresult` | `Shape` (proxy-mode result trimming + recovery notice), TOON re-encoding, outputSchema adaptation |
 | `internal/auth` | API key + OAuth2 PKCE token storage |
 | `internal/daemon` | Background daemon rendezvous; Unix socket, bearer token, spawn lock, and health checks |
 | `internal/proxy` | stdio→HTTP bridge; connects agent stdio to daemon HTTP |
