@@ -30,8 +30,10 @@ func (s *Server) handleConfigure(ctx context.Context, raw json.RawMessage, sessi
 	return result, err
 }
 
+// Only remove_server: a server add_server connects notifies agents itself when it adopts the
+// connection.
 func (s *Server) notifyToolsChanged(action string) {
-	if action == "add_server" || action == "remove_server" {
+	if action == "remove_server" {
 		s.notifyAllSessions()
 	}
 }

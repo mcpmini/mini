@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net/http"
 	"testing"
 	"time"
 
@@ -16,35 +15,14 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-func TestRemoveServerFromAgent_duringAStartupBackoff_endsTheConnect(t *testing.T) {
-	srv := newInstallTestServer(t)
-	srv.cfg.DangerousAllowPrivateURLs = true
-	fc := clock.NewFake()
-	srv.clock = fc
-	down := testutil.Serve(t, func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusServiceUnavailable)
-	})
-	srv.ConnectUpstreams(t.Context(), []config.ServerConfig{{Name: "svc", Transport: "http", URL: down.URL}})
-	if err := fc.BlockUntilContext(t.Context(), 1); err != nil {
-		t.Fatal("svc never backed off after its connect failed:", err)
-	}
-
-	if _, err := srv.removeServerFromAgent("svc"); err != nil {
-		t.Fatal(err)
-	}
-
-	connectsEnded := testutil.RunInBackground(func() error { srv.WaitForStartupConnects(); return nil })
-	testutil.WaitForReceive(t, connectsEnded, "svc's startup connect to end with its removal, with no backoff elapsing")
-}
-
-func TestRecordStartupFailure_aStaleAttemptDoesNotMarkAServerConfiguredAgainUnderItsName(t *testing.T) {
+func TestRecordFailure_aStaleAttemptDoesNotMarkAServerConfiguredAgainUnderItsName(t *testing.T) {
 	srv := newInstallTestServer(t)
 	srv.recordConfigServers([]config.ServerConfig{{Name: "svc"}})
 	stale := srv.startupInstall(config.ServerConfig{Name: "svc"})
 	srv.detachAndCloseServer("svc")
 	srv.recordConfigServers([]config.ServerConfig{{Name: "svc"}})
 
-	srv.recordStartupFailure(stale, needsAuthStatus{})
+	srv.recordFailure(stale, needsAuthStatus{})
 
 	if state := srv.upstreams.get("svc").startupState(srv.clock.Now()); state.phase() == "failed" {
 		t.Error("a failure from before the remove was recorded against the server configured again")
@@ -66,7 +44,7 @@ func TestDetachAndCloseServer_aServerConfiguredAgainStartsWithoutTheOldStartupSt
 			}
 		}},
 		{name: "had failed", setUp: func(srv *Server) {
-			srv.recordStartupFailure(
+			srv.recordFailure(
 				srv.startupInstall(config.ServerConfig{Name: "svc"}),
 				needsAuthStatus{},
 			)

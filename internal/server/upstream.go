@@ -22,17 +22,17 @@ type upstreamServer struct {
 	cfg        config.ServerConfig
 	fromConfig bool                // started from servers/, the only servers a config edit removes
 	saved      config.ServerConfig // own copy of the settings, compared with the file on each check
-	removeGen  uint64
-	openedAt   time.Time // start of the startup hold
+	openedAt   time.Time           // start of the startup hold
 	ctx        context.Context
 	cancel     context.CancelFunc
 	clock      clock.Clock
-	group      goroutineGroup // its tool-refresh worker, which stop waits for
+	group      goroutineGroup // every goroutine of this incarnation; stop waits for them
 
 	mu       sync.RWMutex
 	conn     transport.Connection // nil until the first connect succeeds
 	lastDefs []transport.ToolDefinition
-	ready    bool // set once the registry has the tools
+	ready    bool // the tools are registered and calls reach the connection
+	opening  bool // the open loop is running
 	failure  startupFailure
 	// loginSavedAt is the token file's time when the server stopped at needs auth. Taken then, not
 	// before connecting, so a token mini refreshed during that attempt doesn't count as a new login.
@@ -41,10 +41,9 @@ type upstreamServer struct {
 	// check doesn't take the note for an edit of the file.
 	detectedAuth *config.AuthConfig
 
-	reconnecting atomic.Bool
-	sem          chan struct{} // nil when MaxPendingRequests == 0 (unlimited)
-	onReconnect  func()        // called after successful reconnect; used in tests
-	refresher    toolListRefresher
+	sem         chan struct{} // nil when MaxPendingRequests == 0 (unlimited)
+	onReconnect func()        // called after successful reconnect; used in tests
+	refresher   toolListRefresher
 
 	calls          atomic.Int64
 	errs           atomic.Int64
@@ -167,7 +166,7 @@ func (u *upstreamServer) appendLastError(st map[string]any) {
 }
 
 func (u *upstreamServer) appendStatus(st map[string]any) {
-	if u.reconnecting.Load() {
+	if u.isOpening() {
 		st["status"] = "reconnecting"
 		return
 	}

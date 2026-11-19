@@ -137,7 +137,7 @@ func buildAndStart(ctx context.Context, p BuildServerParams) *server.Server {
 		Clock:           p.Clock,
 		DaemonAuthToken: p.DaemonAuthToken,
 	})
-	srv.ConnectUpstreams(ctx, p.Servers)
+	srv.ConnectUpstreams(p.Servers)
 	srv.StartConfigReload(ctx)
 	return srv
 }

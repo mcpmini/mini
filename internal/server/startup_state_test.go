@@ -57,7 +57,7 @@ func connectWithFakeClock(t *testing.T, servers ...config.ServerConfig) startupR
 	r := startupRetry{clock: clock.NewFake()}
 	r.srv = newConnectTestServerLogging(t, discardLogs(), r.clock)
 	t.Cleanup(r.srv.Close)
-	r.srv.ConnectUpstreams(context.Background(), servers)
+	r.srv.ConnectUpstreams(servers)
 	return r
 }
 
@@ -214,7 +214,7 @@ func TestConfigStatus_anAttemptFailingAfterItsServerWasReplacedKeepsTheNewServer
 	staleAttempt.awaitReached("the first attempt to reach the upstream")
 
 	assertRemoveOk(t, r.srv, "svc")
-	r.srv.ConnectUpstreams(context.Background(), []config.ServerConfig{needingUnsetEnv("svc", "MINI_TEST_UNSET")})
+	r.srv.ConnectUpstreams([]config.ServerConfig{needingUnsetEnv("svc", "MINI_TEST_UNSET")})
 	staleAttempt.release()
 	r.srv.WaitForStartupConnects()
 

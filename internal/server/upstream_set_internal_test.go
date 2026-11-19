@@ -34,7 +34,7 @@ func (s *Server) openConnectWindow(name string) {
 	}
 	s.upstreams.swap(
 		name,
-		s.newUpstreamServer(sc, upstreamOrigin{fromConfig: true, removeGen: s.snapshotRemoveGen(name)}),
+		s.newUpstreamServer(sc, upstreamOrigin{fromConfig: true}),
 	)
 	s.startupChanged.signal()
 }
@@ -44,7 +44,7 @@ func (s *Server) startupInstall(sc config.ServerConfig) *upstreamServer {
 	if u := s.upstreams.get(sc.Name); u != nil {
 		return u
 	}
-	return s.newUpstreamServer(sc, upstreamOrigin{fromConfig: true, removeGen: s.snapshotRemoveGen(sc.Name)})
+	return s.newUpstreamServer(sc, upstreamOrigin{fromConfig: true})
 }
 
 func (s *Server) liveProjections(name string) map[string]*config.ProjectionConfig {

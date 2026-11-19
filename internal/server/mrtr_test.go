@@ -123,7 +123,7 @@ func TestModernInputRequestRoundTripThroughModernHTTPUpstream(t *testing.T) {
 	cfg.DangerousAllowPrivateURLs = true
 	srv := newTestServer(t, server.Params{Config: cfg})
 	upstreamCalls := make(chan mrtrCallParams, 2)
-	srv.ConnectUpstreams(t.Context(), []config.ServerConfig{
+	srv.ConnectUpstreams([]config.ServerConfig{
 		{Name: "svc", Transport: "http", URL: modernElicitingUpstream(t, upstreamCalls)},
 	})
 	// Proxy-mode tools/list waits for a connecting upstream, so the calls below find it ready.

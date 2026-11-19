@@ -35,16 +35,14 @@ type Server struct {
 	// and an incarnation's goroutineGroup are leaves.
 	// stateMu is the innermost hot-path lock (RLock on every request);
 	// the outer locks serialize cold-path admin operations.
-	stateMu     sync.RWMutex
-	persistMu   sync.Mutex
-	serverOpMu  sync.Mutex
-	removeGen   map[string]uint64 // protected by serverOpMu; incremented on each remove_server
-	authMu      sync.Mutex
-	authFlows   map[string]*authFlowState
-	authWg      sync.WaitGroup
-	reconnectWg sync.WaitGroup // tracks all active reconnectLoop goroutines
-	connector   *upstreamConnector
-	reloadLoop  backgroundLoop
+	stateMu    sync.RWMutex
+	persistMu  sync.Mutex
+	serverOpMu sync.Mutex
+	removeGen  map[string]uint64 // protected by serverOpMu; incremented on each remove_server
+	authMu     sync.Mutex
+	authFlows  map[string]*authFlowState
+	authWg     sync.WaitGroup
+	reloadLoop backgroundLoop
 }
 
 func (s *Server) ToolCount(serverName string) int {
@@ -59,18 +57,15 @@ func (s *Server) Close() {
 	for _, u := range upstreams {
 		u.beginStop()
 	}
-	s.connector.stop()
 	s.authWg.Wait()
 	// Before closing and waiting: a token refresh runs under the provider registry's lifetime, not
 	// an incarnation's.
 	s.providerRegistry.Close()
-	s.connector.wait()
 	for _, u := range upstreams {
 		u.closeConn()
 		u.awaitStopped()
 	}
 	s.sessions.closeAll()
-	s.reconnectWg.Wait()
 	s.store.Close()
 }
 

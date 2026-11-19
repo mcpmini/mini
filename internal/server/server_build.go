@@ -81,7 +81,6 @@ func newServer(p serverInitParams) *Server {
 		clock:            clock.System(),
 		providerRegistry: provider.NewRegistry(),
 	}
-	s.connector = newUpstreamConnector(s.connectUntilRegistered)
 	return s
 }
 

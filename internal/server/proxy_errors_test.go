@@ -200,7 +200,7 @@ func TestModernProxyPreservesHTTPMissingCapabilityError(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.DangerousAllowPrivateURLs = true
 	srv := newTestServer(t, server.Params{Config: cfg})
-	srv.ConnectUpstreams(t.Context(), []config.ServerConfig{{Name: "svc", Transport: "http", URL: endpoint.URL}})
+	srv.ConnectUpstreams([]config.ServerConfig{{Name: "svc", Transport: "http", URL: endpoint.URL}})
 	serveModern(t, srv, transporttest.ModernRequest(0, "tools/list", nil))
 	id := json.RawMessage(`"agent-request"`)
 	request := transporttest.ModernRequest(

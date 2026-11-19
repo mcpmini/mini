@@ -61,20 +61,20 @@ func (s *Server) awaitFreshToolLists(wait context.Context, upstreams []*upstream
 	}
 }
 
-func (s *Server) runToolRefreshes(u *upstreamServer) {
+func (s *Server) runToolRefreshes(ctx context.Context, u *upstreamServer) {
 	for u.refresher.next() {
-		if err := s.refreshTools(u); err != nil && !errors.Is(err, context.Canceled) {
+		if err := s.refreshTools(ctx, u); err != nil && !errors.Is(err, context.Canceled) {
 			s.logger.Warn("refresh upstream tools failed", "server", u.cfg.Name, "err", err)
 		}
 	}
 }
 
-func (s *Server) refreshTools(u *upstreamServer) error {
+func (s *Server) refreshTools(ctx context.Context, u *upstreamServer) error {
 	conn := s.currentUpstreamConn(u)
 	if conn == nil {
 		return context.Canceled
 	}
-	ctx, cancel := context.WithTimeout(u.ctx, refreshTimeout)
+	ctx, cancel := context.WithTimeout(ctx, refreshTimeout)
 	defer cancel()
 	toolList, err := conn.ListTools(ctx)
 	if err != nil {

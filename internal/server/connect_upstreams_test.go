@@ -3,7 +3,6 @@
 package server_test
 
 import (
-	"context"
 	"io"
 	"log/slog"
 	"net/http"
@@ -61,7 +60,7 @@ func TestConnectUpstreams_NotifiesLiveSessionOfLateUpstream(t *testing.T) {
 	srv := newConnectTestServer(t)
 	agent := openAgent(t, srv)
 
-	srv.ConnectUpstreams(t.Context(), []config.ServerConfig{{Name: "dynamic", Transport: "http", URL: mcp.URL}})
+	srv.ConnectUpstreams([]config.ServerConfig{{Name: "dynamic", Transport: "http", URL: mcp.URL}})
 	agent.waitForLine("notifications/tools/list_changed")
 }
 
@@ -69,9 +68,7 @@ func TestConnectUpstreams_CleanShutdownWithHungUpstream(t *testing.T) {
 	ts := hungHTTPServer(t)
 	srv := newConnectTestServer(t)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	srv.ConnectUpstreams(ctx, []config.ServerConfig{{Name: "hung", Transport: "http", URL: ts.URL}})
-	cancel()
+	srv.ConnectUpstreams([]config.ServerConfig{{Name: "hung", Transport: "http", URL: ts.URL}})
 	mustClose(t, srv)
 }
 
@@ -86,7 +83,7 @@ func TestConnectUpstreams_CloseCancelsInFlightConnect(t *testing.T) {
 	})
 
 	srv := newConnectTestServer(t)
-	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{{Name: "slow", Transport: "http", URL: ts.URL}})
+	srv.ConnectUpstreams([]config.ServerConfig{{Name: "slow", Transport: "http", URL: ts.URL}})
 	mustClose(t, srv)
 }
 
@@ -95,7 +92,7 @@ func TestConnectUpstreams_CloseUnblocksHungConnectWithNoTimeout(t *testing.T) {
 	srv := newConnectTestServer(t)
 
 	sc := config.ServerConfig{Name: "hung", Transport: "http", URL: ts.URL, HandshakeTimeout: "0"}
-	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{sc})
+	srv.ConnectUpstreams([]config.ServerConfig{sc})
 	mustClose(t, srv)
 }
 
@@ -104,7 +101,7 @@ func TestConnectUpstreams_NormalConnectUnaffectedByFix(t *testing.T) {
 	srv := newConnectTestServer(t)
 
 	sc := config.ServerConfig{Name: "svc", Transport: "http", URL: mcp.URL, HandshakeTimeout: "0"}
-	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{sc})
+	srv.ConnectUpstreams([]config.ServerConfig{sc})
 	eventually(t, func() bool { return srv.ToolCount("svc") > 0 })
 	mustClose(t, srv)
 }
@@ -115,7 +112,7 @@ func TestConnectUpstreams_FastUpstreamRegistersWhileHungStillConnecting(t *testi
 	srv := newConnectTestServer(t)
 	defer srv.Close()
 
-	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{
+	srv.ConnectUpstreams([]config.ServerConfig{
 		{Name: "fast", Transport: "http", URL: fast.URL},
 		{Name: "hung", Transport: "http", URL: hung.URL},
 	})
@@ -132,7 +129,7 @@ func TestConnectUpstreams_SkipsDisabledServer(t *testing.T) {
 	defer srv.Close()
 
 	enabled := false
-	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{
+	srv.ConnectUpstreams([]config.ServerConfig{
 		{Name: "off", Transport: "http", URL: mcp.URL, Enabled: &enabled},
 	})
 	// Give it a moment — if a goroutine was incorrectly launched, it would register tools.
@@ -146,11 +143,8 @@ func TestConnectUpstreams_SkipsDisabledServer(t *testing.T) {
 func TestConnectUpstreams_closeCancelsConnectsFromEveryCall(t *testing.T) {
 	hung := hungHTTPServer(t)
 	srv := newConnectTestServer(t)
-	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{{Name: "first", Transport: "http", URL: hung.URL}})
-	srv.ConnectUpstreams(
-		context.Background(),
-		[]config.ServerConfig{{Name: "second", Transport: "http", URL: hung.URL}},
-	)
+	srv.ConnectUpstreams([]config.ServerConfig{{Name: "first", Transport: "http", URL: hung.URL}})
+	srv.ConnectUpstreams([]config.ServerConfig{{Name: "second", Transport: "http", URL: hung.URL}})
 
 	mustClose(t, srv)
 }
@@ -200,7 +194,7 @@ func TestServerClose_inFlightOAuthRefresh_isAborted(t *testing.T) {
 	cfg.DangerousAllowPrivateURLs = true
 	srv := newTestServer(t, server.Params{Config: cfg, ConfigDir: dir})
 
-	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{sc})
+	srv.ConnectUpstreams([]config.ServerConfig{sc})
 
 	testutil.WaitForReceive(t, reached, "the token endpoint to be reached")
 

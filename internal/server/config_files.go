@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"os"
 	"reflect"
 	"slices"
@@ -21,14 +20,14 @@ func (s *Server) loginSavedAt(name string) time.Time {
 
 // applyServerFiles connects and removes servers to match servers/. It looks at every name each tick,
 // so a name skipped while busy or broken is picked up once it isn't.
-func (s *Server) applyServerFiles(ctx context.Context) {
+func (s *Server) applyServerFiles() {
 	names, err := s.namesToApply()
 	if err != nil {
 		return // a listing error must never remove servers; the next tick tries again
 	}
 	toolsDropped := false
 	for _, name := range names {
-		toolsDropped = s.applyServerFile(ctx, name) || toolsDropped
+		toolsDropped = s.applyServerFile(name) || toolsDropped
 	}
 	// A server that connects notifies agents itself; one whose new settings fail never does.
 	if toolsDropped {
@@ -46,7 +45,7 @@ func (s *Server) namesToApply() ([]string, error) {
 	return slices.Compact(names), nil
 }
 
-func (s *Server) applyServerFile(ctx context.Context, name string) (toolsDropped bool) {
+func (s *Server) applyServerFile(name string) (toolsDropped bool) {
 	unlock, ok := s.serverNames.tryLock(name)
 	if !ok {
 		return false
@@ -63,7 +62,7 @@ func (s *Server) applyServerFile(ctx context.Context, name string) (toolsDropped
 	if sc.Command == "" && sc.URL == "" {
 		return false
 	}
-	return s.connectConfigServer(ctx, sc)
+	return s.connectConfigServer(sc)
 }
 
 func (s *Server) removeConfigServer(name string) bool {
@@ -75,18 +74,18 @@ func (s *Server) removeConfigServer(name string) bool {
 	return true
 }
 
-func (s *Server) connectConfigServer(ctx context.Context, sc config.ServerConfig) (toolsDropped bool) {
+func (s *Server) connectConfigServer(sc config.ServerConfig) (toolsDropped bool) {
 	switch {
 	case !s.isKnownServer(sc.Name):
 		s.logger.Info("server added by config change", "server", sc.Name)
-		s.ConnectUpstreams(ctx, []config.ServerConfig{sc})
+		s.ConnectUpstreams([]config.ServerConfig{sc})
 	case s.settingsChanged(sc) && !s.loginInFlightFor(sc):
 		s.logger.Info("reconnecting server with its changed settings", "server", sc.Name)
-		s.reconnectConfigServer(ctx, sc)
+		s.reconnectConfigServer(sc)
 		return true
 	case s.loginSavedSinceAuthFailed(sc.Name):
 		s.logger.Info("reconnecting server with its saved login", "server", sc.Name)
-		s.reconnectConfigServer(ctx, sc)
+		s.reconnectConfigServer(sc)
 		return true
 	}
 	return false
@@ -142,14 +141,14 @@ func withOwnAuth(sc config.ServerConfig) config.ServerConfig {
 	return sc
 }
 
-func (s *Server) reconnectConfigServer(ctx context.Context, sc config.ServerConfig) {
+func (s *Server) reconnectConfigServer(sc config.ServerConfig) {
 	// A login still waiting in the browser was started for the old settings.
 	s.cancelExistingAuthFlow(sc.Name, errLoginSettingsEdit)
 	s.serverOpMu.Lock()
 	s.removeGen[sc.Name]++
 	s.closeDetached(sc.Name, s.detachUpstreamKeepingProjections(sc.Name))
 	s.serverOpMu.Unlock()
-	s.ConnectUpstreams(ctx, []config.ServerConfig{sc})
+	s.ConnectUpstreams([]config.ServerConfig{sc})
 }
 
 func (s *Server) isKnownServer(name string) bool {

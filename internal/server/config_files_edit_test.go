@@ -127,7 +127,7 @@ func TestServerReload_aServerStillRetrying_reconnectsToTheFixedURL(t *testing.T)
 	gone := httptest.NewServer(nil)
 	gone.Close()
 	e.writeServer(config.ServerConfig{Name: "svc", Transport: "http", URL: gone.URL})
-	e.srv.ConnectUpstreams(t.Context(), []config.ServerConfig{{Name: "svc", Transport: "http", URL: gone.URL}})
+	e.srv.ConnectUpstreams([]config.ServerConfig{{Name: "svc", Transport: "http", URL: gone.URL}})
 	e.waitForRetryBackoff()
 	e.startPoller()
 

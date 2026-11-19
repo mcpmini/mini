@@ -271,7 +271,7 @@ func TestServeLogin_cancelledLoginReportsWhy(t *testing.T) {
 			edited := f.sc
 			edited.Headers = map[string]string{"X-Edited": "1"}
 			configtest.WriteServer(t, f.srv.configDir, edited)
-			f.srv.applyServerFiles(t.Context())
+			f.srv.applyServerFiles()
 		}, "login cancelled: the server's settings changed"},
 		{"remove_server", func(t *testing.T, f *loginFixture) {
 			if _, err := f.srv.removeServerFromAgent("svc"); err != nil {
@@ -302,7 +302,7 @@ func TestServeLogin_reloadMatchingTheLoginsSettingsDoesNotCancelIt(t *testing.T)
 	stream := f.postLogin(t.Context(), t, "svc")
 	authURL := stream.authURL(t)
 
-	f.srv.applyServerFiles(t.Context())
+	f.srv.applyServerFiles()
 	authtest.CompleteAuthorization(t, authURL, "test-auth-code")
 
 	if line := stream.next(t); line["ok"] != true {

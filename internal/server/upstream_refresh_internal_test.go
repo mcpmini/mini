@@ -308,9 +308,7 @@ func changeLifecycle(t *testing.T, change lifecycleChange) {
 			t.Fatal(err)
 		}
 	case "reconnect":
-		if !s.swapConn(change.Upstream, replacementConn, change.Replacement) {
-			t.Fatal("reconnect rejected")
-		}
+		s.adoptConn(change.Upstream, replacementConn, change.Replacement)
 	}
 }
 

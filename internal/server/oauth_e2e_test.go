@@ -298,7 +298,7 @@ func TestStartAuth_aStartupAttemptFinishingAfterTheLoginLeavesTheLoginsTools(t *
 		return toolPerTokenUpstream(t, loginToken, savedTokenListing)
 	})
 	e.saveToken("saved")
-	e.srv.ConnectUpstreams(context.Background(), []config.ServerConfig{e.serverConfig()})
+	e.srv.ConnectUpstreams([]config.ServerConfig{e.serverConfig()})
 	savedTokenListing.awaitReached("the startup attempt to list tools with the saved token")
 
 	e.completeLogin()

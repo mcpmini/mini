@@ -292,7 +292,6 @@ func (s *Server) reconnectWithToken(ctx context.Context, install upstreamInstall
 		s.logger.Error("reconnect after auth failed", "server", serverName, "err", err)
 		return err
 	}
-	s.notifyAllSessions()
 	s.logger.Info("reconnected after auth", "server", serverName)
 	return nil
 }

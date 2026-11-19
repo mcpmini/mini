@@ -16,7 +16,26 @@ func (s *Server) ReplaceProjections(p map[string]map[string]*config.ProjectionCo
 	s.replaceProjections(p, config.Servers{})
 }
 
-func (s *Server) WaitForStartupConnects() { s.connector.wait() }
+// WaitForStartupConnects waits until no server's open loop is running, so a reconnect started
+// after it returns isn't dropped as one already under way.
+func (s *Server) WaitForStartupConnects() {
+	for {
+		changed := s.startupChanged.wait()
+		if !s.anyOpening() {
+			return
+		}
+		<-changed
+	}
+}
+
+func (s *Server) anyOpening() bool {
+	for _, u := range s.upstreams.snapshot() {
+		if u.isOpening() {
+			return true
+		}
+	}
+	return false
+}
 
 func (s *Server) WaitForLogins() { s.authWg.Wait() }
 

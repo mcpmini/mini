@@ -114,36 +114,6 @@ func terminalStartupFailure(err error) (startupFailure, bool) {
 	return nil, false
 }
 
-func (s *Server) recordStartupFailure(u *upstreamServer, failure startupFailure) {
-	loginSavedAt := s.loginSavedAt(u.cfg.Name)
-	detected := u.cfg
-	config.MergeDetectedOAuth(s.configDir, &detected)
-	s.serverOpMu.Lock()
-	defer s.serverOpMu.Unlock()
-	if !s.isCurrentIncarnationLocked(u) {
-		return
-	}
-	u.mu.Lock()
-	u.failure = failure
-	u.loginSavedAt = loginSavedAt
-	u.detectedAuth = detected.Auth
-	u.mu.Unlock()
-	s.startupChanged.signal()
-}
-
-// isCurrentIncarnationLocked is called under serverOpMu, which every remove holds while it bumps
-// removeGen and takes the incarnation out of the set.
-func (s *Server) isCurrentIncarnationLocked(u *upstreamServer) bool {
-	return s.removeGen[u.cfg.Name] == u.removeGen && s.upstreams.get(u.cfg.Name) == u && u.ctx.Err() == nil
-}
-
-func (s *Server) markToolsReady(u *upstreamServer) {
-	u.mu.Lock()
-	u.ready = true
-	u.mu.Unlock()
-	s.startupChanged.signal()
-}
-
 type startupReport struct {
 	starting    []string
 	unavailable map[string]any

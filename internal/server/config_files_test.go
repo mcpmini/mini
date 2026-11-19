@@ -61,7 +61,7 @@ func (e *serverReloadEnv) connectConfigured() {
 	if len(servers.Broken) > 0 {
 		e.t.Fatalf("broken servers: %+v", servers.Broken)
 	}
-	e.srv.ConnectUpstreams(e.t.Context(), servers.Loaded)
+	e.srv.ConnectUpstreams(servers.Loaded)
 	e.srv.WaitForStartupConnects()
 }
 
@@ -309,7 +309,7 @@ func TestServerReload_removalDuringStartupRetry_staysRemoved(t *testing.T) {
 	ts, _ := upstreamFailingFirst(t, 1, pingHandler())
 	e := newServerReloadEnv(t)
 	configtest.WriteServer(t, e.dir, config.ServerConfig{Name: "flaky", Transport: "http", URL: ts.URL})
-	e.srv.ConnectUpstreams(t.Context(), []config.ServerConfig{{Name: "flaky", Transport: "http", URL: ts.URL}})
+	e.srv.ConnectUpstreams([]config.ServerConfig{{Name: "flaky", Transport: "http", URL: ts.URL}})
 	e.waitForRetryBackoff()
 
 	e.removeServerFile("flaky")

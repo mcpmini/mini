@@ -281,7 +281,7 @@ func newServerAwaitingAuthorization(
 	dir := t.TempDir()
 	configtest.WriteServer(t, dir, sc)
 	srv := newTestServer(t, server.Params{ConfigDir: dir})
-	srv.ConnectUpstreams(t.Context(), []config.ServerConfig{sc})
+	srv.ConnectUpstreams([]config.ServerConfig{sc})
 	srv.WaitForStartupConnects()
 	postMCP(postMCPParams{T: t, Server: srv, SessionID: sessionID, Msg: initMsg()})
 	return srv
