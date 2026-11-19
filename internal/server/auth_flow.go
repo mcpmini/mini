@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/mcpmini/mini/internal/auth"
@@ -12,14 +13,16 @@ import (
 type authFlowParams struct {
 	Server             string
 	LeaveBrowserClosed bool
+	// An agent can't enable the server it logs in to, so its login would end with nothing connected.
+	RefuseDisabled bool
 }
 
 type authFlowState struct {
-	cancel   context.CancelFunc
-	login    *auth.BrowserLogin
-	settings config.ServerConfig
-	done     chan struct{} // closed once outcome is set, after the login's reconnect
-	outcome  loginOutcome
+	cancel  context.CancelFunc
+	login   *auth.BrowserLogin
+	server  string
+	done    chan struct{} // closed once outcome is set, after the login's reconnect
+	outcome loginOutcome
 	// cancelReason and committed are guarded by Server.authMu.
 	cancelReason error
 	committed    bool
@@ -49,32 +52,60 @@ func (s *Server) beginAuthFlow(ctx context.Context, p authFlowParams) (*authFlow
 	// login, and can't delete the server's files while the login is still writing them.
 	unlock := s.serverNames.lock(p.Server)
 	defer unlock()
-	sc, err := s.loadOAuthServerConfig(p.Server)
+	sc, err := s.loadLoginServer(ctx, p)
 	if err != nil {
 		return nil, err
 	}
-	if contextErr := ctx.Err(); contextErr != nil {
-		return nil, contextErr
-	}
+	s.applyEditBeforeLogin(sc)
 	return s.launchAuthFlow(ctx, sc, p)
 }
 
+func (s *Server) loadLoginServer(ctx context.Context, p authFlowParams) (config.ServerConfig, error) {
+	sc, err := s.loadOAuthServerConfig(p.Server)
+	if err != nil {
+		return config.ServerConfig{}, err
+	}
+	if p.RefuseDisabled && !sc.IsEnabled() {
+		return config.ServerConfig{}, fmt.Errorf(
+			`server %q is disabled; enable it, or log in with "mini auth %s"`,
+			p.Server,
+			p.Server,
+		)
+	}
+	return sc, ctx.Err()
+}
+
+// applyEditBeforeLogin puts a running server on its file's settings, so the login is for them and
+// only a later edit replaces the server and cancels the login; one the file now disables stops,
+// and the login only saves its token. A server not running is left for the finished login to
+// start: connecting it now would only fail for want of that login.
+func (s *Server) applyEditBeforeLogin(sc config.ServerConfig) {
+	if !sc.IsEnabled() {
+		if s.removeConfigServer(sc.Name) {
+			s.notifyAllSessions()
+		}
+		return
+	}
+	if !s.settingsChanged(sc) {
+		return
+	}
+	s.logger.Info("applying the server's edited settings before its login", "server", sc.Name)
+	s.replace(sc.Name, s.newConfigServer(sc))
+	s.notifyAllSessions()
+}
+
 func (s *Server) launchAuthFlow(ctx context.Context, sc config.ServerConfig, p authFlowParams) (*authFlowState, error) {
-	settings := withOwnAuth(sc)
-	install := s.replacingInstall(sc)
-	// The login is for the server's file, so the reload loop removes it with that file, even when
-	// the login installs it before the loop first sees it.
-	install.fromConfig = true
+	target := s.loginTargetFor(sc)
 	login, err := s.startPKCEFlow(ctx, sc.Name, sc)
 	if err != nil {
 		return nil, err
 	}
-	authCtx, flow, err := s.registerAuthFlow(ctx, login, settings)
+	authCtx, flow, err := s.registerAuthFlow(ctx, login, sc.Name)
 	if err != nil {
 		return nil, err
 	}
 	s.authWg.Add(1)
-	go s.runAuthFlow(authCtx, install, flow)
+	go s.runAuthFlow(authCtx, target, flow)
 	if !p.LeaveBrowserClosed {
 		s.maybeOpenAuthBrowser(sc, login.AuthURL())
 	}
@@ -105,40 +136,25 @@ func (s *Server) startPKCEFlow(
 func (s *Server) registerAuthFlow(
 	ctx context.Context,
 	login *auth.BrowserLogin,
-	settings config.ServerConfig,
+	server string,
 ) (context.Context, *authFlowState, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, nil, errors.Join(err, login.Close())
 	}
 	authCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Minute)
-	state := newAuthFlow(cancel, login, settings)
-	s.storeAuthFlow(settings.Name, state)
+	state := newAuthFlow(cancel, login, server)
+	s.storeAuthFlow(server, state)
 	return authCtx, state, nil
 }
 
-func newAuthFlow(cancel context.CancelFunc, login *auth.BrowserLogin, settings config.ServerConfig) *authFlowState {
-	return &authFlowState{cancel: cancel, login: login, settings: settings, done: make(chan struct{})}
+func newAuthFlow(cancel context.CancelFunc, login *auth.BrowserLogin, server string) *authFlowState {
+	return &authFlowState{cancel: cancel, login: login, server: server, done: make(chan struct{})}
 }
 
 func (s *Server) storeAuthFlow(serverName string, state *authFlowState) {
 	s.authMu.Lock()
 	s.authFlows[serverName] = state
 	s.authMu.Unlock()
-}
-
-// loginInFlightFor is true while start_auth logs in with sc's settings: once it finishes, its own
-// reconnect applies them.
-func (s *Server) loginInFlightFor(sc config.ServerConfig) bool {
-	s.authMu.Lock()
-	defer s.authMu.Unlock()
-	flow := s.authFlows[sc.Name]
-	return flow != nil && sameSettings(flow.settings, sc)
-}
-
-func (s *Server) hasAuthFlow(serverName string) bool {
-	s.authMu.Lock()
-	defer s.authMu.Unlock()
-	return s.authFlows[serverName] != nil
 }
 
 func (s *Server) cancelExistingAuthFlow(serverName string, reason error) {

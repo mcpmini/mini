@@ -16,7 +16,10 @@ func (r retireReason) loginCancelReason() error {
 	return errLoginSettingsEdit
 }
 
-// replace starts next connecting in the background, after stopping what ran under name.
+// replace starts next connecting in the background. It, replaceConnected,
+// replaceReportingFirstOpen and remove are the only ways the set of running incarnations changes
+// before Close, each called under the name's lock. They stop the previous incarnation before
+// starting the next, so the two never run at once.
 func (s *Server) replace(name string, next *upstreamServer) {
 	if s.swapIn(name, next, retireReplaced) {
 		s.start(next)
@@ -33,25 +36,45 @@ func (s *Server) replaceConnected(u *upstreamServer, c connected) error {
 	return nil
 }
 
+// firstOpen is a new incarnation's first connect, which a login reports; after a failure a retry
+// can fix, the open loop goes on retrying.
+type firstOpen struct {
+	u      *upstreamServer
+	result chan error
+}
+
+// wait reports no failure for an incarnation retired meanwhile: what retired it handles the server.
+func (o *firstOpen) wait() error {
+	err := <-o.result
+	if o.u.group.Stopped() {
+		return nil
+	}
+	return err
+}
+
+func (s *Server) replaceReportingFirstOpen(name string, next *upstreamServer) *firstOpen {
+	opening := &firstOpen{u: next, result: make(chan error, 1)}
+	started := s.swapIn(name, next, retireReplaced) &&
+		s.startOpenLoop(next, openLoopParams{immediate: true, firstOpen: opening.result})
+	if !started {
+		opening.result <- fmt.Errorf("server %q: %w", name, errClosed)
+	}
+	return opening
+}
+
 func (s *Server) remove(name string, reason retireReason) {
 	s.swapIn(name, nil, reason)
 }
 
 // swapIn reports false when mini is shutting down and next was not installed.
 func (s *Server) swapIn(name string, next *upstreamServer, reason retireReason) bool {
-	// A server starting under a free name leaves a login started for it running, and keeps the
-	// provider a synchronous Open just attached to next's connection.
-	retiring := next == nil || s.upstreams.get(name) != nil
-	if retiring {
-		// Before the swap: an install checks the generation and swaps under serverOpMu, so one
-		// that started before this either lands first, and is retired here, or is refused.
-		s.bumpRemoveGen(name)
-	}
 	prev, ok := s.upstreams.swap(name, next)
 	if !ok {
 		return false
 	}
-	if retiring || prev != nil {
+	// Retiring with nothing to replace would forget the provider a synchronous Open just attached to
+	// next's connection, which then refuses to authorize.
+	if prev != nil || next == nil {
 		s.retire(name, prev, reason)
 	}
 	s.startupChanged.signal()
@@ -65,6 +88,7 @@ func (s *Server) swapIn(name string, next *upstreamServer, reason retireReason) 
 // provider or projections may still be left.
 func (s *Server) retire(name string, u *upstreamServer, reason retireReason) {
 	s.cancelExistingAuthFlow(name, reason.loginCancelReason())
+	s.bumpRemoveGen(name)
 	if u != nil {
 		u.beginStop()
 	}
@@ -85,7 +109,8 @@ func (s *Server) retire(name string, u *upstreamServer, reason retireReason) {
 	}
 }
 
-// A login finishing after its server was retired must not save its token.
+// A login finishing after its server was retired must not save its token, so every retire moves
+// the name's generation on before the incarnation stops.
 func (s *Server) bumpRemoveGen(name string) {
 	s.serverOpMu.Lock()
 	defer s.serverOpMu.Unlock()

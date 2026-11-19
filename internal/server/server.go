@@ -59,6 +59,7 @@ func (s *Server) Close() {
 	for _, u := range upstreams {
 		u.beginStop()
 	}
+	// After stopping: a finished login waits for its new incarnation's first connect.
 	s.authWg.Wait()
 	// Before closing and waiting: a token refresh runs under the provider registry's lifetime, not
 	// an incarnation's.

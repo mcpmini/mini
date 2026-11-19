@@ -13,7 +13,7 @@ import (
 )
 
 func (s *Server) handleStartAuth(ctx context.Context, serverName string) (any, error) {
-	flow, err := s.beginAuthFlow(ctx, authFlowParams{Server: serverName})
+	flow, err := s.beginAuthFlow(ctx, authFlowParams{Server: serverName, RefuseDisabled: true})
 	if err != nil {
 		return nil, err
 	}

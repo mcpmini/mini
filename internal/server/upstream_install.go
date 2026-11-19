@@ -33,10 +33,7 @@ func (s *Server) newConfigServer(sc config.ServerConfig) *upstreamServer {
 	return s.newUpstreamServer(sc, upstreamOrigin{fromConfig: true})
 }
 
-var (
-	errServerRemoved = errors.New("removed during connection setup")
-	errClosed        = errors.New("mini is shutting down")
-)
+var errClosed = errors.New("mini is shutting down")
 
 // AddUpstream connects sc and replaces whatever runs under its name. A failed connect leaves the
 // name with no server.
@@ -85,26 +82,6 @@ func (s *Server) installConnected(sc config.ServerConfig, c connected) error {
 	return s.replaceConnected(s.newUpstreamServer(sc, upstreamOrigin{}), c)
 }
 
-// upstreamInstall is a login's reconnect, which keeps the incarnation it replaces running until
-// its own connect succeeds.
-type upstreamInstall struct {
-	cfg        config.ServerConfig
-	removeGen  uint64
-	fromConfig bool
-}
-
-func (s *Server) replacingInstall(sc config.ServerConfig) upstreamInstall {
-	return upstreamInstall{cfg: sc, removeGen: s.snapshotRemoveGen(sc.Name)}
-}
-
-func (s *Server) addUpstream(ctx context.Context, in upstreamInstall) error {
-	conn, toolList, err := s.openUpstream(ctx, in.cfg)
-	if err != nil {
-		return err
-	}
-	return s.installChecked(conn, toolList, in)
-}
-
 func (s *Server) openUpstream(
 	ctx context.Context,
 	sc config.ServerConfig,
@@ -132,44 +109,6 @@ func (s *Server) SetReconnectHook(serverName string, fn func()) {
 func (s *Server) IsReconnecting(serverName string) bool {
 	u := s.upstreams.get(serverName)
 	return u != nil && u.isOpening()
-}
-
-func (s *Server) installChecked(conn transport.Connection, toolList transport.ToolList, in upstreamInstall) error {
-	s.serverOpMu.Lock()
-	defer s.serverOpMu.Unlock()
-	if err := s.checkInstallLocked(in); err != nil {
-		conn.Close() //nolint:errcheck // The install rejection is returned; Close only releases the unregistered connection.
-		return err
-	}
-	return s.installUpstreamLocked(in, conn, toolList)
-}
-
-func (s *Server) checkInstallLocked(in upstreamInstall) error {
-	if s.removeGen[in.cfg.Name] != in.removeGen {
-		return fmt.Errorf("server %q: %w", in.cfg.Name, errServerRemoved)
-	}
-	return nil
-}
-
-func (s *Server) installUpstreamLocked(
-	in upstreamInstall,
-	conn transport.Connection,
-	toolList transport.ToolList,
-) error {
-	prev := s.upstreams.get(in.cfg.Name)
-	// A login's reconnect replaces a configured server, which stays one.
-	fromConfig := in.fromConfig || (prev != nil && prev.fromConfig)
-	u := s.newUpstreamServer(in.cfg, upstreamOrigin{fromConfig: fromConfig})
-	if _, ok := s.upstreams.swap(in.cfg.Name, u); !ok {
-		conn.Close() //nolint:errcheck // The install is refused; Close only releases the unused connection.
-		return fmt.Errorf("server %q: %w", in.cfg.Name, errClosed)
-	}
-	if prev != nil {
-		prev.stop()
-	}
-	s.seedProjectionsIfNone(in.cfg)
-	s.adoptConn(u, conn, toolList)
-	return nil
 }
 
 func (s *Server) seedProjectionsIfNone(sc config.ServerConfig) {

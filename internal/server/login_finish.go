@@ -2,19 +2,30 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"time"
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/config"
 )
 
-func (s *Server) runAuthFlow(ctx context.Context, install upstreamInstall, flow *authFlowState) {
+type loginTarget struct {
+	cfg       config.ServerConfig
+	removeGen uint64
+}
+
+func (s *Server) loginTargetFor(sc config.ServerConfig) loginTarget {
+	return loginTarget{cfg: sc, removeGen: s.snapshotRemoveGen(sc.Name)}
+}
+
+var errServerRemoved = errors.New("removed or replaced meanwhile")
+
+func (s *Server) runAuthFlow(ctx context.Context, target loginTarget, flow *authFlowState) {
 	defer s.authWg.Done()
 	defer flow.cancel()
-	defer s.clearAuthFlow(install.cfg.Name, flow)
-	flow.finish(s.awaitAuthAndReconnect(ctx, install, flow))
+	defer s.clearAuthFlow(target.cfg.Name, flow)
+	flow.finish(s.awaitAuthAndReplace(ctx, target, flow))
 }
 
 func (s *Server) clearAuthFlow(serverName string, flow *authFlowState) {
@@ -30,29 +41,61 @@ func (f *authFlowState) finish(outcome loginOutcome) {
 	close(f.done)
 }
 
-func (s *Server) awaitAuthAndReconnect(ctx context.Context, install upstreamInstall, flow *authFlowState) loginOutcome {
-	sc := install.cfg
+func (s *Server) awaitAuthAndReplace(ctx context.Context, target loginTarget, flow *authFlowState) loginOutcome {
+	name := target.cfg.Name
 	savedLogin, err := flow.login.Wait(ctx)
 	if err != nil {
-		s.logger.Error("oauth flow failed", "server", sc.Name, "err", err)
+		s.logger.Error("oauth flow failed", "server", name, "err", err)
 		return loginOutcome{err: s.loginFailure(flow, fmt.Errorf("auth flow: %w", err))}
 	}
 	if !s.beginCommit(flow) {
 		return loginOutcome{err: s.loginFailure(flow, nil)}
 	}
-	if err := s.commitTokenUnlessRemoved(install, savedLogin); err != nil {
-		s.logger.Error("commit oauth token failed", "server", sc.Name, "err", err)
+	opening, err := s.commitAndReplace(target, flow, savedLogin)
+	if err != nil {
+		s.logger.Error("commit oauth token failed", "server", name, "err", err)
 		return loginOutcome{err: fmt.Errorf("save login: %w", err)}
 	}
 	outcome := loginOutcome{expiry: savedLogin.Token.Expiry}
-	if sc.IsEnabled() {
-		outcome.connectErr = s.connectAfterLogin(ctx, install, flow)
+	if opening != nil {
+		outcome.connectErr = opening.wait()
 	}
 	return outcome
 }
 
-func (s *Server) connectAfterLogin(ctx context.Context, install upstreamInstall, flow *authFlowState) error {
-	return s.connectFailure(flow, s.reconnectWithToken(ctx, install))
+// commitAndReplace holds the name's lock across the commit and the replace, so the watcher can't
+// see the new token and replace the server in between, and a remove either runs first or waits for
+// both. It returns the new incarnation's first connect, which is waited for without the lock.
+func (s *Server) commitAndReplace(target loginTarget, flow *authFlowState, login *auth.Login) (*firstOpen, error) {
+	name := target.cfg.Name
+	unlock := s.serverNames.lock(name)
+	defer unlock()
+	if err := s.commitTokenUnlessRemoved(target, login); err != nil {
+		return nil, err
+	}
+	// Cleared first: this login has saved its token, so the replace mustn't record it as cancelled.
+	s.clearAuthFlow(name, flow)
+	return s.replaceAfterLogin(name), nil
+}
+
+// replaceAfterLogin starts the server afresh on the file's settings, so the new incarnation's
+// connect loads the saved token into a fresh provider. A disabled server keeps only the token.
+func (s *Server) replaceAfterLogin(name string) *firstOpen {
+	sc, saved := s.lookupSavedServer(name)
+	switch saved {
+	case savedGone:
+		if s.removeConfigServer(name) {
+			s.notifyAllSessions()
+		}
+		return nil
+	case savedUnreadable:
+		return nil
+	case savedStartable:
+	}
+	opening := s.replaceReportingFirstOpen(name, s.newConfigServer(sc))
+	s.notifyAllSessions()
+	s.logger.Info("reconnecting after auth", "server", name)
+	return opening
 }
 
 // beginCommit makes the commit and cancellation exclusive: a cancelled flow never saves its token,
@@ -73,26 +116,15 @@ func (s *Server) loginFailure(flow *authFlowState, err error) error {
 	return err
 }
 
-// A settings edit or remove that cancels this login after its token is saved reconnects or drops the
-// server itself, so this login's cut-short reconnect is no failure of it.
-func (s *Server) connectFailure(flow *authFlowState, err error) error {
-	s.authMu.Lock()
-	defer s.authMu.Unlock()
-	if flow.cancelReason != nil {
-		return nil
-	}
-	return err
-}
-
-func (s *Server) commitTokenUnlessRemoved(install upstreamInstall, login *auth.Login) error {
+func (s *Server) commitTokenUnlessRemoved(target loginTarget, login *auth.Login) error {
 	s.serverOpMu.Lock()
 	defer s.serverOpMu.Unlock()
-	// A remove bumps the generation under serverOpMu before deleting the token, so a login that
-	// finishes after it can't save the token back, or onto a new server added under the name.
-	if s.removeGen[install.cfg.Name] != install.removeGen {
-		return fmt.Errorf("server %q: %w", install.cfg.Name, errServerRemoved)
+	// Every retire bumps the generation before deleting anything, so a login that finishes after a
+	// remove or an edit can't save its token back, or onto a new server added under the name.
+	if s.removeGen[target.cfg.Name] != target.removeGen {
+		return fmt.Errorf("server %q: %w", target.cfg.Name, errServerRemoved)
 	}
-	return s.providerRegistry.CommitAuthorizedToken(s.providerParamsFor(install.cfg), login)
+	return s.providerRegistry.CommitAuthorizedToken(s.providerParamsFor(target.cfg), login)
 }
 
 func (s *Server) providerParamsFor(sc config.ServerConfig) provider.Params {
@@ -104,18 +136,4 @@ func (s *Server) providerParamsFor(sc config.ServerConfig) provider.Params {
 		ServerURL:  sc.URL,
 		Clock:      s.clock,
 	}
-}
-
-func (s *Server) reconnectWithToken(ctx context.Context, install upstreamInstall) error {
-	serverName := install.cfg.Name
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	// Not AddUpstream, which retires the server first: a failed reconnect here leaves the server
-	// that ran before the login in place.
-	if err := s.addUpstream(ctx, install); err != nil {
-		s.logger.Error("reconnect after auth failed", "server", serverName, "err", err)
-		return err
-	}
-	s.logger.Info("reconnected after auth", "server", serverName)
-	return nil
 }

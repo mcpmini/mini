@@ -28,7 +28,7 @@ func TestReplace_underAFreeName_leavesALoginStartedForItRunning(t *testing.T) {
 	srv, _ := newRetryTestServer(t)
 	cancelled := false
 	login := authtest.StartLogin(t, &config.AuthConfig{})
-	srv.storeAuthFlow("svc", newAuthFlow(func() { cancelled = true }, login, config.ServerConfig{}))
+	srv.storeAuthFlow("svc", newAuthFlow(func() { cancelled = true }, login, ""))
 	genAtStartAuth := srv.snapshotRemoveGen("svc")
 	unlock := srv.serverNames.lock("svc")
 	defer unlock()
