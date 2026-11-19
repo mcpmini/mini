@@ -213,7 +213,7 @@ func TestAuthFlow_loginInstallingAnUnrecordedServerRecordsItSoRmRemovesIt(t *tes
 	if err := ops.RemoveServer(f.srv.configDir, "svc"); err != nil {
 		t.Fatal(err)
 	}
-	f.srv.applyServerFiles(t.Context())
+	f.srv.applyServerFiles()
 
 	if f.srv.isUpstreamConnected("svc") {
 		t.Error("svc still runs after its file was removed")

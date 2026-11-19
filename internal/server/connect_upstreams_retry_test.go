@@ -60,7 +60,7 @@ func startRetrying(t *testing.T, url string, logs slog.Handler) startupRetry {
 	t.Helper()
 	fakeClock := clock.NewFake()
 	srv := newConnectTestServerLogging(t, logs, fakeClock)
-	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{{Name: "svc", Transport: "http", URL: url}})
+	srv.ConnectUpstreams([]config.ServerConfig{{Name: "svc", Transport: "http", URL: url}})
 	return startupRetry{srv: srv, clock: fakeClock}
 }
 
@@ -129,10 +129,7 @@ func TestConnectUpstreams_laterCall_leavesEarlierRetriesRunning(t *testing.T) {
 	r.waitForBackoffTimer(t)
 
 	other := mcptest.NewHTTP(t, mcptest.Upstream{Tools: pingTools})
-	r.srv.ConnectUpstreams(
-		context.Background(),
-		[]config.ServerConfig{{Name: "other", Transport: "http", URL: other.URL}},
-	)
+	r.srv.ConnectUpstreams([]config.ServerConfig{{Name: "other", Transport: "http", URL: other.URL}})
 	r.clock.Advance(time.Second)
 	r.srv.WaitForStartupConnects()
 
@@ -248,7 +245,7 @@ func TestConnectUpstreams_removedBeforeFirstAttempt_isNotInstalled(t *testing.T)
 	srv := newConnectTestServer(t)
 	defer srv.Close()
 
-	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{{Name: "svc", Transport: "http", URL: ts.URL}})
+	srv.ConnectUpstreams([]config.ServerConfig{{Name: "svc", Transport: "http", URL: ts.URL}})
 	serve(t, srv, callTool("config", map[string]any{"action": "remove_server", "server": "svc"}))
 	srv.WaitForStartupConnects()
 
@@ -286,7 +283,7 @@ func TestConnectUpstreamAsync_runtimeAddWhileDialInFlight_doesNotOverwriteRuntim
 	srv := newConnectTestServer(t)
 	defer mustClose(t, srv)
 
-	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{{Name: "svc", Transport: "http", URL: ts.URL}})
+	srv.ConnectUpstreams([]config.ServerConfig{{Name: "svc", Transport: "http", URL: ts.URL}})
 
 	testutil.WaitForReceive(t, reached, "the handler to reach tools/list")
 
@@ -336,7 +333,7 @@ func TestConnectUpstreamAsync_projectionsReloadedDuringRetry_installUsesLiveProj
 			r.srv = newConnectTestServerLogging(t, discardLogs(), r.clock)
 			defer r.srv.Close()
 			r.srv.ReplaceProjections(aliasPing("old_alias"))
-			r.srv.ConnectUpstreams(context.Background(), []config.ServerConfig{
+			r.srv.ConnectUpstreams([]config.ServerConfig{
 				{Name: "svc", Transport: "http", URL: ts.URL, Projections: aliasPing("old_alias")["svc"]},
 			})
 

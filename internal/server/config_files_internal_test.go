@@ -29,26 +29,26 @@ func TestApplyServerFile_skipsANameAnotherOperationHolds(t *testing.T) {
 	srv.recordConfigServers([]config.ServerConfig{{Name: "svc"}})
 	unlock := srv.serverNames.lock("svc")
 
-	removedWhileHeld := srv.applyServerFile(t.Context(), "svc")
+	removedWhileHeld := srv.applyServerFile("svc")
 	unlock()
 
 	if removedWhileHeld {
 		t.Error("applyServerFile removed svc while another operation held its name")
 	}
-	if !srv.applyServerFile(t.Context(), "svc") {
+	if !srv.applyServerFile("svc") {
 		t.Error("applyServerFile kept svc once its name was free, want the next pass to remove it")
 	}
 }
 
 func TestApplyServerFile_reconnectsAServerStoppedAtNeedsAuthOnceItsLoginIsSaved(t *testing.T) {
 	srv, sc := newNeedsAuthServer(t)
-	if srv.applyServerFile(t.Context(), "svc"); srv.ToolCount("svc") != 0 || !srv.isConfigServer("svc") {
+	if srv.applyServerFile("svc"); srv.ToolCount("svc") != 0 || !srv.isConfigServer("svc") {
 		t.Fatal("svc was touched before any login was saved")
 	}
 
 	writeLogin(t, srv)
-	srv.applyServerFile(t.Context(), "svc")
-	srv.connector.wait()
+	srv.applyServerFile("svc")
+	srv.WaitForStartupConnects()
 
 	if srv.ToolCount("svc") == 0 {
 		t.Error("svc still has no tools after its login was saved, want it reconnected")
@@ -63,9 +63,9 @@ func TestApplyServerFile_aLoginSavedWhileTheFileIsHalfWrittenAppliesOnceItIsComp
 	writeLogin(t, srv)
 	testutil.WriteFile(t, config.ServerPath(srv.configDir, "svc"), "")
 
-	srv.applyServerFile(t.Context(), "svc")
+	srv.applyServerFile("svc")
 	configtest.WriteServer(t, srv.configDir, sc)
-	srv.applyServerFile(t.Context(), "svc")
+	srv.applyServerFile("svc")
 
 	if !connectsWithin(srv, 3*time.Second) || srv.ToolCount("svc") == 0 {
 		t.Error("svc never connected: the half-written file took the place of its complete settings")
@@ -91,8 +91,8 @@ func TestApplyServerFile_leavesAServerAtNeedsAuthWithoutANewLogin(t *testing.T) 
 		t.Run(name, func(t *testing.T) {
 			srv := setUp(t)
 
-			srv.applyServerFile(t.Context(), "svc")
-			srv.connector.wait()
+			srv.applyServerFile("svc")
+			srv.WaitForStartupConnects()
 
 			if srv.ToolCount("svc") != 0 {
 				t.Error("svc reconnected without a login saved since its attempt")
@@ -106,7 +106,7 @@ func TestApplyServerFile_leavesAServerAtNeedsAuthWithoutANewLogin(t *testing.T) 
 func connectsWithin(srv *Server, d time.Duration) bool {
 	done := make(chan struct{})
 	go func() {
-		srv.connector.wait()
+		srv.WaitForStartupConnects()
 		close(done)
 	}()
 	select {
@@ -133,7 +133,7 @@ func recordNeedsAuth(t *testing.T, srv *Server) config.ServerConfig {
 	configtest.WriteServer(t, srv.configDir, sc)
 	srv.replaceProjections(map[string]map[string]*config.ProjectionConfig{"svc": sc.Projections}, config.Servers{})
 	srv.recordConfigServers([]config.ServerConfig{sc})
-	srv.recordStartupFailure(srv.startupInstall(sc), needsAuthStatus{})
+	srv.recordFailure(srv.startupInstall(sc), needsAuthStatus{})
 	return sc
 }
 
@@ -155,8 +155,8 @@ func TestApplyServerFile_anEditCancelsALoginStartedForTheOldSettings(t *testing.
 
 	sc.Args = []string{"--moved"}
 	configtest.WriteServer(t, srv.configDir, sc)
-	srv.applyServerFile(t.Context(), "svc")
-	srv.connector.wait()
+	srv.applyServerFile("svc")
+	srv.WaitForStartupConnects()
 
 	if !cancelled || srv.hasAuthFlow("svc") {
 		t.Error("a login for svc's old settings is still waiting after svc was edited")
@@ -172,7 +172,7 @@ func TestSettingsChanged_OAuthMiniDetectedFromA401IsNotAnEdit(t *testing.T) {
 	if err := config.MarkOAuthDetected(srv.configDir, "svc"); err != nil {
 		t.Fatal(err)
 	}
-	srv.recordStartupFailure(srv.startupInstall(saved), needsAuthStatus{})
+	srv.recordFailure(srv.startupInstall(saved), needsAuthStatus{})
 
 	loaded, _, err := config.LookupServer(srv.configDir, "svc")
 	if err != nil {

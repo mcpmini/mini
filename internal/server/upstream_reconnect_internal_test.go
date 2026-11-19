@@ -9,11 +9,13 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"slices"
 	"testing"
 	"time"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -35,7 +37,7 @@ func registeredToolNames(srv *Server) []string {
 	return names
 }
 
-func TestPublishReconnectedTools_staleUpstreamLeavesTheRegistryAlone(t *testing.T) {
+func TestAdoptConn_aStoppedIncarnationLeavesTheRegistryAlone(t *testing.T) {
 	oldTools := []transport.ToolDefinition{{Name: "old_tool", InputSchema: json.RawMessage(`{}`)}}
 	newTools := []transport.ToolDefinition{{Name: "new_tool", InputSchema: json.RawMessage(`{}`)}}
 
@@ -51,9 +53,8 @@ func TestPublishReconnectedTools_staleUpstreamLeavesTheRegistryAlone(t *testing.
 		if _, err := srv.removeServerFromAgent("svc"); err != nil {
 			t.Fatal(err)
 		}
-		if srv.publishReconnectedTools(reconnecting, reconnecting.conn, transport.ToolList{Tools: newTools}) {
-			t.Error("publish reported success for a removed upstream")
-		}
+		srv.adoptConn(reconnecting, &transport.FakeConnection{}, transport.ToolList{Tools: newTools})
+
 		if got := registeredToolNames(srv); len(got) != 0 {
 			t.Errorf("registry after removal = %v, want empty", got)
 		}
@@ -73,16 +74,15 @@ func TestPublishReconnectedTools_staleUpstreamLeavesTheRegistryAlone(t *testing.
 			config.ServerConfig{Name: "svc"},
 			&transport.FakeConnection{Tools: newTools},
 		)
-		if srv.publishReconnectedTools(reconnecting, reconnecting.conn, transport.ToolList{Tools: oldTools}) {
-			t.Error("publish reported success for a replaced upstream")
-		}
+		srv.adoptConn(reconnecting, &transport.FakeConnection{}, transport.ToolList{Tools: oldTools})
+
 		if got := registeredToolNames(srv); !slices.Equal(got, []string{"svc.new_tool"}) {
 			t.Errorf("registry = %v, want only the newer install's svc.new_tool", got)
 		}
 	})
 }
 
-func TestPublishReconnectedTools_usesReloadedAliases(t *testing.T) {
+func TestAdoptConn_aReconnectUsesReloadedAliases(t *testing.T) {
 	srv := newInternalTestServer(t)
 
 	tools := []transport.ToolDefinition{{Name: "list_pull_requests", InputSchema: json.RawMessage(`{}`)}}
@@ -101,7 +101,7 @@ func TestPublishReconnectedTools_usesReloadedAliases(t *testing.T) {
 	if len(upstreams) != 1 {
 		t.Fatalf("expected 1 upstream, got %d", len(upstreams))
 	}
-	srv.publishReconnectedTools(upstreams[0], upstreams[0].conn, transport.ToolList{Tools: tools})
+	srv.adoptConn(upstreams[0], &transport.FakeConnection{}, transport.ToolList{Tools: tools})
 
 	names := map[string]bool{}
 	for _, e := range srv.reg.AllFull() {
@@ -153,5 +153,54 @@ func TestClassifyCallError(t *testing.T) {
 				t.Errorf("classifyCallError(%v) = %v, which no longer wraps the call's error", tc.err, got)
 			}
 		})
+	}
+}
+
+func TestMaybeReconnect_afterAFailureARetryCantFix_opensNothing(t *testing.T) {
+	srv := newInternalTestServer(t)
+	if err := srv.AddConnection(
+		t.Context(),
+		config.ServerConfig{Name: "svc"},
+		&transport.FakeConnection{},
+	); err != nil {
+		t.Fatal(err)
+	}
+	u := srv.upstreams.get("svc")
+	srv.recordFailure(u, needsAuthStatus{})
+
+	srv.maybeReconnect(u, markConnError(errors.New("broken pipe")))
+
+	if u.isOpening() {
+		t.Error("a call failing on svc's old connection reopened it while it waits for a login")
+	}
+}
+
+func TestMaybeReconnect_toAConfiguredServerThatNowRefusesItsLogin_givesCallsTheLoginRemedy(t *testing.T) {
+	srv, fc := newRetryTestServer(t)
+	refusing := testutil.Serve(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		w.WriteHeader(http.StatusUnauthorized)
+	})
+	u := srv.newUpstreamServer(config.ServerConfig{
+		Name: "svc", Transport: "http", URL: refusing.URL,
+		Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "c", TokenURL: refusing.URL + "/token"},
+	}, upstreamOrigin{fromConfig: true})
+	srv.upstreams.swap("svc", u)
+	srv.adoptConn(u, &transport.FakeConnection{}, transport.ToolList{Tools: []transport.ToolDefinition{{Name: "ping"}}})
+
+	srv.maybeReconnect(u, connError{errors.New("connection reset")})
+	if err := fc.BlockUntilContext(t.Context(), 1); err != nil {
+		t.Fatal("the reconnect never waited out its backoff:", err)
+	}
+	fc.Advance(time.Second)
+	srv.WaitForStartupConnects()
+
+	_, err := srv.lookupTool("svc", "ping")
+	var notReady errServerNotReady
+	if !errors.As(err, &notReady) || notReady.env.Error != "server_needs_auth" {
+		t.Errorf(
+			"a call after the reconnect was refused = %v, want server_needs_auth so the agent can start a login",
+			err,
+		)
 	}
 }

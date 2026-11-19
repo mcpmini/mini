@@ -27,10 +27,10 @@ func TestNotification_toolsChangedAfterAddServer(t *testing.T) {
 		}),
 	)
 
-	notification := findMethod(msgs, "notifications/tools/list_changed")
-	if notification == nil {
-		t.Fatalf("expected notifications/tools/list_changed after add_server; got: %v", msgs)
+	if n := countMethod(msgs, "notifications/tools/list_changed"); n != 1 {
+		t.Fatalf("add_server sent %d notifications/tools/list_changed, want 1; got: %v", n, msgs)
 	}
+	notification := findMethod(msgs, "notifications/tools/list_changed")
 	if params, ok := notification["params"].(map[string]any); ok && params["_meta"] != nil {
 		t.Errorf("legacy tools changed notification must be untagged, got: %v", notification)
 	}
@@ -112,6 +112,16 @@ func TestToolsListChanged_notificationShape(t *testing.T) {
 }
 
 // hasNotification returns true if any message has the given method and no id.
+func countMethod(messages []map[string]any, method string) int {
+	n := 0
+	for _, m := range messages {
+		if m["method"] == method {
+			n++
+		}
+	}
+	return n
+}
+
 func hasNotification(msgs []map[string]any, method string) bool {
 	for _, m := range msgs {
 		if m["method"] == method && m["id"] == nil {

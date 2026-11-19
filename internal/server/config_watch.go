@@ -62,7 +62,7 @@ func (s *Server) runConfigReload(ctx context.Context, afterCheck func()) {
 	// Startup read the config before this poller existed; an edit made in
 	// between is only caught by applying the config once now.
 	s.applyConfig()
-	s.applyServerFiles(ctx)
+	s.applyServerFiles()
 	ticker := s.clock.NewTicker(configPollInterval)
 	defer ticker.Stop()
 	afterCheck()
@@ -70,7 +70,7 @@ func (s *Server) runConfigReload(ctx context.Context, afterCheck func()) {
 		select {
 		case <-ticker.Chan():
 			last = s.reloadIfConfigChanged(last)
-			s.applyServerFiles(ctx)
+			s.applyServerFiles()
 			afterCheck()
 		case <-ctx.Done():
 			return
