@@ -1,5 +1,5 @@
 // Package configui serves the browser page where a user reviews a server's tools after logging in.
-// It runs in the daemon, on a loopback port of its own.
+// It runs in the daemon, on a loopback port of its own, and reaches servers only through Backend.
 package configui
 
 import (
@@ -19,7 +19,8 @@ import (
 // Manager binds the page's loopback port only while a link or session is live, so a page nobody
 // has open leaves nothing listening.
 type Manager struct {
-	clock clock.Clock
+	clock   clock.Clock
+	backend Backend
 
 	mu       sync.Mutex
 	entries  map[[sha256.Size]byte]entry
@@ -33,9 +34,10 @@ type uiListener struct {
 	closed chan struct{}
 }
 
-func NewManager(c clock.Clock) *Manager {
+func NewManager(backend Backend, c clock.Clock) *Manager {
 	return &Manager{
 		clock:    c,
+		backend:  backend,
 		entries:  map[[sha256.Size]byte]entry{},
 		sessions: map[[sha256.Size]byte]*session{},
 	}

@@ -16,6 +16,26 @@ import (
 	"github.com/mcpmini/mini/internal/testutil"
 )
 
+type fakeBackend map[string]ServerView
+
+func (b fakeBackend) Servers(names []string) []ServerSummary {
+	var out []ServerSummary
+	for _, name := range names {
+		if view, ok := b[name]; ok {
+			out = append(out, ServerSummary{Name: name, State: view.State})
+		}
+	}
+	return out
+}
+
+func (b fakeBackend) Server(name string) (ServerView, error) {
+	view, ok := b[name]
+	if !ok {
+		return ServerView{}, ErrUnknownServer
+	}
+	return view, nil
+}
+
 type page struct {
 	t     *testing.T
 	m     *Manager
@@ -25,8 +45,12 @@ type page struct {
 
 func newPage(t *testing.T) *page {
 	t.Helper()
+	backend := fakeBackend{
+		"svc":   {Name: "svc", State: StateReady, Tools: []Tool{{Name: "getData"}, {Name: "drop", Hidden: true}}},
+		"other": {Name: "other", State: StateReady},
+	}
 	c := clock.NewFake()
-	m := NewManager(c)
+	m := NewManager(backend, c)
 	t.Cleanup(m.Close)
 	return &page{t: t, m: m, clock: c}
 }
@@ -99,6 +123,63 @@ func (p *page) advance(d time.Duration) {
 	p.clock.Advance(d)
 }
 
+func TestPage_linkOpensASessionThatShowsItsServer(t *testing.T) {
+	p := newPage(t)
+	token := p.redeem(p.open("svc"))
+
+	listStatus, list := p.do(request{method: http.MethodGet, path: "/api/servers", body: "", edit: bearer(token)})
+	viewStatus, view := p.do(
+		request{method: http.MethodGet, path: "/api/server?server=svc", body: "", edit: bearer(token)},
+	)
+
+	if listStatus != http.StatusOK || string(list) != `[{"name":"svc","state":"ready"}]`+"\n" {
+		t.Errorf("GET /api/servers = %d %s, want only svc", listStatus, list)
+	}
+	want := `{"name":"svc","state":"ready","tools":[{"name":"getData","hidden":false},{"name":"drop","hidden":true}]}` + "\n"
+	if viewStatus != http.StatusOK || string(view) != want {
+		t.Errorf("GET /api/server = %d %s, want %s", viewStatus, view, want)
+	}
+}
+
+func TestPage_serverWithNoToolsYetShowsAnEmptyList(t *testing.T) {
+	p := newPage(t)
+	token := p.redeem(p.open("other"))
+
+	status, view := p.do(request{method: http.MethodGet, path: "/api/server?server=other", edit: bearer(token)})
+
+	if want := `{"name":"other","state":"ready","tools":[]}` + "\n"; status != http.StatusOK || string(view) != want {
+		t.Errorf("GET /api/server = %d %s, want %s", status, view, want)
+	}
+}
+
+func TestPage_serverRemovedFromMiniIsNoLongerListed(t *testing.T) {
+	p := newPage(t)
+	token := p.redeem(p.open("gone"))
+
+	listStatus, list := p.do(request{method: http.MethodGet, path: "/api/servers", edit: bearer(token)})
+	viewStatus, _ := p.do(request{method: http.MethodGet, path: "/api/server?server=gone", edit: bearer(token)})
+
+	if listStatus != http.StatusOK || string(list) != "[]\n" || viewStatus != http.StatusNotFound {
+		t.Errorf("servers = %d %s, server = %d; want an empty list and 404", listStatus, list, viewStatus)
+	}
+}
+
+func TestPage_servesThePageWithItsSecurityHeaders(t *testing.T) {
+	p := newPage(t)
+	p.open("svc")
+
+	resp, err := http.Get(p.base + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Security-Policy") != contentSecurityPolicy ||
+		resp.Header.Get("X-Content-Type-Options") != "nosniff" || resp.Header.Get("Referrer-Policy") != "no-referrer" {
+		t.Errorf("GET / = %d, headers %v; want the page with its security headers", resp.StatusCode, resp.Header)
+	}
+}
+
 func TestPage_rejectsRequestsWithoutTheRightHostOriginTypeOrSession(t *testing.T) {
 	p := newPage(t)
 	token := p.redeem(p.open("svc"))
@@ -118,8 +199,9 @@ func TestPage_rejectsRequestsWithoutTheRightHostOriginTypeOrSession(t *testing.T
 			bearer(token)(r)
 			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		}, want: http.StatusUnsupportedMediaType},
-		"no bearer":      {method: http.MethodPost, path: "/api/touch", body: "{}", want: http.StatusUnauthorized},
-		"unknown bearer": {method: http.MethodPost, path: "/api/touch", body: "{}", edit: bearer("not-a-session"), want: http.StatusUnauthorized},
+		"no bearer":          {method: http.MethodPost, path: "/api/touch", body: "{}", want: http.StatusUnauthorized},
+		"server not granted": {method: http.MethodGet, path: "/api/server?server=other", edit: bearer(token), want: http.StatusNotFound},
+		"unknown bearer":     {method: http.MethodPost, path: "/api/touch", body: "{}", edit: bearer("not-a-session"), want: http.StatusUnauthorized},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if status, body := p.do(tc.request); status != tc.want {
@@ -159,8 +241,8 @@ func TestSession_endsAfterAnHourWithoutATouch(t *testing.T) {
 		touched bool
 		alive   bool
 	}{
-		"untouched": {touched: false, alive: false},
-		"touched":   {touched: true, alive: true},
+		"polled with GETs": {touched: false, alive: false},
+		"touched":          {touched: true, alive: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			p := newPage(t)
@@ -168,6 +250,8 @@ func TestSession_endsAfterAnHourWithoutATouch(t *testing.T) {
 			p.advance(idleTimeout - 10*time.Minute)
 			if tc.touched {
 				p.do(request{method: http.MethodPost, path: "/api/touch", body: "{}", edit: bearer(token)})
+			} else {
+				p.do(request{method: http.MethodGet, path: "/api/servers", edit: bearer(token)})
 			}
 
 			p.advance(20 * time.Minute)

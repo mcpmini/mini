@@ -3,6 +3,7 @@ package configui
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"slices"
 	"time"
 
 	"github.com/mcpmini/mini/internal/randutil"
@@ -33,6 +34,8 @@ func (s *session) expiresAt() time.Time {
 	}
 	return capped
 }
+
+func (s *session) allows(server string) bool { return slices.Contains(s.servers, server) }
 
 func newSecret() string { return base64.RawURLEncoding.EncodeToString(randutil.Bytes(32)) }
 
