@@ -72,7 +72,7 @@ func addToolListConnection(t *testing.T, s *Server, c *toolListConnection) *upst
 }
 
 func readToolsList(s *Server) string {
-	result, err := s.handleToolsList(context.Background())
+	result, err := s.handleToolsList(context.Background(), nil)
 	raw, _ := json.Marshal(result)
 	return fmt.Sprint(string(raw), err)
 }

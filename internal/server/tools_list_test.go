@@ -9,6 +9,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
+	"github.com/mcpmini/mini/internal/transport/transporttest"
 )
 
 func TestProxy_ToolsList_ContainsMiniTools(t *testing.T) {
@@ -61,7 +62,7 @@ func TestProxy_ToolsList_AnnotationsPassthrough(t *testing.T) {
 			InputSchema:  json.RawMessage(`{"type":"object"}`),
 			Annotations:  raw,
 			Title:        json.RawMessage(`"My Tool"`),
-			OutputSchema: json.RawMessage(`{"type":"string"}`),
+			OutputSchema: json.RawMessage(`{"type":"object"}`),
 			Meta:         json.RawMessage(`{"key":"val"}`),
 			Icons:        json.RawMessage(`{"url":"http://example.com/icon.png"}`),
 			Execution:    json.RawMessage(`{"timeout":30}`),
@@ -198,6 +199,71 @@ func TestProxy_ToolsList_OutputSchemaOmittedWhenUpstreamHasNone(t *testing.T) {
 	}
 	if _, ok := tool["outputSchema"]; ok {
 		t.Errorf("tool without an upstream outputSchema must not advertise one, got: %v", tool["outputSchema"])
+	}
+}
+
+func TestProxy_ToolsList_LegacyAgentGetsNoNonObjectOutputSchema(t *testing.T) {
+	for _, schema := range []string{
+		`{"type":"array","items":{"type":"string"}}`,
+		`{"type":["null","array"]}`,
+		`{"type":["object","null"]}`,
+		`{"properties":{"id":{"type":"string"}}}`,
+		`true`,
+	} {
+		t.Run(schema, func(t *testing.T) {
+			srv := newTestServer(t, server.Params{})
+			addProxyConn(
+				addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: fakeConnWithOutputSchema(schema)},
+			)
+
+			tool := findTool(toolsList(t, srv), "svc__list")
+
+			if tool == nil {
+				t.Fatal("svc__list must stay in a legacy tools/list without its outputSchema")
+			}
+			if got, ok := tool["outputSchema"]; ok {
+				t.Errorf("legacy agent must not get an outputSchema whose root isn't an object, got %v", got)
+			}
+		})
+	}
+}
+
+func TestProxy_ToolsList_LegacyAgentKeepsObjectOutputSchema(t *testing.T) {
+	srv := newTestServer(t, server.Params{})
+	conn := fakeConnWithOutputSchema(`{"type":"object","properties":{"id":{"type":"string"}}}`)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
+
+	schema, _ := findTool(toolsList(t, srv), "svc__list")["outputSchema"].(map[string]any)
+
+	if schema["type"] != "object" {
+		t.Errorf("legacy agent must keep an object outputSchema, got %v", schema)
+	}
+}
+
+func TestProxy_ToolsList_ModernAgentKeepsNonObjectOutputSchema(t *testing.T) {
+	srv := newTestServer(t, server.Params{})
+	conn := fakeConnWithOutputSchema(`{"type":"array","items":{"type":"string"}}`)
+	addProxyConn(addProxyConnParams{T: t, Server: srv, Name: "svc", Connection: conn})
+
+	response := responsesByID(serveModern(t, srv, transporttest.ModernRequest(1, "tools/list", nil)))[1]
+
+	list := decodeResult[struct {
+		Tools []map[string]any `json:"tools"`
+	}](t, response)
+	schema, _ := findTool(list.Tools, "svc__list")["outputSchema"].(map[string]any)
+	if schema["type"] != "array" {
+		t.Errorf("modern agent must get the array outputSchema, got %s", response.Result)
+	}
+}
+
+func fakeConnWithOutputSchema(schema string) *transport.FakeConnection {
+	return &transport.FakeConnection{
+		Tools: []transport.ToolDefinition{{
+			Name:         "list",
+			InputSchema:  json.RawMessage(`{"type":"object"}`),
+			OutputSchema: json.RawMessage(schema),
+		}},
+		Responses: make(map[string]json.RawMessage),
 	}
 }
 
