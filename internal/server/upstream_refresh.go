@@ -94,7 +94,8 @@ func (s *Server) publishRefreshedTools(
 	conn transport.Connection,
 	toolList transport.ToolList,
 ) bool {
-	// Under u.mu, not serverOpMu: a remove holds serverOpMu while it waits for this refresh to end.
+	// Under u.mu, not serverOpMu: a login's install holds serverOpMu while it waits for this refresh
+	// to end.
 	u.mu.Lock()
 	if !s.isCurrentUpstreamConnLocked(u, conn) {
 		u.mu.Unlock()

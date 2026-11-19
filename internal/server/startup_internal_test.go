@@ -19,7 +19,7 @@ func TestRecordFailure_aStaleAttemptDoesNotMarkAServerConfiguredAgainUnderItsNam
 	srv := newInstallTestServer(t)
 	srv.recordConfigServers([]config.ServerConfig{{Name: "svc"}})
 	stale := srv.startupInstall(config.ServerConfig{Name: "svc"})
-	srv.detachAndCloseServer("svc")
+	srv.remove("svc", retireRemoved)
 	srv.recordConfigServers([]config.ServerConfig{{Name: "svc"}})
 
 	srv.recordFailure(stale, needsAuthStatus{})
@@ -29,7 +29,7 @@ func TestRecordFailure_aStaleAttemptDoesNotMarkAServerConfiguredAgainUnderItsNam
 	}
 }
 
-func TestDetachAndCloseServer_aServerConfiguredAgainStartsWithoutTheOldStartupState(t *testing.T) {
+func TestRemove_aServerConfiguredAgainStartsWithoutTheOldStartupState(t *testing.T) {
 	cases := []struct {
 		name  string
 		setUp func(*Server)
@@ -56,7 +56,7 @@ func TestDetachAndCloseServer_aServerConfiguredAgainStartsWithoutTheOldStartupSt
 			srv.recordConfigServers([]config.ServerConfig{{Name: "svc"}})
 			srv.openConnectWindow("svc")
 			tc.setUp(srv)
-			srv.detachAndCloseServer("svc")
+			srv.remove("svc", retireRemoved)
 			srv.recordConfigServers([]config.ServerConfig{{Name: "svc"}})
 			srv.openConnectWindow("svc")
 

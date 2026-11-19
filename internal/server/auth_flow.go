@@ -285,9 +285,8 @@ func (s *Server) reconnectWithToken(ctx context.Context, install upstreamInstall
 	serverName := install.cfg.Name
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	// Do not call removeServerRuntime first: if AddUpstream fails the server
-	// would be permanently gone. registerUpstream → swapUpstream replaces the
-	// old upstream in-place; on failure the old upstream is untouched.
+	// Not AddUpstream, which retires the server first: a failed reconnect here leaves the server
+	// that ran before the login in place.
 	if err := s.addUpstream(ctx, install); err != nil {
 		s.logger.Error("reconnect after auth failed", "server", serverName, "err", err)
 		return err
