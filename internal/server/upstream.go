@@ -27,6 +27,7 @@ type upstreamServer struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
 	clock      clock.Clock
+	group      goroutineGroup // its tool-refresh worker, which stop waits for
 
 	mu       sync.RWMutex
 	conn     transport.Connection // nil until the first connect succeeds
@@ -56,20 +57,6 @@ type upstreamServer struct {
 func (u *upstreamServer) adoptToolList(toolList transport.ToolList) {
 	u.lastDefs = toolList.Tools
 	u.refresher.published(toolList.Freshness)
-}
-
-func (u *upstreamServer) shutdown() {
-	u.refresher.stop()
-	u.cancel()
-}
-
-func (u *upstreamServer) shutdownAndClose() {
-	u.shutdown()
-	// Outside u.mu: HTTP Close waits for notification callbacks that take u.mu. Once u.ctx is done no
-	// reconnect can swap u.conn, so this is the last connection.
-	if conn := u.currentConn(); conn != nil {
-		conn.Close() //nolint:errcheck // Server removal has no caller to receive connection cleanup errors.
-	}
 }
 
 type callToolParams struct {

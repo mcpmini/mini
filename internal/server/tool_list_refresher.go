@@ -16,7 +16,7 @@ func closedChannel() chan struct{} {
 }
 
 type toolListRefresher struct {
-	startWorker func()
+	startWorker func() bool // false once the incarnation is stopped
 
 	mu        sync.Mutex
 	stopped   bool
@@ -60,7 +60,11 @@ func (r *toolListRefresher) startLocked() {
 	r.running = true
 	r.done = make(chan struct{})
 	// Under the lock, so a worker is registered before stop returns and shutdown can wait for it.
-	r.startWorker()
+	if !r.startWorker() {
+		// Nobody would close done, and a tools/list waiting on it would sit out the discovery wait.
+		r.running = false
+		close(r.done)
+	}
 }
 
 // A list fetched by a pass that a notification overtook may predate the change, so it stays stale

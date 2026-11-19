@@ -11,7 +11,7 @@ import (
 
 func TestToolListRefresherCoalescesRequestsDuringAPass(t *testing.T) {
 	starts := 0
-	r := toolListRefresher{startWorker: func() { starts++ }}
+	r := toolListRefresher{startWorker: func() bool { starts++; return true }}
 
 	r.request()
 	if !r.next() {
@@ -36,7 +36,7 @@ func TestToolListRefresherCoalescesRequestsDuringAPass(t *testing.T) {
 
 func TestToolListRefresherStopEndsTheWorkerAndRefusesNewOnes(t *testing.T) {
 	started := false
-	r := toolListRefresher{startWorker: func() { started = true }}
+	r := toolListRefresher{startWorker: func() bool { started = true; return true }}
 	r.request()
 	r.stop()
 	if r.next() {
@@ -52,7 +52,7 @@ func TestToolListRefresherStopEndsTheWorkerAndRefusesNewOnes(t *testing.T) {
 func TestToolListRefresherRefreshesOnlyStaleManagedLists(t *testing.T) {
 	now := time.Unix(100, 0)
 	starts := 0
-	startWorker := func() { starts++ }
+	startWorker := func() bool { starts++; return true }
 	for _, freshness := range []transport.Freshness{{}, transport.FreshUntil(now.Add(time.Second))} {
 		r := toolListRefresher{startWorker: startWorker, freshness: freshness}
 		if !isClosed(r.refreshIfStale(now)) || starts != 0 {
@@ -80,7 +80,10 @@ func TestToolListRefresherRefreshesOnlyStaleManagedLists(t *testing.T) {
 func TestToolListRefresherNotificationDuringAPassKeepsTheListStale(t *testing.T) {
 	now := time.Unix(100, 0)
 	starts := 0
-	r := toolListRefresher{startWorker: func() { starts++ }, freshness: transport.FreshUntil(now.Add(time.Hour))}
+	r := toolListRefresher{
+		startWorker: func() bool { starts++; return true },
+		freshness:   transport.FreshUntil(now.Add(time.Hour)),
+	}
 	r.request()
 	r.next()
 	r.request()
@@ -101,7 +104,7 @@ func TestToolListRefresherNotificationDuringAPassKeepsTheListStale(t *testing.T)
 
 func TestToolListRefresherNotificationLeavesAnUnmanagedListUnmanaged(t *testing.T) {
 	starts := 0
-	r := toolListRefresher{startWorker: func() { starts++ }}
+	r := toolListRefresher{startWorker: func() bool { starts++; return true }}
 	r.request()
 	r.next()
 	r.next()
@@ -113,7 +116,7 @@ func TestToolListRefresherNotificationLeavesAnUnmanagedListUnmanaged(t *testing.
 func TestToolListRefresherStopReleasesWaitersAndRefusesReaders(t *testing.T) {
 	now := time.Unix(100, 0)
 	starts := 0
-	r := toolListRefresher{startWorker: func() { starts++ }, freshness: transport.FreshUntil(now)}
+	r := toolListRefresher{startWorker: func() bool { starts++; return true }, freshness: transport.FreshUntil(now)}
 	done := r.refreshIfStale(now)
 	r.stop()
 	if r.next() {
