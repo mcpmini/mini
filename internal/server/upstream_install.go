@@ -8,7 +8,6 @@ import (
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/invoke"
-	"github.com/mcpmini/mini/internal/ops"
 	"github.com/mcpmini/mini/internal/registry"
 	"github.com/mcpmini/mini/internal/transport"
 )
@@ -95,48 +94,26 @@ func (s *Server) AddUpstream(ctx context.Context, sc config.ServerConfig) error 
 }
 
 func (s *Server) addUpstream(ctx context.Context, in upstreamInstall) error {
-	connectCtx, cancel := applyHandshakeTimeout(ctx, in.cfg.HandshakeTimeout)
-	defer cancel()
-	conn, err := s.dialUpstream(connectCtx, in.cfg)
+	conn, toolList, err := s.openUpstream(ctx, in.cfg)
 	if err != nil {
-		return fmt.Errorf("connect to %s: %w", in.cfg.Name, err)
+		return err
 	}
-	if err := s.registerUpstream(connectCtx, conn, in); err != nil {
-		return s.markOAuthIfRequired(ctx, in.cfg, err)
-	}
-	return nil
-}
-
-func (s *Server) markOAuthIfRequired(ctx context.Context, sc config.ServerConfig, connErr error) error {
-	required, err := ops.DetectOAuth(ctx, ops.DetectOAuthParams{ConfigDir: s.configDir, Server: sc, ConnErr: connErr})
-	if err != nil {
-		s.logger.Warn("persist discovered oauth requirement", "server", sc.Name, "err", err)
-	}
-	if required {
-		return oauthRequiredError(sc.Name, connErr)
-	}
-	return connErr
-}
-
-func oauthRequiredError(serverName string, connErr error) error {
-	return fmt.Errorf(
-		"%s requires OAuth authorization; run `mini auth %s`: %w: %w",
-		serverName,
-		serverName,
-		transport.ErrReauthRequired,
-		connErr,
-	)
+	//nolint:contextcheck // Installed upstream ownership keeps notification refreshes alive beyond this install request.
+	return s.installChecked(conn, toolList, in)
 }
 
 func (s *Server) AddConnection(ctx context.Context, sc config.ServerConfig, conn transport.Connection) error {
 	return s.registerUpstream(ctx, conn, s.replacingInstall(sc))
 }
 
-func (s *Server) dialUpstream(ctx context.Context, sc config.ServerConfig) (transport.Connection, error) {
-	return invoke.Dial(ctx, invoke.DialParams{
+func (s *Server) openUpstream(
+	ctx context.Context,
+	sc config.ServerConfig,
+) (transport.Connection, transport.ToolList, error) {
+	return invoke.Open(ctx, invoke.OpenParams{DialParams: invoke.DialParams{
 		Logger: s.logger, Config: s.cfg, Server: sc, Clock: s.clock,
 		ConfigDir: s.configDir, ProviderRegistry: s.providerRegistry,
-	})
+	}})
 }
 
 // SetReconnectHook sets a callback that fires after a successful automatic reconnect

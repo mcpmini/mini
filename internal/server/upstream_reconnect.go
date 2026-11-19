@@ -78,49 +78,13 @@ func nextBackoff(d time.Duration) time.Duration {
 }
 
 func (s *Server) tryReconnect(u *upstreamServer) error {
-	conn, tools, err := s.dialAndList(u)
+	conn, tools, err := s.openUpstream(u.ctx, u.cfg)
 	if err != nil {
+		s.logger.Warn("reconnect failed", "server", u.cfg.Name, "err", err)
 		return err
 	}
 	s.swapConn(u, conn, tools)
 	return nil
-}
-
-func (s *Server) dialAndList(u *upstreamServer) (transport.Connection, transport.ToolList, error) {
-	conn, err := s.dialForReconnect(u)
-	if err != nil {
-		return nil, transport.ToolList{}, err
-	}
-	list, err := s.listToolsForReconnect(u, conn)
-	if err != nil {
-		return nil, transport.ToolList{}, err
-	}
-	return conn, list, nil
-}
-
-func (s *Server) dialForReconnect(u *upstreamServer) (transport.Connection, error) {
-	ctx, cancel := context.WithTimeout(u.ctx, 15*time.Second)
-	conn, err := s.dialUpstream(ctx, u.cfg)
-	cancel()
-	if err != nil {
-		s.logger.Warn("reconnect failed", "server", u.cfg.Name, "err", err)
-	}
-	return conn, err
-}
-
-func (s *Server) listToolsForReconnect(
-	u *upstreamServer,
-	conn transport.Connection,
-) (transport.ToolList, error) {
-	ctx, cancel := context.WithTimeout(u.ctx, 15*time.Second)
-	defer cancel()
-	toolList, err := conn.ListTools(ctx)
-	if err != nil {
-		conn.Close() //nolint:errcheck // ListTools failure is returned and logged; Close only releases the failed connection.
-		err = s.markOAuthIfRequired(ctx, u.cfg, err)
-		s.logger.Warn("reconnect list tools failed", "server", u.cfg.Name, "err", err)
-	}
-	return toolList, err
 }
 
 func (s *Server) swapConn(u *upstreamServer, conn transport.Connection, toolList transport.ToolList) bool {

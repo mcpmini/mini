@@ -5,6 +5,7 @@ package server_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -136,4 +137,27 @@ func eventually(t *testing.T, condition func() bool) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("condition was not met before timeout")
+}
+
+func TestToolsChangedRefresh_timingOutOnTheConnection_reconnects(t *testing.T) {
+	srv := newTestServer(t, server.Params{})
+	conn := &timingOutRefreshConn{FakeConnection: fakeConn("tool")}
+	if err := srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, conn); err != nil {
+		t.Fatal(err)
+	}
+
+	emitToolsChanged(conn.FakeConnection)
+
+	eventually(t, func() bool { return srv.IsReconnecting("svc") })
+}
+
+type timingOutRefreshConn struct{ *transport.FakeConnection }
+
+func (c *timingOutRefreshConn) ListTools(ctx context.Context) (transport.ToolList, error) {
+	if c.ListToolsCallCount() > 0 {
+		return transport.ToolList{}, &transport.ConnectionError{
+			Err: fmt.Errorf("tools/list: %w", context.DeadlineExceeded),
+		}
+	}
+	return c.FakeConnection.ListTools(ctx)
 }

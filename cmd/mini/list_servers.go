@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/mcpmini/mini/internal/config"
-	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -39,18 +38,16 @@ func listAllServers(configDir string, out io.Writer) error {
 func checkServerList(configDir string, cfg *config.Config, servers config.Servers) []serverListRow {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	srv := buildStatusServer(cfg, configDir)
-	defer srv.Close()
-	return probeServerList(ctx, srv, servers)
+	return probeServerList(ctx, probeWith(cfg, configDir), servers)
 }
 
-func probeServerList(ctx context.Context, srv *server.Server, servers config.Servers) []serverListRow {
+func probeServerList(ctx context.Context, probe probeFunc, servers config.Servers) []serverListRow {
 	rows := make([]serverListRow, len(servers.Broken)+len(servers.Loaded))
 	for i, broken := range servers.Broken {
 		rows[i] = serverListRow{Config: config.ServerConfig{Name: broken.ServerName}, State: "invalid"}
 	}
 	probed := probeConcurrently(servers.Loaded, func(sc config.ServerConfig) serverListRow {
-		return probeListedServer(ctx, srv, sc)
+		return probeListedServer(ctx, probe, sc)
 	})
 	copy(rows[len(servers.Broken):], probed)
 	return rows
@@ -66,11 +63,11 @@ func probeConcurrently[T any](servers []config.ServerConfig, probe func(config.S
 	return results
 }
 
-func probeListedServer(ctx context.Context, srv *server.Server, sc config.ServerConfig) serverListRow {
+func probeListedServer(ctx context.Context, probe probeFunc, sc config.ServerConfig) serverListRow {
 	if !sc.IsEnabled() {
 		return serverListRow{Config: sc, State: "disabled"}
 	}
-	if err := srv.AddUpstream(ctx, sc); err != nil {
+	if _, err := probe(ctx, sc); err != nil {
 		return serverListRow{Config: sc, State: connectionState(err)}
 	}
 	return serverListRow{Config: sc, State: "ready"}

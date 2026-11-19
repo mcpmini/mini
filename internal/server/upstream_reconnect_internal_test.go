@@ -5,12 +5,11 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 
@@ -116,43 +115,6 @@ func TestPublishReconnectedTools_usesReloadedAliases(t *testing.T) {
 	}
 }
 
-func TestMarkOAuthIfRequired_secondCallSkipsRewrite(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	configDir := t.TempDir()
-	srv := New(Params{Config: cfg, ConfigDir: configDir, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
-	t.Cleanup(srv.Close)
-
-	sc := config.ServerConfig{Name: "svc", Transport: "http", URL: "https://example.com/mcp"}
-	connErr := fmt.Errorf("list tools: %w", &transport.UnauthorizedError{WWWAuthenticate: "Bearer"})
-
-	if err := srv.markOAuthIfRequired(
-		context.Background(),
-		sc,
-		connErr,
-	); err == nil ||
-		!strings.Contains(err.Error(), "requires OAuth authorization") {
-		t.Fatalf("first call: err = %v, want oauth-required error", err)
-	}
-
-	// Make a rewrite attempt fail: without the fix, the second call would try
-	// MarkOAuthDetected again, hit this permission error, and fall back to returning
-	// the bare connErr — so the error content alone proves whether it short-circuited.
-	metaPath := config.ServerMetaPath(configDir, "svc")
-	if err := os.Chmod(metaPath, 0o400); err != nil {
-		t.Fatalf("chmod marker read-only: %v", err)
-	}
-	t.Cleanup(func() { os.Chmod(metaPath, 0o600) }) //nolint:errcheck
-
-	err := srv.markOAuthIfRequired(context.Background(), sc, connErr)
-	if err == nil || !strings.Contains(err.Error(), "requires OAuth authorization") {
-		t.Errorf(
-			"second call: err = %v, want the oauth-required error (a rewrite attempt would have failed and returned the bare connErr instead)",
-			err,
-		)
-	}
-}
-
 func TestNextBackoffDoublesUpTo64Seconds(t *testing.T) {
 	for _, c := range []struct{ in, want time.Duration }{
 		{time.Second, 2 * time.Second},
@@ -163,5 +125,33 @@ func TestNextBackoffDoublesUpTo64Seconds(t *testing.T) {
 		if got := nextBackoff(c.in); got != c.want {
 			t.Errorf("nextBackoff(%v) = %v, want %v", c.in, got, c.want)
 		}
+	}
+}
+
+func TestClassifyCallError(t *testing.T) {
+	transportErr := errors.New("broken pipe")
+	tests := []struct {
+		name         string
+		err          error
+		wantConnFail bool
+	}{
+		{
+			name: "a deadline is the caller's, not the connection's",
+			err:  fmt.Errorf("call: %w", context.DeadlineExceeded),
+		},
+		{name: "a cancellation is the caller's", err: context.Canceled},
+		{name: "an RPC error is an answer", err: &transport.RPCError{Code: -32602, Message: "bad args"}},
+		{name: "anything else is the connection's", err: transportErr, wantConnFail: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := classifyCallError(tc.err)
+			if isConnError(got) != tc.wantConnFail {
+				t.Errorf("isConnError(classifyCallError(%v)) = %v, want %v", tc.err, !tc.wantConnFail, tc.wantConnFail)
+			}
+			if !errors.Is(got, tc.err) {
+				t.Errorf("classifyCallError(%v) = %v, which no longer wraps the call's error", tc.err, got)
+			}
+		})
 	}
 }

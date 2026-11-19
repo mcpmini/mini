@@ -13,8 +13,8 @@ import (
 
 	"github.com/mcpmini/mini/internal/agents"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/invoke"
 	"github.com/mcpmini/mini/internal/ops"
-	"github.com/mcpmini/mini/internal/server"
 )
 
 // addProbeTimeout bounds only the connectivity check — doPKCEFlow has its own 5-minute OAuth window.
@@ -288,7 +288,7 @@ func loadServerConfigForAdd(configDir, name string) (*config.ServerConfig, error
 func probeAndReload(configDir string, sc config.ServerConfig, out io.Writer) config.ServerConfig {
 	ctx, cancel := context.WithTimeout(context.Background(), addProbeTimeout)
 	defer cancel()
-	connectErr := server.ProbeServer(ctx, configDir, sc)
+	connectErr := invoke.ProbeServer(ctx, configDir, sc)
 	// Connecting may have triggered OAuth detection (markOAuthIfRequired) — reload to see it merged in.
 	reloaded, err := loadServerConfigForAdd(configDir, sc.Name)
 	if err != nil || reloaded == nil {

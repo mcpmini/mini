@@ -201,8 +201,9 @@ type ServerConfig struct {
 	// Set to "0" to disable (not recommended for production).
 	HTTPClientTimeout string `yaml:"http_client_timeout,omitempty"`
 
-	// HandshakeTimeout is the deadline for the startup handshake with this upstream —
-	// subprocess spawn (stdio) or initialize (HTTP) through the first tools/list.
+	// HandshakeTimeout is the deadline for each handshake with this upstream, at startup, on
+	// reconnect and for per-session dials: subprocess spawn (stdio) or initialize (HTTP) through
+	// the first tools/list.
 	// Default "30s", "0" = no deadline.
 	HandshakeTimeout string `yaml:"handshake_timeout,omitempty"`
 

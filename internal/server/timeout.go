@@ -24,17 +24,3 @@ func parseToolTimeout(spec string) (time.Duration, bool) {
 	}
 	return ts.Duration, ts.Enabled
 }
-
-const defaultHandshakeTimeout = 30 * time.Second
-
-func applyHandshakeTimeout(ctx context.Context, spec string) (context.Context, context.CancelFunc) {
-	ts, err := config.ParseTimeoutSpec(spec, defaultHandshakeTimeout)
-	if err != nil {
-		slog.Warn("invalid handshake_timeout spec, using default", "spec", spec, "default", defaultHandshakeTimeout)
-		ts = config.TimeoutSpec{Duration: defaultHandshakeTimeout, Enabled: true}
-	}
-	if !ts.Enabled {
-		return ctx, func() {}
-	}
-	return context.WithTimeout(ctx, ts.Duration)
-}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"strconv"
 	"text/tabwriter"
 	"time"
@@ -12,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mcpmini/mini/internal/config"
-	"github.com/mcpmini/mini/internal/server"
+	"github.com/mcpmini/mini/internal/invoke"
 )
 
 const noServersConfigured = "no servers configured; run `mini init` to choose from the MCP catalog, or `mini add NAME --url URL`"
@@ -84,9 +83,9 @@ func runStatus(configDir string, out io.Writer) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	injectOAuthTokens(ctx, configDir, servers.Loaded)
-	srv := buildStatusServer(cfg, configDir)
-	defer srv.Close()
-	anyFailed, err := printStatusTable(statusTableParams{Context: ctx, Server: srv, Out: out, Servers: servers})
+	anyFailed, err := printStatusTable(statusTableParams{
+		Context: ctx, Probe: probeWith(cfg, configDir), Out: out, Servers: servers,
+	})
 	if err != nil {
 		return err
 	}
@@ -96,14 +95,17 @@ func runStatus(configDir string, out io.Writer) error {
 	return nil
 }
 
-func buildStatusServer(cfg *config.Config, configDir string) *server.Server {
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return server.New(server.Params{Config: cfg, ConfigDir: configDir, Logger: logger})
+type probeFunc func(context.Context, config.ServerConfig) (int, error)
+
+func probeWith(cfg *config.Config, configDir string) probeFunc {
+	return func(ctx context.Context, sc config.ServerConfig) (int, error) {
+		return invoke.Probe(ctx, invoke.ProbeParams{Config: cfg, ConfigDir: configDir, Server: sc})
+	}
 }
 
 type statusTableParams struct {
 	Context context.Context
-	Server  *server.Server
+	Probe   probeFunc
 	Out     io.Writer
 	Servers config.Servers
 }
@@ -118,7 +120,7 @@ func printStatusTable(p statusTableParams) (bool, error) {
 	}
 	anyFailed := len(p.Servers.Broken) > 0
 	rows := probeConcurrently(p.Servers.Loaded, func(sc config.ServerConfig) statusRow {
-		return probeStatus(p.Context, p.Server, sc)
+		return probeStatus(p.Context, p.Probe, sc)
 	})
 	for _, row := range rows {
 		if err := printStatusRow(w, row); err != nil {
@@ -161,17 +163,18 @@ type statusRow struct {
 	failed bool
 }
 
-func probeStatus(ctx context.Context, srv *server.Server, sc config.ServerConfig) statusRow {
+func probeStatus(ctx context.Context, probe probeFunc, sc config.ServerConfig) statusRow {
 	row := statusRow{config: sc, status: "disabled" + projectionsNote(sc), tools: "-", failed: sc.ProjectionsErr != nil}
 	if !sc.IsEnabled() {
 		return row
 	}
-	if err := srv.AddUpstream(ctx, sc); err != nil {
+	tools, err := probe(ctx, sc)
+	if err != nil {
 		row.status, row.failed = "error: "+singleLine(err), true
 		return row
 	}
 	row.status = "ok" + projectionsNote(sc)
-	row.tools = strconv.Itoa(srv.ToolCount(sc.Name))
+	row.tools = strconv.Itoa(tools)
 	return row
 }
 

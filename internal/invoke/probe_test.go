@@ -1,6 +1,6 @@
 //go:build test
 
-package server_test
+package invoke_test
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
-	"github.com/mcpmini/mini/internal/server"
+	"github.com/mcpmini/mini/internal/invoke"
 	"github.com/mcpmini/mini/internal/testutil"
 )
 
@@ -20,7 +20,7 @@ func TestProbeServer_invalidConfigMakesNoRequest(t *testing.T) {
 	upstream := testutil.Serve(t, func(http.ResponseWriter, *http.Request) { hit.Store(true) })
 	dir := t.TempDir()
 	testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), "bad: [yaml\n")
-	err := server.ProbeServer(
+	err := invoke.ProbeServer(
 		context.Background(),
 		dir,
 		config.ServerConfig{Name: "svc", Transport: "http", URL: upstream.URL},
@@ -36,7 +36,7 @@ func TestProbeServer_recordsDetectedOAuth(t *testing.T) {
 		w.WriteHeader(http.StatusUnauthorized)
 	})
 	dir := t.TempDir()
-	if err := server.ProbeServer(
+	if err := invoke.ProbeServer(
 		context.Background(),
 		dir,
 		config.ServerConfig{Name: "svc", Transport: "http", URL: upstream.URL},

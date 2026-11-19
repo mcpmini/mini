@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"slices"
 	"text/tabwriter"
 	"time"
@@ -13,7 +12,6 @@ import (
 
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
-	"github.com/mcpmini/mini/internal/server"
 )
 
 type upstreamResult struct {
@@ -39,11 +37,11 @@ func newTestCmd(opts *rootOptions) *cobra.Command {
 
 func runTest(configDir string, timeout time.Duration, out io.Writer) error {
 	ctx := context.Background()
-	srv, servers, err := buildTestServer(ctx, configDir)
+	cfg, servers, err := loadConfig(configDir)
 	if err != nil {
 		return err
 	}
-	defer srv.Close()
+	injectOAuthTokens(ctx, configDir, servers.Loaded)
 	if !slices.ContainsFunc(servers.Loaded, config.ServerConfig.IsEnabled) && !servers.HasProblems() {
 		_, err := fmt.Fprintln(out, emptyTestMessage(servers.Loaded))
 		return err
@@ -53,7 +51,9 @@ func runTest(configDir string, timeout time.Duration, out io.Writer) error {
 		out,
 		append(
 			results,
-			checkServers(checkServersParams{Context: ctx, Server: srv, Servers: servers.Loaded, Timeout: timeout})...),
+			checkServers(checkServersParams{
+				Context: ctx, Probe: probeWith(cfg, configDir), Servers: servers.Loaded, Timeout: timeout,
+			})...),
 	)
 }
 
@@ -62,16 +62,6 @@ func emptyTestMessage(servers []config.ServerConfig) string {
 		return noServersConfigured
 	}
 	return "no enabled servers"
-}
-
-func buildTestServer(ctx context.Context, configDir string) (*server.Server, config.Servers, error) {
-	cfg, servers, err := loadConfig(configDir)
-	if err != nil {
-		return nil, config.Servers{}, err
-	}
-	injectOAuthTokens(ctx, configDir, servers.Loaded)
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return server.New(server.Params{Config: cfg, ConfigDir: configDir, Logger: logger}), servers, nil
 }
 
 func brokenServerResults(broken []config.SourceError) []upstreamResult {
@@ -91,7 +81,7 @@ func checkServers(params checkServersParams) []upstreamResult {
 				checkServer(
 					probeUpstreamParams{
 						Context: params.Context,
-						Server:  params.Server,
+						Probe:   params.Probe,
 						Config:  sc,
 						Timeout: params.Timeout,
 					},
@@ -116,14 +106,12 @@ func probeUpstream(params probeUpstreamParams) upstreamResult {
 	clock := clock.System()
 	tctx, cancel := context.WithTimeout(params.Context, params.Timeout)
 	start := clock.Now()
-	err := params.Server.AddUpstream(tctx, params.Config)
+	tools, err := params.Probe(tctx, params.Config)
 	elapsed := clock.Since(start)
 	cancel()
-	r := upstreamResult{name: params.Config.Name, transport: params.Config.Transport, elapsed: elapsed, err: err}
-	if err == nil {
-		r.tools = params.Server.ToolCount(params.Config.Name)
+	return upstreamResult{
+		name: params.Config.Name, transport: params.Config.Transport, elapsed: elapsed, err: err, tools: tools,
 	}
-	return r
 }
 
 func countResults(results []upstreamResult) (passed, failed int) {
@@ -182,14 +170,14 @@ func displayTransport(transport config.TransportKind) string {
 
 type checkServersParams struct {
 	Context context.Context
-	Server  *server.Server
+	Probe   probeFunc
 	Servers []config.ServerConfig
 	Timeout time.Duration
 }
 
 type probeUpstreamParams struct {
 	Context context.Context
-	Server  *server.Server
+	Probe   probeFunc
 	Config  config.ServerConfig
 	Timeout time.Duration
 }

@@ -6,6 +6,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -96,9 +97,33 @@ func TestPerSession_aConnectionThatFailsToListToolsIsNotKeptForTheSession(t *tes
 	}
 }
 
+func TestPerSession_aDialRefusedForAMissingLogin_isReportedAsNeedingALogin(t *testing.T) {
+	var refuse atomic.Bool
+	up := mcptest.NewHTTP(t, mcptest.Upstream{
+		Tools: pingTools, Methods: pongMethods,
+		Authorize: func(mcptest.Request) bool { return !refuse.Load() },
+	})
+	dir := t.TempDir()
+	call := pingCall(t, servePerSessionIn(t, dir, up.URL))
+	refuse.Store(true)
+
+	text := httpExecToolText(call)
+
+	if !strings.Contains(text, "mini auth svc") {
+		t.Errorf("call = %q, want the remedy `mini auth svc`", text)
+	}
+	if !config.IsOAuthDetected(dir, "svc") {
+		t.Error("the OAuth requirement wasn't recorded")
+	}
+}
+
 func servePerSession(t *testing.T, url string) *httptest.Server {
+	return servePerSessionIn(t, t.TempDir(), url)
+}
+
+func servePerSessionIn(t *testing.T, configDir, url string) *httptest.Server {
 	t.Helper()
-	srv, mini := newHTTPTestServer(t, server.Params{})
+	srv, mini := newHTTPTestServer(t, server.Params{ConfigDir: configDir})
 	sc := config.ServerConfig{Name: "svc", Transport: "http", URL: url, SessionMode: config.SessionModePerSession}
 	if err := srv.AddUpstream(context.Background(), sc); err != nil {
 		t.Fatalf("AddUpstream: %v", err)
