@@ -167,6 +167,17 @@ func TestServerReload_aLoginStartedAfterAnEdit_survivesAndIsKept(t *testing.T) {
 	}
 }
 
+func TestServerReload_aServerConnectedByALogin_isRemovedWithItsFile(t *testing.T) {
+	e := startOAuthReloadEnv(t)
+	authtest.CompleteAuthorization(t, startAuth(t, e.srv, "svc"), "code")
+	waitForServerConnected(t, e.srv, "svc")
+
+	e.removeServerFile("svc")
+	e.advanceTick()
+
+	e.assertRemoved("svc")
+}
+
 func TestServerReload_anEditCancelsALoginStartedForTheOldFile(t *testing.T) {
 	e := startOAuthReloadEnv(t)
 

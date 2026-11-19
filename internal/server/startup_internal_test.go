@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"testing"
 	"time"
 
@@ -14,6 +15,27 @@ import (
 	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
+
+func TestRemoveServerFromAgent_duringAStartupBackoff_endsTheConnect(t *testing.T) {
+	srv := newInstallTestServer(t)
+	srv.cfg.DangerousAllowPrivateURLs = true
+	fc := clock.NewFake()
+	srv.clock = fc
+	down := testutil.Serve(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	})
+	srv.ConnectUpstreams(t.Context(), []config.ServerConfig{{Name: "svc", Transport: "http", URL: down.URL}})
+	if err := fc.BlockUntilContext(t.Context(), 1); err != nil {
+		t.Fatal("svc never backed off after its connect failed:", err)
+	}
+
+	if _, err := srv.removeServerFromAgent("svc"); err != nil {
+		t.Fatal(err)
+	}
+
+	connectsEnded := testutil.RunInBackground(func() error { srv.WaitForStartupConnects(); return nil })
+	testutil.WaitForReceive(t, connectsEnded, "svc's startup connect to end with its removal, with no backoff elapsing")
+}
 
 func TestRecordStartupFailure_aStaleAttemptDoesNotMarkAServerConfiguredAgainUnderItsName(t *testing.T) {
 	srv := newInstallTestServer(t)
@@ -24,9 +46,7 @@ func TestRecordStartupFailure_aStaleAttemptDoesNotMarkAServerConfiguredAgainUnde
 
 	srv.recordStartupFailure(stale, needsAuthStatus{})
 
-	srv.stateMu.RLock()
-	defer srv.stateMu.RUnlock()
-	if state := srv.startup.state("svc", srv.clock.Now()); state.phase() == "failed" {
+	if state := srv.upstreams.get("svc").startupState(srv.clock.Now()); state.phase() == "failed" {
 		t.Error("a failure from before the remove was recorded against the server configured again")
 	}
 }
@@ -62,9 +82,7 @@ func TestDetachAndCloseServer_aServerConfiguredAgainStartsWithoutTheOldStartupSt
 			srv.recordConfigServers([]config.ServerConfig{{Name: "svc"}})
 			srv.openConnectWindow("svc")
 
-			srv.stateMu.RLock()
-			defer srv.stateMu.RUnlock()
-			if state := srv.startup.state("svc", srv.clock.Now()); state.phase() != "connecting" {
+			if state := srv.upstreams.get("svc").startupState(srv.clock.Now()); state.phase() != "connecting" {
 				t.Errorf("svc configured again is %s, want connecting", state.phase())
 			}
 		})
@@ -105,10 +123,8 @@ func TestWaitForStartup_aWindowOpenedDuringTheHoldDoesNotExtendIt(t *testing.T) 
 }
 
 func TestConnectedStartupHasNoFailureDiagnostics(t *testing.T) {
-	tracker := newStartupTracker()
-	tracker.recordFailure("svc", needsAuthStatus{})
-	tracker.markReady("svc")
-	state := tracker.state("svc", time.Time{})
+	u := &upstreamServer{failure: needsAuthStatus{}, ready: true}
+	state := u.startupState(time.Time{})
 	if code := state.errorCode(); code != "" {
 		t.Errorf("connected error code = %q, want none", code)
 	}
@@ -121,20 +137,16 @@ func TestConnectedStartupHasNoFailureDiagnostics(t *testing.T) {
 }
 
 func TestMissingStartupStatusDoesNotInventATrustFailure(t *testing.T) {
-	tracker := newStartupTracker()
-	tracker.recordFailure("svc", nil)
-	states := []startupState{{}, tracker.state("svc", time.Time{})}
-	for _, state := range states {
-		if code := state.errorCode(); code != "server_failed" {
-			t.Errorf("missing status error code = %q, want server_failed", code)
-		}
-		want := `server "svc" could not start; ask the user to run "mini status".`
-		if reason := state.reason("svc"); reason != want {
-			t.Errorf("missing status reason = %q, want %q", reason, want)
-		}
-		if state.retryable() || state.action() != "" {
-			t.Error("missing startup status must not request retries or authorization")
-		}
+	var state startupState
+	if code := state.errorCode(); code != "server_failed" {
+		t.Errorf("missing status error code = %q, want server_failed", code)
+	}
+	want := `server "svc" could not start; ask the user to run "mini status".`
+	if reason := state.reason("svc"); reason != want {
+		t.Errorf("missing status reason = %q, want %q", reason, want)
+	}
+	if state.retryable() || state.action() != "" {
+		t.Error("missing startup status must not request retries or authorization")
 	}
 }
 

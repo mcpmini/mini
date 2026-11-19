@@ -13,13 +13,19 @@ import (
 )
 
 func (s *Server) ConnectUpstreams(ctx context.Context, servers []config.ServerConfig) {
-	s.recordConfigServers(servers)
 	for _, sc := range servers {
 		if !sc.IsEnabled() {
 			continue
 		}
-		s.openConnectWindow(sc.Name)
-		s.connector.connect(ctx, s.startupInstall(sc))
+		if s.upstreams.get(sc.Name) != nil {
+			s.logger.Info("startup connect skipped, the server is already running", "server", sc.Name)
+			continue
+		}
+		//nolint:contextcheck // An incarnation outlives the call that starts it; it ends when it is removed.
+		u := s.newUpstreamServer(sc, upstreamOrigin{fromConfig: true, removeGen: s.snapshotRemoveGen(sc.Name)})
+		s.upstreams.swap(sc.Name, u)
+		s.startupChanged.signal()
+		s.connector.connect(ctx, u)
 	}
 }
 
@@ -29,64 +35,89 @@ var (
 )
 
 type upstreamInstall struct {
-	cfg                 config.ServerConfig
-	removeGen           uint64
-	refuseIfRunning     bool
-	keepLiveProjections bool
-}
-
-func (s *Server) startupInstall(sc config.ServerConfig) upstreamInstall {
-	return upstreamInstall{
-		cfg:                 sc,
-		removeGen:           s.snapshotRemoveGen(sc.Name),
-		refuseIfRunning:     true,
-		keepLiveProjections: true,
-	}
+	cfg             config.ServerConfig
+	removeGen       uint64
+	refuseIfRunning bool
+	fromConfig      bool
 }
 
 func (s *Server) newServerInstall(sc config.ServerConfig) upstreamInstall {
-	return upstreamInstall{cfg: sc, removeGen: s.snapshotRemoveGen(sc.Name), refuseIfRunning: true}
+	return upstreamInstall{cfg: sc, removeGen: s.snapshotRemoveGen(sc.Name), refuseIfRunning: true, fromConfig: true}
 }
 
 func (s *Server) replacingInstall(sc config.ServerConfig) upstreamInstall {
 	return upstreamInstall{cfg: sc, removeGen: s.snapshotRemoveGen(sc.Name)}
 }
 
-func (s *Server) connectUntilRegistered(ctx context.Context, in upstreamInstall) {
+func (s *Server) connectUntilRegistered(ctx context.Context, u *upstreamServer) {
+	// The incarnation's own end stops its retries, so a remove or an edit never waits out a backoff.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	//nolint:contextcheck // ctx is inherited above; u.ctx adds the incarnation's end.
+	stop := context.AfterFunc(u.ctx, cancel)
+	defer stop()
 	backoff := time.Second
 	for {
-		err := s.connectAtStartup(ctx, in)
+		err := s.connectAtStartup(ctx, u)
 		if err == nil {
 			s.notifyAllSessions()
 			return
 		}
-		if !s.retryStartupAfter(in, err, backoff) || !s.sleepBackoff(ctx, backoff) {
+		if !s.retryStartupAfter(u, err, backoff) || !s.sleepBackoff(ctx, backoff) {
 			return
 		}
 		backoff = nextBackoff(backoff)
 	}
 }
 
-func (s *Server) connectAtStartup(ctx context.Context, in upstreamInstall) error {
-	if err := s.checkInstall(in); err != nil {
+func (s *Server) connectAtStartup(ctx context.Context, u *upstreamServer) error {
+	if !s.isCurrentIncarnation(u) {
+		return fmt.Errorf("server %q: %w", u.cfg.Name, errServerRemoved)
+	}
+	conn, toolList, err := s.openUpstream(ctx, u.cfg)
+	if err != nil {
 		return err
 	}
-	return s.addUpstream(ctx, in)
+	return s.adoptStartupConn(u, conn, toolList)
 }
 
-func (s *Server) retryStartupAfter(in upstreamInstall, err error, backoff time.Duration) bool {
-	name := in.cfg.Name
-	if errors.Is(err, errServerRemoved) || errors.Is(err, errAlreadyRegistered) {
+func (s *Server) retryStartupAfter(u *upstreamServer, err error, backoff time.Duration) bool {
+	name := u.cfg.Name
+	if errors.Is(err, errServerRemoved) {
 		s.logger.Info("startup connect abandoned", "server", name, "reason", err)
 		return false
 	}
 	if failure, terminal := terminalStartupFailure(err); terminal {
 		s.logger.Warn(failure.logMessage(), "server", name, "err", err)
-		s.recordStartupFailure(in, failure)
+		s.recordStartupFailure(u, failure)
 		return false
 	}
 	s.logger.Warn("upstream unavailable at startup, retrying", "server", name, "err", err, "backoff", backoff)
 	return true
+}
+
+func (s *Server) isCurrentIncarnation(u *upstreamServer) bool {
+	s.serverOpMu.Lock()
+	defer s.serverOpMu.Unlock()
+	return s.isCurrentIncarnationLocked(u)
+}
+
+func (s *Server) adoptStartupConn(u *upstreamServer, conn transport.Connection, toolList transport.ToolList) error {
+	s.serverOpMu.Lock()
+	defer s.serverOpMu.Unlock()
+	if !s.isCurrentIncarnationLocked(u) {
+		conn.Close() //nolint:errcheck // The incarnation was removed; Close only releases the unused connection.
+		return fmt.Errorf("server %q: %w", u.cfg.Name, errServerRemoved)
+	}
+	u.mu.Lock()
+	u.conn = conn
+	u.adoptToolList(toolList)
+	u.mu.Unlock()
+	s.publishTools(u, toolList.Tools)
+	s.markToolsReady(u)
+	s.attachNotificationHandler(u, conn)
+	s.logger.Info("upstream registered", "server", u.cfg.Name, "tools", len(toolList.Tools))
+	return nil
 }
 
 func (s *Server) AddUpstream(ctx context.Context, sc config.ServerConfig) error {
@@ -119,9 +150,7 @@ func (s *Server) openUpstream(
 // SetReconnectHook sets a callback that fires after a successful automatic reconnect
 // for the named server. Used in tests to replace polling with a deterministic signal.
 func (s *Server) SetReconnectHook(serverName string, fn func()) {
-	s.stateMu.RLock()
-	u := s.upstreams[serverName]
-	s.stateMu.RUnlock()
+	u := s.upstreams.get(serverName)
 	if u == nil {
 		return
 	}
@@ -133,9 +162,7 @@ func (s *Server) SetReconnectHook(serverName string, fn func()) {
 // IsReconnecting reports whether the named server is currently in a reconnect loop.
 // Used in tests to assert that application-level errors do not trigger reconnects.
 func (s *Server) IsReconnecting(serverName string) bool {
-	s.stateMu.RLock()
-	u := s.upstreams[serverName]
-	s.stateMu.RUnlock()
+	u := s.upstreams.get(serverName)
 	return u != nil && u.reconnecting.Load()
 }
 
@@ -155,12 +182,6 @@ func (s *Server) snapshotRemoveGen(name string) uint64 {
 	return s.removeGen[name]
 }
 
-func (s *Server) checkInstall(in upstreamInstall) error {
-	s.serverOpMu.Lock()
-	defer s.serverOpMu.Unlock()
-	return s.checkInstallLocked(in)
-}
-
 func (s *Server) installChecked(conn transport.Connection, toolList transport.ToolList, in upstreamInstall) error {
 	s.serverOpMu.Lock()
 	defer s.serverOpMu.Unlock()
@@ -168,47 +189,39 @@ func (s *Server) installChecked(conn transport.Connection, toolList transport.To
 		conn.Close() //nolint:errcheck // The install rejection is returned; Close only releases the unregistered connection.
 		return err
 	}
-	if in.keepLiveProjections {
-		in.cfg.Projections = s.liveProjections(in.cfg.Name)
-	}
-	s.installUpstreamLocked(in.cfg, conn, toolList)
+	s.installUpstreamLocked(in, conn, toolList)
 	return nil
-}
-
-func (s *Server) liveProjections(name string) map[string]*config.ProjectionConfig {
-	s.stateMu.RLock()
-	defer s.stateMu.RUnlock()
-	return s.projections[name]
 }
 
 func (s *Server) checkInstallLocked(in upstreamInstall) error {
 	if s.removeGen[in.cfg.Name] != in.removeGen {
 		return fmt.Errorf("server %q: %w", in.cfg.Name, errServerRemoved)
 	}
-	if !in.refuseIfRunning {
-		return nil
-	}
-	s.stateMu.RLock()
-	defer s.stateMu.RUnlock()
-	if s.upstreams[in.cfg.Name] != nil {
+	if in.refuseIfRunning && s.upstreams.get(in.cfg.Name) != nil {
 		return fmt.Errorf("server %q: %w", in.cfg.Name, errAlreadyRegistered)
 	}
 	return nil
 }
 
-func (s *Server) installUpstreamLocked(
-	sc config.ServerConfig,
-	conn transport.Connection,
-	toolList transport.ToolList,
-) {
-	u := s.newUpstreamServer(sc, conn)
+func (s *Server) installUpstreamLocked(in upstreamInstall, conn transport.Connection, toolList transport.ToolList) {
+	prev := s.upstreams.get(in.cfg.Name)
+	// A login's reconnect replaces a configured server, which stays one.
+	fromConfig := in.fromConfig || (prev != nil && prev.fromConfig)
+	u := s.newUpstreamServer(in.cfg, upstreamOrigin{fromConfig: fromConfig, removeGen: in.removeGen})
+	u.conn = conn
 	u.adoptToolList(toolList)
-	old := s.swapUpstream(sc.Name, u)
-	s.seedProjectionsIfNone(sc)
-	s.registerTools(sc, toolList.Tools, old)
-	s.markToolsReady(sc.Name)
+	s.upstreams.swap(in.cfg.Name, u)
+	if prev != nil {
+		prev.shutdownAndClose()
+	}
+	s.seedProjectionsIfNone(in.cfg)
+	s.publishTools(u, toolList.Tools)
+	u.mu.Lock()
+	u.ready = true
+	u.mu.Unlock()
+	s.startupChanged.signal()
 	s.attachNotificationHandler(u, conn)
-	s.logger.Info("upstream registered", "server", sc.Name, "tools", len(toolList.Tools))
+	s.logger.Info("upstream registered", "server", in.cfg.Name, "tools", len(toolList.Tools))
 }
 
 func (s *Server) seedProjectionsIfNone(sc config.ServerConfig) {
@@ -222,9 +235,17 @@ func (s *Server) seedProjectionsIfNone(sc config.ServerConfig) {
 	}
 }
 
-func (s *Server) newUpstreamServer(sc config.ServerConfig, conn transport.Connection) *upstreamServer {
+type upstreamOrigin struct {
+	fromConfig bool
+	removeGen  uint64
+}
+
+func (s *Server) newUpstreamServer(sc config.ServerConfig, origin upstreamOrigin) *upstreamServer {
 	ctx, cancel := context.WithCancel(context.Background())
-	u := &upstreamServer{cfg: sc, conn: conn, ctx: ctx, cancel: cancel, clock: s.clock}
+	u := &upstreamServer{
+		cfg: sc, fromConfig: origin.fromConfig, saved: withOwnAuth(sc), removeGen: origin.removeGen,
+		openedAt: s.clock.Now(), ctx: ctx, cancel: cancel, clock: s.clock,
+	}
 	u.refresher.startWorker = func() { s.refreshWg.Go(func() { s.runToolRefreshes(u) }) }
 	if sc.MaxPendingRequests > 0 {
 		u.sem = make(chan struct{}, sc.MaxPendingRequests)
@@ -232,27 +253,15 @@ func (s *Server) newUpstreamServer(sc config.ServerConfig, conn transport.Connec
 	return u
 }
 
-func (s *Server) swapUpstream(name string, u *upstreamServer) *upstreamServer {
-	s.stateMu.Lock()
-	old := s.upstreams[name]
-	s.upstreams[name] = u
-	s.stateMu.Unlock()
-	return old
-}
-
-func (s *Server) registerTools(sc config.ServerConfig, tools []transport.ToolDefinition, old *upstreamServer) {
-	p := registry.ServerParams{
-		Name:            sc.Name,
-		Defs:            tools,
-		Perm:            sc.Permissions,
-		AliasByToolName: s.currentAliasesFor(sc.Name),
-	}
-	if old != nil {
-		old.shutdownAndClose()
-		s.reg.ReplaceServer(p)
-		return
-	}
-	s.reg.AddServer(p)
+// publishTools is called under serverOpMu, so a remove can't take the tools out between the
+// caller's check and this write.
+func (s *Server) publishTools(u *upstreamServer, defs []transport.ToolDefinition) {
+	s.reg.ReplaceServer(registry.ServerParams{
+		Name:            u.cfg.Name,
+		Defs:            defs,
+		Perm:            u.cfg.Permissions,
+		AliasByToolName: s.currentAliasesFor(u.cfg.Name),
+	})
 }
 
 func (s *Server) currentAliasesFor(serverName string) map[string]string {
@@ -286,21 +295,13 @@ func (s *Server) closeDetached(serverName string, u *upstreamServer) {
 
 func (s *Server) detachUpstream(serverName string) *upstreamServer {
 	s.stateMu.Lock()
-	defer s.stateMu.Unlock()
 	delete(s.projections, serverName)
-	return s.detachUpstreamLocked(serverName)
+	s.stateMu.Unlock()
+	return s.detachUpstreamKeepingProjections(serverName)
 }
 
 func (s *Server) detachUpstreamKeepingProjections(serverName string) *upstreamServer {
-	s.stateMu.Lock()
-	defer s.stateMu.Unlock()
-	return s.detachUpstreamLocked(serverName)
-}
-
-func (s *Server) detachUpstreamLocked(serverName string) *upstreamServer {
-	u := s.upstreams[serverName]
-	delete(s.upstreams, serverName)
-	delete(s.configServers, serverName)
-	s.startup.forget(serverName)
+	u := s.upstreams.swap(serverName, nil)
+	s.startupChanged.signal()
 	return u
 }

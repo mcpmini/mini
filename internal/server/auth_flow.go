@@ -64,6 +64,9 @@ func (s *Server) beginAuthFlow(ctx context.Context, p authFlowParams) (*authFlow
 func (s *Server) launchAuthFlow(ctx context.Context, sc config.ServerConfig, p authFlowParams) (*authFlowState, error) {
 	settings := withOwnAuth(sc)
 	install := s.replacingInstall(sc)
+	// The login is for the server's file, so the reload loop removes it with that file, even when
+	// the login installs it before the loop first sees it.
+	install.fromConfig = true
 	login, err := s.startPKCEFlow(ctx, sc.Name, sc)
 	if err != nil {
 		return nil, err
@@ -224,20 +227,7 @@ func (s *Server) awaitAuthAndReconnect(ctx context.Context, install upstreamInst
 }
 
 func (s *Server) connectAfterLogin(ctx context.Context, install upstreamInstall, flow *authFlowState) error {
-	err := s.reconnectWithToken(ctx, install)
-	if err == nil {
-		s.recordLoginSettings(install, flow.settings)
-	}
-	return s.connectFailure(flow, err)
-}
-
-// An edit or remove applied since the login started has its own record, which this mustn't replace.
-func (s *Server) recordLoginSettings(install upstreamInstall, settings config.ServerConfig) {
-	s.serverOpMu.Lock()
-	defer s.serverOpMu.Unlock()
-	if s.removeGen[install.cfg.Name] == install.removeGen {
-		s.recordSettings(settings)
-	}
+	return s.connectFailure(flow, s.reconnectWithToken(ctx, install))
 }
 
 // beginCommit makes the commit and cancellation exclusive: a cancelled flow never saves its token,

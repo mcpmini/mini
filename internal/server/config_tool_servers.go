@@ -26,7 +26,7 @@ func (s *Server) addServerFromAgent(ctx context.Context, raw *config.ServerConfi
 }
 
 func (s *Server) saveAndConnect(ctx context.Context, sc config.ServerConfig) error {
-	if s.isUpstreamRegistered(sc.Name) {
+	if s.isUpstreamConnected(sc.Name) {
 		return errAlreadyRunning(sc.Name)
 	}
 	// Checked before changeSavedServer, which would stop a configured server's login or retries.
@@ -43,11 +43,9 @@ func (s *Server) saveAndConnect(ctx context.Context, sc config.ServerConfig) err
 	if err != nil {
 		return fmt.Errorf("add_server: %w", err)
 	}
-	saved, err := s.connectSaved(ctx, sc.Name)
-	if err != nil {
+	if err := s.connectSaved(ctx, sc.Name); err != nil {
 		return errors.Join(err, s.rollBackAdd(sc.Name))
 	}
-	s.recordConfigServers([]config.ServerConfig{saved})
 	return nil
 }
 
@@ -62,16 +60,16 @@ func (s *Server) refuseConfiguredName(name string) error {
 	return nil
 }
 
-func (s *Server) connectSaved(ctx context.Context, name string) (config.ServerConfig, error) {
+func (s *Server) connectSaved(ctx context.Context, name string) error {
 	saved, err := config.LoadServer(s.configDir, name)
 	if err != nil {
-		return config.ServerConfig{}, fmt.Errorf("add_server: %w", err)
+		return fmt.Errorf("add_server: %w", err)
 	}
 	err = s.addUpstream(ctx, s.newServerInstall(saved))
 	if errors.Is(err, errAlreadyRegistered) {
-		return config.ServerConfig{}, errAlreadyRunning(name)
+		return errAlreadyRunning(name)
 	}
-	return saved, err
+	return err
 }
 
 func (s *Server) rollBackAdd(name string) error {

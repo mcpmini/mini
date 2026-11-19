@@ -2,6 +2,7 @@ package server
 
 import (
 	"log/slog"
+	"slices"
 	"sync"
 
 	"github.com/mcpmini/mini/internal/auth/provider"
@@ -16,9 +17,8 @@ type Server struct {
 	cfg              *config.Config
 	configDir        string
 	reg              *registry.Registry
-	upstreams        map[string]*upstreamServer
-	configServers    map[string]configServer // servers started from the config files, the only ones a config edit removes
-	startup          *startupTracker         // guarded by stateMu
+	upstreams        *upstreamSet
+	startupChanged   *broadcast // signaled on every change of an incarnation's startup state
 	stopWaiting      chan struct{}
 	stopWaitingOnce  sync.Once
 	projections      map[string]map[string]*config.ProjectionConfig
@@ -81,13 +81,12 @@ func cancelAuthFlows(flows map[string]*authFlowState) {
 }
 
 func (s *Server) snapshotUpstreams() []*upstreamServer {
-	s.stateMu.RLock()
-	defer s.stateMu.RUnlock()
-	upstreams := make([]*upstreamServer, 0, len(s.upstreams))
-	for _, u := range s.upstreams {
-		upstreams = append(upstreams, u)
-	}
-	return upstreams
+	return s.upstreams.snapshot()
+}
+
+func (s *Server) snapshotConnectedUpstreams() []*upstreamServer {
+	upstreams := s.upstreams.snapshot()
+	return slices.DeleteFunc(upstreams, func(u *upstreamServer) bool { return u.currentConn() == nil })
 }
 
 func closeUpstreams(upstreams []*upstreamServer) {

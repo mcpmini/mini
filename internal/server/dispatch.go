@@ -93,7 +93,7 @@ func (s *Server) checkDialedConn(
 	conn transport.Connection,
 	session *Session,
 ) (transport.Connection, error) {
-	if s.isUpstreamRegistered(name) {
+	if s.isUpstreamConnected(name) {
 		return conn, nil
 	}
 	session.RemoveConn(name)
@@ -116,18 +116,14 @@ func (s *Server) dialPerSessionConn(
 	return session.GetOrSetConn(upstream.cfg.Name, conn), nil
 }
 
-func (s *Server) isUpstreamRegistered(name string) bool {
-	s.stateMu.RLock()
-	defer s.stateMu.RUnlock()
-	_, ok := s.upstreams[name]
-	return ok
+func (s *Server) isUpstreamConnected(name string) bool {
+	u := s.upstreams.get(name)
+	return u != nil && u.currentConn() != nil
 }
 
 func (s *Server) getUpstream(serverName string) (*upstreamServer, error) {
-	s.stateMu.RLock()
-	defer s.stateMu.RUnlock()
-	u, ok := s.upstreams[serverName]
-	if !ok {
+	u := s.upstreams.get(serverName)
+	if u == nil {
 		return nil, fmt.Errorf("server not connected: %s", serverName)
 	}
 	return u, nil

@@ -67,65 +67,21 @@ func (notTrustedStatus) logMessage() string {
 	return "upstream not allowed to start, not retrying"
 }
 
-type startupTracker struct {
-	startedAt  map[string]time.Time
-	toolsReady map[string]bool // set after the registry has the tools; upstreams is set before
-	failures   map[string]startupFailure
-	changed    chan struct{}
-}
-
-func newStartupTracker() *startupTracker {
-	return &startupTracker{
-		startedAt:  make(map[string]time.Time),
-		toolsReady: make(map[string]bool),
-		failures:   make(map[string]startupFailure),
-		changed:    make(chan struct{}),
-	}
-}
-
-func (t *startupTracker) open(name string, now time.Time) {
-	t.startedAt[name] = now
-	t.broadcastChange()
-}
-
-func (t *startupTracker) markReady(name string) {
-	t.toolsReady[name] = true
-	t.broadcastChange()
-}
-
-func (t *startupTracker) recordFailure(name string, failure startupFailure) {
-	t.failures[name] = failure
-	t.broadcastChange()
-}
-
-func (t *startupTracker) forget(name string) {
-	delete(t.startedAt, name)
-	delete(t.toolsReady, name)
-	delete(t.failures, name)
-	t.broadcastChange()
-}
-
-func (t *startupTracker) broadcastChange() {
-	close(t.changed)
-	t.changed = make(chan struct{})
-}
-
-func (t *startupTracker) ready(name string) bool { return t.toolsReady[name] }
-
-func (t *startupTracker) windowEnd(name string) time.Time { return t.startedAt[name].Add(startupHold) }
-
-func (t *startupTracker) state(name string, now time.Time) startupState {
-	if t.toolsReady[name] {
+func (u *upstreamServer) startupState(now time.Time) startupState {
+	u.mu.RLock()
+	defer u.mu.RUnlock()
+	switch {
+	case u.ready:
 		return startupState{status: connectedStatus{}}
-	}
-	if failure, ok := t.failures[name]; ok {
-		return startupState{status: failure}
-	}
-	if now.Before(t.windowEnd(name)) {
+	case u.failure != nil:
+		return startupState{status: u.failure}
+	case now.Before(u.windowEnd()):
 		return startupState{status: connectingStatus{}}
 	}
 	return startupState{status: delayedStatus{}}
 }
+
+func (u *upstreamServer) windowEnd() time.Time { return u.openedAt.Add(startupHold) }
 
 type startupState struct {
 	status startupStatus
@@ -158,39 +114,34 @@ func terminalStartupFailure(err error) (startupFailure, bool) {
 	return nil, false
 }
 
-func (s *Server) openConnectWindow(name string) {
-	s.stateMu.Lock()
-	defer s.stateMu.Unlock()
-	s.startup.open(name, s.clock.Now())
-}
-
-func (s *Server) recordStartupFailure(in upstreamInstall, failure startupFailure) {
-	loginSavedAt := s.loginSavedAt(in.cfg.Name)
-	// A 401 may have made mini note the server uses OAuth, which every later load merges in. Recorded
-	// with it, the next check doesn't take the note for an edit of the file.
-	detected := in.cfg
+func (s *Server) recordStartupFailure(u *upstreamServer, failure startupFailure) {
+	loginSavedAt := s.loginSavedAt(u.cfg.Name)
+	detected := u.cfg
 	config.MergeDetectedOAuth(s.configDir, &detected)
 	s.serverOpMu.Lock()
 	defer s.serverOpMu.Unlock()
-	if s.removeGen[in.cfg.Name] != in.removeGen {
+	if !s.isCurrentIncarnationLocked(u) {
 		return
 	}
-	s.stateMu.Lock()
-	defer s.stateMu.Unlock()
-	s.startup.recordFailure(in.cfg.Name, failure)
-	if record, ok := s.configServers[in.cfg.Name]; ok {
-		record.loginSavedAt = loginSavedAt
-		if record.settings.Auth == nil {
-			record.settings.Auth = detected.Auth
-		}
-		s.configServers[in.cfg.Name] = record
-	}
+	u.mu.Lock()
+	u.failure = failure
+	u.loginSavedAt = loginSavedAt
+	u.detectedAuth = detected.Auth
+	u.mu.Unlock()
+	s.startupChanged.signal()
 }
 
-func (s *Server) markToolsReady(name string) {
-	s.stateMu.Lock()
-	defer s.stateMu.Unlock()
-	s.startup.markReady(name)
+// isCurrentIncarnationLocked is called under serverOpMu, which every remove holds while it bumps
+// removeGen and takes the incarnation out of the set.
+func (s *Server) isCurrentIncarnationLocked(u *upstreamServer) bool {
+	return s.removeGen[u.cfg.Name] == u.removeGen && s.upstreams.get(u.cfg.Name) == u && u.ctx.Err() == nil
+}
+
+func (s *Server) markToolsReady(u *upstreamServer) {
+	u.mu.Lock()
+	u.ready = true
+	u.mu.Unlock()
+	s.startupChanged.signal()
 }
 
 type startupReport struct {
@@ -198,22 +149,31 @@ type startupReport struct {
 	unavailable map[string]any
 }
 
-func (s *Server) startupReportLocked() startupReport {
+// Each server is classified from one read of its state, so one that finishes connecting meanwhile
+// is never listed both as ready and as starting.
+func (s *Server) classifyStartup(upstreams []*upstreamServer) (map[string]*upstreamServer, startupReport) {
 	now := s.clock.Now()
+	ready := make(map[string]*upstreamServer, len(upstreams))
 	report := startupReport{starting: []string{}, unavailable: map[string]any{}}
-	for name := range s.configServers {
-		state := s.startup.state(name, now)
+	for _, u := range upstreams {
+		state := u.startupState(now)
+		if _, connected := state.status.(connectedStatus); connected {
+			ready[u.cfg.Name] = u
+			continue
+		}
+		if !u.fromConfig {
+			continue
+		}
 		switch state.status.(type) {
 		case connectingStatus:
-			report.starting = append(report.starting, name)
+			report.starting = append(report.starting, u.cfg.Name)
 		case delayedStatus, needsAuthStatus, needsEnvStatus, notTrustedStatus:
-			report.unavailable[name] = map[string]any{"state": state.phase(), "reason": state.reason(name)}
+			report.unavailable[u.cfg.Name] = map[string]any{"state": state.phase(), "reason": state.reason(u.cfg.Name)}
 		case connectedStatus:
-			continue
 		}
 	}
 	slices.Sort(report.starting)
-	return report
+	return ready, report
 }
 
 // Agents read these, so they never include the upstream error: it can hold credentials.

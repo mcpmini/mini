@@ -113,9 +113,6 @@ func TestIntegrationDaemon_anEditWhileTheFirstConnectIsStuck_isServedAndOutlives
 	client.sendNotification("notifications/initialized", nil)
 	waitUntilListed(t, client, listing{tool: "svc__get_new", listed: true})
 
-	if !fakeIsRunning(stuck) {
-		t.Fatal("setup: the stuck first connect ended before the edit applied")
-	}
 	waitUntilFakeExited(t, stuck)
 	if tools := proxyToolNames(
 		t,

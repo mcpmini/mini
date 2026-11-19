@@ -6,7 +6,6 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/mcpmini/mini/internal/registry"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -42,7 +41,7 @@ func (s *Server) awaitCurrentToolLists(ctx context.Context) error {
 	if err := s.waitForStartup(ctx); err != nil {
 		return err
 	}
-	s.awaitFreshToolLists(wait, s.snapshotUpstreams())
+	s.awaitFreshToolLists(wait, s.snapshotConnectedUpstreams())
 	return ctx.Err()
 }
 
@@ -102,12 +101,7 @@ func (s *Server) publishRefreshedTools(
 	}
 	changed := !reflect.DeepEqual(u.lastDefs, toolList.Tools)
 	u.adoptToolList(toolList)
-	s.reg.ReplaceServer(registry.ServerParams{
-		Name:            u.cfg.Name,
-		Defs:            toolList.Tools,
-		Perm:            u.cfg.Permissions,
-		AliasByToolName: s.currentAliasesFor(u.cfg.Name),
-	})
+	s.publishTools(u, toolList.Tools)
 	if changed {
 		s.notifyAllSessions()
 	}
@@ -133,8 +127,5 @@ func (s *Server) isCurrentUpstreamConnLocked(u *upstreamServer, conn transport.C
 	if conn == nil || u.ctx.Err() != nil || u.conn != conn {
 		return false
 	}
-	s.stateMu.RLock()
-	current := s.upstreams[u.cfg.Name] == u
-	s.stateMu.RUnlock()
-	return current
+	return s.upstreams.get(u.cfg.Name) == u
 }

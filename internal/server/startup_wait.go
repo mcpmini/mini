@@ -53,12 +53,11 @@ func (s *Server) awaitStartupChange(ctx context.Context, changed <-chan struct{}
 }
 
 func (s *Server) startupWaitTarget() (changed <-chan struct{}, until time.Time, connecting bool) {
-	s.stateMu.RLock()
-	defer s.stateMu.RUnlock()
+	changed = s.startupChanged.wait()
 	now := s.clock.Now()
-	for name := range s.configServers {
-		if s.startup.state(name, now).phase() == phaseConnecting {
-			return s.startup.changed, s.startup.windowEnd(name), true
+	for _, u := range s.upstreams.snapshot() {
+		if u.fromConfig && u.startupState(now).phase() == phaseConnecting {
+			return changed, u.windowEnd(), true
 		}
 	}
 	return nil, time.Time{}, false
