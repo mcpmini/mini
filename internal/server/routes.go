@@ -107,7 +107,7 @@ func (s *Server) routeRequest(ctx context.Context, req transport.Request, sessio
 	case "initialize":
 		return s.handleInitialize(req.Params)
 	case "tools/list":
-		return s.handleToolsList(ctx)
+		return s.handleToolsList(ctx, req.Params)
 	case "tools/call":
 		return s.handleToolsCall(ctx, req.Params, session)
 	case "ping":
@@ -160,13 +160,16 @@ func (s *Server) handleInitialize(params json.RawMessage) (any, error) {
 	}, nil
 }
 
-func (s *Server) handleToolsList(ctx context.Context) (any, error) {
+func (s *Server) handleToolsList(ctx context.Context, params json.RawMessage) (any, error) {
 	if err := s.awaitCurrentToolLists(ctx); err != nil {
 		return nil, err
 	}
 	schemas, err := buildProxyToolSchemas(s.reg.AllFull())
 	if err != nil {
 		return nil, err
+	}
+	if !transport.IsModernVersion(transport.ProtocolVersionFromParams(params)) {
+		dropNonObjectOutputSchemas(schemas)
 	}
 	return map[string]any{"tools": schemas}, nil
 }

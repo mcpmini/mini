@@ -60,6 +60,18 @@ func setProxyOutputSchema(tool map[string]any) {
 	}
 }
 
+// Before 2026-07-28 an outputSchema root must be an object, and clients that validate tool definitions
+// reject the whole list over one that isn't:
+// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c4c367f9f58296a7053f5c78a52fd02bfbb56a49/schema/2025-11-25/schema.ts#L1279-L1284
+func dropNonObjectOutputSchemas(tools []map[string]any) {
+	for _, tool := range tools {
+		schema, _ := tool["outputSchema"].(map[string]any)
+		if schema["type"] != "object" {
+			delete(tool, "outputSchema")
+		}
+	}
+}
+
 func hasKnownDialect(schema map[string]any) bool {
 	dialect, declared := schema["$schema"].(string)
 	if !declared {
