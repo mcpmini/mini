@@ -31,7 +31,8 @@ type Server struct {
 	providerRegistry *provider.Registry
 	// Held across each add_server, remove_server and config check of one name, so its saved and live states agree.
 	serverNames nameLocks
-	// Lock ordering: serverNames → persistMu → serverOpMu → stateMu → authMu.
+	// Lock ordering: serverNames → persistMu → serverOpMu → u.mu → stateMu → authMu; upstreamSet.mu
+	// and an incarnation's goroutineGroup are leaves.
 	// stateMu is the innermost hot-path lock (RLock on every request);
 	// the outer locks serialize cold-path admin operations.
 	stateMu     sync.RWMutex
@@ -42,7 +43,6 @@ type Server struct {
 	authFlows   map[string]*authFlowState
 	authWg      sync.WaitGroup
 	reconnectWg sync.WaitGroup // tracks all active reconnectLoop goroutines
-	refreshWg   sync.WaitGroup
 	connector   *upstreamConnector
 	reloadLoop  backgroundLoop
 }
@@ -55,13 +55,21 @@ func (s *Server) Close() {
 	s.reloadLoop.stop()
 	s.ReleaseStartupHolds()
 	cancelAuthFlows(s.takeAuthFlows())
+	upstreams := s.upstreams.close()
+	for _, u := range upstreams {
+		u.beginStop()
+	}
 	s.connector.stop()
 	s.authWg.Wait()
+	// Before closing and waiting: a token refresh runs under the provider registry's lifetime, not
+	// an incarnation's.
 	s.providerRegistry.Close()
 	s.connector.wait()
-	closeUpstreams(s.snapshotUpstreams())
+	for _, u := range upstreams {
+		u.closeConn()
+		u.awaitStopped()
+	}
 	s.sessions.closeAll()
-	s.refreshWg.Wait()
 	s.reconnectWg.Wait()
 	s.store.Close()
 }
@@ -87,10 +95,4 @@ func (s *Server) snapshotUpstreams() []*upstreamServer {
 func (s *Server) snapshotConnectedUpstreams() []*upstreamServer {
 	upstreams := s.upstreams.snapshot()
 	return slices.DeleteFunc(upstreams, func(u *upstreamServer) bool { return u.currentConn() == nil })
-}
-
-func closeUpstreams(upstreams []*upstreamServer) {
-	for _, u := range upstreams {
-		u.shutdownAndClose()
-	}
 }

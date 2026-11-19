@@ -94,14 +94,16 @@ func (s *Server) publishRefreshedTools(
 	conn transport.Connection,
 	toolList transport.ToolList,
 ) bool {
-	s.serverOpMu.Lock()
-	defer s.serverOpMu.Unlock()
-	if !s.isCurrentUpstreamConn(u, conn) {
+	// Under u.mu, not serverOpMu: a remove holds serverOpMu while it waits for this refresh to end.
+	u.mu.Lock()
+	if !s.isCurrentUpstreamConnLocked(u, conn) {
+		u.mu.Unlock()
 		return false
 	}
 	changed := !reflect.DeepEqual(u.lastDefs, toolList.Tools)
 	u.adoptToolList(toolList)
 	s.publishTools(u, toolList.Tools)
+	u.mu.Unlock()
 	if changed {
 		s.notifyAllSessions()
 	}
@@ -124,7 +126,7 @@ func (s *Server) isCurrentUpstreamConn(u *upstreamServer, conn transport.Connect
 }
 
 func (s *Server) isCurrentUpstreamConnLocked(u *upstreamServer, conn transport.Connection) bool {
-	if conn == nil || u.ctx.Err() != nil || u.conn != conn {
+	if conn == nil || u.group.Stopped() || u.conn != conn {
 		return false
 	}
 	return s.upstreams.get(u.cfg.Name) == u

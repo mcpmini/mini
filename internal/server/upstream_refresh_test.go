@@ -108,7 +108,11 @@ type heldRefreshConn struct {
 
 func (c *heldRefreshConn) ListTools(ctx context.Context) (transport.ToolList, error) {
 	if c.ListToolsCallCount() > 0 {
-		c.refresh.hold() // ignores ctx: the refresh must finish after the test's change
+		c.refresh.arrive()
+		select { // a stop cancels the refresh and waits for it, as a real connection's ListTools allows
+		case <-c.refresh.gate:
+		case <-ctx.Done():
+		}
 	}
 	return c.FakeConnection.ListTools(ctx)
 }

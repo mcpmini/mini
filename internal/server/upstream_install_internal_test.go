@@ -397,6 +397,20 @@ func TestRemoveServerFromAgent_aTokenRefreshFinishingMidRemoveLeavesNoToken(t *t
 // on the token endpoint; finish lets it save the new token, and refreshed closes when it has.
 func startTokenRefresh(t *testing.T, srv *Server) (finish func(), refreshed <-chan struct{}) {
 	t.Helper()
+	login, refreshReached, finish := expiredLoginProvider(t, srv)
+	done := make(chan struct{})
+	go func() { defer close(done); _, _ = login.Authorization(context.Background()) }() // the refresh's outcome is read from disk
+	testutil.WaitForReceive(t, refreshReached, "the token refresh to reach the endpoint")
+	return finish, done
+}
+
+// expiredLoginProvider returns svc's provider holding an expired login, whose refresh waits on the
+// token endpoint until finish.
+func expiredLoginProvider(
+	t *testing.T,
+	srv *Server,
+) (login transport.AuthorizationProvider, refreshReached <-chan struct{}, finish func()) {
+	t.Helper()
 	epoch := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 	endpoint, refreshReached, finish := gatedTokenEndpoint(t)
 	sc := config.ServerConfig{
@@ -423,10 +437,7 @@ func startTokenRefresh(t *testing.T, srv *Server) (finish func(), refreshed <-ch
 	if err != nil {
 		t.Fatal(err)
 	}
-	done := make(chan struct{})
-	go func() { defer close(done); _, _ = login.Authorization(context.Background()) }() // the refresh's outcome is read from disk
-	testutil.WaitForReceive(t, refreshReached, "the token refresh to reach the endpoint")
-	return finish, done
+	return login, refreshReached, finish
 }
 
 func TestCommitTokenUnlessRemoved(t *testing.T) {

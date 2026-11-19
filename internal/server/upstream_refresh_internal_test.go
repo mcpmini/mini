@@ -207,7 +207,7 @@ func TestToolListDiscoveryReadsAnswerWithinTheWait(t *testing.T) {
 				if !strings.Contains(got, "one__old") || !strings.Contains(got, "two__old") {
 					t.Fatalf("read that gave up = %s; want the lists it had", got)
 				}
-				s.refreshWg.Wait()
+				s.waitForUpstreamGoroutines()
 				if got := readToolsList(s); tc.wantPublished != strings.Contains(got, "one__new") {
 					t.Fatalf("read after the refresh ended = %s; want published=%v", got, tc.wantPublished)
 				}
@@ -219,7 +219,7 @@ func TestToolListDiscoveryReadsAnswerWithinTheWait(t *testing.T) {
 func TestToolListShutdownReleasesDiscoveryReads(t *testing.T) {
 	for name, shutdown := range map[string]func(*Server, *upstreamServer){
 		"mini":     func(s *Server, _ *upstreamServer) { s.ReleaseStartupHolds() },
-		"upstream": func(_ *Server, u *upstreamServer) { u.shutdown() },
+		"upstream": func(_ *Server, u *upstreamServer) { u.beginStop() },
 	} {
 		t.Run(name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
@@ -248,7 +248,7 @@ func TestToolListShutdownReleasesDiscoveryReads(t *testing.T) {
 						time.Since(started),
 					)
 				}
-				s.refreshWg.Wait()
+				s.waitForUpstreamGoroutines()
 			})
 		})
 	}
@@ -260,9 +260,12 @@ func TestToolListLateRefreshCannotPublishAfterLifecycleChange(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				s, fc := newToolListTestServer(t)
 				release := make(chan struct{})
-				c := newToolListConnection("svc", func(_ context.Context, n int32) (transport.ToolList, error) {
+				c := newToolListConnection("svc", func(ctx context.Context, n int32) (transport.ToolList, error) {
 					if n == 2 {
-						<-release
+						select { // a stop cancels the refresh, which a real connection honors
+						case <-release:
+						case <-ctx.Done():
+						}
 					}
 					return toolListNamed("late", transport.FreshUntil(fc.Now().Add(time.Hour))), nil
 				})
@@ -272,7 +275,7 @@ func TestToolListLateRefreshCannotPublishAfterLifecycleChange(t *testing.T) {
 				replacement := toolListNamed("replacement", transport.FreshUntil(fc.Now()))
 				changeLifecycle(t, lifecycleChange{Server: s, Upstream: u, Action: action, Replacement: replacement})
 				close(release)
-				s.refreshWg.Wait()
+				s.waitForUpstreamGoroutines()
 				names := strings.Join(registeredToolNames(s), ",")
 				if strings.Contains(names, "late") || (action != "remove" && !strings.Contains(names, "replacement")) {
 					t.Fatalf("tools after a late refresh = %s; want only the replacement", names)
@@ -336,4 +339,27 @@ func TestToolListRefreshKeepsAliasesAndPermissions(t *testing.T) {
 	if _, err := s.reg.Lookup("svc.alias"); err != nil {
 		t.Fatalf("refreshed alias lookup: %v", err)
 	}
+}
+
+func TestReapplyAliases_duringARefreshPublish_doesNotRace(t *testing.T) {
+	s, _ := newToolListTestServer(t)
+	conn := &transport.FakeConnection{}
+	if err := s.AddConnection(t.Context(), config.ServerConfig{Name: "svc"}, conn); err != nil {
+		t.Fatal(err)
+	}
+	u := s.upstreams.get("svc")
+	var wg sync.WaitGroup
+
+	wg.Go(func() {
+		for range 100 {
+			s.publishRefreshedTools(u, conn, toolListNamed("refreshed", transport.Freshness{}))
+		}
+	})
+	wg.Go(func() {
+		for range 100 {
+			s.reapplyAliases()
+		}
+	})
+
+	wg.Wait() // the race detector fails the test on an unsynchronized read of the tool list
 }

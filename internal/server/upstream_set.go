@@ -8,6 +8,7 @@ import (
 type upstreamSet struct {
 	mu     sync.RWMutex // a leaf: nothing calls into an incarnation while holding it
 	byName map[string]*upstreamServer
+	closed bool // set by Close; nothing new is installed after
 }
 
 func newUpstreamSet() *upstreamSet {
@@ -43,16 +44,33 @@ func (s *upstreamSet) configNames() []string {
 	return names
 }
 
-func (s *upstreamSet) swap(name string, next *upstreamServer) (prev *upstreamServer) {
+// Once the set is closed, swap installs nothing and reports false; a remove still succeeds.
+func (s *upstreamSet) swap(name string, next *upstreamServer) (prev *upstreamServer, ok bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.closed && next != nil {
+		return nil, false
+	}
 	prev = s.byName[name]
 	if next == nil {
 		delete(s.byName, name)
 	} else {
 		s.byName[name] = next
 	}
-	return prev
+	return prev, true
+}
+
+// close empties the set and returns what ran, so Close's list of incarnations to stop is final.
+func (s *upstreamSet) close() []*upstreamServer {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.closed = true
+	upstreams := make([]*upstreamServer, 0, len(s.byName))
+	for _, u := range s.byName {
+		upstreams = append(upstreams, u)
+	}
+	clear(s.byName)
+	return upstreams
 }
 
 // broadcast wakes everyone waiting on the channel taken before a change. Taking the channel before

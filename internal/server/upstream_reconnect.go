@@ -111,9 +111,9 @@ func (s *Server) publishReconnectedTools(
 	conn transport.Connection,
 	toolList transport.ToolList,
 ) bool {
-	s.serverOpMu.Lock()
-	defer s.serverOpMu.Unlock()
-	if !s.isCurrentUpstreamConn(u, conn) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if !s.isCurrentUpstreamConnLocked(u, conn) {
 		return false
 	}
 	u.adoptToolList(toolList)

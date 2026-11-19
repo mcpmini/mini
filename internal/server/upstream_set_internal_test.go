@@ -52,3 +52,9 @@ func (s *Server) liveProjections(name string) map[string]*config.ProjectionConfi
 	defer s.stateMu.RUnlock()
 	return s.projections[name]
 }
+
+func (s *Server) waitForUpstreamGoroutines() {
+	for _, u := range s.upstreams.snapshot() {
+		u.group.Wait()
+	}
+}

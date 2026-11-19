@@ -23,7 +23,9 @@ func (s *Server) ConnectUpstreams(ctx context.Context, servers []config.ServerCo
 		}
 		//nolint:contextcheck // An incarnation outlives the call that starts it; it ends when it is removed.
 		u := s.newUpstreamServer(sc, upstreamOrigin{fromConfig: true, removeGen: s.snapshotRemoveGen(sc.Name)})
-		s.upstreams.swap(sc.Name, u)
+		if _, ok := s.upstreams.swap(sc.Name, u); !ok {
+			return
+		}
 		s.startupChanged.signal()
 		s.connector.connect(ctx, u)
 	}
@@ -32,6 +34,7 @@ func (s *Server) ConnectUpstreams(ctx context.Context, servers []config.ServerCo
 var (
 	errServerRemoved     = errors.New("removed during connection setup")
 	errAlreadyRegistered = errors.New("already registered")
+	errClosed            = errors.New("mini is shutting down")
 )
 
 type upstreamInstall struct {
@@ -112,8 +115,8 @@ func (s *Server) adoptStartupConn(u *upstreamServer, conn transport.Connection, 
 	u.mu.Lock()
 	u.conn = conn
 	u.adoptToolList(toolList)
-	u.mu.Unlock()
 	s.publishTools(u, toolList.Tools)
+	u.mu.Unlock()
 	s.markToolsReady(u)
 	s.attachNotificationHandler(u, conn)
 	s.logger.Info("upstream registered", "server", u.cfg.Name, "tools", len(toolList.Tools))
@@ -189,8 +192,7 @@ func (s *Server) installChecked(conn transport.Connection, toolList transport.To
 		conn.Close() //nolint:errcheck // The install rejection is returned; Close only releases the unregistered connection.
 		return err
 	}
-	s.installUpstreamLocked(in, conn, toolList)
-	return nil
+	return s.installUpstreamLocked(in, conn, toolList)
 }
 
 func (s *Server) checkInstallLocked(in upstreamInstall) error {
@@ -203,25 +205,33 @@ func (s *Server) checkInstallLocked(in upstreamInstall) error {
 	return nil
 }
 
-func (s *Server) installUpstreamLocked(in upstreamInstall, conn transport.Connection, toolList transport.ToolList) {
+func (s *Server) installUpstreamLocked(
+	in upstreamInstall,
+	conn transport.Connection,
+	toolList transport.ToolList,
+) error {
 	prev := s.upstreams.get(in.cfg.Name)
 	// A login's reconnect replaces a configured server, which stays one.
 	fromConfig := in.fromConfig || (prev != nil && prev.fromConfig)
 	u := s.newUpstreamServer(in.cfg, upstreamOrigin{fromConfig: fromConfig, removeGen: in.removeGen})
 	u.conn = conn
 	u.adoptToolList(toolList)
-	s.upstreams.swap(in.cfg.Name, u)
+	if _, ok := s.upstreams.swap(in.cfg.Name, u); !ok {
+		conn.Close() //nolint:errcheck // The install is refused; Close only releases the unused connection.
+		return fmt.Errorf("server %q: %w", in.cfg.Name, errClosed)
+	}
 	if prev != nil {
-		prev.shutdownAndClose()
+		prev.stop()
 	}
 	s.seedProjectionsIfNone(in.cfg)
-	s.publishTools(u, toolList.Tools)
 	u.mu.Lock()
+	s.publishTools(u, toolList.Tools)
 	u.ready = true
 	u.mu.Unlock()
 	s.startupChanged.signal()
 	s.attachNotificationHandler(u, conn)
 	s.logger.Info("upstream registered", "server", in.cfg.Name, "tools", len(toolList.Tools))
+	return nil
 }
 
 func (s *Server) seedProjectionsIfNone(sc config.ServerConfig) {
@@ -246,15 +256,15 @@ func (s *Server) newUpstreamServer(sc config.ServerConfig, origin upstreamOrigin
 		cfg: sc, fromConfig: origin.fromConfig, saved: withOwnAuth(sc), removeGen: origin.removeGen,
 		openedAt: s.clock.Now(), ctx: ctx, cancel: cancel, clock: s.clock,
 	}
-	u.refresher.startWorker = func() { s.refreshWg.Go(func() { s.runToolRefreshes(u) }) }
+	u.refresher.startWorker = func() bool { return u.group.Go(func() { s.runToolRefreshes(u) }) }
 	if sc.MaxPendingRequests > 0 {
 		u.sem = make(chan struct{}, sc.MaxPendingRequests)
 	}
 	return u
 }
 
-// publishTools is called under serverOpMu, so a remove can't take the tools out between the
-// caller's check and this write.
+// publishTools is called under u.mu for an incarnation that isn't stopped. A remove stops it, under
+// u.mu, before taking its tools out, so no publish lands after the remove.
 func (s *Server) publishTools(u *upstreamServer, defs []transport.ToolDefinition) {
 	s.reg.ReplaceServer(registry.ServerParams{
 		Name:            u.cfg.Name,
@@ -286,10 +296,16 @@ func (s *Server) detachAndCloseLocked(serverName string) {
 
 func (s *Server) closeDetached(serverName string, u *upstreamServer) {
 	if u != nil {
-		u.shutdownAndClose()
+		u.beginStop()
+	}
+	// Before closing: a token refresh runs under the provider's lifetime, not the incarnation's, so
+	// only Forget ends one.
+	s.providerRegistry.Forget(serverName)
+	if u != nil {
+		u.closeConn()
+		u.awaitStopped()
 	}
 	s.sessions.closeServerConnections(serverName)
-	s.providerRegistry.Forget(serverName)
 	s.reg.RemoveServer(serverName)
 }
 
@@ -301,7 +317,7 @@ func (s *Server) detachUpstream(serverName string) *upstreamServer {
 }
 
 func (s *Server) detachUpstreamKeepingProjections(serverName string) *upstreamServer {
-	u := s.upstreams.swap(serverName, nil)
+	u, _ := s.upstreams.swap(serverName, nil) // a remove is never refused
 	s.startupChanged.signal()
 	return u
 }

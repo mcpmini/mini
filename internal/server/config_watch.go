@@ -272,13 +272,15 @@ func (s *Server) replaceProjections(
 }
 
 func (s *Server) reapplyAliases() {
-	s.serverOpMu.Lock()
-	defer s.serverOpMu.Unlock()
-
 	for _, u := range s.snapshotUpstreams() {
-		if u.lastDefs == nil {
-			continue
-		}
+		u.republishTools(s)
+	}
+}
+
+func (u *upstreamServer) republishTools(s *Server) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.lastDefs != nil && !u.group.Stopped() {
 		s.publishTools(u, u.lastDefs)
 	}
 }
