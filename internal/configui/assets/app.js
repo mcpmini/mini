@@ -1,50 +1,51 @@
-const app = document.getElementById("app");
-const bearerKey = "mini-bearer";
+import { render } from "./vendor/preact.js";
+import { useEffect, useState } from "./vendor/preact-hooks.js";
+import { getServer, listServers, startSession } from "./api.js";
+import { errorMessage, pollDelay } from "./model.js";
+import { html, ServerHeader, StatusNotice, ToolList } from "./views.js";
 
-async function api(path, options = {}) {
-  const headers = { Authorization: "Bearer " + (sessionStorage.getItem(bearerKey) || "") };
-  if (options.body) headers["Content-Type"] = "application/json";
-  const resp = await fetch(path, { ...options, headers });
-  if (resp.status === 401) throw new Error("expired");
-  if (!resp.ok) throw new Error((await resp.json()).message);
-  return resp.json();
+function App() {
+  const [servers, setServers] = useState(null);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    startSession().then(listServers).then(setServers).catch(setError);
+  }, []);
+  if (error) return html`<p class="notice notice-failed" role="alert">${errorMessage(error)}</p>`;
+  if (!servers) return html`<p class="muted">Loading…</p>`;
+  return servers.map((s) => html`<${ServerPage} key=${s.name} name=${s.name} onError=${setError} />`);
 }
 
-async function startSession() {
-  const entry = new URLSearchParams(location.hash.slice(1)).get("t");
-  if (!entry) return;
-  history.replaceState(null, "", location.pathname);
-  const resp = await fetch("/api/session", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ entry }),
-  });
-  if (!resp.ok) throw new Error("expired");
-  sessionStorage.setItem(bearerKey, (await resp.json()).bearer);
+function ServerPage({ name, onError }) {
+  const server = usePolledServer(name, onError);
+  if (!server) return html`<p class="muted">Loading ${name}…</p>`;
+  return html`<section class="server">
+    <${ServerHeader} server=${server} />
+    ${server.state !== "ready" && html`<${StatusNotice} server=${server} />`}
+    ${server.state === "ready" && html`<${ToolList} server=${server} />`}
+  </section>`;
 }
 
-function line(tag, text) {
-  const el = document.createElement(tag);
-  el.textContent = text;
-  return el;
+function usePolledServer(name, onError) {
+  const [server, setServer] = useState(null);
+  useEffect(() => {
+    let stopped = false;
+    let timer;
+    const load = () =>
+      getServer(name)
+        .then((view) => {
+          if (stopped) return;
+          setServer(view);
+          const delay = pollDelay(view.state);
+          if (delay !== null) timer = setTimeout(load, delay);
+        })
+        .catch((err) => stopped || onError(err));
+    load();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, [name]);
+  return server;
 }
 
-async function render() {
-  const servers = await api("/api/servers");
-  const views = await Promise.all(servers.map((s) => api("/api/server?server=" + encodeURIComponent(s.name))));
-  app.replaceChildren(...views.flatMap((v) => [
-    line("h1", v.name + " (" + v.state + ")"),
-    ...(v.error ? [line("p", v.error)] : []),
-    ...v.tools.map((t) => line("p", t.name + (t.hidden ? " (hidden)" : ""))),
-  ]));
-  if (views.some((v) => v.state === "connecting")) setTimeout(() => render().catch(show), 1000);
-}
-
-function show(err) {
-  const text = err.message === "expired"
-    ? "This page's session has ended. Run `mini auth <server>` to open it again."
-    : err.message;
-  app.replaceChildren(line("p", text));
-}
-
-startSession().then(render).catch(show);
+render(html`<${App} />`, document.getElementById("app"));

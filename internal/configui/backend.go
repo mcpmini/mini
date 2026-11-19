@@ -1,6 +1,9 @@
 package configui
 
-import "errors"
+import (
+	"encoding/json"
+	"errors"
+)
 
 type Backend interface {
 	// Servers skips names that are no longer in mini, so a session never lists a server it can't show.
@@ -32,6 +35,8 @@ type ServerView struct {
 }
 
 type Tool struct {
-	Name   string `json:"name"`
-	Hidden bool   `json:"hidden"`
+	Name        string          `json:"name"`
+	Title       string          `json:"title,omitempty"`
+	Annotations json.RawMessage `json:"annotations,omitempty"`
+	Hidden      bool            `json:"hidden"`
 }

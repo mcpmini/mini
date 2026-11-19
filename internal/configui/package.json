@@ -1,0 +1,5 @@
+{
+  "private": true,
+  "description": "Marks the config page's assets as ES modules so node --test can load them.",
+  "type": "module"
+}
