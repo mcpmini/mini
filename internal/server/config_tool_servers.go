@@ -26,14 +26,16 @@ func (s *Server) addServerFromAgent(ctx context.Context, raw *config.ServerConfi
 }
 
 func (s *Server) saveAndConnect(ctx context.Context, sc config.ServerConfig) error {
-	if s.isUpstreamConnected(sc.Name) {
+	if s.upstreams.get(sc.Name) != nil {
 		return errAlreadyRunning(sc.Name)
 	}
-	// Checked before changeSavedServer, which would stop a configured server's login or retries.
 	if err := s.refuseConfiguredName(sc.Name); err != nil {
 		return err
 	}
-	err := s.changeSavedServer(sc.Name, func() error {
+	// Nothing runs under the name, but a token refresh or a login for its earlier server may: they
+	// would save a token the new server then picks up.
+	s.remove(sc.Name, retireRemoved)
+	err := s.changeSavedFiles(func() error {
 		_, err := ops.AddServer(s.configDir, sc)
 		return err
 	})
@@ -44,6 +46,8 @@ func (s *Server) saveAndConnect(ctx context.Context, sc config.ServerConfig) err
 		return fmt.Errorf("add_server: %w", err)
 	}
 	if err := s.connectSaved(ctx, sc.Name); err != nil {
+		// The failed connect may have acquired a provider for this name and URL.
+		s.providerRegistry.Forget(sc.Name)
 		return errors.Join(err, s.rollBackAdd(sc.Name))
 	}
 	return nil
@@ -65,15 +69,15 @@ func (s *Server) connectSaved(ctx context.Context, name string) error {
 	if err != nil {
 		return fmt.Errorf("add_server: %w", err)
 	}
-	err = s.addUpstream(ctx, s.newServerInstall(saved))
-	if errors.Is(err, errAlreadyRegistered) {
-		return errAlreadyRunning(name)
+	conn, toolList, err := s.openUpstream(ctx, saved)
+	if err != nil {
+		return err
 	}
-	return err
+	return s.replaceConnected(s.newConfigServer(saved), connected{conn: conn, tools: toolList})
 }
 
 func (s *Server) rollBackAdd(name string) error {
-	if err := s.removeSavedServer(name); err != nil {
+	if err := s.removeSavedFiles(name); err != nil {
 		return fmt.Errorf(
 			"add_server: %s is still saved, so mini will keep trying to connect it; remove it with remove_server: %w",
 			name,
@@ -83,21 +87,16 @@ func (s *Server) rollBackAdd(name string) error {
 	return nil
 }
 
-func (s *Server) removeSavedServer(name string) error {
-	return s.changeSavedServer(name, func() error { return ops.RemoveServer(s.configDir, name) })
+func (s *Server) removeSavedFiles(name string) error {
+	return s.changeSavedFiles(func() error { return ops.RemoveServer(s.configDir, name) })
 }
 
-// changeSavedServer runs change, which adds or deletes the files saved for name, with nothing
-// still running for the name able to write them. persistMu keeps a set_projection out.
-func (s *Server) changeSavedServer(name string, change func() error) error {
+// changeSavedFiles holds persistMu so a set_projection can't interleave with the change. The caller
+// holds the name's lock and has already stopped whatever ran under it.
+func (s *Server) changeSavedFiles(change func() error) error {
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()
-	// A token refresh still running would save its token after change clears it.
-	s.detachAndCloseServer(name)
-	err := change()
-	// Stops a login or install that started for the name during change.
-	s.detachAndCloseServer(name)
-	return err
+	return change()
 }
 
 func errAlreadyRunning(name string) error {
@@ -114,7 +113,9 @@ func (s *Server) removeServerFromAgent(name string) (any, error) {
 	}
 	unlock := s.serverNames.lock(name)
 	defer unlock()
-	if err := s.removeSavedServer(name); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	// Stopped before the files go, so nothing it ran can write them back.
+	s.remove(name, retireRemoved)
+	if err := s.removeSavedFiles(name); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf(
 			"remove_server: %s is still saved, so mini will connect it again; try remove_server again: %w",
 			name,

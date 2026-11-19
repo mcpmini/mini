@@ -51,25 +51,49 @@ func (s *Server) applyServerFile(name string) (toolsDropped bool) {
 		return false
 	}
 	defer unlock()
-	sc, found, err := config.LookupServer(s.configDir, name)
-	if err != nil {
-		return false
-	}
-	if !found || !sc.IsEnabled() {
+	return s.reconcileLocked(name)
+}
+
+// reconcileLocked makes what runs under name match its file, under name's lock. It reports whether
+// tools were dropped, which a caller tells agents about.
+func (s *Server) reconcileLocked(name string) (toolsDropped bool) {
+	sc, saved := s.lookupSavedServer(name)
+	switch saved {
+	case savedGone:
 		return s.removeConfigServer(name)
-	}
-	// An empty or half-written file decodes without error.
-	if sc.Command == "" && sc.URL == "" {
+	case savedUnreadable:
 		return false
+	case savedStartable:
 	}
 	return s.connectConfigServer(sc)
+}
+
+type savedState int
+
+const (
+	savedStartable  savedState = iota
+	savedGone                  // missing or disabled
+	savedUnreadable            // left as it runs until the file can be read
+)
+
+func (s *Server) lookupSavedServer(name string) (config.ServerConfig, savedState) {
+	sc, found, err := config.LookupServer(s.configDir, name)
+	switch {
+	case err != nil:
+		return sc, savedUnreadable
+	case !found || !sc.IsEnabled():
+		return sc, savedGone
+	case sc.Command == "" && sc.URL == "": // an empty or half-written file decodes without error
+		return sc, savedUnreadable
+	}
+	return sc, savedStartable
 }
 
 func (s *Server) removeConfigServer(name string) bool {
 	if !s.isConfigServer(name) {
 		return false
 	}
-	s.detachAndCloseServer(name)
+	s.remove(name, retireRemoved)
 	s.logger.Info("server removed by config change", "server", name)
 	return true
 }
@@ -78,14 +102,14 @@ func (s *Server) connectConfigServer(sc config.ServerConfig) (toolsDropped bool)
 	switch {
 	case !s.isKnownServer(sc.Name):
 		s.logger.Info("server added by config change", "server", sc.Name)
-		s.ConnectUpstreams([]config.ServerConfig{sc})
+		s.replace(sc.Name, s.newConfigServer(sc))
 	case s.settingsChanged(sc) && !s.loginInFlightFor(sc):
 		s.logger.Info("reconnecting server with its changed settings", "server", sc.Name)
-		s.reconnectConfigServer(sc)
+		s.replace(sc.Name, s.newConfigServer(sc))
 		return true
 	case s.loginSavedSinceAuthFailed(sc.Name):
 		s.logger.Info("reconnecting server with its saved login", "server", sc.Name)
-		s.reconnectConfigServer(sc)
+		s.replace(sc.Name, s.newConfigServer(sc))
 		return true
 	}
 	return false
@@ -139,16 +163,6 @@ func sameSettings(a, b config.ServerConfig) bool {
 func withOwnAuth(sc config.ServerConfig) config.ServerConfig {
 	sc.Auth = sc.Auth.Clone()
 	return sc
-}
-
-func (s *Server) reconnectConfigServer(sc config.ServerConfig) {
-	// A login still waiting in the browser was started for the old settings.
-	s.cancelExistingAuthFlow(sc.Name, errLoginSettingsEdit)
-	s.serverOpMu.Lock()
-	s.removeGen[sc.Name]++
-	s.closeDetached(sc.Name, s.detachUpstreamKeepingProjections(sc.Name))
-	s.serverOpMu.Unlock()
-	s.ConnectUpstreams([]config.ServerConfig{sc})
 }
 
 func (s *Server) isKnownServer(name string) bool {

@@ -120,8 +120,8 @@ func (r *Registry) removeServerLocked(serverName string) {
 }
 
 // ReplaceServer atomically removes the server's existing tools and registers the
-// new set. Callers outside this package (reconnect, registerUpstream) must use
-// this instead of separate Remove+Add calls to avoid a window where tools are absent.
+// new set. Callers outside this package must use this instead of separate Remove+Add calls to
+// avoid a window where tools are absent.
 func (r *Registry) ReplaceServer(p ServerParams) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

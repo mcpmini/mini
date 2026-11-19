@@ -65,7 +65,7 @@ func TestApplyServerFile_keepsANameSavedAgainSinceTheServerSetWasLoaded(t *testi
 	}
 }
 
-func TestInstallChecked_readsLiveAliasesWhileSetProjectionWritesThem(t *testing.T) {
+func TestAddConnection_readsLiveAliasesWhileSetProjectionWritesThem(t *testing.T) {
 	srv := newInstallTestServer(t)
 	srv.replaceProjections(
 		map[string]map[string]*config.ProjectionConfig{"svc": {"getData": {Alias: "fetch"}}},
@@ -80,10 +80,10 @@ func TestInstallChecked_readsLiveAliasesWhileSetProjectionWritesThem(t *testing.
 	})
 	wg.Go(func() {
 		for range 20 {
-			if err := srv.installChecked(
-				&transport.FakeConnection{},
-				transport.ToolList{Tools: tools},
-				srv.replacingInstall(config.ServerConfig{Name: "svc"}),
+			if err := srv.AddConnection(
+				t.Context(),
+				config.ServerConfig{Name: "svc"},
+				&transport.FakeConnection{Tools: tools},
 			); err != nil {
 				t.Error(err)
 			}
@@ -112,17 +112,20 @@ func TestInstallChecked_guardRejection_closesConn(t *testing.T) {
 	}
 }
 
-func TestInstallChecked_namesToolsByTheLiveProjections(t *testing.T) {
+func TestAddConnection_namesToolsByTheLiveProjections(t *testing.T) {
 	tools := []transport.ToolDefinition{{Name: "getData", InputSchema: json.RawMessage(`{}`)}}
 	aliased := map[string]*config.ProjectionConfig{"getData": {Alias: "fetch"}}
+	install := func(t *testing.T, srv *Server, sc config.ServerConfig) {
+		t.Helper()
+		if err := srv.AddConnection(t.Context(), sc, &transport.FakeConnection{Tools: tools}); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	t.Run("a new server takes its config's projections", func(t *testing.T) {
 		srv := newInstallTestServer(t)
 
-		in := srv.newServerInstall(config.ServerConfig{Name: "svc", Projections: aliased})
-		if err := srv.installChecked(&transport.FakeConnection{}, transport.ToolList{Tools: tools}, in); err != nil {
-			t.Fatal(err)
-		}
+		install(t, srv, config.ServerConfig{Name: "svc", Projections: aliased})
 
 		if got := registeredToolNames(srv); !slices.Equal(got, []string{"svc.fetch"}) {
 			t.Errorf("tools = %v, want [svc.fetch]", got)
@@ -136,13 +139,7 @@ func TestInstallChecked_namesToolsByTheLiveProjections(t *testing.T) {
 			ProjectionsErr: &config.SourceError{ServerName: "svc", Err: errors.New("parse failed")},
 		}
 
-		if err := srv.installChecked(
-			&transport.FakeConnection{},
-			transport.ToolList{Tools: tools},
-			srv.replacingInstall(reloaded),
-		); err != nil {
-			t.Fatal(err)
-		}
+		install(t, srv, reloaded)
 
 		if got := registeredToolNames(srv); !slices.Equal(got, []string{"svc.fetch"}) {
 			t.Errorf(
@@ -261,10 +258,10 @@ func TestStartAuth_waitsUntilAnAddOrRemoveOfTheNameFinishes(t *testing.T) {
 	}
 }
 
-func TestChangeSavedServer_keepsSetProjectionOutUntilTheChangeFinishes(t *testing.T) {
+func TestChangeSavedFiles_keepsSetProjectionOutUntilTheChangeFinishes(t *testing.T) {
 	srv := newInstallTestServer(t)
 
-	_ = srv.changeSavedServer("svc", func() error {
+	_ = srv.changeSavedFiles(func() error {
 		if srv.persistMu.TryLock() {
 			srv.persistMu.Unlock()
 			t.Error("set_projection could save svc.yaml during the change, racing with a remove")
@@ -462,7 +459,7 @@ func TestCommitTokenUnlessRemoved(t *testing.T) {
 	t.Run("refuses a login that finishes after its server was removed", func(t *testing.T) {
 		srv := newInstallTestServer(t)
 		startedBeforeTheRemove := login(srv)
-		srv.detachAndCloseServer("svc")
+		srv.remove("svc", retireRemoved)
 
 		err := srv.commitTokenUnlessRemoved(startedBeforeTheRemove, loginWith(t, startedBeforeTheRemove, "late"))
 

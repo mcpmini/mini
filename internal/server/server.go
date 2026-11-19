@@ -38,7 +38,9 @@ type Server struct {
 	stateMu    sync.RWMutex
 	persistMu  sync.Mutex
 	serverOpMu sync.Mutex
-	removeGen  map[string]uint64 // protected by serverOpMu; incremented on each remove_server
+	// Protected by serverOpMu. Bumped on every retire, so a login started before one can't save its
+	// token.
+	removeGen  map[string]uint64
 	authMu     sync.Mutex
 	authFlows  map[string]*authFlowState
 	authWg     sync.WaitGroup
