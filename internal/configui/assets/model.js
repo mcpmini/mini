@@ -1,4 +1,5 @@
 const POLL_MS = { connecting: 1000, failed: 5000 };
+const MAX_TYPE_DEPTH = 4;
 
 export const EXPIRED_MESSAGE =
   "This page's session has ended. Run `mini auth <server>` to open it again.";
@@ -46,7 +47,10 @@ function toolView(tool) {
   return {
     name: tool.name,
     title: text(tool.title) || text(annotations.title),
+    description: text(tool.description),
     annotations,
+    inputSchema: tool.inputSchema,
+    outputSchema: tool.outputSchema,
     hidden: tool.hidden === true,
   };
 }
@@ -60,6 +64,69 @@ export function annotationBadges(a) {
   if (writes && a.idempotentHint === true) badges.push({ label: "idempotent", tone: "plain" });
   if (a.openWorldHint === true) badges.push({ label: "open world", tone: "plain" });
   return badges;
+}
+
+export function toggled(names, name) {
+  const next = new Set(names);
+  if (!next.delete(name)) next.add(name);
+  return next;
+}
+
+const COMPOSED = ["allOf", "anyOf", "oneOf", "$ref"];
+
+// schemaFields reads only direct properties, so a composed schema can still take arguments it doesn't list.
+export function isComposed(schema) {
+  return isObject(schema) && COMPOSED.some((key) => key in schema);
+}
+
+export function schemaFields(schema) {
+  if (!isObject(schema) || !isObject(schema.properties)) return [];
+  const required = new Set(Array.isArray(schema.required) ? schema.required : []);
+  return Object.entries(schema.properties).map(([name, prop]) => schemaField(name, prop, required.has(name)));
+}
+
+function schemaField(name, prop, required) {
+  const p = isObject(prop) ? prop : {};
+  return {
+    name,
+    type: typeLabel(p, 0),
+    required,
+    description: text(p.description),
+    values: allowedValues(p),
+    defaultValue: "default" in p ? formatValue(p.default) : null,
+  };
+}
+
+// An array of enum values lists them on its items.
+function allowedValues(p) {
+  const values = Array.isArray(p.enum) ? p.enum : isObject(p.items) && Array.isArray(p.items.enum) ? p.items.enum : [];
+  return values.map(formatValue);
+}
+
+function typeLabel(prop, depth) {
+  if (!isObject(prop)) return "any";
+  if (depth > MAX_TYPE_DEPTH) return "…";
+  if ("const" in prop) return formatValue(prop.const);
+  if (Array.isArray(prop.type)) return prop.type.map((t) => primitiveLabel(prop, t, depth)).join(" | ");
+  if (typeof prop.type === "string") return primitiveLabel(prop, prop.type, depth);
+  const union = prop.anyOf ?? prop.oneOf;
+  if (Array.isArray(union)) return union.map((p) => typeLabel(p, depth + 1)).join(" | ");
+  if (Array.isArray(prop.enum)) return "enum";
+  return "any";
+}
+
+function primitiveLabel(prop, type, depth) {
+  if (type !== "array") return String(type);
+  const item = typeLabel(prop.items, depth + 1);
+  return item.includes(" | ") ? `(${item})[]` : `${item}[]`;
+}
+
+export function formatValue(value) {
+  return JSON.stringify(value) ?? String(value);
+}
+
+export function formatSchema(schema) {
+  return JSON.stringify(schema, null, 2);
 }
 
 function text(value) {
