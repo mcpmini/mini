@@ -92,26 +92,6 @@ func TestAddConnection_readsLiveAliasesWhileSetProjectionWritesThem(t *testing.T
 	wg.Wait()
 }
 
-func TestInstallChecked_guardRejection_closesConn(t *testing.T) {
-	srv := newInstallTestServer(t)
-
-	srv.serverOpMu.Lock()
-	srv.removeGen["svc"]++
-	srv.serverOpMu.Unlock()
-
-	fake := &transport.FakeConnection{}
-	in := upstreamInstall{cfg: config.ServerConfig{Name: "svc"}, removeGen: 0}
-
-	err := srv.installChecked(fake, transport.ToolList{}, in)
-
-	if !errors.Is(err, errServerRemoved) {
-		t.Errorf("expected errServerRemoved, got %v", err)
-	}
-	if !fake.Closed {
-		t.Error("expected connection to be closed on guard rejection")
-	}
-}
-
 func TestAddConnection_namesToolsByTheLiveProjections(t *testing.T) {
 	tools := []transport.ToolDefinition{{Name: "getData", InputSchema: json.RawMessage(`{}`)}}
 	aliased := map[string]*config.ProjectionConfig{"getData": {Alias: "fetch"}}
@@ -148,52 +128,6 @@ func TestAddConnection_namesToolsByTheLiveProjections(t *testing.T) {
 			)
 		}
 	})
-}
-
-func TestAddServerFromAgent_aFailedAddStopsAnInstallStartedMeanwhile(t *testing.T) {
-	srv := newInstallTestServer(t)
-	srv.cfg.DangerousAllowPrivateURLs = true
-	startedDuringTheAdd := srv.replacingInstall(config.ServerConfig{Name: "svc"})
-
-	if _, err := srv.addServerFromAgent(
-		t.Context(),
-		&config.ServerConfig{Name: "svc", Transport: "http", URL: "http://127.0.0.1:1/mcp"},
-	); err == nil {
-		t.Fatal("add_server to an unreachable URL succeeded")
-	}
-
-	if err := srv.installChecked(
-		&transport.FakeConnection{},
-		transport.ToolList{},
-		startedDuringTheAdd,
-	); !errors.Is(
-		err,
-		errServerRemoved,
-	) {
-		t.Errorf("install started during the failed add = %v, want errServerRemoved so no unsaved server runs", err)
-	}
-}
-
-func TestAddServerFromAgent_stopsAnInstallStartedForTheNamesEarlierServer(t *testing.T) {
-	echomcp := testutil.Binary(t, "ECHOMCP_BIN")
-	srv := newInstallTestServer(t)
-	srv.cfg.DangerousAllowRuntimeStdio = true
-	startedForTheEarlierServer := srv.replacingInstall(config.ServerConfig{Name: "svc", Command: "earlier"})
-
-	if _, err := srv.addServerFromAgent(t.Context(), &config.ServerConfig{Name: "svc", Command: echomcp}); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := srv.installChecked(
-		&transport.FakeConnection{},
-		transport.ToolList{},
-		startedForTheEarlierServer,
-	); !errors.Is(
-		err,
-		errServerRemoved,
-	) {
-		t.Errorf("install for the earlier svc = %v, want errServerRemoved so it can't replace the added one", err)
-	}
 }
 
 func TestRemoveServerFromAgent_anAddOfTheNameWaitsUntilTheRemoveFinishes(t *testing.T) {
@@ -438,12 +372,12 @@ func expiredLoginProvider(
 }
 
 func TestCommitTokenUnlessRemoved(t *testing.T) {
-	login := func(srv *Server) upstreamInstall {
+	login := func(srv *Server) loginTarget {
 		sc := config.ServerConfig{
 			Name: "svc", Transport: "http", URL: "http://127.0.0.1:1/mcp",
 			Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "c", TokenURL: "http://127.0.0.1:1/token"},
 		}
-		return upstreamInstall{cfg: sc, removeGen: srv.snapshotRemoveGen("svc")}
+		return loginTarget{cfg: sc, removeGen: srv.snapshotRemoveGen("svc")}
 	}
 
 	t.Run("saves the token of a login whose server is still there", func(t *testing.T) {
@@ -472,7 +406,7 @@ func TestCommitTokenUnlessRemoved(t *testing.T) {
 	})
 }
 
-func loginWith(t *testing.T, install upstreamInstall, accessToken string) *auth.Login {
+func loginWith(t *testing.T, install loginTarget, accessToken string) *auth.Login {
 	t.Helper()
 	return authtest.LoginFor(t, install.cfg, &oauth2.Token{AccessToken: accessToken})
 }

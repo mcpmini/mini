@@ -58,6 +58,26 @@ func TestApplyServerFile_reconnectsAServerStoppedAtNeedsAuthOnceItsLoginIsSaved(
 	}
 }
 
+func TestApplyServerFile_aServerWhoseLoginExpiredWhileConnected_reconnectsOnceALoginIsSaved(t *testing.T) {
+	srv := newInstallTestServer(t)
+	sc := config.ServerConfig{Name: "svc", Command: testutil.Binary(t, "ECHOMCP_BIN")}
+	configtest.WriteServer(t, srv.configDir, sc)
+	unlock := srv.serverNames.lock("svc")
+	srv.replace("svc", srv.newConfigServer(sc))
+	unlock()
+	srv.WaitForStartupConnects()
+	expired := srv.upstreams.get("svc")
+	srv.recordFailure(expired, needsAuthStatus{}) // as a reconnect refused for its login records
+
+	writeLogin(t, srv)
+	srv.applyServerFile("svc")
+	srv.WaitForStartupConnects()
+
+	if srv.upstreams.get("svc") == expired {
+		t.Error("svc still runs on its expired login after a new one was saved, want it reconnected")
+	}
+}
+
 func TestApplyServerFile_aLoginSavedWhileTheFileIsHalfWrittenAppliesOnceItIsComplete(t *testing.T) {
 	srv, sc := newNeedsAuthServer(t)
 	writeLogin(t, srv)
@@ -73,31 +93,15 @@ func TestApplyServerFile_aLoginSavedWhileTheFileIsHalfWrittenAppliesOnceItIsComp
 }
 
 func TestApplyServerFile_leavesAServerAtNeedsAuthWithoutANewLogin(t *testing.T) {
-	cases := map[string]func(t *testing.T) *Server{
-		"login saved before the attempt": func(t *testing.T) *Server {
-			srv := newInstallTestServer(t)
-			writeLogin(t, srv)
-			recordNeedsAuth(t, srv)
-			return srv
-		},
-		"login in flight": func(t *testing.T) *Server {
-			srv, _ := newNeedsAuthServer(t)
-			srv.storeAuthFlow("svc", newAuthFlow(func() {}, nil, config.ServerConfig{}))
-			writeLogin(t, srv)
-			return srv
-		},
-	}
-	for name, setUp := range cases {
-		t.Run(name, func(t *testing.T) {
-			srv := setUp(t)
+	srv := newInstallTestServer(t)
+	writeLogin(t, srv)
+	recordNeedsAuth(t, srv)
 
-			srv.applyServerFile("svc")
-			srv.WaitForStartupConnects()
+	srv.applyServerFile("svc")
+	srv.WaitForStartupConnects()
 
-			if srv.ToolCount("svc") != 0 {
-				t.Error("svc reconnected without a login saved since its attempt")
-			}
-		})
+	if srv.ToolCount("svc") != 0 {
+		t.Error("svc reconnected without a login saved since its attempt")
 	}
 }
 
@@ -144,6 +148,37 @@ func writeLogin(t *testing.T, srv *Server) {
 
 func TestApplyServerFile_anEditCancelsALoginStartedForTheOldSettings(t *testing.T) {
 	srv, sc := newNeedsAuthServer(t)
+	cancelled := waitForBrowserLogin(t, srv)
+
+	sc.Args = []string{"--moved"}
+	configtest.WriteServer(t, srv.configDir, sc)
+	srv.applyServerFile("svc")
+	srv.WaitForStartupConnects()
+
+	if !*cancelled || srv.hasAuthFlow("svc") {
+		t.Error("a login for svc's old settings is still waiting after svc was edited")
+	}
+}
+
+func TestApplyServerFile_aLoginSavedWhileABrowserLoginWaits_cancelsItAndReconnects(t *testing.T) {
+	srv, _ := newNeedsAuthServer(t)
+	cancelled := waitForBrowserLogin(t, srv)
+
+	writeLogin(t, srv)
+	srv.applyServerFile("svc")
+	srv.WaitForStartupConnects()
+
+	if !*cancelled || srv.hasAuthFlow("svc") {
+		t.Error("the browser login for svc still waits after a login saved by mini auth reconnected it")
+	}
+	if srv.ToolCount("svc") == 0 {
+		t.Error("svc has no tools after a login was saved for it, want it reconnected")
+	}
+}
+
+// waitForBrowserLogin leaves a browser login for svc waiting, and reports whether it was canceled.
+func waitForBrowserLogin(t *testing.T, srv *Server) *bool {
+	t.Helper()
 	cancelled := false
 	login := authtest.StartLogin(t, &config.AuthConfig{
 		Type:     config.AuthTypeOAuth2,
@@ -151,16 +186,8 @@ func TestApplyServerFile_anEditCancelsALoginStartedForTheOldSettings(t *testing.
 		AuthURL:  "https://auth.example.com/authorize",
 		TokenURL: "https://auth.example.com/token",
 	})
-	srv.storeAuthFlow("svc", newAuthFlow(func() { cancelled = true }, login, config.ServerConfig{}))
-
-	sc.Args = []string{"--moved"}
-	configtest.WriteServer(t, srv.configDir, sc)
-	srv.applyServerFile("svc")
-	srv.WaitForStartupConnects()
-
-	if !cancelled || srv.hasAuthFlow("svc") {
-		t.Error("a login for svc's old settings is still waiting after svc was edited")
-	}
+	srv.storeAuthFlow("svc", newAuthFlow(func() { cancelled = true }, login, ""))
+	return &cancelled
 }
 
 func TestSettingsChanged_OAuthMiniDetectedFromA401IsNotAnEdit(t *testing.T) {

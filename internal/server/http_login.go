@@ -49,7 +49,7 @@ func (s *Server) streamLogin(p loginStreamParams) {
 	case <-p.Flow.done:
 		writeLoginLine(p.Writer, p.Flusher, loginOutcomeLine(p.Flow.outcome))
 	case <-p.Request.Context().Done():
-		s.cancelUncommittedAuthFlow(p.Flow.settings.Name, p.Flow)
+		s.cancelUncommittedAuthFlow(p.Flow.server, p.Flow)
 	}
 }
 

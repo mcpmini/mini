@@ -103,7 +103,7 @@ func (s *Server) connectConfigServer(sc config.ServerConfig) (toolsDropped bool)
 	case !s.isKnownServer(sc.Name):
 		s.logger.Info("server added by config change", "server", sc.Name)
 		s.replace(sc.Name, s.newConfigServer(sc))
-	case s.settingsChanged(sc) && !s.loginInFlightFor(sc):
+	case s.settingsChanged(sc):
 		s.logger.Info("reconnecting server with its changed settings", "server", sc.Name)
 		s.replace(sc.Name, s.newConfigServer(sc))
 		return true
@@ -115,10 +115,10 @@ func (s *Server) connectConfigServer(sc config.ServerConfig) (toolsDropped bool)
 	return false
 }
 
+// A login start_auth runs commits and replaces under the name's lock, which this check runs under
+// too, so it sees a login saved from outside the daemon, or one that saved its token while the
+// server's file couldn't be read.
 func (s *Server) loginSavedSinceAuthFailed(name string) bool {
-	if s.hasAuthFlow(name) { // a login start_auth runs reconnects the server itself
-		return false
-	}
 	u := s.upstreams.get(name)
 	if u == nil || !u.fromConfig {
 		return false

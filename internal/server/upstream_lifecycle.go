@@ -25,22 +25,32 @@ func (s *Server) maybeReconnect(u *upstreamServer, err error) {
 }
 
 type openLoopParams struct {
-	immediate bool // the first attempt doesn't wait out a backoff
+	immediate bool       // the first attempt doesn't wait out a backoff
+	firstOpen chan error // buffered; gets the first attempt's result, even when the loop stops first
 }
 
-func (s *Server) startOpenLoop(u *upstreamServer, p openLoopParams) {
+func (p *openLoopParams) reportFirstOpen(err error) {
+	if p.firstOpen != nil {
+		p.firstOpen <- err
+		p.firstOpen = nil
+	}
+}
+
+func (s *Server) startOpenLoop(u *upstreamServer, p openLoopParams) bool {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	// A failure a retry can't fix ends the loop for good: only a replace, once its remedy is
 	// applied, opens the server again.
 	if u.opening || u.failure != nil {
-		return
+		return false
 	}
 	u.opening = u.group.Go(func() { s.runOpenLoop(u, p) })
+	return u.opening
 }
 
 func (s *Server) runOpenLoop(u *upstreamServer, p openLoopParams) {
 	defer s.endOpening(u)
+	defer p.reportFirstOpen(context.Canceled)
 	backoff := time.Second
 	if !p.immediate {
 		if !s.sleepBackoff(u.ctx, backoff) {
@@ -52,8 +62,10 @@ func (s *Server) runOpenLoop(u *upstreamServer, p openLoopParams) {
 		conn, tools, err := s.openUpstream(u.ctx, u.cfg)
 		if err == nil {
 			s.adoptConn(u, conn, tools)
+			p.reportFirstOpen(nil)
 			return
 		}
+		p.reportFirstOpen(err)
 		if !s.retryOpenAfter(u, err, backoff) || !s.sleepBackoff(u.ctx, backoff) {
 			return
 		}
@@ -181,10 +193,3 @@ func (u *upstreamServer) closeConn() {
 }
 
 func (u *upstreamServer) awaitStopped() { u.group.Wait() }
-
-// stop ends an incarnation another one replaces: its provider is the new one's, so it stays.
-func (u *upstreamServer) stop() {
-	u.beginStop()
-	u.closeConn()
-	u.awaitStopped()
-}

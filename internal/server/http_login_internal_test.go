@@ -108,11 +108,12 @@ func TestServeLogin_urlLineComesFirstAndOutcomeFollowsTheReconnect(t *testing.T)
 	if got := stream.resp.Header.Get("Content-Type"); got != "application/x-ndjson" {
 		t.Errorf("Content-Type = %q, want application/x-ndjson", got)
 	}
+	login := authFlow(f.srv, "svc")
 
 	authtest.CompleteAuthorization(t, authURL, "test-auth-code")
 	testutil.WaitForReceive(t, f.upstream.Connecting, "the reconnect to reach the upstream")
 	select {
-	case <-authFlow(f.srv, "svc").done:
+	case <-login.done:
 		t.Fatal("the login had an outcome while its reconnect was still blocked")
 	default:
 	}
@@ -192,8 +193,9 @@ func TestServeLogin_failedSaveIsASaveLoginError(t *testing.T) {
 	}
 }
 
-func TestServeLogin_failedReconnectIsOKWithItsConnectError(t *testing.T) {
+func TestServeLogin_aRunningServersFailedReconnectIsOKWithItsConnectError(t *testing.T) {
 	f := newLoginFixture(t, authtest.OAuthMCPServerParams{FailConnecting: true})
+	f.srv.recordConfigServers([]config.ServerConfig{f.sc})
 	stream := f.postLogin(t.Context(), t, "svc")
 
 	authtest.CompleteAuthorization(t, stream.authURL(t), "test-auth-code")
@@ -224,9 +226,10 @@ func TestServeLogin_endingTheRequestAfterTheTokenIsSavedLetsTheReconnectFinish(t
 	f := newLoginFixture(t, authtest.OAuthMCPServerParams{BlockConnecting: true})
 	ctx, cancel := context.WithCancel(t.Context())
 	stream := f.postLogin(ctx, t, "svc")
-	authtest.CompleteAuthorization(t, stream.authURL(t), "test-auth-code")
-	testutil.WaitForReceive(t, f.upstream.Connecting, "the reconnect, which follows the token save")
+	authURL := stream.authURL(t)
 	flow := authFlow(f.srv, "svc")
+	authtest.CompleteAuthorization(t, authURL, "test-auth-code")
+	testutil.WaitForReceive(t, f.upstream.Connecting, "the reconnect, which follows the token save")
 
 	cancel()
 	testutil.WaitForReceive(t, f.handled, "the login request to end")
@@ -255,6 +258,23 @@ func TestServeLogin_loginReplacedAfterItsTokenIsSavedStillConnects(t *testing.T)
 	connected := f.srv.isUpstreamConnected("svc")
 	if line["ok"] != true || line["connect_error"] != nil || !connected {
 		t.Errorf("outcome = %v, connected %v; want ok and svc connected", line, connected)
+	}
+}
+
+func TestServeLogin_anEditDuringTheReconnect_reportsNoConnectError(t *testing.T) {
+	f := newLoginFixture(t, authtest.OAuthMCPServerParams{BlockConnecting: true})
+	stream := f.postLogin(t.Context(), t, "svc")
+	authtest.CompleteAuthorization(t, stream.authURL(t), "test-auth-code")
+	testutil.WaitForReceive(t, f.upstream.Connecting, "the reconnect, which follows the token save")
+
+	edited := f.sc
+	edited.Headers = map[string]string{"X-Edited": "1"}
+	configtest.WriteServer(t, f.srv.configDir, edited)
+	f.srv.applyServerFiles()
+	f.upstream.UnblockConnecting()
+
+	if line := stream.next(t); line["ok"] != true || line["connect_error"] != nil {
+		t.Errorf("outcome = %v, want ok: the edit's own connect replaced the login's", line)
 	}
 }
 

@@ -53,6 +53,12 @@ func (s *Server) liveProjections(name string) map[string]*config.ProjectionConfi
 	return s.projections[name]
 }
 
+func (s *Server) hasAuthFlow(name string) bool {
+	s.authMu.Lock()
+	defer s.authMu.Unlock()
+	return s.authFlows[name] != nil
+}
+
 func (s *Server) waitForUpstreamGoroutines() {
 	for _, u := range s.upstreams.snapshot() {
 		u.group.Wait()
