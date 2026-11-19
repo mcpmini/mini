@@ -12,6 +12,7 @@ go build ./...
 staticcheck ./...
 golangci-lint run
 scripts/lint.sh
+node --test internal/configui/jstest/*.test.js
 testbin=$(mktemp -d)
 scripts/test-bins.sh "$testbin" > "$testbin/env"
 while IFS= read -r line; do export "$line"; done < "$testbin/env"
