@@ -114,6 +114,9 @@ function typeLabel(prop, depth) {
   const union = prop.anyOf ?? prop.oneOf;
   if (Array.isArray(union)) return union.map((p) => typeLabel(p, depth + 1)).join(" | ");
   if (Array.isArray(prop.enum)) return "enum";
+  // Pydantic types a model-valued field as a $ref, wrapped in a one-element allOf when it adds a description.
+  if (typeof prop.$ref === "string") return prop.$ref.split("/").pop() || "object";
+  if (Array.isArray(prop.allOf) && prop.allOf.length === 1) return typeLabel(prop.allOf[0], depth + 1);
   return "any";
 }
 
@@ -123,7 +126,7 @@ function primitiveLabel(prop, type, depth) {
   return item.includes(" | ") ? `(${item})[]` : `${item}[]`;
 }
 
-export function formatValue(value) {
+function formatValue(value) {
   return JSON.stringify(value) ?? String(value);
 }
 

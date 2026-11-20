@@ -85,6 +85,8 @@ code, pre, .tool-name, .field-name, .field-type { font: 13px ui-monospace, SFMon
   cursor: pointer;
 }
 .tool-row:hover, .tool-row:focus-visible { background: var(--surface); }
+.tool-row::before { content: "▸"; width: 8px; color: var(--muted); }
+.tool-row[aria-expanded="true"]::before { content: "▾"; }
 .tool-row .tool-title { flex-basis: 100%; padding-left: 16px; color: var(--muted); font-size: 14px; }
 
 .badge {
@@ -99,10 +101,6 @@ code, pre, .tool-name, .field-name, .field-type { font: 13px ui-monospace, SFMon
 .badge-safe { color: var(--safe); }
 .badge-danger { color: var(--danger); }
 .badge-hidden { color: var(--warn); }
-
-
-.tool-row::before { content: "▸"; width: 8px; color: var(--muted); }
-.tool-row[aria-expanded="true"]::before { content: "▾"; }
 
 .tool-details { padding: 0 14px 14px 30px; }
 .tool-details > .description { margin-top: 0; }

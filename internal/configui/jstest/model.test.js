@@ -127,10 +127,12 @@ test("schemaFields labels arrays, unions, consts and untyped properties", () => 
       either: { oneOf: [{ type: "string" }, { type: "null" }] },
       kind: { const: "issue" },
       choice: { enum: [1, 2] },
-      ref: { $ref: "#/$defs/x" },
+      ref: { $ref: "#/$defs/Address" },
+      described: { allOf: [{ $ref: "#/$defs/Address" }], description: "Where to ship" },
+      optional: { anyOf: [{ $ref: "#/$defs/Address" }, { type: "null" }] },
       broken: "not a schema",
     }),
-    ["string[]", "(string | integer)[]", "any[]", "string | null", '"issue"', "enum", "any", "any"],
+    ["string[]", "(string | integer)[]", "any[]", "string | null", '"issue"', "enum", "Address", "Address", "Address | null", "any"],
   );
 });
 
