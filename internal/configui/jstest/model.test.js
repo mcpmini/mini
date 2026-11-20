@@ -5,7 +5,7 @@ import {
   errorMessage,
   EXPIRED_MESSAGE,
   pollDelay,
-  isComposed,
+  hasUnlistedFields,
   schemaFields,
   serverStatus,
   serverTools,
@@ -92,9 +92,12 @@ test("schemaFields lists an enum array's allowed values", () => {
   assert.deepEqual(field.values, ['"a"', '"b"']);
 });
 
-test("isComposed flags schemas whose fields schemaFields can't list", () => {
-  assert.equal(isComposed({ allOf: [{ properties: { q: {} } }] }), true);
-  assert.equal(isComposed({ type: "object", properties: {} }), false);
+test("hasUnlistedFields flags schemas whose fields schemaFields can't list", () => {
+  assert.equal(hasUnlistedFields({ allOf: [{ properties: { q: {} } }] }), true);
+  assert.equal(hasUnlistedFields({ type: "object", additionalProperties: { type: "string" } }), true);
+  assert.equal(hasUnlistedFields({ type: "object", patternProperties: { "^x": {} } }), true);
+  assert.equal(hasUnlistedFields({ type: "object", properties: {}, additionalProperties: false }), false);
+  assert.equal(hasUnlistedFields({ type: "object", properties: {} }), false);
 });
 
 test("schemaFields lists each property with its type, requirement, description, values and default", () => {

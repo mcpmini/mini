@@ -3,7 +3,7 @@ import htm from "./vendor/htm.js";
 import {
   annotationBadges,
   formatSchema,
-  isComposed,
+  hasUnlistedFields,
   schemaFields,
   serverStatus,
   serverTools,
@@ -35,7 +35,7 @@ export function ToolList({ server, expanded = new Set(), onToggle }) {
   if (tools.length === 0) return html`<p class="muted">${server.name} offers no tools.</p>`;
   return html`<ul class="tool-list">
     ${tools.map((tool, i) => html`<li key=${tool.name}>
-      <${ToolRow} tool=${tool} panelID=${`tool-${i}`} open=${expanded.has(tool.name)} onToggle=${onToggle} />
+      <${ToolRow} tool=${tool} panelID=${`tool-${server.name}-${i}`} open=${expanded.has(tool.name)} onToggle=${onToggle} />
     </li>`)}
   </ul>`;
 }
@@ -71,7 +71,7 @@ function SchemaSection({ title, schema, empty }) {
     <h3>${title}</h3>
     ${fields.length > 0
       ? html`<${FieldList} fields=${fields} />`
-      : html`<p class="muted">${isComposed(schema) ? "See the JSON schema." : empty}</p>`}
+      : html`<p class="muted">${hasUnlistedFields(schema) ? "See the JSON schema." : empty}</p>`}
     ${schema !== undefined && html`<details>
       <summary>JSON schema</summary>
       <pre>${formatSchema(schema)}</pre>

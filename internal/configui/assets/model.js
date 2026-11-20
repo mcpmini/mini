@@ -72,11 +72,13 @@ export function toggled(names, name) {
   return next;
 }
 
-const COMPOSED = ["allOf", "anyOf", "oneOf", "$ref"];
+const UNLISTED = ["allOf", "anyOf", "oneOf", "$ref", "patternProperties"];
 
-// schemaFields reads only direct properties, so a composed schema can still take arguments it doesn't list.
-export function isComposed(schema) {
-  return isObject(schema) && COMPOSED.some((key) => key in schema);
+// schemaFields reads only direct properties, so these schemas can still take arguments it doesn't list.
+export function hasUnlistedFields(schema) {
+  if (!isObject(schema)) return false;
+  const open = schema.additionalProperties !== undefined && schema.additionalProperties !== false;
+  return open || UNLISTED.some((key) => key in schema);
 }
 
 export function schemaFields(schema) {

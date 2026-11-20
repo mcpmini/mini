@@ -64,6 +64,15 @@ test("ToolList expands only the open rows, and says so to assistive tech", () =>
   assert.deepEqual(panels.map((p) => p.props.id), [rows[0].props["aria-controls"], rows[2].props["aria-controls"]]);
 });
 
+test("ToolList gives each server's panels their own ids", () => {
+  const ids = ["linear", "github"].flatMap((name) => {
+    const server = { name, tools: [{ name: "a" }] };
+    const { elements } = renderTree(html`<${ToolList} server=${server} expanded=${new Set(["a"])} onToggle=${() => {}} />`);
+    return elements.filter((e) => e.props.class === "tool-details").map((e) => e.props.id);
+  });
+  assert.equal(new Set(ids).size, 2, `panel ids ${ids} should differ between servers`);
+});
+
 function detailOf(tool) {
   return listOf([tool], [tool.name]);
 }
