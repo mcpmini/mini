@@ -6,8 +6,10 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -164,19 +166,51 @@ func TestPage_serverRemovedFromMiniIsNoLongerListed(t *testing.T) {
 	}
 }
 
-func TestPage_servesThePageWithItsSecurityHeaders(t *testing.T) {
+func TestPage_servesEveryAssetWithItsSecurityHeaders(t *testing.T) {
 	p := newPage(t)
 	p.open("svc")
+	paths := []string{"/"}
+	eachAsset(t, func(path string, _ []byte) { paths = append(paths, strings.TrimPrefix(path, "assets")) })
+	for _, path := range paths {
+		resp, err := http.Get(p.base + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
 
-	resp, err := http.Get(p.base + "/")
+		if resp.StatusCode != http.StatusOK || !hasSecurityHeaders(resp.Header) {
+			t.Errorf("GET %s = %d, headers %v; want it with the security headers", path, resp.StatusCode, resp.Header)
+		}
+	}
+}
+
+func hasSecurityHeaders(h http.Header) bool {
+	return h.Get("Content-Security-Policy") == contentSecurityPolicy &&
+		h.Get("X-Content-Type-Options") == "nosniff" && h.Get("Referrer-Policy") == "no-referrer"
+}
+
+// Upstream descriptions and schemas are untrusted, so the page may only ever insert them as text.
+func TestAssets_neverInsertHTML(t *testing.T) {
+	insertsHTML := regexp.MustCompile(`innerHTML|dangerouslySetInnerHTML`)
+	eachAsset(t, func(path string, data []byte) {
+		if !strings.HasPrefix(path, "assets/vendor/") && insertsHTML.Match(data) {
+			t.Errorf("%s inserts HTML", path)
+		}
+	})
+}
+
+func eachAsset(t *testing.T, visit func(path string, data []byte)) {
+	t.Helper()
+	err := fs.WalkDir(assetFiles, "assets", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		data, err := assetFiles.ReadFile(path)
+		visit(path, data)
+		return err
+	})
 	if err != nil {
 		t.Fatal(err)
-	}
-	resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Security-Policy") != contentSecurityPolicy ||
-		resp.Header.Get("X-Content-Type-Options") != "nosniff" || resp.Header.Get("Referrer-Policy") != "no-referrer" {
-		t.Errorf("GET / = %d, headers %v; want the page with its security headers", resp.StatusCode, resp.Header)
 	}
 }
 

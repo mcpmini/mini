@@ -1,7 +1,7 @@
 import { render } from "./vendor/preact.js";
 import { useEffect, useState } from "./vendor/preact-hooks.js";
 import { getServer, listServers, startSession } from "./api.js";
-import { errorMessage, pollDelay } from "./model.js";
+import { errorMessage, pollDelay, toggled } from "./model.js";
 import { html, ServerHeader, StatusNotice, ToolList } from "./views.js";
 
 function App() {
@@ -17,11 +17,13 @@ function App() {
 
 function ServerPage({ name, onError }) {
   const server = usePolledServer(name, onError);
+  const [expanded, setExpanded] = useState(() => new Set());
   if (!server) return html`<p class="muted">Loading ${name}…</p>`;
+  const toggle = (tool) => setExpanded((names) => toggled(names, tool));
   return html`<section class="server">
     <${ServerHeader} server=${server} />
     ${server.state !== "ready" && html`<${StatusNotice} server=${server} />`}
-    ${server.state === "ready" && html`<${ToolList} server=${server} />`}
+    ${server.state === "ready" && html`<${ToolList} server=${server} expanded=${expanded} onToggle=${toggle} />`}
   </section>`;
 }
 

@@ -35,8 +35,11 @@ type ServerView struct {
 }
 
 type Tool struct {
-	Name        string          `json:"name"`
-	Title       string          `json:"title,omitempty"`
-	Annotations json.RawMessage `json:"annotations,omitempty"`
-	Hidden      bool            `json:"hidden"`
+	Name         string          `json:"name"`
+	Title        string          `json:"title,omitempty"`
+	Description  string          `json:"description,omitempty"`
+	Annotations  json.RawMessage `json:"annotations,omitempty"`
+	InputSchema  json.RawMessage `json:"inputSchema,omitempty"`
+	OutputSchema json.RawMessage `json:"outputSchema,omitempty"`
+	Hidden       bool            `json:"hidden"`
 }

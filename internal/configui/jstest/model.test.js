@@ -5,9 +5,12 @@ import {
   errorMessage,
   EXPIRED_MESSAGE,
   pollDelay,
+  hasUnlistedFields,
+  schemaFields,
   serverStatus,
   serverTools,
   stateLabel,
+  toggled,
   UNREACHABLE_MESSAGE,
 } from "../assets/model.js";
 
@@ -50,9 +53,9 @@ test("serverTools drops malformed entries and coerces untrusted fields to safe t
       { name: "b", annotations: { title: "From annotations" }, hidden: true },
     ],
   });
-  assert.deepEqual(tools.map((t) => [t.name, t.title, t.hidden]), [
-    ["a", "", false],
-    ["b", "From annotations", true],
+  assert.deepEqual(tools.map((t) => [t.name, t.title, t.description, t.hidden]), [
+    ["a", "", "", false],
+    ["b", "From annotations", "", true],
   ]);
   assert.deepEqual(tools[0].annotations, {});
 });
@@ -76,4 +79,77 @@ test("annotationBadges shows only hints set to true, and write hints only when n
     "open world",
   ]);
   assert.deepEqual(labels({ readOnlyHint: "true", openWorldHint: false }), []);
+});
+
+test("toggled opens a closed name and closes an open one, leaving the others", () => {
+  const open = toggled(new Set(["a"]), "b");
+  assert.deepEqual([...open], ["a", "b"]);
+  assert.deepEqual([...toggled(open, "a")], ["b"]);
+});
+
+test("schemaFields lists an enum array's allowed values", () => {
+  const [field] = schemaFields({ properties: { tags: { type: "array", items: { enum: ["a", "b"] } } } });
+  assert.deepEqual(field.values, ['"a"', '"b"']);
+});
+
+test("hasUnlistedFields flags schemas whose fields schemaFields can't list", () => {
+  assert.equal(hasUnlistedFields({ allOf: [{ properties: { q: {} } }] }), true);
+  assert.equal(hasUnlistedFields({ type: "object", additionalProperties: { type: "string" } }), true);
+  assert.equal(hasUnlistedFields({ type: "object", patternProperties: { "^x": {} } }), true);
+  assert.equal(hasUnlistedFields({ type: "object", properties: {}, additionalProperties: false }), false);
+  assert.equal(hasUnlistedFields({ type: "object", properties: {} }), false);
+});
+
+test("schemaFields lists each property with its type, requirement, description, values and default", () => {
+  const fields = schemaFields({
+    type: "object",
+    required: ["query"],
+    properties: {
+      query: { type: "string", description: "Search text" },
+      state: { type: "string", enum: ["open", "closed"], default: "open" },
+      limit: { type: ["integer", "null"] },
+    },
+  });
+  assert.deepEqual(fields, [
+    { name: "query", type: "string", required: true, description: "Search text", values: [], defaultValue: null },
+    { name: "state", type: "string", required: false, description: "", values: ['"open"', '"closed"'], defaultValue: '"open"' },
+    { name: "limit", type: "integer | null", required: false, description: "", values: [], defaultValue: null },
+  ]);
+});
+
+test("schemaFields labels arrays, unions, consts and untyped properties", () => {
+  const types = (properties) => schemaFields({ properties }).map((f) => f.type);
+  assert.deepEqual(
+    types({
+      labels: { type: "array", items: { type: "string" } },
+      ids: { type: "array", items: { anyOf: [{ type: "string" }, { type: "integer" }] } },
+      anything: { type: "array" },
+      either: { oneOf: [{ type: "string" }, { type: "null" }] },
+      kind: { const: "issue" },
+      choice: { enum: [1, 2] },
+      ref: { $ref: "#/$defs/Address" },
+      described: { allOf: [{ $ref: "#/$defs/Address" }], description: "Where to ship" },
+      optional: { anyOf: [{ $ref: "#/$defs/Address" }, { type: "null" }] },
+      broken: "not a schema",
+    }),
+    ["string[]", "(string | integer)[]", "any[]", "string | null", '"issue"', "enum", "Address", "Address", "Address | null", "any"],
+  );
+});
+
+test("schemaFields stops descending into deeply nested item types", () => {
+  let prop = { type: "string" };
+  for (let i = 0; i < 10; i++) prop = { type: "array", items: prop };
+  const [field] = schemaFields({ properties: { deep: prop } });
+  assert.equal(field.type, "…[][][][][]");
+});
+
+test("schemaFields returns no fields for a schema without properties", () => {
+  assert.deepEqual(schemaFields(undefined), []);
+  assert.deepEqual(schemaFields({ type: "object" }), []);
+  assert.deepEqual(schemaFields({ properties: ["a"] }), []);
+});
+
+test("schemaFields ignores a non-string description", () => {
+  const [field] = schemaFields({ properties: { a: { type: "string", description: ["<img>"] } } });
+  assert.equal(field.description, "");
 });
